@@ -1,0 +1,45 @@
+# ween32 — the classic win32 API, reimplemented small and portable.
+#
+#   make            build libween32.a (+ examples on X11 hosts)
+#   make test       build & run the headless test suite (no display needed)
+#   make X11=0      build without the X11 backend (headless only)
+
+CC      ?= cc
+CFLAGS  ?= -O2
+CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Iinclude
+X11     ?= 1
+
+OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o \
+       src/gdi.o src/user.o src/dialog.o src/headless.o src/x11.o
+
+LIBS =
+ifeq ($(X11),1)
+src/x11.o: CFLAGS += -DWEEN_BACKEND_X11
+LIBS += -lX11
+endif
+
+all: libween32.a examples/dialog
+
+libween32.a: $(OBJS)
+	ar rcs $@ $(OBJS)
+
+$(OBJS): src/ween_internal.h include/ween32.h
+src/fonts.o: fonts/tahoma_ttf.h fonts/marlett_ttf.h
+
+examples/dialog: examples/dialog.c libween32.a
+	$(CC) $(CFLAGS) -o $@ examples/dialog.c libween32.a $(LIBS)
+
+tests/render_test: tests/render_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
+
+tests/api_test: tests/api_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/api_test.c libween32.a $(LIBS)
+
+test: tests/render_test tests/api_test
+	./tests/render_test
+	./tests/api_test
+
+clean:
+	rm -f $(OBJS) libween32.a examples/dialog tests/render_test tests/api_test
+
+.PHONY: all test clean

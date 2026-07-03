@@ -1,0 +1,122 @@
+/* Software surface and 2D primitives (port of telemouse's framebuffer.zig).
+ * Everything ween32 shows is drawn into one of these, then blitted by a
+ * backend — rendering is pixel-identical on every platform. */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ween_internal.h"
+
+int ween_surface_init(ween_surface *s, int w, int h)
+{
+    if (w <= 0 || h <= 0)
+        return 0;
+    s->px = calloc((size_t)w * (size_t)h, sizeof(ween_color));
+    if (!s->px)
+        return 0;
+    s->w = w;
+    s->h = h;
+    return 1;
+}
+
+void ween_surface_free(ween_surface *s)
+{
+    free(s->px);
+    s->px = NULL;
+    s->w = s->h = 0;
+}
+
+void ween_surface_clear(ween_surface *s, ween_color c)
+{
+    for (long i = 0; i < (long)s->w * s->h; i++)
+        s->px[i] = c;
+}
+
+void ween_surface_pixel(ween_surface *s, int x, int y, ween_color c)
+{
+    if (x < 0 || y < 0 || x >= s->w || y >= s->h)
+        return;
+    s->px[(long)y * s->w + x] = c;
+}
+
+void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c)
+{
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w > s->w ? s->w : x + w;
+    int y1 = y + h > s->h ? s->h : y + h;
+    for (int yy = y0; yy < y1; yy++) {
+        ween_color *row = s->px + (long)yy * s->w;
+        for (int xx = x0; xx < x1; xx++)
+            row[xx] = c;
+    }
+}
+
+void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c)
+{
+    ween_surface_fill(s, x, y, w, 1, c);
+}
+
+void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c)
+{
+    ween_surface_fill(s, x, y, 1, h, c);
+}
+
+void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c)
+{
+    ween_surface_hline(s, x, y, w, c);
+    ween_surface_hline(s, x, y + h - 1, w, c);
+    ween_surface_vline(s, x, y, h, c);
+    ween_surface_vline(s, x + w - 1, y, h, c);
+}
+
+static void put_le32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
+int ween_surface_write_bmp(const ween_surface *s, const char *path)
+{
+    size_t w = (size_t)s->w, h = (size_t)s->h;
+    size_t stride = (w * 3 + 3) & ~(size_t)3;
+    size_t total = 54 + stride * h;
+    unsigned char *out = calloc(1, total);
+    if (!out)
+        return 0;
+
+    out[0] = 'B';
+    out[1] = 'M';
+    put_le32(out + 2, (uint32_t)total);
+    put_le32(out + 10, 54); /* pixel data offset */
+    put_le32(out + 14, 40); /* BITMAPINFOHEADER */
+    put_le32(out + 18, (uint32_t)s->w);
+    put_le32(out + 22, (uint32_t)s->h);
+    out[26] = 1;  /* planes */
+    out[28] = 24; /* bpp */
+    put_le32(out + 34, (uint32_t)(stride * h));
+
+    /* Bottom-up rows, BGR. */
+    for (size_t y = 0; y < h; y++) {
+        const ween_color *src = s->px + (h - 1 - y) * w;
+        unsigned char *dst = out + 54 + y * stride;
+        for (size_t x = 0; x < w; x++) {
+            dst[x * 3] = (unsigned char)src[x];
+            dst[x * 3 + 1] = (unsigned char)(src[x] >> 8);
+            dst[x * 3 + 2] = (unsigned char)(src[x] >> 16);
+        }
+    }
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        free(out);
+        return 0;
+    }
+    size_t n = fwrite(out, 1, total, f);
+    fclose(f);
+    free(out);
+    return n == total;
+}

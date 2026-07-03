@@ -1,0 +1,200 @@
+/* ween32 internals: the software engine (surface, classic chrome, fonts) and
+ * the window/backend model that the public win32-shaped API is built on.
+ * Nothing in this header is public; apps see only include/ween32.h.
+ *
+ * Surface pixels are 0x00RRGGBB (one uint32_t per pixel) — the layout X11
+ * ZPixmap and Win32 DIBs both accept on little-endian without conversion.
+ * Note this differs from COLORREF (0x00BBGGRR); gdi.c converts at the API
+ * boundary.
+ */
+
+#ifndef WEEN_INTERNAL_H
+#define WEEN_INTERNAL_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../include/ween32.h"
+
+/* ---- surface (from telemouse framebuffer.zig) -------------------------- */
+
+typedef uint32_t ween_color; /* 0x00RRGGBB */
+
+typedef struct {
+    ween_color *px;
+    int w, h;
+} ween_surface;
+
+#define WEEN_RGBX(r, g, b) ((ween_color)(((r) << 16) | ((g) << 8) | (b)))
+
+/* Authentic Wine GetSysColor defaults (Win2000 scheme), in surface format. */
+#define WEEN_FACE WEEN_RGBX(212, 208, 200)
+#define WEEN_WHITE WEEN_RGBX(255, 255, 255)
+#define WEEN_3DLIGHT WEEN_RGBX(212, 208, 200) /* == face in the Win2k scheme */
+#define WEEN_SHADOW WEEN_RGBX(128, 128, 128)
+#define WEEN_DKSHADOW WEEN_RGBX(64, 64, 64)
+#define WEEN_BLACK WEEN_RGBX(0, 0, 0)
+#define WEEN_WINDOWBG WEEN_RGBX(255, 255, 255)
+#define WEEN_CAP_LEFT WEEN_RGBX(10, 36, 106)   /* #0A246A */
+#define WEEN_CAP_RIGHT WEEN_RGBX(166, 202, 240) /* #A6CAF0 */
+#define WEEN_CAP_TEXT WEEN_RGBX(255, 255, 255)
+
+int ween_surface_init(ween_surface *s, int w, int h);
+void ween_surface_free(ween_surface *s);
+void ween_surface_clear(ween_surface *s, ween_color c);
+void ween_surface_pixel(ween_surface *s, int x, int y, ween_color c);
+void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c);
+void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
+void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c);
+void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c);
+/* 24-bit uncompressed BMP, for headless render verification. */
+int ween_surface_write_bmp(const ween_surface *s, const char *path);
+
+/* ---- classic chrome (from classic.zig; the Wine DrawEdge algorithm) ---- */
+
+void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken);
+void ween_classic_caption(ween_surface *s, int x, int y, int w, int h);
+
+/* ---- fonts -------------------------------------------------------------- */
+
+/* Tahoma text from the font's embedded 11px bitmap strikes (EBLC/EBDT): the
+ * same hand-tuned 1-bit glyphs GDI showed, no rasteriser (from font.zig). */
+typedef struct {
+    const unsigned char *ttf;
+    size_t len;
+    size_t cmap4; /* format-4 cmap subtable offset */
+    size_t ebdt;
+    size_t isa; /* strike's indexSubTableArray (absolute) */
+    size_t nidx;
+    int ascent;
+    int descent; /* negative, as in the font */
+} ween_strike;
+
+int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int ppem);
+int ween_strike_text_width(const ween_strike *f, const char *s, int len);
+int ween_strike_char_advance(const ween_strike *f, unsigned char c);
+/* y is the top of the text cell (TA_TOP); baseline = y + ascent. */
+void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
+                      const char *text, int len, ween_color color);
+
+/* Marlett caption glyphs from glyf outlines, even-odd scanline fill (from
+ * marlett.zig). code: 0x72 close, 0x30 min, 0x31 max, 0x32 restore. */
+typedef struct {
+    const unsigned char *ttf;
+    size_t len;
+} ween_marlett;
+
+int ween_marlett_init(ween_marlett *m, const unsigned char *ttf, size_t len);
+void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
+                       int x, int y, int size, ween_color color);
+
+/* The built-in fonts (Wine's redistributable Tahoma/Marlett, embedded). */
+const ween_strike *ween_gui_font(void);   /* Tahoma 11px — DEFAULT_GUI_FONT */
+const ween_marlett *ween_caption_font(void);
+
+/* ---- GDI objects and device contexts ------------------------------------ */
+
+typedef struct ween_gdiobj {
+    enum { WEEN_OBJ_BRUSH, WEEN_OBJ_FONT } kind;
+    ween_color color;         /* brush fill (surface format) */
+    const ween_strike *font;  /* font strike */
+    int is_static;            /* stock/system object: DeleteObject is a no-op */
+} ween_gdiobj;
+
+struct ween_dc {
+    ween_surface *s;
+    int org_x, org_y;   /* window origin within the surface */
+    int clip_w, clip_h; /* drawing area (window size) */
+    ween_color text_color;
+    int bk_mode;
+    const ween_strike *font;
+};
+
+/* ---- windows ------------------------------------------------------------- */
+
+#define WEEN_MAX_CLASSES 16
+#define WEEN_MAX_TEXT 128
+
+typedef struct ween_class {
+    char name[32];
+    WNDPROC proc;
+    HBRUSH background;
+    int in_use;
+} ween_class;
+
+struct ween_wnd {
+    const ween_class *cls;
+    WNDPROC proc; /* class proc (subclassing not in v1) */
+    struct ween_wnd *parent;
+    struct ween_wnd *first_child;
+    struct ween_wnd *next_sibling;
+    DWORD style;
+    int x, y, w, h; /* window rect; children: in parent CLIENT coordinates */
+    char text[WEEN_MAX_TEXT];
+    UINT_PTR id; /* (HMENU) child id */
+    const ween_strike *font;
+    int visible;
+    int pressed; /* BUTTON down-state */
+    int destroyed;
+
+    /* top-level only */
+    ween_surface surface;
+    void *backend_win;
+    int dirty;
+    int nc_close_pressed; /* close-box tracking */
+};
+
+/* Non-client metrics of a WS_CAPTION window (classic Win2k popup chrome). */
+#define WEEN_NC_FRAME 3
+#define WEEN_NC_CAPTION 20 /* caption strip height, frame excluded */
+#define WEEN_NC_BTN_W 16
+#define WEEN_NC_BTN_H 14
+
+/* The client origin of a window within its top-level surface. */
+void ween_client_origin(HWND wnd, int *ox, int *oy);
+HWND ween_top_level(HWND wnd);
+/* Repaint the whole tree into the surface and present it, if dirty. */
+void ween_flush_paint(void);
+
+/* ---- backend contract ------------------------------------------------------
+ * A backend owns the native window: it blits the finished surface and yields
+ * raw input events. It never draws. */
+
+typedef enum {
+    WEEN_EV_NONE,
+    WEEN_EV_EXPOSE,
+    WEEN_EV_MOUSE_DOWN,
+    WEEN_EV_MOUSE_UP,
+    WEEN_EV_MOUSE_MOVE,
+    WEEN_EV_KEY, /* vk: translated virtual-key code */
+    WEEN_EV_CLOSE,
+    WEEN_EV_END /* event source exhausted (headless) / connection lost */
+} ween_ev_kind;
+
+typedef struct {
+    ween_ev_kind kind;
+    int x, y;           /* window coordinates */
+    int x_root, y_root; /* desktop coordinates (caption drag) */
+    int button;
+    unsigned vk;
+} ween_event;
+
+typedef struct {
+    void *(*open)(int w, int h, const char *title);
+    void (*present)(void *win, const ween_surface *s);
+    void (*move_by)(void *win, int dx, int dy);
+    /* Blocks until the next event. */
+    ween_event (*next_event)(void *win);
+    void (*close)(void *win);
+} ween_backend;
+
+extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
+const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */
+const ween_backend *ween_backend_headless(void);
+
+/* headless test hooks */
+void ween_headless_inject(ween_event ev);
+void ween_headless_set_bmp_path(const char *path); /* written on present */
+const ween_surface *ween_headless_surface(void);   /* last presented */
+
+#endif /* WEEN_INTERNAL_H */

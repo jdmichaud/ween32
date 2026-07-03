@@ -1,0 +1,7 @@
+*.o
+*.a
+examples/dialog
+tests/render_test
+tests/api_test
+*.bmp
+*.exe
