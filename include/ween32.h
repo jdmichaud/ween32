@@ -40,6 +40,7 @@ typedef uintptr_t UINT_PTR;
 typedef UINT_PTR WPARAM;
 typedef LONG_PTR LPARAM;
 typedef LONG_PTR LRESULT;
+typedef intptr_t INT_PTR;
 typedef char CHAR;
 typedef const CHAR *LPCSTR;
 typedef CHAR *LPSTR;
@@ -92,6 +93,29 @@ typedef struct tagMSG {
 typedef MSG *LPMSG;
 
 typedef LRESULT(CALLBACK *WNDPROC)(HWND, UINT, WPARAM, LPARAM);
+typedef INT_PTR(CALLBACK *DLGPROC)(HWND, UINT, WPARAM, LPARAM);
+
+/* Dialog templates share the real win32 binary layout (2-byte packed): an app
+ * can build one in memory and CreateDialogIndirect it, and the same bytes feed
+ * the real dialog manager on Windows. Each is followed in the stream by its
+ * variable-length menu/class/title (and per-item creation data), with items
+ * aligned to DWORD boundaries. */
+#pragma pack(push, 2)
+typedef struct {
+    DWORD style;
+    DWORD dwExtendedStyle;
+    WORD cdit;
+    short x, y, cx, cy;
+} DLGTEMPLATE, *LPDLGTEMPLATE;
+typedef const DLGTEMPLATE *LPCDLGTEMPLATEA;
+
+typedef struct {
+    DWORD style;
+    DWORD dwExtendedStyle;
+    short x, y, cx, cy;
+    WORD id;
+} DLGITEMTEMPLATE, *LPDLGITEMTEMPLATE;
+#pragma pack(pop)
 
 typedef struct tagWNDCLASSA {
     UINT style;
@@ -177,6 +201,11 @@ typedef struct tagCREATESTRUCTA {
 #define WM_NCLBUTTONDOWN 0x00A1
 #define WM_NCLBUTTONUP 0x00A2
 #define WM_DRAWITEM 0x002B
+#define WM_INITDIALOG 0x0110
+#define WM_USER 0x0400
+#define DM_GETDEFID (WM_USER + 0)
+#define DM_SETDEFID (WM_USER + 1)
+#define DC_HASDEFID 0x534B
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
 #define WM_CHAR 0x0102
@@ -195,6 +224,18 @@ typedef struct tagCREATESTRUCTA {
 #define WS_BORDER 0x00800000L
 #define WS_DLGFRAME 0x00400000L
 #define WS_SYSMENU 0x00080000L
+#define WS_GROUP 0x00020000L
+#define WS_TABSTOP 0x00010000L
+
+/* dialog styles */
+#define DS_3DLOOK 0x0004L
+#define DS_SETFONT 0x40L
+#define DS_MODALFRAME 0x80L
+#define DS_CENTER 0x0800L
+
+/* standard command ids */
+#define IDOK 1
+#define IDCANCEL 2
 
 /* button / static control styles */
 #define BS_PUSHBUTTON 0x00000000L
@@ -300,6 +341,7 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint);
 BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase);
 BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);
+int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
 
 BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max);
@@ -314,6 +356,17 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 LONG GetDialogBaseUnits(void);
 BOOL MapDialogRect(HWND dlg, LPRECT rect);
 int MulDiv(int number, int numerator, int denominator);
+
+/* The dialog manager: create a dialog from a template (the manager instantiates
+ * every control and maps its DLUs to pixels), run the DLGPROC, and route
+ * keyboard navigation. This is how win32 dialogs were built. */
+HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
+                                HWND parent, DLGPROC proc, LPARAM init_param);
+#define CreateDialogIndirectA(inst, tmpl, parent, proc) \
+    CreateDialogIndirectParamA(inst, tmpl, parent, proc, 0)
+BOOL IsDialogMessageA(HWND dlg, LPMSG msg);
+LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp);
+BOOL EndDialog(HWND dlg, INT_PTR result);
 
 /* ---- GDI ------------------------------------------------------------------ */
 

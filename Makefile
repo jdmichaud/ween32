@@ -29,7 +29,7 @@ src/fonts.o: fonts/tahoma_ttf.h fonts/marlett_ttf.h
 examples/dialog: examples/dialog.c libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/dialog.c libween32.a $(LIBS)
 
-examples/calc: examples/calc.c libween32.a
+examples/calc: examples/calc.c examples/win32_dlg.h libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/calc.c libween32.a $(LIBS) -lm
 
 tests/render_test: tests/render_test.c libween32.a
@@ -38,11 +38,16 @@ tests/render_test: tests/render_test.c libween32.a
 tests/api_test: tests/api_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/api_test.c libween32.a $(LIBS)
 
-test: tests/render_test tests/api_test
+tests/dlg_test: tests/dlg_test.c examples/win32_dlg.h libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/dlg_test.c libween32.a $(LIBS)
+
+test: tests/render_test tests/api_test tests/dlg_test
 	./tests/render_test
 	./tests/api_test
+	./tests/dlg_test
 
 clean:
-	rm -f $(OBJS) libween32.a examples/dialog examples/calc tests/render_test tests/api_test
+	rm -f $(OBJS) libween32.a examples/dialog examples/calc \
+	      tests/render_test tests/api_test tests/dlg_test
 
 .PHONY: all test clean

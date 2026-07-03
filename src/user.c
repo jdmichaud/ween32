@@ -338,6 +338,37 @@ HWND GetDlgItem(HWND dlg, int id)
     return NULL;
 }
 
+int GetDlgCtrlID(HWND wnd)
+{
+    return wnd ? (int)wnd->id : 0;
+}
+
+HWND ween_focus_get(void)
+{
+    return g_focus;
+}
+
+/* Walk the child list in creation order to the next/previous WS_TABSTOP window
+ * after `cur`, wrapping around — the dialog manager's Tab navigation. */
+HWND ween_tab_next(HWND dlg, HWND cur, int forward)
+{
+    HWND list[64];
+    int n = 0;
+    for (struct ween_wnd *c = dlg->first_child; c && n < 64; c = c->next_sibling)
+        if (c->visible && (c->style & WS_TABSTOP))
+            list[n++] = c;
+    if (n == 0)
+        return NULL;
+    int idx = -1;
+    for (int i = 0; i < n; i++)
+        if (list[i] == cur)
+            idx = i;
+    if (idx < 0)
+        return list[0];
+    idx = (idx + (forward ? 1 : n - 1)) % n;
+    return list[idx];
+}
+
 HWND SetFocus(HWND wnd)
 {
     HWND prev = g_focus;

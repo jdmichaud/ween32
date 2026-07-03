@@ -6,3 +6,4 @@ tests/render_test
 tests/api_test
 *.bmp
 *.exe
+tests/dlg_test

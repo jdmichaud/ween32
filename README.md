@@ -17,8 +17,10 @@ ween32 everywhere else. That dual-compile property is the project's fidelity con
 ![the demo dialog](docs/dialog.png)
 
 The flagship example is the classic Windows calculator, recreated in `examples/calc.c` as
-pure win32 code — owner-drawn colored keys (`BS_OWNERDRAW`/`WM_DRAWITEM`), dialog-unit
-layout, memory keys and all:
+pure win32 code — built the authentic way from a **dialog template**: the controls are
+declared once in dialog units and the dialog manager (`CreateDialogIndirectParam`)
+instantiates them and maps their DLUs to pixels. Owner-drawn colored keys
+(`BS_OWNERDRAW`/`WM_DRAWITEM`), memory keys, `Enter`=equals via `IsDialogMessage`, and all:
 
 ![the calculator](docs/calc.png)
 
@@ -85,10 +87,15 @@ GDI: `BeginPaint/EndPaint, FillRect, DrawEdge, DrawFrameControl (DFC_CAPTION), T
 DrawTextA, GetTextExtentPoint32A, SetTextColor, SetBkMode, GetSysColor(Brush),
 CreateSolidBrush, DeleteObject, GetStockObject(DEFAULT_GUI_FONT), SelectObject`.
 
-Dialog layout: `GetDialogBaseUnits, MapDialogRect, MulDiv`.
+Dialogs (the authentic layout path): `CreateDialogIndirectParamA` (+ `CreateDialogIndirectA`)
+builds a dialog from a `DLGTEMPLATE`/`DLGITEMTEMPLATE`, instantiating each control and mapping
+its dialog units to pixels; `DLGPROC` (`WM_INITDIALOG`), `DefDlgProcA`, `EndDialog`,
+`IsDialogMessageA` (Tab / Enter→default / Esc), `DM_SETDEFID`, `GetDlgCtrlID`,
+`GetDialogBaseUnits`, `MapDialogRect`, `MulDiv`. An app declares a control table in DLUs — no
+pixel arithmetic — exactly like a `.rc` `DIALOGEX` resource.
 
-Not yet: EDIT/LISTBOX, menus, DLGTEMPLATE dialogs, wide-char (`W`) APIs, pens/regions,
-resizable windows, multiple top-level windows, timers. The subset grows by need, always with
+Not yet: EDIT/LISTBOX, menus, modal `DialogBox` (needs multiple top-level windows), wide-char
+(`W`) APIs, pens/regions, resizable windows, timers. The subset grows by need, always with
 SDK-exact names, values and semantics (constants are verified against mingw-w64's headers).
 
 ## Fonts and licensing

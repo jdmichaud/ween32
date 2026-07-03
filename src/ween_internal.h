@@ -137,6 +137,11 @@ struct ween_wnd {
     int pressed; /* BUTTON down-state */
     int destroyed;
 
+    /* dialog frame (created by CreateDialogIndirect) */
+    DLGPROC dlgproc;
+    int is_dialog;
+    UINT defid; /* default-command id, for Enter (DM_SETDEFID) */
+
     /* top-level only */
     ween_surface surface;
     void *backend_win;
@@ -153,6 +158,9 @@ struct ween_wnd {
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);
 HWND ween_top_level(HWND wnd);
+HWND ween_focus_get(void);
+/* The next/previous focusable (WS_TABSTOP) child of `dlg`, wrapping. */
+HWND ween_tab_next(HWND dlg, HWND cur, int forward);
 /* Repaint the whole tree into the surface and present it, if dirty. */
 void ween_flush_paint(void);
 
