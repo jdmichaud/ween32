@@ -3,8 +3,9 @@
  * <windows.h> on Windows and against ween32 everywhere else.
  *
  * Faithful details:
- *   - layout in dialog units mapped through the base units (nothing is
- *     hand-placed in pixels);
+ *   - layout in dialog units, with every rectangle's EDGES mapped to pixels
+ *     independently (MapDialogRect semantics) so edges shared in DLU space
+ *     stay pixel-aligned — nothing is hand-placed;
  *   - the colored key caps (blue digits/operators, red clear & memory keys)
  *     use BS_OWNERDRAW buttons painted in WM_DRAWITEM — the mechanism the
  *     real calc.exe used;
@@ -54,6 +55,27 @@
 static int g_bx = 6, g_by = 13;
 #define XDLU(u) MulDiv(u, g_bx, 4)
 #define YDLU(u) MulDiv(u, g_by, 8)
+
+/* Total window client size and the grid anchors, in DLUs. */
+#define GRID_X (M + BW + MEMGAP)              /* main grid left edge */
+#define GRID_W (5 * BW + 4 * GX)              /* main grid width */
+#define ROW0 (M + DISP_H + GY)                /* indicator + Back/CE/C row */
+#define ROW(r) (ROW0 + (BH + GY) * (r))       /* r = 0..4 */
+#define COL(c) (GRID_X + (BW + GX) * (c))     /* c = 0..4 */
+#define TOTAL_W (GRID_X + GRID_W + M)
+#define TOTAL_H (ROW(4) + BH + M)
+
+/* Map a DLU rectangle to pixels edge by edge — MapDialogRect semantics — so
+ * rectangles that share an edge in DLU space share the exact pixel edge. */
+static RECT dlu_rect(int x, int y, int w, int h)
+{
+    RECT r;
+    r.left = XDLU(x);
+    r.top = YDLU(y);
+    r.right = XDLU(x + w);
+    r.bottom = YDLU(y + h);
+    return r;
+}
 
 /* ---- calculator state --------------------------------------------------- */
 
@@ -243,50 +265,43 @@ static COLORREF key_color(int id)
     }
 }
 
+/* Create a key from a DLU box. */
 static void make_key(HWND parent, int id, const char *label, int x, int y,
                      int w, int h)
 {
-    CreateWindowA("BUTTON", label, WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, x, y,
-                  w, h, parent, (HMENU)(UINT_PTR)id, NULL, NULL);
+    RECT r = dlu_rect(x, y, w, h);
+    CreateWindowA("BUTTON", label, WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                  r.left, r.top, r.right - r.left, r.bottom - r.top, parent,
+                  (HMENU)(UINT_PTR)id, NULL, NULL);
 }
 
-static RECT display_rect(HWND hwnd)
+static RECT display_rect(void)
 {
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    RECT r;
-    r.left = XDLU(M);
-    r.top = YDLU(M);
-    r.right = rc.right - XDLU(M);
-    r.bottom = r.top + YDLU(DISP_H);
-    return r;
+    /* spans the full width, sharing its edges with the key columns below */
+    return dlu_rect(M, M, TOTAL_W - 2 * M, DISP_H);
 }
 
 static RECT mem_indicator_rect(void)
 {
-    RECT r;
-    r.left = XDLU(M);
-    r.top = YDLU(M + DISP_H + GY);
-    r.right = r.left + XDLU(BW);
-    r.bottom = r.top + YDLU(BH);
-    return r;
+    return dlu_rect(M, ROW0, BW, BH);
 }
 
 static LRESULT CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
     case WM_CREATE: {
-        int grid_x = XDLU(M + BW + MEMGAP);
-        int row0 = M + DISP_H + GY; /* the indicator + Back/CE/C row, in DLUs */
-
-        /* Back / CE / C: three keys spread across the main grid width. */
-        int grid_w = XDLU(5 * BW + 4 * GX);
-        int cw = (grid_w - 2 * XDLU(GX)) / 3;
-        make_key(hwnd, ID_BACK, "Backspace", grid_x, YDLU(row0), cw, YDLU(BH));
-        make_key(hwnd, ID_CE, "CE", grid_x + cw + XDLU(GX), YDLU(row0), cw,
-                 YDLU(BH));
-        make_key(hwnd, ID_C, "C", grid_x + 2 * (cw + XDLU(GX)), YDLU(row0), cw,
-                 YDLU(BH));
+        /* Back / CE / C: exact thirds of the grid width in DLU space
+         * (GRID_W = 132, gaps 2*3 -> three 42-DLU keys), so the "C" key's
+         * right edge is the grid's right edge, pixel-exact. */
+        int cw = (GRID_W - 2 * GX) / 3;
+        for (int i = 0; i < 3; i++) {
+            static const struct {
+                int id;
+                const char *label;
+            } row[] = { { ID_BACK, "Backspace" }, { ID_CE, "CE" }, { ID_C, "C" } };
+            make_key(hwnd, row[i].id, row[i].label, GRID_X + (cw + GX) * i,
+                     ROW0, cw, BH);
+        }
 
         /* memory column */
         static const struct {
@@ -296,8 +311,7 @@ static LRESULT CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             { ID_MC, "MC" }, { ID_MR, "MR" }, { ID_MS, "MS" }, { ID_MPLUS, "M+" }
         };
         for (int r = 0; r < 4; r++)
-            make_key(hwnd, memkeys[r].id, memkeys[r].label, XDLU(M),
-                     YDLU(row0 + (BH + GY) * (r + 1)), XDLU(BW), YDLU(BH));
+            make_key(hwnd, memkeys[r].id, memkeys[r].label, M, ROW(r + 1), BW, BH);
 
         /* main 4x5 grid */
         static const struct {
@@ -309,13 +323,10 @@ static LRESULT CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             { { ID_DIGIT(1), "1" }, { ID_DIGIT(2), "2" }, { ID_DIGIT(3), "3" }, { ID_SUB, "-" }, { ID_INV, "1/x" } },
             { { ID_DIGIT(0), "0" }, { ID_SIGN, "+/-" }, { ID_DOT, "." }, { ID_ADD, "+" }, { ID_EQ, "=" } },
         };
-        for (int r = 0; r < 4; r++) {
-            for (int c = 0; c < 5; c++) {
-                make_key(hwnd, grid[r][c].id, grid[r][c].label,
-                         grid_x + XDLU((BW + GX)) * c,
-                         YDLU(row0 + (BH + GY) * (r + 1)), XDLU(BW), YDLU(BH));
-            }
-        }
+        for (int r = 0; r < 4; r++)
+            for (int c = 0; c < 5; c++)
+                make_key(hwnd, grid[r][c].id, grid[r][c].label, COL(c),
+                         ROW(r + 1), BW, BH);
         return 0;
     }
 
@@ -324,7 +335,7 @@ static LRESULT CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc = BeginPaint(hwnd, &ps);
 
         /* the display: a sunken well with right-aligned text */
-        RECT disp = display_rect(hwnd);
+        RECT disp = display_rect();
         FillRect(dc, &disp, GetSysColorBrush(COLOR_WINDOW));
         DrawEdge(dc, &disp, EDGE_SUNKEN, BF_RECT);
         char text[48];
@@ -411,8 +422,8 @@ int main(void)
     RegisterClassA(&wc);
 
     /* client size follows from the DLU layout; the window adds the chrome */
-    int client_w = XDLU(M + BW + MEMGAP + 5 * BW + 4 * GX + M);
-    int client_h = YDLU(M + DISP_H + GY + 5 * BH + 4 * GY + GY + M);
+    int client_w = XDLU(TOTAL_W);
+    int client_h = YDLU(TOTAL_H);
     HWND wnd = CreateWindowExA(0, "ween32calc", "Calculator",
                                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
                                100, 100, client_w + 6, client_h + 26, NULL,
