@@ -228,17 +228,9 @@ void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
             continue;
         qsort(xs, nx, sizeof(float), cmp_float);
         for (size_t k = 0; k + 1 < nx; k += 2) {
-            /* GDI executed Marlett's hinting, which snaps every stroke to a
-             * uniform whole-pixel width; emulate that by quantizing the span
-             * to an integer width (min 1) centred on the true span, so the
-             * diagonals of the caption glyphs come out even, not ragged. */
-            float width = xs[k + 1] - xs[k];
-            int wpx = (int)(width + 0.5f);
-            if (wpx < 1)
-                wpx = 1;
-            float centre = (xs[k] + xs[k + 1]) * 0.5f;
-            int xa = (int)(centre - (float)wpx * 0.5f + 0.5f);
-            for (int px = xa; px < xa + wpx; px++)
+            int xa = (int)(xs[k] + 0.5f);
+            int xb = (int)(xs[k + 1] + 0.5f);
+            for (int px = xa; px < xb; px++)
                 ween_surface_pixel(s, x_org + px, y_org + row, color);
         }
     }

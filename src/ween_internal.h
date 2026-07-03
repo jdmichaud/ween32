@@ -149,10 +149,11 @@ struct ween_wnd {
     int nc_close_pressed; /* close-box tracking */
 };
 
-/* Non-client metrics of a WS_CAPTION window (classic Win2k popup chrome). */
+/* Non-client metrics of a WS_CAPTION window (classic Win2k popup chrome,
+ * matching the validated telemouse/win2k_popup_wine reference). */
 #define WEEN_NC_FRAME 3
 #define WEEN_NC_CAPTION 20 /* caption strip height, frame excluded */
-#define WEEN_NC_BTN_W 16
+#define WEEN_NC_BTN_W 18
 #define WEEN_NC_BTN_H 14
 
 /* The client origin of a window within its top-level surface. */

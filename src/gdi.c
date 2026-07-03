@@ -182,14 +182,14 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
         return FALSE;
     }
 
-    /* The button face + bevel, then the Marlett glyph (shifted when pushed).
-     * The font size is the button's short side minus 2: Marlett's ink covers
-     * ~2/3 of its em, which lands the classic ~8px X in a 16x14 close box. */
+    /* The button face + bevel, then the Marlett glyph centred in the box and
+     * shifted down-right when pushed. Glyph size = short side - 3, matching
+     * the validated telemouse/win2k_popup_wine reference rendering. */
     ween_surface_fill(dc->s, x, y, w, h, WEEN_FACE);
     ween_classic_bevel(dc->s, x, y, w, h, pushed);
     const ween_marlett *m = ween_caption_font();
     if (m) {
-        int size = (w < h ? w : h) - 2;
+        int size = (w < h ? w : h) - 3;
         int gx = x + (w - size) / 2 + pushed;
         int gy = y + (h - size) / 2 + pushed;
         ween_marlett_draw(m, dc->s, code, gx, gy, size, WEEN_BLACK);
