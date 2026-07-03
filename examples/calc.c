@@ -318,6 +318,11 @@ static INT_PTR CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 
     case WM_COMMAND:
+        /* Esc arrives as IDCANCEL via IsDialogMessage: quit the app. */
+        if (LOWORD(wp) == IDCANCEL) {
+            DestroyWindow(hwnd);
+            return TRUE;
+        }
         key(LOWORD(wp));
         return TRUE;
 

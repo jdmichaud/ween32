@@ -42,6 +42,53 @@ int ween_marlett_init(ween_marlett *m, const unsigned char *ttf, size_t len)
     return find_table(ttf, "glyf") != 0 && find_table(ttf, "cmap") != 0;
 }
 
+/* Caption glyphs at the caption-button size, extracted pixel-for-pixel from a
+ * capture of REAL Wine's DrawFrameControl output (the win2k_popup_wine
+ * reference, popup_wine.png) — i.e. from GDI executing Microsoft Marlett's
+ * hand-written hinting bytecode, which reshapes these glyphs at small sizes
+ * (the close X becomes 11x9 with even 2px strokes).
+ *
+ * Why baked bitmaps and not the font: the authentic shape exists only in MS
+ * Marlett's hint programs. The redistributable replacement font we ship has
+ * the outlines but not those hints — verified empirically: FreeType renders
+ * of it (full bytecode interpreter v35/v40 and the autohinter, ppem 12..18)
+ * all produce a different, symmetric glyph. So, exactly like the embedded
+ * Tahoma bitmap strikes used for text, the classic caption glyphs are carried
+ * as bitmaps at their one canonical size; other sizes fall back to the
+ * outline scanline fill below.
+ *
+ * Each row is MSB-first; (dx, dy) place the ink's top-left relative to the
+ * centre of the size x size box, matching Wine's TextOut-centred placement. */
+typedef struct {
+    int code;
+    int w, h;
+    int dx, dy;
+    unsigned short rows[12];
+} ween_baked_glyph;
+
+static const ween_baked_glyph baked12[] = {
+    /* close 'r' 0x72: the 2px-stroke X */
+    { 0x72, 11, 9, -5, -4,
+      { 0x306, 0x18C, 0x0D8, 0x070, 0x070, 0x0D8, 0x18C, 0x306, 0x603,
+        0, 0, 0 } },
+    /* maximize '1' 0x31: the window frame */
+    { 0x31, 11, 9, -4, -4,
+      { 0x7FF, 0x7FF, 0x401, 0x401, 0x401, 0x401, 0x401, 0x401, 0x7FF,
+        0, 0, 0 } },
+    /* minimize '0' 0x30: the bottom bar */
+    { 0x30, 8, 2, -4, 3, { 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+};
+
+static const ween_baked_glyph *baked_lookup(int code, int size)
+{
+    if (size != 12)
+        return NULL;
+    for (size_t i = 0; i < sizeof(baked12) / sizeof(baked12[0]); i++)
+        if (baked12[i].code == code)
+            return &baked12[i];
+    return NULL;
+}
+
 /* Map an ASCII/Mac code to a glyph id via a format-0 or format-4 subtable. */
 static uint32_t glyph_id(const unsigned char *ttf, uint32_t code)
 {
@@ -201,6 +248,20 @@ static int cmp_float(const void *a, const void *b)
 void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
                        int x_org, int y_org, int size, ween_color color)
 {
+    /* The canonical caption size uses the baked hinted bitmaps. */
+    const ween_baked_glyph *bg = baked_lookup(code, size);
+    if (bg) {
+        int cx = x_org + size / 2, cy = y_org + size / 2;
+        for (int y = 0; y < bg->h; y++) {
+            for (int x = 0; x < bg->w; x++) {
+                if (bg->rows[y] & (1u << (bg->w - 1 - x)))
+                    ween_surface_pixel(s, cx + bg->dx + x, cy + bg->dy + y,
+                                       color);
+            }
+        }
+        return;
+    }
+
     outline_t o;
     if (!parse_outline(m->ttf, (uint32_t)code, &o))
         return;

@@ -150,10 +150,11 @@ struct ween_wnd {
 };
 
 /* Non-client metrics of a WS_CAPTION window (classic Win2k popup chrome,
- * matching the validated telemouse/win2k_popup_wine reference). */
+ * matching the validated win2k_popup_wine reference: 16x14 caption buttons
+ * at y=6, 2px in from the frame). */
 #define WEEN_NC_FRAME 3
 #define WEEN_NC_CAPTION 20 /* caption strip height, frame excluded */
-#define WEEN_NC_BTN_W 18
+#define WEEN_NC_BTN_W 16
 #define WEEN_NC_BTN_H 14
 
 /* The client origin of a window within its top-level surface. */
