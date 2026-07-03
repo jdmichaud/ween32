@@ -201,8 +201,14 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             free(wnd);
             return NULL;
         }
-        if (!ween_active_backend)
-            ween_active_backend = ween_backend_x11();
+        if (!ween_active_backend) {
+            /* WEEN32_HEADLESS=1 runs any app without a display (present goes
+             * to $WEEN32_BMP if set) — used to screenshot examples in CI. */
+            if (getenv("WEEN32_HEADLESS"))
+                ween_active_backend = ween_backend_headless();
+            else
+                ween_active_backend = ween_backend_x11();
+        }
         if (!ween_active_backend) {
             free(wnd);
             return NULL;
@@ -683,6 +689,23 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
+        /* Owner-drawn: the parent paints it (WM_DRAWITEM), as on Windows. */
+        if ((wnd->style & 0x0F) == BS_OWNERDRAW) {
+            DRAWITEMSTRUCT dis;
+            memset(&dis, 0, sizeof(dis));
+            dis.CtlType = ODT_BUTTON;
+            dis.CtlID = (UINT)wnd->id;
+            dis.itemAction = ODA_DRAWENTIRE;
+            dis.itemState = wnd->pressed ? ODS_SELECTED : 0;
+            dis.hwndItem = wnd;
+            dis.hDC = dc;
+            dis.rcItem = ps.rcPaint;
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_DRAWITEM, (WPARAM)wnd->id,
+                             (LPARAM)&dis);
+            EndPaint(wnd, &ps);
+            return 0;
+        }
         RECT r = ps.rcPaint;
         if (wnd->style & BS_DEFPUSHBUTTON) {
             /* the default ring: 1px black outline, button inset within */
@@ -751,7 +774,17 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         UINT fmt = DT_SINGLELINE;
-        fmt |= (wnd->style & SS_CENTER) ? DT_CENTER : DT_LEFT;
+        switch (wnd->style & 0x03) {
+        case SS_CENTER:
+            fmt |= DT_CENTER;
+            break;
+        case SS_RIGHT:
+            fmt |= DT_RIGHT;
+            break;
+        default:
+            fmt |= DT_LEFT;
+            break;
+        }
         RECT r = ps.rcPaint;
         DrawTextA(dc, wnd->text, -1, &r, fmt);
         EndPaint(wnd, &ps);

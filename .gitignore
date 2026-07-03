@@ -1,6 +1,7 @@
 *.o
 *.a
 examples/dialog
+examples/calc
 tests/render_test
 tests/api_test
 *.bmp

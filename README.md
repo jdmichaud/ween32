@@ -16,6 +16,12 @@ ween32 everywhere else. That dual-compile property is the project's fidelity con
 
 ![the demo dialog](docs/dialog.png)
 
+The flagship example is the classic Windows calculator, recreated in `examples/calc.c` as
+pure win32 code — owner-drawn colored keys (`BS_OWNERDRAW`/`WM_DRAWITEM`), dialog-unit
+layout, memory keys and all:
+
+![the calculator](docs/calc.png)
+
 ## Why it looks right
 
 - **Software rendering, no 2D library.** Every pixel is drawn by ween32 into a plain
@@ -51,10 +57,14 @@ the real thing.
 ## Build
 
 ```sh
-make            # libween32.a + examples/dialog (needs libX11 to run the example)
+make            # libween32.a + examples (dialog, calc; libX11 to run them live)
 make test       # headless test suite: engine pixels + full API path, no display needed
 make X11=0      # library without the X11 backend
 ```
+
+Any example also runs without a display: `WEEN32_HEADLESS=1 WEEN32_BMP=shot.bmp
+WEEN32_SCRIPT="d:113,169 u:113,169" ./examples/calc` renders to a BMP, driven by scripted
+input — that is how the screenshots above were made and how CI can exercise real apps.
 
 The dual-compile gate (needs zig or a mingw toolchain):
 

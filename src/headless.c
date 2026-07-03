@@ -2,6 +2,7 @@
  * events and read the presented surface (or a BMP dump) back — the whole
  * win32 layer is exercised end to end without a window system. */
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "ween_internal.h"
@@ -33,11 +34,54 @@ const ween_surface *ween_headless_surface(void)
     return g_last.px ? &g_last : NULL;
 }
 
+/* WEEN32_SCRIPT: space-separated scripted input, e.g. "d:110,146 u:110,146
+ * k:27" — d/u/m = mouse down/up/move at window coordinates, k = a virtual-key
+ * press. Lets any example run and be screenshotted with no display. */
+static void inject_script(const char *script)
+{
+    const char *p = script;
+    while (*p) {
+        while (*p == ' ')
+            p++;
+        if (!*p)
+            break;
+        char kind = *p;
+        ween_event ev;
+        memset(&ev, 0, sizeof(ev));
+        if (kind == 'k' && p[1] == ':') {
+            ev.kind = WEEN_EV_KEY;
+            ev.vk = (unsigned)strtol(p + 2, (char **)&p, 10);
+            ween_headless_inject(ev);
+        } else if ((kind == 'd' || kind == 'u' || kind == 'm') && p[1] == ':') {
+            char *end;
+            ev.x = (int)strtol(p + 2, &end, 10);
+            if (*end == ',')
+                ev.y = (int)strtol(end + 1, &end, 10);
+            p = end;
+            ev.kind = kind == 'd' ? WEEN_EV_MOUSE_DOWN
+                      : kind == 'u' ? WEEN_EV_MOUSE_UP
+                                    : WEEN_EV_MOUSE_MOVE;
+            ev.button = 1;
+            ween_headless_inject(ev);
+        } else {
+            break; /* malformed: stop rather than loop */
+        }
+    }
+}
+
 static void *hl_open(int w, int h, const char *title)
 {
     (void)w;
     (void)h;
     (void)title;
+    if (!g_bmp_path[0]) {
+        const char *env = getenv("WEEN32_BMP");
+        if (env)
+            ween_headless_set_bmp_path(env);
+    }
+    const char *script = getenv("WEEN32_SCRIPT");
+    if (script)
+        inject_script(script);
     static int marker;
     return &marker;
 }

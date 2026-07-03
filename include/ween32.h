@@ -115,6 +115,18 @@ typedef struct tagPAINTSTRUCT {
     BYTE rgbReserved[32];
 } PAINTSTRUCT;
 
+typedef struct tagDRAWITEMSTRUCT {
+    UINT CtlType;
+    UINT CtlID;
+    UINT itemID;
+    UINT itemAction;
+    UINT itemState;
+    HWND hwndItem;
+    HDC hDC;
+    RECT rcItem;
+    UINT_PTR itemData;
+} DRAWITEMSTRUCT, *LPDRAWITEMSTRUCT;
+
 typedef struct tagCREATESTRUCTA {
     LPVOID lpCreateParams;
     HINSTANCE hInstance;
@@ -164,6 +176,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_NCMOUSEMOVE 0x00A0
 #define WM_NCLBUTTONDOWN 0x00A1
 #define WM_NCLBUTTONUP 0x00A2
+#define WM_DRAWITEM 0x002B
 #define WM_KEYDOWN 0x0100
 #define WM_KEYUP 0x0101
 #define WM_CHAR 0x0102
@@ -186,11 +199,19 @@ typedef struct tagCREATESTRUCTA {
 /* button / static control styles */
 #define BS_PUSHBUTTON 0x00000000L
 #define BS_DEFPUSHBUTTON 0x00000001L
+#define BS_OWNERDRAW 0x0000000BL
 #define SS_LEFT 0x00000000L
 #define SS_CENTER 0x00000001L
+#define SS_RIGHT 0x00000002L
 
 /* button notifications */
 #define BN_CLICKED 0
+
+/* owner draw */
+#define ODT_BUTTON 4
+#define ODA_DRAWENTIRE 0x0001
+#define ODA_SELECT 0x0002
+#define ODS_SELECTED 0x0001
 
 /* ---- hit-test results --------------------------------------------------- */
 
@@ -207,6 +228,7 @@ typedef struct tagCREATESTRUCTA {
 
 /* ---- virtual keys ------------------------------------------------------- */
 
+#define VK_BACK 0x08
 #define VK_TAB 0x09
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
