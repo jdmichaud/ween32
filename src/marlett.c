@@ -1,9 +1,18 @@
-/* Marlett caption glyphs (port of telemouse's marlett.zig), rendered from the
- * font's own `glyf` outlines. The caption symbols (close/min/max/restore) are
- * simple straight-line polygons, so an even-odd scanline fill reproduces them
- * pixel-for-pixel — no curve flattening or hinting. These are the same glyphs
- * Windows drew for DrawFrameControl(DFC_CAPTION, ...). */
+/* Marlett caption glyphs, rendered from the font's own `glyf` outlines with
+ * FreeType-equivalent monochrome scan conversion.
+ *
+ * Wine's DrawFrameControl (dlls/user32/uitools.c) selects Marlett at the
+ * button size and TextOuts the glyph; on X11 desktops that lands in
+ * FreeType's mono rasteriser. Marlett's caption glyphs are straight-line
+ * polygons with no hinting instructions (verified: no fpgm/prep, empty
+ * per-glyph programs), so FreeType's output is plain scan conversion of the
+ * scaled outline — reproduced here exactly: coordinates scaled to the 26.6
+ * grid (round-to-nearest 1/64 per point, like FT_MulFix), the ink box
+ * grid-fitted (floor/ceil), nonzero-winding fill sampled at pixel centres.
+ * Verified bit-identical to FreeType (and to the win2k_popup_wine reference
+ * capture) at the caption sizes. */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,55 +51,6 @@ int ween_marlett_init(ween_marlett *m, const unsigned char *ttf, size_t len)
     return find_table(ttf, "glyf") != 0 && find_table(ttf, "cmap") != 0;
 }
 
-/* Caption glyphs at the caption-button size (Marlett, 12 ppem).
- *
- * Mechanism, from Wine's own DrawFrameControl (dlls/user32/uitools.c,
- * UITOOLS95_DrawFrameCaption): select Marlett at -SmallDiam and TextOut the
- * glyph centred in the button. The user-validated reference rendering
- * (win2k_popup_wine, zoomed capture zc_new.png) rasterises that font at
- * 12 ppem through FreeType in monochrome (Xft "antialias=false" hintfull) and
- * centres the INK on the button.
- *
- * These bitmaps are that exact output — generated from fonts/marlett.ttf by
- * tools/bake_marlett.c (FreeType FT_LOAD_TARGET_MONO at 12 ppem) and verified
- * bit-identical to the validated capture. They are baked because the tiny
- * outline rasteriser below has no grid-fitting: its unhinted fill draws these
- * glyphs thinner than the FreeType mono pass the reference (and every Xft
- * user) sees. Other sizes fall back to the outline fill.
- *
- * Rows are MSB-first, ink-tight (w x h); the ink is centred on the target
- * box when drawn. */
-typedef struct {
-    int code;
-    int w, h;
-    unsigned short rows[12];
-} ween_baked_glyph;
-
-static const ween_baked_glyph baked12[] = {
-    /* close 'r' 0x72 */
-    { 0x72, 8, 8,
-      { 0x0C3, 0x0E7, 0x07E, 0x03C, 0x03C, 0x07E, 0x0E7, 0x0C3, 0, 0, 0, 0 } },
-    /* minimize '0' 0x30 */
-    { 0x30, 7, 2, { 0x07F, 0x07F, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
-    /* maximize '1' 0x31 */
-    { 0x31, 9, 9,
-      { 0x1FF, 0x1FF, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x1FF,
-        0, 0, 0 } },
-    /* restore '2' 0x32 */
-    { 0x32, 9, 9,
-      { 0x07F, 0x07F, 0x041, 0x1FD, 0x1FD, 0x107, 0x104, 0x104, 0x1FC,
-        0, 0, 0 } },
-};
-
-static const ween_baked_glyph *baked_lookup(int code, int size)
-{
-    if (size != 12)
-        return NULL;
-    for (size_t i = 0; i < sizeof(baked12) / sizeof(baked12[0]); i++)
-        if (baked12[i].code == code)
-            return &baked12[i];
-    return NULL;
-}
 
 /* Map an ASCII/Mac code to a glyph id via a format-0 or format-4 subtable. */
 static uint32_t glyph_id(const unsigned char *ttf, uint32_t code)
@@ -224,7 +184,7 @@ static int parse_outline(const unsigned char *ttf, uint32_t code, outline_t *o)
         }
         o->xs[i] = (float)x;
     }
-    /* Y coordinates, flipped so downward is positive. */
+    /* Y coordinates (font units, +y upward as in the font). */
     int32_t y = 0;
     for (size_t i = 0; i < npts; i++) {
         unsigned char fl = flags[i];
@@ -235,68 +195,169 @@ static int parse_outline(const unsigned char *ttf, uint32_t code, outline_t *o)
             y += rdi16(ttf, p);
             p += 2;
         }
-        o->ys[i] = o->upem - (float)y;
+        o->ys[i] = (float)y;
     }
     return 1;
 }
 
-static int cmp_float(const void *a, const void *b)
+typedef struct {
+    double x;
+    int dir; /* +1 upward edge, -1 downward (nonzero winding) */
+} crossing_t;
+
+static int cmp_crossing(const void *a, const void *b)
 {
-    float fa = *(const float *)a, fb = *(const float *)b;
-    return (fa > fb) - (fa < fb);
+    double xa = ((const crossing_t *)a)->x, xb = ((const crossing_t *)b)->x;
+    return (xa > xb) - (xa < xb);
 }
 
-/* Draw glyph `code` filling a size x size box at (ox, oy): 1-bit even-odd
- * scanline fill — crisp, no antialiasing. */
+/* Draw glyph `code` at `size` ppem, its ink centred in the size x size box at
+ * (ox, oy) — the placement of the validated reference (which centres the ink
+ * extents, XGlyphInfo-style, on the caption button).
+ *
+ * Rasterisation mirrors FreeType's unhinted monochrome pass: every point is
+ * scaled to the 26.6 grid with round-to-nearest (FT_MulFix), the ink box is
+ * grid-fitted with floor/ceil, and a pixel is set when its centre lies inside
+ * the outline under the nonzero winding rule. */
 void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
                        int x_org, int y_org, int size, ween_color color)
 {
-    /* The canonical caption size uses the baked FreeType-mono bitmaps,
-     * ink-centred on the box as the validated reference places them. */
-    const ween_baked_glyph *bg = baked_lookup(code, size);
-    if (bg) {
-        int x0 = x_org + size / 2 - bg->w / 2;
-        int y0 = y_org + size / 2 - bg->h / 2;
-        for (int y = 0; y < bg->h; y++) {
-            for (int x = 0; x < bg->w; x++) {
-                if (bg->rows[y] & (1u << (bg->w - 1 - x)))
-                    ween_surface_pixel(s, x0 + x, y0 + y, color);
-            }
-        }
+    outline_t o;
+    if (size <= 0 || !parse_outline(m->ttf, (uint32_t)code, &o))
         return;
+
+    /* Scale to the 26.6 grid: round each coordinate to the nearest 1/64th of
+     * a pixel (FT_MulFix), in integers. 1/64 multiples are exact in doubles,
+     * so the span comparisons below behave like FreeType's fixed point. */
+    double k = (double)size * 64.0 / (double)o.upem;
+    long X26[MAX_POINTS], Y26[MAX_POINTS];
+    long xmin26 = LONG_MAX, xmax26 = LONG_MIN;
+    long ymin26 = LONG_MAX, ymax26 = LONG_MIN;
+    for (size_t i = 0; i < o.npoints; i++) {
+        double fx = (double)o.xs[i] * k;
+        double fy = (double)o.ys[i] * k;
+        X26[i] = fx >= 0 ? (long)(fx + 0.5) : -(long)(-fx + 0.5);
+        Y26[i] = fy >= 0 ? (long)(fy + 0.5) : -(long)(-fy + 0.5);
+        if (X26[i] < xmin26)
+            xmin26 = X26[i];
+        if (X26[i] > xmax26)
+            xmax26 = X26[i];
+        if (Y26[i] < ymin26)
+            ymin26 = Y26[i];
+        if (Y26[i] > ymax26)
+            ymax26 = Y26[i];
     }
 
-    outline_t o;
-    if (!parse_outline(m->ttf, (uint32_t)code, &o))
+    /* Grid-fitted ink box, ftobjs.c ft_glyphslot_preset_bitmap (MONO):
+     * "bbox values get rounded; we do asymmetric rounding so that the center
+     * of a pixel gets always included" — min edges round half DOWN (+31),
+     * max edges half UP (+32). */
+    int gx0 = (int)((xmin26 + 31) >> 6), gx1 = (int)((xmax26 + 32) >> 6);
+    int gy0 = (int)((ymin26 + 31) >> 6), gy1 = (int)((ymax26 + 32) >> 6);
+    int w = gx1 - gx0, h = gy1 - gy0;
+    if (w <= 0 || h <= 0)
         return;
-    float scale = (float)size / o.upem;
+    int bx = x_org + size / 2 - w / 2;
+    int by = y_org + size / 2 - h / 2;
 
-    for (int row = 0; row < size; row++) {
-        float yc = (float)row + 0.5f;
-        float xs[MAX_POINTS];
-        size_t nx = 0;
+    for (int row = 0; row < h; row++) {
+        /* pixel-centre scanline, top row first (+y is up in font space) */
+        double yc = (double)gy1 - (double)row - 0.5;
+        crossing_t cr[MAX_POINTS];
+        size_t nc = 0;
         size_t start = 0;
         for (size_t c = 0; c < o.ncontours; c++) {
             size_t end = o.ends[c];
             for (size_t i = start; i < end; i++) {
                 size_t j = i + 1 < end ? i + 1 : start;
-                float y0 = o.ys[i] * scale;
-                float y1 = o.ys[j] * scale;
-                if ((y0 <= yc && yc < y1) || (y1 <= yc && yc < y0)) {
-                    float t = (yc - y0) / (y1 - y0);
-                    xs[nx++] = (o.xs[i] + t * (o.xs[j] - o.xs[i])) * scale;
+                double y0 = (double)Y26[i] / 64.0, y1 = (double)Y26[j] / 64.0;
+                if (y0 == y1)
+                    continue; /* horizontal edge: no crossing */
+                /* ftraster's profile coverage: an ascending edge covers
+                 * (start, end], a descending one likewise excludes its
+                 * start scanline — EXCEPT when the start vertex joins a
+                 * horizontal edge (a flat), which ftraster's profile-join
+                 * handling extends to cover the flat's scanline. */
+                int up = y1 > y0;
+                if (up ? !(y0 < yc && yc <= y1) : !(y1 <= yc && yc < y0)) {
+                    size_t prev = i > start ? i - 1 : end - 1;
+                    if (!(yc == y0 && Y26[prev] == Y26[i]))
+                        continue;
                 }
+                double x0 = (double)X26[i] / 64.0, x1 = (double)X26[j] / 64.0;
+                double t = (yc - y0) / (y1 - y0);
+                cr[nc].x = x0 + t * (x1 - x0);
+                cr[nc].dir = up ? 1 : -1;
+                nc++;
             }
             start = end;
         }
-        if (nx < 2)
+        if (nc < 2)
             continue;
-        qsort(xs, nx, sizeof(float), cmp_float);
-        for (size_t k = 0; k + 1 < nx; k += 2) {
-            int xa = (int)(xs[k] + 0.5f);
-            int xb = (int)(xs[k + 1] + 0.5f);
-            for (int px = xa; px < xb; px++)
-                ween_surface_pixel(s, x_org + px, y_org + row, color);
+        qsort(cr, nc, sizeof(cr[0]), cmp_crossing);
+
+        /* Nonzero-winding sweep; unbalanced tails are dropped. Fill pixels
+         * whose centre gx0+px+0.5 lies in [x_start, x_end] — BOTH ends
+         * inclusive, as in ftraster's Vertical_Sweep_Span (e1 = CEILING(x1),
+         * e2 = FLOOR(x2), filled inclusively on the shifted grid). */
+        int acc = 0;
+        double span_x = 0;
+        for (size_t i = 0; i < nc; i++) {
+            int was = acc;
+            acc += cr[i].dir;
+            if (was == 0 && acc != 0) {
+                span_x = cr[i].x;
+            } else if (was != 0 && acc == 0) {
+                double v0 = span_x - (double)gx0 - 0.5;
+                double v1 = cr[i].x - (double)gx0 - 0.5;
+                int p0 = (int)v0;
+                if ((double)p0 < v0)
+                    p0++; /* ceil */
+                int p1 = (int)v1;
+                if ((double)p1 > v1)
+                    p1--; /* floor, inclusive */
+                if (p0 < 0)
+                    p0 = 0;
+                for (int px = p0; px <= p1 && px < w; px++)
+                    ween_surface_pixel(s, bx + px, by + row, color);
+            }
+        }
+    }
+
+    /* ftraster's second (horizontal) sweep fix: "the vertical sweep
+     * mishandles horizontal lines through pixel centers". Any horizontal
+     * edge lying exactly on a pixel-centre scanline gets its pixels set
+     * directly (Horizontal_Sweep_Span's aligned-edge case). */
+    {
+        size_t start = 0;
+        for (size_t c = 0; c < o.ncontours; c++) {
+            size_t end = o.ends[c];
+            for (size_t i = start; i < end; i++) {
+                size_t j = i + 1 < end ? i + 1 : start;
+                if (Y26[i] != Y26[j])
+                    continue; /* not horizontal */
+                if (((Y26[i] - 32) & 63) != 0)
+                    continue; /* not on a pixel-centre scanline */
+                double ye = (double)Y26[i] / 64.0;
+                int row = gy1 - (int)(ye + 0.5);
+                if (row < 0 || row >= h)
+                    continue;
+                double xa = (double)(X26[i] < X26[j] ? X26[i] : X26[j]) / 64.0;
+                double xb = (double)(X26[i] < X26[j] ? X26[j] : X26[i]) / 64.0;
+                double v0 = xa - (double)gx0 - 0.5;
+                double v1 = xb - (double)gx0 - 0.5;
+                int p0 = (int)v0;
+                if ((double)p0 < v0)
+                    p0++;
+                int p1 = (int)v1;
+                if ((double)p1 > v1)
+                    p1--;
+                if (p0 < 0)
+                    p0 = 0;
+                for (int px = p0; px <= p1 && px < w; px++)
+                    ween_surface_pixel(s, bx + px, by + row, color);
+            }
+            start = end;
         }
     }
 }
