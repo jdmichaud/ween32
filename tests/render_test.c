@@ -2,6 +2,8 @@
  * tests made, plus BMP dumps for visual inspection. Uses the internal engine
  * API directly — the win32 layer is exercised by api_test.c. */
 
+#define _POSIX_C_SOURCE 200112L /* setenv */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,12 +118,28 @@ static void test_dialog_units(void)
     CHECK(bh == 23, "14 DLU tall button is 23 px");
 }
 
+static void test_xft_dpi_parser(void)
+{
+    CHECK(ween_parse_xft_dpi("Xft.dpi:\t120\nXft.rgba: none\n") == 120,
+          "Xft.dpi parses (tab separated)");
+    CHECK(ween_parse_xft_dpi("Xft.antialias: 1\nXft.dpi: 96.5\n") == 97,
+          "fractional Xft.dpi rounds");
+    CHECK(ween_parse_xft_dpi("Xft.dpiX: 999\nfoo: bar\n") == 0,
+          "prefix keys are not mistaken for Xft.dpi");
+    CHECK(ween_parse_xft_dpi("") == 0, "empty resources yield no dpi");
+}
+
 int main(void)
 {
+    /* Pin the dpi: these tests assert 96-dpi pixels and must not pick up the
+     * desktop's Xft.dpi. The env override exists exactly for this. */
+    setenv("WEEN32_DPI", "96", 1);
+
     test_classic_dialog();
     test_text();
     test_marlett();
     test_dialog_units();
+    test_xft_dpi_parser();
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

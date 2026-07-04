@@ -170,6 +170,10 @@ struct ween_wnd {
 int ween_render_dpi(void); /* dpi the renderer works at (96 when zooming) */
 int ween_zoom(void);       /* integer backend magnification (1 = native) */
 int ween_ncm(int base96);  /* scale a 96-dpi non-client metric */
+/* "Xft.dpi: N" from an X resource-manager string; 0 if absent/invalid. */
+int ween_parse_xft_dpi(const char *resources);
+/* Ask the display for its dpi (Xft.dpi); 0 if no display / not compiled. */
+int ween_x11_probe_dpi(void);
 
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);

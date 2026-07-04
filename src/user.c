@@ -20,17 +20,43 @@ const ween_backend *ween_active_backend = NULL;
 static int g_render_dpi = 0; /* 0 = not initialised */
 static int g_zoom = 1;
 
+/* Parse "Xft.dpi: <value>" out of an X resource-manager string — the same
+ * resource Xft/GTK/Qt read; desktops set it when the user scales the UI. */
+int ween_parse_xft_dpi(const char *resources)
+{
+    for (const char *line = resources; line && *line;) {
+        if (strncmp(line, "Xft.dpi", 7) == 0) {
+            const char *p = line + 7;
+            while (*p == ' ' || *p == '\t')
+                p++;
+            if (*p == ':') {
+                double v = strtod(p + 1, NULL);
+                if (v >= 48.0 && v <= 480.0)
+                    return (int)(v + 0.5);
+            }
+        }
+        const char *nl = strchr(line, '\n');
+        line = nl ? nl + 1 : NULL;
+    }
+    return 0;
+}
+
 static void dpi_init(void)
 {
     if (g_render_dpi)
         return;
-    int dpi = 96;
+    int dpi = 0;
     const char *e = getenv("WEEN32_DPI");
-    if (e) {
-        dpi = atoi(e);
-        if (dpi < 48 || dpi > 480)
-            dpi = 96;
-    }
+    if (e)
+        dpi = atoi(e); /* explicit override (also the deterministic CI knob) */
+    if (dpi < 48 || dpi > 480)
+        dpi = 0;
+    /* Autodetect from the desktop's Xft.dpi resource — unless running
+     * headless, where determinism matters more than the host's scaling. */
+    if (!dpi && !getenv("WEEN32_HEADLESS"))
+        dpi = ween_x11_probe_dpi();
+    if (dpi < 48 || dpi > 480)
+        dpi = 96;
     /* Near-integer multiples >= 2x render native and pixel-double (the crisp
      * HiDPI path); fractional scales re-render at the scaled dpi. */
     int z = (dpi + 48) / 96;

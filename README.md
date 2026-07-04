@@ -78,7 +78,10 @@ zig cc -target x86_64-windows-gnu -std=c99 -Iinclude examples/dialog.c -luser32 
 
 The classic win32 model, faithfully: one system dpi, fonts sized in points
 against it, and dialog-unit layout follows the font — so apps scale with zero
-code changes. Set `WEEN32_DPI` (default 96):
+code changes. The dpi is detected from the desktop's `Xft.dpi` X resource (what
+GNOME/KDE/xrdb set when you scale the UI — the same source GTK/Qt honor;
+physical monitor size is deliberately not trusted). `WEEN32_DPI` overrides it,
+and headless runs default to 96 for determinism:
 
 - **120 / 144 (125% / 150%)**: the GUI font picks Tahoma's real 13px / 16px
   strikes (`MulDiv(8pt, dpi, 72)`, snapped to shipped strikes), non-client

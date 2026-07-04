@@ -3,6 +3,8 @@
  * with scripted mouse events, and assert message routing and rendered pixels.
  * No display needed. */
 
+#define _POSIX_C_SOURCE 200112L /* setenv */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,6 +68,7 @@ static ween_event ev_mouse(ween_ev_kind kind, int x, int y)
 
 int main(void)
 {
+    setenv("WEEN32_DPI", "96", 1); /* pixel asserts are 96-dpi */
     ween_active_backend = ween_backend_headless();
     const char *dir = getenv("WEEN_TEST_OUT");
     char path[512];

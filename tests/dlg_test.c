@@ -4,7 +4,10 @@
  * routes to WM_COMMAND, and that Enter fires the default id via
  * IsDialogMessage. This is the authentic win32 layout path end to end. */
 
+#define _POSIX_C_SOURCE 200112L /* setenv */
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../src/ween_internal.h"
@@ -68,6 +71,7 @@ static ween_event ev_key(unsigned vk)
 
 int main(void)
 {
+    setenv("WEEN32_DPI", "96", 1); /* pixel asserts are 96-dpi */
     ween_active_backend = ween_backend_headless();
 
     static const dlg_item items[] = {

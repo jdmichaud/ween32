@@ -21,6 +21,11 @@ const ween_backend *ween_backend_x11(void)
     return NULL;
 }
 
+int ween_x11_probe_dpi(void)
+{
+    return 0;
+}
+
 #else
 
 /* Self-declared Xlib subset (no Xlib.h dependency at build time). */
@@ -134,6 +139,23 @@ extern int XMoveWindow(XDisplay *, XWindow, int, int);
 extern int XChangeProperty(XDisplay *, XWindow, XAtom, XAtom, int, int,
                            const void *, int);
 extern unsigned long XLookupKeysym(XButtonEvent *, int);
+extern char *XResourceManagerString(XDisplay *);
+
+/* System dpi from the desktop's Xft.dpi resource (a brief probe connection —
+ * dpi is needed before any window exists, e.g. for GetDialogBaseUnits).
+ * Physical DisplayWidthMM math is deliberately not used: monitors lie. */
+int ween_x11_probe_dpi(void)
+{
+    XDisplay *dpy = XOpenDisplay(NULL);
+    if (!dpy)
+        return 0;
+    int dpi = 0;
+    const char *rm = XResourceManagerString(dpy);
+    if (rm)
+        dpi = ween_parse_xft_dpi(rm);
+    XCloseDisplay(dpy);
+    return dpi;
+}
 
 typedef struct {
     XDisplay *dpy;
