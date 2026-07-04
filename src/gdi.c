@@ -141,6 +141,27 @@ BOOL FillRect(HDC dc, const RECT *rect, HBRUSH brush)
     return TRUE;
 }
 
+int FrameRect(HDC dc, const RECT *rect, HBRUSH brush)
+{
+    if (!dc || !rect || !brush)
+        return 0;
+    /* a 1-logical-unit border drawn with the brush, as on Windows */
+    RECT r;
+    r = *rect;
+    r.bottom = r.top + 1;
+    FillRect(dc, &r, brush); /* top */
+    r = *rect;
+    r.top = r.bottom - 1;
+    FillRect(dc, &r, brush); /* bottom */
+    r = *rect;
+    r.right = r.left + 1;
+    FillRect(dc, &r, brush); /* left */
+    r = *rect;
+    r.left = r.right - 1;
+    FillRect(dc, &r, brush); /* right */
+    return 1;
+}
+
 BOOL DrawEdge(HDC dc, LPRECT rect, UINT edge, UINT flags)
 {
     int x, y, w, h;

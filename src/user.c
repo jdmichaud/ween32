@@ -369,6 +369,24 @@ HWND ween_tab_next(HWND dlg, HWND cur, int forward)
     return list[idx];
 }
 
+HWND SetCapture(HWND wnd)
+{
+    HWND prev = g_capture;
+    g_capture = wnd;
+    return prev;
+}
+
+BOOL ReleaseCapture(void)
+{
+    g_capture = NULL;
+    return TRUE;
+}
+
+HWND GetCapture(void)
+{
+    return g_capture;
+}
+
 HWND SetFocus(HWND wnd)
 {
     HWND prev = g_focus;
