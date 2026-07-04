@@ -324,6 +324,19 @@ typedef struct tagCREATESTRUCTA {
 #define SYSTEM_FONT 13
 #define DEFAULT_GUI_FONT 17
 
+/* CreateFont */
+#define FW_NORMAL 400
+#define FW_BOLD 700
+#define ANSI_CHARSET 0
+#define DEFAULT_CHARSET 1
+#define SYMBOL_CHARSET 2
+#define OUT_DEFAULT_PRECIS 0
+#define CLIP_DEFAULT_PRECIS 0
+#define DEFAULT_QUALITY 0
+#define DEFAULT_PITCH 0
+#define FIXED_PITCH 1
+#define FF_DONTCARE (0 << 4)
+
 /* ---- USER32 -------------------------------------------------------------- */
 
 ATOM RegisterClassA(const WNDCLASSA *wc);
@@ -387,6 +400,10 @@ int SetBkMode(HDC dc, int mode);
 DWORD GetSysColor(int index);
 HBRUSH GetSysColorBrush(int index);
 HBRUSH CreateSolidBrush(COLORREF color);
+HFONT CreateFontA(int height, int width, int escapement, int orientation,
+                  int weight, DWORD italic, DWORD underline, DWORD strike_out,
+                  DWORD charset, DWORD out_precision, DWORD clip_precision,
+                  DWORD quality, DWORD pitch_and_family, LPCSTR face_name);
 BOOL DeleteObject(HGDIOBJ obj);
 HGDIOBJ GetStockObject(int what);
 HGDIOBJ SelectObject(HDC dc, HGDIOBJ obj);

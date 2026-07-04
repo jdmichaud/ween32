@@ -85,6 +85,7 @@ static double g_acc = 0.0;
 static int g_pending = 0;
 static double g_mem = 0.0;
 static HWND g_wnd;
+static HFONT g_key_font; /* bold key caps, as on the real calculator */
 
 static double current(void)
 {
@@ -264,6 +265,10 @@ static INT_PTR CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_INITDIALOG:
         g_wnd = hwnd;
+        g_key_font = CreateFontA(-11, 0, 0, 0, FW_BOLD, 0, 0, 0,
+                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                 CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                                 DEFAULT_PITCH | FF_DONTCARE, "Tahoma");
         SendMessageA(hwnd, DM_SETDEFID, ID_EQ, 0); /* Enter = "=" */
         return FALSE; /* keep focus on the dialog so it sees digit keys */
 
@@ -312,6 +317,8 @@ static INT_PTR CALLBACK CalcProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         char label[32];
         GetWindowTextA(dis->hwndItem, label, sizeof(label));
+        if (g_key_font)
+            SelectObject(dis->hDC, g_key_font);
         SetTextColor(dis->hDC, key_color((int)dis->CtlID));
         DrawTextA(dis->hDC, label, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return TRUE;

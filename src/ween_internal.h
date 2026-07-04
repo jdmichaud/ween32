@@ -89,7 +89,8 @@ void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
                        int x, int y, int size, ween_color color);
 
 /* The built-in fonts (Wine's redistributable Tahoma/Marlett, embedded). */
-const ween_strike *ween_gui_font(void);   /* Tahoma 11px — DEFAULT_GUI_FONT */
+const ween_strike *ween_gui_font(void);      /* Tahoma 11px — DEFAULT_GUI_FONT */
+const ween_strike *ween_gui_font_bold(void); /* Tahoma Bold 11px */
 const ween_marlett *ween_caption_font(void);
 
 /* ---- GDI objects and device contexts ------------------------------------ */

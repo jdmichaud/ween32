@@ -695,10 +695,10 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_classic_bevel(s, 0, 0, wnd->w, wnd->h, 0);
         if (!has_caption(wnd))
             return 0;
-        /* caption gradient + title + close box */
+        /* caption gradient + title (bold, as Win2k captions were) + close */
         ween_classic_caption(s, WEEN_NC_FRAME, WEEN_NC_FRAME,
                              wnd->w - 2 * WEEN_NC_FRAME, WEEN_NC_CAPTION);
-        const ween_strike *f = ween_gui_font();
+        const ween_strike *f = ween_gui_font_bold();
         if (f) {
             int ty = WEEN_NC_FRAME + (WEEN_NC_CAPTION - (f->ascent - f->descent)) / 2;
             ween_strike_draw(f, s, WEEN_NC_FRAME + 5, ty, wnd->text,

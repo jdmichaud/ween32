@@ -79,6 +79,36 @@ HBRUSH CreateSolidBrush(COLORREF color)
     return b;
 }
 
+/* v1 font realisation: the engine carries Tahoma's 11px embedded bitmap
+ * strikes (regular and bold) — the classic GUI face. Weight selects between
+ * them (GDI's threshold: above FW_MEDIUM is bold); the height and face name
+ * are accepted but the 11px strike is what every classic dialog used. */
+HFONT CreateFontA(int height, int width, int escapement, int orientation,
+                  int weight, DWORD italic, DWORD underline, DWORD strike_out,
+                  DWORD charset, DWORD out_precision, DWORD clip_precision,
+                  DWORD quality, DWORD pitch_and_family, LPCSTR face_name)
+{
+    (void)height;
+    (void)width;
+    (void)escapement;
+    (void)orientation;
+    (void)italic;
+    (void)underline;
+    (void)strike_out;
+    (void)charset;
+    (void)out_precision;
+    (void)clip_precision;
+    (void)quality;
+    (void)pitch_and_family;
+    (void)face_name;
+    ween_gdiobj *f = calloc(1, sizeof(*f));
+    if (!f)
+        return NULL;
+    f->kind = WEEN_OBJ_FONT;
+    f->font = weight > 500 ? ween_gui_font_bold() : ween_gui_font();
+    return f;
+}
+
 BOOL DeleteObject(HGDIOBJ obj)
 {
     if (!obj)

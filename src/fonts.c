@@ -7,6 +7,7 @@
 
 #include "../fonts/marlett_ttf.h"
 #include "../fonts/tahoma_ttf.h"
+#include "../fonts/tahomabd_ttf.h"
 
 const ween_strike *ween_gui_font(void)
 {
@@ -14,6 +15,15 @@ const ween_strike *ween_gui_font(void)
     static int ready = 0;
     if (!ready)
         ready = ween_strike_init(&f, ween_tahoma_ttf, ween_tahoma_ttf_len, 11);
+    return ready ? &f : NULL;
+}
+
+const ween_strike *ween_gui_font_bold(void)
+{
+    static ween_strike f;
+    static int ready = 0;
+    if (!ready)
+        ready = ween_strike_init(&f, ween_tahomabd_ttf, ween_tahomabd_ttf_len, 11);
     return ready ? &f : NULL;
 }
 

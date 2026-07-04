@@ -264,6 +264,18 @@ pub const OPAQUE = 2;
 pub const SYSTEM_FONT = 13;
 pub const DEFAULT_GUI_FONT = 17;
 
+pub const FW_NORMAL = 400;
+pub const FW_BOLD = 700;
+pub const ANSI_CHARSET = 0;
+pub const DEFAULT_CHARSET = 1;
+pub const SYMBOL_CHARSET = 2;
+pub const OUT_DEFAULT_PRECIS = 0;
+pub const CLIP_DEFAULT_PRECIS = 0;
+pub const DEFAULT_QUALITY = 0;
+pub const DEFAULT_PITCH = 0;
+pub const FIXED_PITCH = 1;
+pub const FF_DONTCARE = 0;
+
 pub const ODT_BUTTON = 4;
 pub const ODA_DRAWENTIRE = 0x0001;
 pub const ODA_SELECT = 0x0002;
@@ -321,6 +333,7 @@ pub extern fn SetBkMode(dc: HDC, mode: c_int) c_int;
 pub extern fn GetSysColor(index: c_int) DWORD;
 pub extern fn GetSysColorBrush(index: c_int) ?HBRUSH;
 pub extern fn CreateSolidBrush(color: COLORREF) ?HBRUSH;
+pub extern fn CreateFontA(height: c_int, width: c_int, escapement: c_int, orientation: c_int, weight: c_int, italic: DWORD, underline: DWORD, strike_out: DWORD, charset: DWORD, out_precision: DWORD, clip_precision: DWORD, quality: DWORD, pitch_and_family: DWORD, face_name: LPCSTR) ?HFONT;
 pub extern fn DeleteObject(obj: HGDIOBJ) BOOL;
 pub extern fn GetStockObject(what: c_int) ?HGDIOBJ;
 pub extern fn SelectObject(dc: HDC, obj: HGDIOBJ) ?HGDIOBJ;
