@@ -104,9 +104,3 @@ The library code is MIT. The embedded fonts (`fonts/tahoma.ttf`, `fonts/marlett.
 Wine's redistributable Tahoma and Marlett replacements (see Wine's `fonts/` — LGPL); they
 carry their own license, not MIT. They are build-time embedded byte arrays; swap the files
 and regenerate (`xxd -i`) to use different metrics-compatible fonts.
-
-## Provenance
-
-Extracted from the pixel-faithful Win2000 configuration UI of
-[telemouse](../telemouse), where the engine (surface, bevel, strikes, Marlett) was developed
-and visually validated, then reshaped behind the real win32 API surface.

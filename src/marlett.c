@@ -42,41 +42,44 @@ int ween_marlett_init(ween_marlett *m, const unsigned char *ttf, size_t len)
     return find_table(ttf, "glyf") != 0 && find_table(ttf, "cmap") != 0;
 }
 
-/* Caption glyphs at the caption-button size, extracted pixel-for-pixel from a
- * capture of REAL Wine's DrawFrameControl output (the win2k_popup_wine
- * reference, popup_wine.png) — i.e. from GDI executing Microsoft Marlett's
- * hand-written hinting bytecode, which reshapes these glyphs at small sizes
- * (the close X becomes 11x9 with even 2px strokes).
+/* Caption glyphs at the caption-button size (Marlett, 12 ppem).
  *
- * Why baked bitmaps and not the font: the authentic shape exists only in MS
- * Marlett's hint programs. The redistributable replacement font we ship has
- * the outlines but not those hints — verified empirically: FreeType renders
- * of it (full bytecode interpreter v35/v40 and the autohinter, ppem 12..18)
- * all produce a different, symmetric glyph. So, exactly like the embedded
- * Tahoma bitmap strikes used for text, the classic caption glyphs are carried
- * as bitmaps at their one canonical size; other sizes fall back to the
- * outline scanline fill below.
+ * Mechanism, from Wine's own DrawFrameControl (dlls/user32/uitools.c,
+ * UITOOLS95_DrawFrameCaption): select Marlett at -SmallDiam and TextOut the
+ * glyph centred in the button. The user-validated reference rendering
+ * (win2k_popup_wine, zoomed capture zc_new.png) rasterises that font at
+ * 12 ppem through FreeType in monochrome (Xft "antialias=false" hintfull) and
+ * centres the INK on the button.
  *
- * Each row is MSB-first; (dx, dy) place the ink's top-left relative to the
- * centre of the size x size box, matching Wine's TextOut-centred placement. */
+ * These bitmaps are that exact output — generated from fonts/marlett.ttf by
+ * tools/bake_marlett.c (FreeType FT_LOAD_TARGET_MONO at 12 ppem) and verified
+ * bit-identical to the validated capture. They are baked because the tiny
+ * outline rasteriser below has no grid-fitting: its unhinted fill draws these
+ * glyphs thinner than the FreeType mono pass the reference (and every Xft
+ * user) sees. Other sizes fall back to the outline fill.
+ *
+ * Rows are MSB-first, ink-tight (w x h); the ink is centred on the target
+ * box when drawn. */
 typedef struct {
     int code;
     int w, h;
-    int dx, dy;
     unsigned short rows[12];
 } ween_baked_glyph;
 
 static const ween_baked_glyph baked12[] = {
-    /* close 'r' 0x72: the 2px-stroke X */
-    { 0x72, 11, 9, -5, -4,
-      { 0x306, 0x18C, 0x0D8, 0x070, 0x070, 0x0D8, 0x18C, 0x306, 0x603,
+    /* close 'r' 0x72 */
+    { 0x72, 8, 8,
+      { 0x0C3, 0x0E7, 0x07E, 0x03C, 0x03C, 0x07E, 0x0E7, 0x0C3, 0, 0, 0, 0 } },
+    /* minimize '0' 0x30 */
+    { 0x30, 7, 2, { 0x07F, 0x07F, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+    /* maximize '1' 0x31 */
+    { 0x31, 9, 9,
+      { 0x1FF, 0x1FF, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x1FF,
         0, 0, 0 } },
-    /* maximize '1' 0x31: the window frame */
-    { 0x31, 11, 9, -4, -4,
-      { 0x7FF, 0x7FF, 0x401, 0x401, 0x401, 0x401, 0x401, 0x401, 0x7FF,
+    /* restore '2' 0x32 */
+    { 0x32, 9, 9,
+      { 0x07F, 0x07F, 0x041, 0x1FD, 0x1FD, 0x107, 0x104, 0x104, 0x1FC,
         0, 0, 0 } },
-    /* minimize '0' 0x30: the bottom bar */
-    { 0x30, 8, 2, -4, 3, { 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
 };
 
 static const ween_baked_glyph *baked_lookup(int code, int size)
@@ -248,15 +251,16 @@ static int cmp_float(const void *a, const void *b)
 void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
                        int x_org, int y_org, int size, ween_color color)
 {
-    /* The canonical caption size uses the baked hinted bitmaps. */
+    /* The canonical caption size uses the baked FreeType-mono bitmaps,
+     * ink-centred on the box as the validated reference places them. */
     const ween_baked_glyph *bg = baked_lookup(code, size);
     if (bg) {
-        int cx = x_org + size / 2, cy = y_org + size / 2;
+        int x0 = x_org + size / 2 - bg->w / 2;
+        int y0 = y_org + size / 2 - bg->h / 2;
         for (int y = 0; y < bg->h; y++) {
             for (int x = 0; x < bg->w; x++) {
                 if (bg->rows[y] & (1u << (bg->w - 1 - x)))
-                    ween_surface_pixel(s, cx + bg->dx + x, cy + bg->dy + y,
-                                       color);
+                    ween_surface_pixel(s, x0 + x, y0 + y, color);
             }
         }
         return;
