@@ -197,9 +197,10 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
 #define MX(u) MulDiv((u), bx, 4)
 #define MY(u) MulDiv((u), by, 8)
 
-    int cap = ((style & WS_CAPTION) == WS_CAPTION) ? WEEN_NC_CAPTION : 0;
-    int win_w = MX(cx) + 2 * WEEN_NC_FRAME;
-    int win_h = MY(cy) + 2 * WEEN_NC_FRAME + cap;
+    RECT wr = { 0, 0, MX(cx), MY(cy) };
+    AdjustWindowRect(&wr, style, FALSE);
+    int win_w = wr.right - wr.left;
+    int win_h = wr.bottom - wr.top;
 
     HWND dlg = CreateWindowExA(0, "#32770", title, style, MX(dx), MY(dy), win_w,
                                win_h, parent, NULL, inst, NULL);

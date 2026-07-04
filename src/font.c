@@ -174,7 +174,7 @@ int ween_strike_char_advance(const ween_strike *f, unsigned char c)
     ween_glyph g;
     if (!glyph_bitmap(f, glyph_index(f, c), &g))
         return blank_advance();
-    return g.adv;
+    return g.adv + f->embolden;
 }
 
 int ween_strike_text_width(const ween_strike *f, const char *s, int len)
@@ -196,11 +196,14 @@ static int draw_char(const ween_strike *f, ween_surface *s, int pen_x,
     for (int row = 0; row < g.h; row++) {
         for (int col = 0; col < g.w; col++) {
             size_t bi = (size_t)(row * g.w + col);
-            if ((f->ttf[g.data + bi / 8] >> (7 - bi % 8)) & 1)
+            if ((f->ttf[g.data + bi / 8] >> (7 - bi % 8)) & 1) {
                 ween_surface_pixel(s, left + col, top + row, color);
+                if (f->embolden) /* synthetic bold: 1px overstrike */
+                    ween_surface_pixel(s, left + col + 1, top + row, color);
+            }
         }
     }
-    return g.adv;
+    return g.adv + f->embolden;
 }
 
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,

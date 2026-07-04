@@ -71,6 +71,26 @@ void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c
     ween_surface_vline(s, x + w - 1, y, h, c);
 }
 
+/* Nearest-neighbour integer magnification: the crisp HiDPI path (render at
+ * 96 dpi, pixel-double on the way out). dst must be sized src * zoom. */
+void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom)
+{
+    for (int y = 0; y < src->h; y++) {
+        /* expand one source row into the first destination row... */
+        ween_color *d0 = dst->px + (long)y * zoom * dst->w;
+        const ween_color *sp = src->px + (long)y * src->w;
+        for (int x = 0; x < src->w; x++) {
+            ween_color c = sp[x];
+            for (int i = 0; i < zoom; i++)
+                d0[x * zoom + i] = c;
+        }
+        /* ...then replicate it */
+        for (int i = 1; i < zoom; i++)
+            memcpy(dst->px + ((long)y * zoom + i) * dst->w, d0,
+                   (size_t)dst->w * sizeof(ween_color));
+    }
+}
+
 static void put_le32(unsigned char *p, uint32_t v)
 {
     p[0] = (unsigned char)v;

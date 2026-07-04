@@ -9,12 +9,32 @@
 #include "../fonts/tahoma_ttf.h"
 #include "../fonts/tahomabd_ttf.h"
 
+/* The GUI font is 8pt Tahoma sized against the system dpi, GDI-style:
+ * ppem = MulDiv(8, dpi, 72) -> 11px @96, 13px @120, 16px @144 — snapped to
+ * the strikes the font actually carries (a between-strike size would fall to
+ * rough outline rendering). Ties snap up, Large Fonts style. */
+static int gui_ppem(void)
+{
+    static const int strikes[] = { 9, 10, 11, 12, 13, 15, 16 };
+    int want = MulDiv(8, ween_render_dpi(), 72);
+    int best = strikes[0], bd = 1 << 30;
+    for (size_t i = 0; i < sizeof(strikes) / sizeof(strikes[0]); i++) {
+        int d = want > strikes[i] ? want - strikes[i] : strikes[i] - want;
+        if (d < bd || (d == bd && strikes[i] > best)) {
+            bd = d;
+            best = strikes[i];
+        }
+    }
+    return best;
+}
+
 const ween_strike *ween_gui_font(void)
 {
     static ween_strike f;
     static int ready = 0;
     if (!ready)
-        ready = ween_strike_init(&f, ween_tahoma_ttf, ween_tahoma_ttf_len, 11);
+        ready = ween_strike_init(&f, ween_tahoma_ttf, ween_tahoma_ttf_len,
+                                 gui_ppem());
     return ready ? &f : NULL;
 }
 
@@ -22,8 +42,15 @@ const ween_strike *ween_gui_font_bold(void)
 {
     static ween_strike f;
     static int ready = 0;
-    if (!ready)
-        ready = ween_strike_init(&f, ween_tahomabd_ttf, ween_tahomabd_ttf_len, 11);
+    if (!ready) {
+        int ppem = gui_ppem();
+        ready = ween_strike_init(&f, ween_tahomabd_ttf, ween_tahomabd_ttf_len,
+                                 ppem);
+        /* Wine's tahomabd strikes at 13/15/16px have regular-weight stems (a
+         * font defect the reference also works around): synthesise bold. */
+        if (ready && (ppem == 13 || ppem == 15 || ppem == 16))
+            f.embolden = 1;
+    }
     return ready ? &f : NULL;
 }
 

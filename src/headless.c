@@ -90,8 +90,21 @@ static void hl_present(void *win, const ween_surface *s)
 {
     (void)win;
     g_last = *s; /* the surface outlives the pump in tests */
-    if (g_bmp_path[0])
-        ween_surface_write_bmp(s, g_bmp_path);
+    if (!g_bmp_path[0])
+        return;
+    int zoom = ween_zoom();
+    if (zoom > 1) { /* capture what the screen would show */
+        static ween_surface zbuf;
+        if (zbuf.w != s->w * zoom || zbuf.h != s->h * zoom) {
+            ween_surface_free(&zbuf);
+            if (!ween_surface_init(&zbuf, s->w * zoom, s->h * zoom))
+                return;
+        }
+        ween_surface_zoom_into(&zbuf, s, zoom);
+        ween_surface_write_bmp(&zbuf, g_bmp_path);
+        return;
+    }
+    ween_surface_write_bmp(s, g_bmp_path);
 }
 
 static void hl_move_by(void *win, int dx, int dy)

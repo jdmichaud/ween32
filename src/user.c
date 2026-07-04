@@ -15,6 +15,58 @@
 
 const ween_backend *ween_active_backend = NULL;
 
+/* ---- system dpi --------------------------------------------------------- */
+
+static int g_render_dpi = 0; /* 0 = not initialised */
+static int g_zoom = 1;
+
+static void dpi_init(void)
+{
+    if (g_render_dpi)
+        return;
+    int dpi = 96;
+    const char *e = getenv("WEEN32_DPI");
+    if (e) {
+        dpi = atoi(e);
+        if (dpi < 48 || dpi > 480)
+            dpi = 96;
+    }
+    /* Near-integer multiples >= 2x render native and pixel-double (the crisp
+     * HiDPI path); fractional scales re-render at the scaled dpi. */
+    int z = (dpi + 48) / 96;
+    int d = dpi - z * 96;
+    if (z >= 2 && d >= -5 && d <= 5) {
+        g_zoom = z;
+        g_render_dpi = 96;
+    } else {
+        g_zoom = 1;
+        g_render_dpi = dpi;
+    }
+}
+
+int ween_render_dpi(void)
+{
+    dpi_init();
+    return g_render_dpi;
+}
+
+int ween_zoom(void)
+{
+    dpi_init();
+    return g_zoom;
+}
+
+int ween_ncm(int base96)
+{
+    return MulDiv(base96, ween_render_dpi(), 96);
+}
+
+UINT GetDpiForSystem(void)
+{
+    dpi_init();
+    return (UINT)(g_render_dpi * g_zoom);
+}
+
 static ween_class g_classes[WEEN_MAX_CLASSES];
 static struct ween_wnd *g_top = NULL;
 static HWND g_focus = NULL;
@@ -99,12 +151,33 @@ static int has_caption(const struct ween_wnd *w)
 static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
 {
     if (has_caption(w)) {
-        *ox = WEEN_NC_FRAME;
-        *oy = WEEN_NC_FRAME + WEEN_NC_CAPTION;
+        *ox = ween_ncm(WEEN_NC_FRAME);
+        *oy = ween_ncm(WEEN_NC_FRAME) + ween_ncm(WEEN_NC_CAPTION);
     } else {
         *ox = 0;
         *oy = 0;
     }
+}
+
+BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style)
+{
+    (void)menu;
+    (void)ex_style;
+    if (!rect)
+        return FALSE;
+    if ((style & WS_CAPTION) == WS_CAPTION && !(style & WS_CHILD)) {
+        int frame = ween_ncm(WEEN_NC_FRAME);
+        rect->left -= frame;
+        rect->right += frame;
+        rect->top -= frame + ween_ncm(WEEN_NC_CAPTION);
+        rect->bottom += frame;
+    }
+    return TRUE;
+}
+
+BOOL AdjustWindowRect(LPRECT rect, DWORD style, BOOL menu)
+{
+    return AdjustWindowRectEx(rect, style, menu, 0);
 }
 
 BOOL GetClientRect(HWND wnd, LPRECT rect)
@@ -115,8 +188,8 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    rect->right = wnd->w - ox - (has_caption(wnd) ? WEEN_NC_FRAME : 0);
-    rect->bottom = wnd->h - oy - (has_caption(wnd) ? WEEN_NC_FRAME : 0);
+    rect->right = wnd->w - ox - (has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : 0);
+    rect->bottom = wnd->h - oy - (has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : 0);
     return TRUE;
 }
 
@@ -149,10 +222,14 @@ HWND ween_top_level(HWND wnd)
 static RECT nc_close_rect(const struct ween_wnd *w)
 {
     RECT r;
-    r.left = w->w - WEEN_NC_FRAME - 2 - WEEN_NC_BTN_W;
-    r.top = WEEN_NC_FRAME + (WEEN_NC_CAPTION - WEEN_NC_BTN_H) / 2;
-    r.right = r.left + WEEN_NC_BTN_W;
-    r.bottom = r.top + WEEN_NC_BTN_H;
+    int frame = ween_ncm(WEEN_NC_FRAME);
+    int cap = ween_ncm(WEEN_NC_CAPTION);
+    int bw = ween_ncm(WEEN_NC_BTN_W);
+    int bh = ween_ncm(WEEN_NC_BTN_H);
+    r.left = w->w - frame - ween_ncm(2) - bw;
+    r.top = frame + (cap - bh) / 2;
+    r.right = r.left + bw;
+    r.bottom = r.top + bh;
     return r;
 }
 
@@ -680,8 +757,9 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         RECT c = nc_close_rect(wnd);
         if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
             return HTCLOSE;
-        if (y < WEEN_NC_FRAME + WEEN_NC_CAPTION && y >= WEEN_NC_FRAME &&
-            x >= WEEN_NC_FRAME && x < wnd->w - WEEN_NC_FRAME)
+        int frame = ween_ncm(WEEN_NC_FRAME);
+        if (y < frame + ween_ncm(WEEN_NC_CAPTION) && y >= frame && x >= frame &&
+            x < wnd->w - frame)
             return HTCAPTION;
         return HTCLIENT;
     }
@@ -696,12 +774,13 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!has_caption(wnd))
             return 0;
         /* caption gradient + title (bold, as Win2k captions were) + close */
-        ween_classic_caption(s, WEEN_NC_FRAME, WEEN_NC_FRAME,
-                             wnd->w - 2 * WEEN_NC_FRAME, WEEN_NC_CAPTION);
+        int frame = ween_ncm(WEEN_NC_FRAME);
+        int cap = ween_ncm(WEEN_NC_CAPTION);
+        ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap);
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
-            int ty = WEEN_NC_FRAME + (WEEN_NC_CAPTION - (f->ascent - f->descent)) / 2;
-            ween_strike_draw(f, s, WEEN_NC_FRAME + 5, ty, wnd->text,
+            int ty = frame + (cap - (f->ascent - f->descent)) / 2;
+            ween_strike_draw(f, s, frame + ween_ncm(5), ty, wnd->text,
                              (int)strlen(wnd->text), WEEN_CAP_TEXT);
         }
         if (wnd->style & WS_SYSMENU) {

@@ -49,6 +49,8 @@ void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c);
 /* 24-bit uncompressed BMP, for headless render verification. */
 int ween_surface_write_bmp(const ween_surface *s, const char *path);
+/* Nearest-neighbour integer magnification (dst must be src * zoom). */
+void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom);
 
 /* ---- classic chrome (from classic.zig; the Wine DrawEdge algorithm) ---- */
 
@@ -67,7 +69,8 @@ typedef struct {
     size_t isa; /* strike's indexSubTableArray (absolute) */
     size_t nidx;
     int ascent;
-    int descent; /* negative, as in the font */
+    int descent;  /* negative, as in the font */
+    int embolden; /* synthetic bold: overstrike 1px (weak bold strikes) */
 } ween_strike;
 
 int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int ppem);
@@ -150,13 +153,23 @@ struct ween_wnd {
     int nc_close_pressed; /* close-box tracking */
 };
 
-/* Non-client metrics of a WS_CAPTION window (classic Win2k popup chrome,
- * matching the validated win2k_popup_wine reference: 16x14 caption buttons
- * at y=6, 2px in from the frame). */
+/* Non-client metrics of a WS_CAPTION window at 96 dpi (classic Win2k popup
+ * chrome, matching the validated win2k_popup_wine reference: 16x14 caption
+ * buttons at y=6, 2px in from the frame). Scale through ween_ncm() for the
+ * system dpi, like the classic SM_* system metrics did. */
 #define WEEN_NC_FRAME 3
 #define WEEN_NC_CAPTION 20 /* caption strip height, frame excluded */
 #define WEEN_NC_BTN_W 16
 #define WEEN_NC_BTN_H 14
+
+/* ---- DPI ------------------------------------------------------------------
+ * Classic win32 model: one system dpi; fonts are sized in points against it
+ * and dialog-unit layout follows the font. Sourced from WEEN32_DPI (default
+ * 96). Near-integer multiples >= 2x render at 96 dpi and pixel-double in the
+ * backend (crisp); fractional scales pick the nearest font strike. */
+int ween_render_dpi(void); /* dpi the renderer works at (96 when zooming) */
+int ween_zoom(void);       /* integer backend magnification (1 = native) */
+int ween_ncm(int base96);  /* scale a 96-dpi non-client metric */
 
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);

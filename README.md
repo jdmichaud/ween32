@@ -74,6 +74,22 @@ The dual-compile gate (needs zig or a mingw toolchain):
 zig cc -target x86_64-windows-gnu -std=c99 -Iinclude examples/dialog.c -luser32 -lgdi32
 ```
 
+## DPI
+
+The classic win32 model, faithfully: one system dpi, fonts sized in points
+against it, and dialog-unit layout follows the font — so apps scale with zero
+code changes. Set `WEEN32_DPI` (default 96):
+
+- **120 / 144 (125% / 150%)**: the GUI font picks Tahoma's real 13px / 16px
+  strikes (`MulDiv(8pt, dpi, 72)`, snapped to shipped strikes), non-client
+  metrics scale like the classic `SM_*` system metrics, and
+  `GetDialogBaseUnits`/`MapDialogRect` re-lay dialogs automatically.
+- **192+ (200%, small hi-res screens)**: renders at 96 dpi and the backend
+  pixel-doubles the finished frame — perfectly crisp, authentically chunky.
+- `GetDpiForSystem()` (and `AdjustWindowRect`) are available to apps; on real
+  Windows declare DPI awareness in the manifest and the same mechanism runs
+  in genuine GDI.
+
 ## Scope (v1)
 
 Windowing: `RegisterClassA, CreateWindowExA, DestroyWindow, ShowWindow, MoveWindow,

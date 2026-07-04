@@ -142,7 +142,9 @@ typedef struct {
     XImage *img;
     XAtom wm_delete;
     int pos_x, pos_y;
-    int w, h;
+    int w, h;    /* native (renderer) size */
+    int zoom;    /* integer HiDPI magnification */
+    ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
 } x11_win;
 
 static void *x11_open(int w, int h, const char *title)
@@ -155,15 +157,22 @@ static void *x11_open(int w, int h, const char *title)
         XCloseDisplay(dpy);
         return NULL;
     }
+    int zoom = ween_zoom();
+    int ww = w * zoom, wh = h * zoom;
+    if (zoom > 1 && !ween_surface_init(&xw->zbuf, ww, wh)) {
+        XCloseDisplay(dpy);
+        free(xw);
+        return NULL;
+    }
     int scr = XDefaultScreen(dpy);
     XWindow root = XDefaultRootWindow(dpy);
 
     /* centred on the primary screen */
-    int px = (XDisplayWidth(dpy, scr) - w) / 2;
-    int py = (XDisplayHeight(dpy, scr) - h) / 2;
+    int px = (XDisplayWidth(dpy, scr) - ww) / 2;
+    int py = (XDisplayHeight(dpy, scr) - wh) / 2;
 
-    XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)w,
-                                      (unsigned)h, 0, 0, 0x00c0c0c0);
+    XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)ww,
+                                      (unsigned)wh, 0, 0, 0x00c0c0c0);
     XStoreName(dpy, win, title);
 
     /* fixed size: no WM resize handles */
@@ -172,8 +181,8 @@ static void *x11_open(int w, int h, const char *title)
     hints.flags = X_PPosition | X_PSize | X_PMinSize | X_PMaxSize;
     hints.x = px;
     hints.y = py;
-    hints.width = hints.min_width = hints.max_width = w;
-    hints.height = hints.min_height = hints.max_height = h;
+    hints.width = hints.min_width = hints.max_width = ww;
+    hints.height = hints.min_height = hints.max_height = wh;
     XSetWMNormalHints(dpy, win, &hints);
 
     /* no WM decorations: ween32 windows draw their own Win2k caption */
@@ -192,7 +201,7 @@ static void *x11_open(int w, int h, const char *title)
     XGC *gc = XCreateGC(dpy, win, 0, NULL);
     XImage *img = XCreateImage(dpy, XDefaultVisual(dpy, scr),
                                (unsigned)XDefaultDepth(dpy, scr), X_ZPixmap, 0,
-                               NULL, (unsigned)w, (unsigned)h, 32, w * 4);
+                               NULL, (unsigned)ww, (unsigned)wh, 32, ww * 4);
     if (!gc || !img) {
         XCloseDisplay(dpy);
         free(xw);
@@ -207,15 +216,21 @@ static void *x11_open(int w, int h, const char *title)
     xw->pos_y = py;
     xw->w = w;
     xw->h = h;
+    xw->zoom = zoom;
     return xw;
 }
 
 static void x11_present(void *win, const ween_surface *s)
 {
     x11_win *xw = win;
-    xw->img->data = (char *)s->px;
-    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, 0, 0, (unsigned)s->w,
-              (unsigned)s->h);
+    const ween_surface *out = s;
+    if (xw->zoom > 1) { /* crisp HiDPI: pixel-double the finished frame */
+        ween_surface_zoom_into(&xw->zbuf, s, xw->zoom);
+        out = &xw->zbuf;
+    }
+    xw->img->data = (char *)out->px;
+    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, 0, 0, (unsigned)out->w,
+              (unsigned)out->h);
     XFlush(xw->dpy);
 }
 
@@ -263,16 +278,16 @@ static ween_event x11_next_event(void *win)
         case X_ButtonRelease:
             out.kind = ev.type == X_ButtonPress ? WEEN_EV_MOUSE_DOWN
                                                 : WEEN_EV_MOUSE_UP;
-            out.x = b->x;
-            out.y = b->y;
+            out.x = b->x / xw->zoom; /* window px -> renderer px */
+            out.y = b->y / xw->zoom;
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             out.button = (int)b->button;
             return out;
         case X_MotionNotify:
             out.kind = WEEN_EV_MOUSE_MOVE;
-            out.x = b->x;
-            out.y = b->y;
+            out.x = b->x / xw->zoom;
+            out.y = b->y / xw->zoom;
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             return out;
@@ -300,6 +315,8 @@ static void x11_close(void *win)
 {
     x11_win *xw = win;
     XCloseDisplay(xw->dpy);
+    if (xw->zoom > 1)
+        ween_surface_free(&xw->zbuf);
     free(xw);
 }
 
