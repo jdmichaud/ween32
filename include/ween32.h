@@ -224,6 +224,9 @@ typedef struct tagCREATESTRUCTA {
 #define WM_MOUSEMOVE 0x0200
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
+#define WM_MOUSEWHEEL 0x020A
+#define WHEEL_DELTA 120
+#define GET_WHEEL_DELTA_WPARAM(wp) ((short)HIWORD(wp))
 
 /* ---- window styles ------------------------------------------------------ */
 
@@ -266,6 +269,8 @@ typedef struct tagCREATESTRUCTA {
 #define LB_GETCURSEL 0x0188
 #define LB_GETTEXT 0x0189
 #define LB_GETCOUNT 0x018B
+#define LB_GETTOPINDEX 0x018E
+#define LB_SETTOPINDEX 0x0197
 #define LBN_SELCHANGE 1
 #define LBN_DBLCLK 2
 

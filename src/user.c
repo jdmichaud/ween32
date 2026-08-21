@@ -750,13 +750,14 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
         ween_client_origin(top, &cx0, &cy0);
         int cx = x - cx0, cy = y - cy0;
         dst = top;
-        for (struct ween_wnd *c = top->first_child; c; c = c->next_sibling) {
+        /* A newly created child sits at the top of the z-order, so the last
+         * one in the list that contains the point is the one on top — the
+         * group box created before its radio buttons must not swallow their
+         * clicks. */
+        for (struct ween_wnd *c = top->first_child; c; c = c->next_sibling)
             if (c->visible && cx >= c->x && cx < c->x + c->w && cy >= c->y &&
-                cy < c->y + c->h) {
+                cy < c->y + c->h)
                 dst = c;
-                break;
-            }
-        }
     }
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
@@ -816,8 +817,11 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         top->dirty = 1;
         break;
     case WEEN_EV_MOUSE_DOWN: {
-        LRESULT hit = SendMessageA(top, WM_NCHITTEST, 0,
-                                   MAKELPARAM((WORD)ev->x, (WORD)ev->y));
+        LRESULT hit;
+        if (ev->button != 1) /* the wheel arrives as buttons 4 and 5 */
+            break;
+        hit = SendMessageA(top, WM_NCHITTEST, 0,
+                           MAKELPARAM((WORD)ev->x, (WORD)ev->y));
         if (hit == HTCAPTION)
             nc_drag_caption(top, ev);
         else if (hit == HTCLOSE)
@@ -827,10 +831,19 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         break;
     }
     case WEEN_EV_MOUSE_UP:
+        if (ev->button != 1)
+            break;
         route_mouse(top, WM_LBUTTONUP, ev->x, ev->y);
         break;
     case WEEN_EV_MOUSE_MOVE:
         route_mouse(top, WM_MOUSEMOVE, ev->x, ev->y);
+        break;
+    case WEEN_EV_WHEEL:
+        /* win32 sends the wheel to the focused window, not the one under the
+         * pointer — a control scrolls once it has been clicked */
+        post_msg(g_focus ? g_focus : (HWND)top, WM_MOUSEWHEEL,
+                 MAKEWPARAM(0, (WORD)(short)(ev->button * 120)),
+                 MAKELPARAM((WORD)ev->x, (WORD)ev->y));
         break;
     case WEEN_EV_KEY:
         /* the character rides in the high word, where win32 keeps the scan
@@ -1123,21 +1136,22 @@ static void button_click(HWND wnd)
         break;
     case BS_AUTORADIOBUTTON:
         if (wnd->parent) {
-            /* the group runs from the previous WS_GROUP to the next one */
-            struct ween_wnd *g = NULL, *c;
+            /* the group runs from the last WS_GROUP at or before this button
+             * up to the next one after it */
+            struct ween_wnd *c, *start = wnd->parent->first_child;
             for (c = wnd->parent->first_child; c; c = c->next_sibling) {
                 if (c->style & WS_GROUP)
-                    g = c;
+                    start = c;
                 if (c == wnd)
                     break;
             }
-            for (c = g ? g : wnd->parent->first_child; c; c = c->next_sibling) {
-                if (c != (g ? g : c) && (c->style & WS_GROUP) && c != wnd &&
-                    c != g)
+            for (c = start; c; c = c->next_sibling) {
+                if (c != start && (c->style & WS_GROUP))
                     break;
                 if (button_type(c) == BS_AUTORADIOBUTTON)
                     c->check = c == wnd ? BST_CHECKED : BST_UNCHECKED;
             }
+            ween_top_level(wnd)->dirty = 1;
         }
         wnd->check = BST_CHECKED;
         break;

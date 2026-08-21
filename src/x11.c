@@ -270,10 +270,27 @@ static unsigned keysym_to_vk(unsigned long ks)
     switch (ks) {
     case 0xff1b:
         return VK_ESCAPE;
-    case 0xff0d:
+    case 0xff0d: /* Return */
+    case 0xff8d: /* KP_Enter */
         return VK_RETURN;
     case 0xff09:
         return VK_TAB;
+    case 0xff08:
+        return VK_BACK;
+    case 0xffff:
+        return VK_DELETE;
+    case 0xff50:
+        return VK_HOME;
+    case 0xff57:
+        return VK_END;
+    case 0xff51:
+        return VK_LEFT;
+    case 0xff52:
+        return VK_UP;
+    case 0xff53:
+        return VK_RIGHT;
+    case 0xff54:
+        return VK_DOWN;
     default:
         if (ks >= 'a' && ks <= 'z')
             return (unsigned)(ks - 32); /* VK codes are uppercase ASCII */
@@ -298,6 +315,15 @@ static ween_event x11_next_event(void *win)
             return out;
         case X_ButtonPress:
         case X_ButtonRelease:
+            if (b->button == 4 || b->button == 5) { /* the wheel */
+                if (ev.type != X_ButtonPress)
+                    continue;
+                out.kind = WEEN_EV_WHEEL;
+                out.button = b->button == 4 ? 1 : -1;
+                out.x = b->x / xw->zoom;
+                out.y = b->y / xw->zoom;
+                return out;
+            }
             out.kind = ev.type == X_ButtonPress ? WEEN_EV_MOUSE_DOWN
                                                 : WEEN_EV_MOUSE_UP;
             out.x = b->x / xw->zoom; /* window px -> renderer px */

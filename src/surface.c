@@ -84,6 +84,35 @@ void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c)
     ween_surface_fill(s, x, y, 1, h, c);
 }
 
+/* DrawFocusRect: a dotted rectangle drawn by inverting the pixels under it,
+ * so it shows against a selection bar as well as against white. The dots fall
+ * on device coordinates, which is what lines two of them up. */
+static void invert_pixel(ween_surface *s, int x, int y)
+{
+    if (x < s->clip_x || y < s->clip_y || x >= s->clip_r || y >= s->clip_b)
+        return;
+    s->px[(long)y * s->w + x] ^= 0x00ffffffu;
+}
+
+void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h)
+{
+    int r = x + w - 1, b = y + h - 1;
+    if (w <= 0 || h <= 0)
+        return;
+    for (int i = x; i <= r; i++) {
+        if (!((i + y) & 1))
+            invert_pixel(s, i, y);
+        if (!((i + b) & 1))
+            invert_pixel(s, i, b);
+    }
+    for (int j = y + 1; j < b; j++) {
+        if (!((x + j) & 1))
+            invert_pixel(s, x, j);
+        if (!((r + j) & 1))
+            invert_pixel(s, r, j);
+    }
+}
+
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c)
 {
     ween_surface_hline(s, x, y, w, c);

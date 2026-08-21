@@ -52,6 +52,8 @@ void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c
 void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
 void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c);
+/* DrawFocusRect's dotted, inverting rectangle. */
+void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h);
 /* 24-bit uncompressed BMP, for headless render verification. */
 int ween_surface_write_bmp(const ween_surface *s, const char *path);
 /* Nearest-neighbour integer magnification (dst must be src * zoom). */
@@ -178,7 +180,8 @@ struct ween_wnd {
     int pressed; /* BUTTON down-state */
     UINT check;  /* BUTTON check state (BST_*) */
     int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
-    int drag_offset; /* where a drag grabbed the thumb */
+    int drag_offset;   /* where a drag grabbed the thumb */
+    int drag_vertical; /* which of a view's two bars is being dragged */
     void *ctl;   /* per-class state, freed with the window */
     int destroyed;
 
@@ -252,7 +255,8 @@ typedef enum {
     WEEN_EV_MOUSE_DOWN,
     WEEN_EV_MOUSE_UP,
     WEEN_EV_MOUSE_MOVE,
-    WEEN_EV_KEY, /* vk: translated virtual-key code */
+    WEEN_EV_KEY,   /* vk: translated virtual-key code */
+    WEEN_EV_WHEEL, /* button: +1 away from the user, -1 toward */
     WEEN_EV_CLOSE,
     WEEN_EV_END /* event source exhausted (headless) / connection lost */
 } ween_ev_kind;

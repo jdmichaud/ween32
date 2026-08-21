@@ -83,7 +83,9 @@ message its win32 counterpart uses:
   Home/End; `EN_CHANGE` to the parent. It draws a caret when focused.
 - **BUTTON** — press and release tracking, auto check boxes and radio groups,
   `BN_CLICKED`.
-- **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`.
+- **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`; its scroll bar
+  scrolls, by arrow, page, thumb or wheel, and the arrows keep the selection in
+  view.
 - **COMBOBOX** — click to drop the list, click an item to pick it,
   `CBN_SELCHANGE`. The list is painted over everything else and gets first
   refusal on the mouse, which is how it escapes its own client area without a
@@ -94,8 +96,14 @@ message its win32 counterpart uses:
 - **Trackbar** — click or drag to a position, arrow keys to step.
 - **Tabs** — click to switch, `TCN_SELCHANGE` through `WM_NOTIFY`.
 - **TreeView** — click the button to expand or collapse, click an item to
-  select it; `TVN_SELCHANGED` and `TVN_ITEMEXPANDED`.
-- **ListView** — click a row to select it, `LVN_ITEMCHANGED`.
+  select it; `TVN_SELCHANGED` and `TVN_ITEMEXPANDED`. Both scroll bars work,
+  and appear only when there is something to scroll — taking one strip can
+  bring the other on, as in win32.
+- **ListView** — click a row to select it, `LVN_ITEMCHANGED`. The selection is
+  the label rect inflated five pixels with a dotted focus rectangle over it,
+  which is pixel-identical to Wine's.
+- **The wheel** goes to the focused window, as win32 sends it — a view scrolls
+  once it has been clicked, and never selects.
 
 `tests/input_test.c` drives all of this through the headless backend and
 asserts where each control ends up, so CI covers it.
@@ -107,10 +115,12 @@ asserts where each control ends up, so CI covers it.
       is clipped instead.
 - [ ] **A blinking caret** — the caret is drawn solid, because there are no
       timers (`SetTimer`/`WM_TIMER`).
-- [ ] **Scrolling the views** — the list box, tree and list views draw their
-      scroll bars but do not scroll: no wheel, no thumb wired to the content,
-      no keyboard paging.
+- [ ] **Scrolling the list view** — its rows do not scroll yet; the list box
+      and tree view do.
 - [ ] **Auto-repeat** on a held scroll-bar arrow, and hot-tracking states.
+- [ ] **A focus rectangle on a focused button**, and the tree view's focused
+      item — `DrawFocusRect` exists on the surface but only the list view uses
+      it.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), item images from an image list,
       and column resizing in the list view.
 

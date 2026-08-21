@@ -44,6 +44,8 @@ static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "one");
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "two");
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "three");
+        SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "four");
+        SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "five");
         g_track = CreateWindowA(TRACKBAR_CLASSA, "",
                                 WS_CHILD | WS_VISIBLE | TBS_HORZ, 10, 130, 100,
                                 30, hwnd, (HMENU)(UINT_PTR)ID_TRACK, NULL, NULL);
@@ -89,6 +91,17 @@ static void type_char(unsigned ch)
     ween_headless_inject(ev);
 }
 
+static void wheel(int notches, int x, int y)
+{
+    ween_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind = WEEN_EV_WHEEL;
+    ev.button = notches;
+    ev.x = x;
+    ev.y = y;
+    ween_headless_inject(ev);
+}
+
 static void press(unsigned vk)
 {
     ween_event ev;
@@ -127,6 +140,9 @@ int main(void)
     inject(WEEN_EV_MOUSE_DOWN, cx + 40, cy + 80);
     inject(WEEN_EV_MOUSE_UP, cx + 40, cy + 80);
 
+    /* the wheel scrolls the focused list box, and does not select */
+    wheel(-1, cx + 40, cy + 80);
+
     /* drag the trackbar's thumb to the far end */
     inject(WEEN_EV_MOUSE_DOWN, cx + 30, cy + 145);
     inject(WEEN_EV_MOUSE_MOVE, cx + 100, cy + 145);
@@ -155,6 +171,11 @@ int main(void)
     CHECK(SendMessageA(g_list, LB_GETCURSEL, 0, 0) == 1,
           "clicking the list box selected the item under the cursor");
     CHECK(g_list_changed == 1, "the list box sent LBN_SELCHANGE");
+
+    CHECK(SendMessageA(g_list, LB_GETTOPINDEX, 0, 0) > 0,
+          "the wheel scrolled the list box");
+    CHECK(SendMessageA(g_list, LB_GETCURSEL, 0, 0) == 1,
+          "the wheel did not change the selection");
 
     CHECK(SendMessageA(g_track, TBM_GETPOS, 0, 0) == 10,
           "dragging the trackbar moved it to the end of its range");

@@ -82,8 +82,12 @@ void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
     }
     if (thumb >= track)
         return; /* no room for a thumb: the track stays bare, as in win32 */
-    if (max - min > 0)
-        tpos = (track - thumb) * (pos - min) / (max - min);
+    {   /* the thumb spans the positions that still show a full page, which is
+         * nMax - nPage + 1 — the same range a click or a drag works in */
+        int span = (page > 0 ? max - page + 1 : max) - min;
+        if (span > 0)
+            tpos = MulDiv(pos - min, track - thumb, span);
+    }
     if (vert)
         ween_classic_edge(s, x, y + sz + tpos, w, thumb, EDGE_RAISED,
                           BF_RECT | BF_MIDDLE, NULL);
@@ -92,29 +96,96 @@ void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                           BF_RECT | BF_MIDDLE, NULL);
 }
 
+/* ---- scroll bars embedded in a view --------------------------------------
+ *
+ * A list box, tree or list view owns its bars rather than hosting SCROLLBAR
+ * children, so it needs the same hit-testing the class does. `at` is the
+ * offset along the bar; the result is the new position. */
+
+typedef struct {
+    int pos, min, max, page;
+    int line; /* what an arrow click scrolls by */
+} ween_sbstate;
+
+/* The last position that still shows a full page — win32's nMax - nPage + 1. */
+static int sb_maxpos(const ween_sbstate *st)
+{
+    int m = st->page > 0 ? st->max - st->page + 1 : st->max;
+    return m < st->min ? st->min : m;
+}
+
+static void sb_thumb(int len, const ween_sbstate *st, int *tpos, int *tsize)
+{
+    int sz = ween_scroll_metric();
+    int track = len - 2 * sz, span = sb_maxpos(st) - st->min;
+    *tsize = sz;
+    if (st->page > 0 && st->max > st->min) {
+        *tsize = MulDiv(st->page, track, st->max - st->min + 1);
+        if (*tsize < sz)
+            *tsize = sz;
+        if (*tsize > track)
+            *tsize = track;
+    }
+    *tpos = span > 0 ? MulDiv(st->pos - st->min, track - *tsize, span) : 0;
+}
+
+/* Act on a click. Sets *grab to where within the thumb it landed, or -1. */
+static int sb_click(int at, int len, const ween_sbstate *st, int *grab)
+{
+    int sz = ween_scroll_metric(), tpos, tsize;
+    int page = st->page > 0 ? st->page : 1;
+    int line = st->line > 0 ? st->line : 1;
+    sb_thumb(len, st, &tpos, &tsize);
+    *grab = -1;
+    if (at < sz)
+        return st->pos - line;
+    if (at >= len - sz)
+        return st->pos + line;
+    if (at < sz + tpos)
+        return st->pos - page;
+    if (at >= sz + tpos + tsize)
+        return st->pos + page;
+    *grab = at - (sz + tpos);
+    return st->pos;
+}
+
+/* Where a drag has moved the thumb to. */
+static int sb_drag(int at, int len, const ween_sbstate *st, int grab)
+{
+    int sz = ween_scroll_metric(), tpos, tsize, track;
+    sb_thumb(len, st, &tpos, &tsize);
+    track = len - 2 * sz - tsize;
+    if (track <= 0)
+        return st->pos;
+    return st->min + MulDiv(at - grab - sz, sb_maxpos(st) - st->min, track);
+}
+
+static int sb_clamp(int pos, const ween_sbstate *st)
+{
+    int max = sb_maxpos(st);
+    if (pos < st->min)
+        pos = st->min;
+    if (pos > max)
+        pos = max;
+    return pos;
+}
+
 /* ---- the SCROLLBAR class --------------------------------------------------
  *
  * Clicking an arrow scrolls a line, the track a page, and the thumb can be
  * dragged; each tells the parent through WM_HSCROLL/WM_VSCROLL, as win32
  * does — the control itself owns no content. */
 
-/* Thumb extent along the bar, in pixels from the first arrow. */
-static void scroll_thumb(HWND wnd, int *pos, int *size, int *track)
+/* The bar's state, as the class holds it. */
+static ween_sbstate scroll_state(HWND wnd)
 {
-    int sz = ween_scroll_metric();
-    int vert = (wnd->style & SBS_VERT) != 0;
-    int len = vert ? wnd->h : wnd->w;
-    int min = wnd->scroll_min, max = wnd->scroll_max;
-    int page = wnd->scroll_page;
-    *track = len - 2 * sz;
-    *size = sz;
-    if (page > 0 && max > min) {
-        *size = MulDiv(page, *track, max - min + 1);
-        if (*size < sz)
-            *size = sz;
-    }
-    *pos = max > min ? MulDiv(wnd->scroll_pos - min, *track - *size, max - min)
-                     : 0;
+    ween_sbstate st;
+    st.pos = wnd->scroll_pos;
+    st.min = wnd->scroll_min;
+    st.max = wnd->scroll_max;
+    st.page = wnd->scroll_page;
+    st.line = 1;
+    return st;
 }
 
 static void scroll_notify(HWND wnd, int code)
@@ -128,10 +199,8 @@ static void scroll_notify(HWND wnd, int code)
 
 static void scroll_set(HWND wnd, int pos, int code)
 {
-    if (pos < wnd->scroll_min)
-        pos = wnd->scroll_min;
-    if (pos > wnd->scroll_max)
-        pos = wnd->scroll_max;
+    ween_sbstate st = scroll_state(wnd);
+    pos = sb_clamp(pos, &st);
     if (pos != wnd->scroll_pos) {
         wnd->scroll_pos = pos;
         InvalidateRect(wnd, NULL, FALSE);
@@ -141,43 +210,33 @@ static void scroll_set(HWND wnd, int pos, int code)
 
 static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    int sz = ween_scroll_metric();
     int vert = (wnd->style & SBS_VERT) != 0;
     int len = vert ? wnd->h : wnd->w;
     int at = vert ? GET_Y_LPARAM(lp) : GET_X_LPARAM(lp);
-    int tpos, tsize, track;
+    ween_sbstate st = scroll_state(wnd);
 
     switch (msg) {
-    case WM_LBUTTONDOWN:
+    case WM_LBUTTONDOWN: {
+        int grab, pos;
         SetFocus(wnd);
-        scroll_thumb(wnd, &tpos, &tsize, &track);
-        if (at < sz) {
-            scroll_set(wnd, wnd->scroll_pos - 1, SB_LINEUP);
-        } else if (at >= len - sz) {
-            scroll_set(wnd, wnd->scroll_pos + 1, SB_LINEDOWN);
-        } else if (at < sz + tpos) {
-            scroll_set(wnd, wnd->scroll_pos - (wnd->scroll_page ? wnd->scroll_page : 1),
-                       SB_PAGEUP);
-        } else if (at >= sz + tpos + tsize) {
-            scroll_set(wnd, wnd->scroll_pos + (wnd->scroll_page ? wnd->scroll_page : 1),
-                       SB_PAGEDOWN);
-        } else {
+        pos = sb_click(at, len, &st, &grab);
+        if (grab >= 0) {
             SetCapture(wnd);
-            wnd->drag_offset = at - (sz + tpos); /* grab point within the thumb */
+            wnd->drag_offset = grab;
+            return 0;
         }
+        scroll_set(wnd, pos,
+                   pos < st.pos ? (at < ween_scroll_metric() ? SB_LINEUP
+                                                             : SB_PAGEUP)
+                                : (at >= len - ween_scroll_metric()
+                                       ? SB_LINEDOWN
+                                       : SB_PAGEDOWN));
         return 0;
+    }
     case WM_MOUSEMOVE:
-        if (GetCapture() == wnd) {
-            scroll_thumb(wnd, &tpos, &tsize, &track);
-            if (track > tsize) {
-                int want = at - wnd->drag_offset - sz;
-                scroll_set(wnd,
-                           wnd->scroll_min + MulDiv(want,
-                                                    wnd->scroll_max - wnd->scroll_min,
-                                                    track - tsize),
-                           SB_THUMBTRACK);
-            }
-        }
+        if (GetCapture() == wnd)
+            scroll_set(wnd, sb_drag(at, len, &st, wnd->drag_offset),
+                       SB_THUMBTRACK);
         return 0;
     case WM_LBUTTONUP:
         if (GetCapture() == wnd) {
@@ -547,6 +606,19 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         it = items_of(wnd);
         GetClientRect(wnd, &cr);
         SetFocus(wnd);
+        if ((wnd->style & WS_VSCROLL) && it &&
+            GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
+            int visible = cr.bottom / (ih ? ih : 1);
+            ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
+            int grab, pos = sb_click(GET_Y_LPARAM(lp), cr.bottom, &st, &grab);
+            if (grab >= 0) {
+                SetCapture(wnd);
+                wnd->drag_offset = grab;
+            }
+            it->top = sb_clamp(pos, &st);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         i = (it ? it->top : 0) + GET_Y_LPARAM(lp) / (ih ? ih : 1);
         if (it && i >= 0 && i < it->count && GET_X_LPARAM(lp) < cr.right) {
             it->cursel = i;
@@ -558,12 +630,54 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_MOUSEWHEEL: {
+        RECT cr;
+        int ih = item_height(wnd);
+        int delta = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        it = items_of(wnd);
+        GetClientRect(wnd, &cr);
+        if (it) {
+            int visible = cr.bottom / (ih ? ih : 1);
+            ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
+            it->top = sb_clamp(it->top - delta * 3, &st);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (GetCapture() == wnd) {
+            RECT cr;
+            int ih = item_height(wnd);
+            it = items_of(wnd);
+            GetClientRect(wnd, &cr);
+            if (it) {
+                int visible = cr.bottom / (ih ? ih : 1);
+                ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
+                it->top = sb_clamp(
+                    sb_drag(GET_Y_LPARAM(lp), cr.bottom, &st, wnd->drag_offset),
+                    &st);
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        return 0;
     case WM_KEYDOWN:
         it = items_of(wnd);
         if (it && (wp == VK_UP || wp == VK_DOWN)) {
             int next = it->cursel + (wp == VK_DOWN ? 1 : -1);
             if (next >= 0 && next < it->count) {
+                RECT cr;
+                int ih = item_height(wnd), visible;
+                GetClientRect(wnd, &cr);
+                visible = cr.bottom / (ih ? ih : 1);
                 it->cursel = next;
+                if (next < it->top) /* scroll to keep it in view */
+                    it->top = next;
+                else if (next >= it->top + visible)
+                    it->top = next - visible + 1;
                 InvalidateRect(wnd, NULL, FALSE);
                 if (wnd->parent)
                     SendMessageA(wnd->parent, WM_COMMAND,
@@ -591,6 +705,15 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case LB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;
+    case LB_GETTOPINDEX:
+        it = items_of(wnd);
+        return it ? it->top : 0;
+    case LB_SETTOPINDEX:
+        it = items_of(wnd);
+        if (it)
+            it->top = (int)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case LB_RESETCONTENT:
         ween_controls_free(wnd);
         InvalidateRect(wnd, NULL, FALSE);
@@ -863,6 +986,8 @@ typedef struct ween_tvitem {
 typedef struct {
     ween_tvitem *root;
     ween_tvitem *sel;
+    int scroll_x, content_w; /* horizontal scroll, and what there is to scroll */
+    int scroll_row, rows;    /* vertical, counted in items */
 } ween_tree;
 
 #define WEEN_TV_ITEM_H 16
@@ -955,6 +1080,18 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
     return row;
 }
 
+/* How many rows the tree shows when fully walked. */
+static int tree_rows(ween_tvitem *first)
+{
+    int n = 0;
+    for (ween_tvitem *it = first; it; it = it->next) {
+        n++;
+        if (it->expanded && it->child)
+            n += tree_rows(it->child);
+    }
+    return n;
+}
+
 /* The item on a given visible row, and how deep it sits. */
 static ween_tvitem *tree_at_row(ween_tvitem *first, int depth, int want,
                                 int *row, int *depth_out)
@@ -1000,20 +1137,53 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     ween_tree *t = tree_of(wnd);
     struct ween_wnd *top = ween_top_level(wnd);
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-    RECT r = ps->rcPaint;
-    int ox, oy, content, sb = ween_scroll_metric();
+    RECT r = ps->rcPaint, clip;
+    int ox, oy, sb = ween_scroll_metric();
+    int hbar, vbar, view_w, view_h, visible;
 
     ween_client_origin(wnd, &ox, &oy);
     FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
     if (!t || !t->root)
         return;
-    tree_draw(&top->surface, f, t->root, ox, oy, 0, 0,
-              (wnd->style & TVS_HASLINES) != 0, t->sel);
 
-    content = tree_extent(f, t->root, 0) + 8;
-    if (content > r.right) /* a bar along the bottom, as wide as it needs */
-        ween_draw_scrollbar(&top->surface, ox, oy + r.bottom - sb, r.right, sb,
-                            0, 1, 0, r.right, 0, content - 1);
+    /* each bar takes a strip, and taking one can bring the other on */
+    t->content_w = tree_extent(f, t->root, 0) + 8;
+    t->rows = tree_rows(t->root);
+    hbar = t->content_w > r.right;
+    vbar = t->rows * WEEN_TV_ITEM_H > r.bottom - (hbar ? sb : 0);
+    hbar = t->content_w > r.right - (vbar ? sb : 0);
+    view_w = r.right - (vbar ? sb : 0);
+    view_h = r.bottom - (hbar ? sb : 0);
+    visible = view_h / WEEN_TV_ITEM_H;
+
+    if (!hbar)
+        t->scroll_x = 0;
+    if (!vbar)
+        t->scroll_row = 0;
+    else if (t->scroll_row > t->rows - visible)
+        t->scroll_row = t->rows - visible;
+
+    ween_surface_get_clip(&top->surface, &clip);
+    ween_surface_clip(&top->surface, clip.left, clip.top,
+                      (ox + view_w < clip.right ? ox + view_w : clip.right) -
+                          clip.left,
+                      (oy + view_h < clip.bottom ? oy + view_h : clip.bottom) -
+                          clip.top);
+    tree_draw(&top->surface, f, t->root, ox - t->scroll_x,
+              oy - t->scroll_row * WEEN_TV_ITEM_H, 0, 0,
+              (wnd->style & TVS_HASLINES) != 0, t->sel);
+    ween_surface_clip(&top->surface, clip.left, clip.top,
+                      clip.right - clip.left, clip.bottom - clip.top);
+
+    if (hbar)
+        ween_draw_scrollbar(&top->surface, ox, oy + r.bottom - sb, view_w, sb, 0,
+                            1, t->scroll_x, view_w, 0, t->content_w - 1);
+    if (vbar)
+        ween_draw_scrollbar(&top->surface, ox + r.right - sb, oy, sb, view_h, 1,
+                            1, t->scroll_row, visible, 0, t->rows - 1);
+    if (hbar && vbar) /* the dead square where they meet */
+        ween_surface_fill(&top->surface, ox + r.right - sb, oy + r.bottom - sb,
+                          sb, sb, WEEN_FACE);
 }
 
 static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -1031,10 +1201,47 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int row = 0, depth = 0;
         int want = GET_Y_LPARAM(lp) / WEEN_TV_ITEM_H;
         ween_tvitem *hit;
+        RECT cr;
+        int sb = ween_scroll_metric();
         t = tree_of(wnd);
         SetFocus(wnd);
         if (!t || !t->root)
             return 0;
+        GetClientRect(wnd, &cr);
+        {
+            int hbar = t->content_w > cr.right;
+            int vbar = t->rows * WEEN_TV_ITEM_H > cr.bottom - (hbar ? sb : 0);
+            int view_w = cr.right - (vbar ? sb : 0);
+            int view_h = cr.bottom - (hbar ? sb : 0);
+            int visible = view_h / WEEN_TV_ITEM_H;
+            int grab, pos;
+            hbar = t->content_w > view_w;
+            if (hbar && GET_Y_LPARAM(lp) >= cr.bottom - sb) {
+                ween_sbstate st = { t->scroll_x, 0, t->content_w - 1, view_w, 8 };
+                pos = sb_click(GET_X_LPARAM(lp), view_w, &st, &grab);
+                if (grab >= 0) {
+                    SetCapture(wnd);
+                    wnd->drag_offset = grab;
+                    wnd->drag_vertical = 0;
+                }
+                t->scroll_x = sb_clamp(pos, &st);
+                InvalidateRect(wnd, NULL, FALSE);
+                return 0;
+            }
+            if (vbar && GET_X_LPARAM(lp) >= cr.right - sb) {
+                ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
+                pos = sb_click(GET_Y_LPARAM(lp), view_h, &st, &grab);
+                if (grab >= 0) {
+                    SetCapture(wnd);
+                    wnd->drag_offset = grab;
+                    wnd->drag_vertical = 1;
+                }
+                t->scroll_row = sb_clamp(pos, &st);
+                InvalidateRect(wnd, NULL, FALSE);
+                return 0;
+            }
+            want += t->scroll_row;
+        }
         hit = tree_at_row(t->root, 0, want, &row, &depth);
         if (!hit)
             return 0;
@@ -1051,6 +1258,48 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
+    case WM_MOUSEWHEEL: {
+        RECT cr;
+        int sb2 = ween_scroll_metric(), lines = 3;
+        int delta = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        t = tree_of(wnd);
+        GetClientRect(wnd, &cr);
+        if (t) {
+            int view_h = cr.bottom - (t->content_w > cr.right ? sb2 : 0);
+            int visible = view_h / WEEN_TV_ITEM_H;
+            ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
+            t->scroll_row = sb_clamp(t->scroll_row - delta * lines, &st);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (GetCapture() == wnd) {
+            RECT cr;
+            int sb2 = ween_scroll_metric();
+            t = tree_of(wnd);
+            GetClientRect(wnd, &cr);
+            if (t && wnd->drag_vertical) {
+                int view_h = cr.bottom - (t->content_w > cr.right ? sb2 : 0);
+                int visible = view_h / WEEN_TV_ITEM_H;
+                ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
+                t->scroll_row = sb_clamp(
+                    sb_drag(GET_Y_LPARAM(lp), view_h, &st, wnd->drag_offset), &st);
+                InvalidateRect(wnd, NULL, FALSE);
+            } else if (t) {
+                int view_w = cr.right -
+                             (t->rows * WEEN_TV_ITEM_H > cr.bottom ? sb2 : 0);
+                ween_sbstate st = { t->scroll_x, 0, t->content_w - 1, view_w, 8 };
+                t->scroll_x = sb_clamp(
+                    sb_drag(GET_X_LPARAM(lp), view_w, &st, wnd->drag_offset), &st);
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        return 0;
     case TVM_SELECTITEM:
         t = tree_of(wnd);
         if (t)
@@ -1157,10 +1406,14 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         x = 0;
         if (selected && f && l->row[i].text[0]) {
-            int tw = ween_strike_text_width(f, l->row[i].text[0],
-                                            (int)strlen(l->row[i].text[0]));
-            ween_surface_fill(&top->surface, ox + 5, y, tw + 4, WEEN_LV_ITEM_H,
-                              WEEN_CAP_LEFT);
+            /* the label rect: the text inflated five pixels each side, with
+             * the focus rectangle drawn over it */
+            int tw = ween_strike_text_extent(f, l->row[i].text[0],
+                                             (int)strlen(l->row[i].text[0]));
+            ween_surface_fill(&top->surface, ox + 2, y, tw + 10,
+                              WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
+            ween_surface_focus_rect(&top->surface, ox + 2, y, tw + 10,
+                                    WEEN_LV_ITEM_H);
         }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
