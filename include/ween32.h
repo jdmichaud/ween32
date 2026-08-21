@@ -271,6 +271,15 @@ typedef struct tagCREATESTRUCTA {
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
 
+/* status bar (comctl32) */
+#define STATUSCLASSNAMEA "msctls_statusbar32"
+#define SBARS_SIZEGRIP 0x0100L
+#define SB_SETTEXTA (WM_USER + 1)
+#define SB_GETTEXTA (WM_USER + 2)
+#define SB_SETPARTS (WM_USER + 4)
+#define SB_GETPARTS (WM_USER + 6)
+#define SB_SIMPLE (WM_USER + 9)
+
 /* progress bar (comctl32) */
 #define PROGRESS_CLASSA "msctls_progress32"
 #define PBS_SMOOTH 0x01
@@ -457,6 +466,7 @@ typedef struct tagCREATESTRUCTA {
 #define WEEN32_HAS_LISTBOX 1
 #define WEEN32_HAS_COMBOBOX 1
 #define WEEN32_HAS_PROGRESS 1
+#define WEEN32_HAS_STATUSBAR 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 

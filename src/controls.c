@@ -191,6 +191,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 typedef struct {
     char **item;
+    int *edge; /* status-bar part right edges, in client coordinates */
     int count, cap, cursel, top;
 } ween_items;
 
@@ -237,6 +238,7 @@ void ween_controls_free(HWND w)
     for (int i = 0; i < it->count; i++)
         free(it->item[i]);
     free(it->item);
+    free(it->edge);
     free(it);
     w->ctl = NULL;
 }
@@ -490,6 +492,109 @@ static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- the status bar -------------------------------------------------------
+ *
+ * A strip along the bottom of its parent's client area, divided into parts,
+ * each in a status-field border, with the size grip in the corner. */
+
+static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_items *it = items_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    RECT r = ps->rcPaint;
+    int ox, oy, left = 0, grip = 0;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    if (wnd->style & SBARS_SIZEGRIP)
+        grip = 15; /* the corner square the grip is drawn in */
+
+    for (int i = 0; it && i < it->count; i++) {
+        int right = it->edge[i];
+        RECT part;
+        if (right < 0 || right > r.right)
+            right = r.right;
+        part.left = left;
+        part.top = r.top;
+        part.right = right;
+        part.bottom = r.bottom;
+        ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
+                          part.right - part.left, part.bottom - part.top,
+                          BDR_SUNKENOUTER, BF_RECT, NULL);
+        part.left += 4; /* the text inset a status bar uses */
+        SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+        DrawTextA(dc, it->item[i], -1, &part,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        left = right + 2; /* the gap between parts */
+    }
+    if (grip) /* drawn over the last part, in the corner */
+        ween_classic_sizegrip(&top->surface, ox + r.right - grip, oy + r.top,
+                              grip, r.bottom - r.top);
+}
+
+static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_items *it;
+    switch (msg) {
+    case WM_CREATE: {
+        /* the strip sizes itself to the bottom of the parent's client area */
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        RECT pc;
+        wnd->h = (f ? f->ascent - f->descent : 13) + 5;
+        if (wnd->parent && GetClientRect(wnd->parent, &pc)) {
+            wnd->w = pc.right;
+            wnd->x = 0;
+            wnd->y = pc.bottom - wnd->h;
+        }
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        status_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case SB_SETPARTS: {
+        const int *edges = (const int *)lp;
+        int n = (int)wp;
+        it = items_of(wnd);
+        if (!it || !edges)
+            return FALSE;
+        free(it->edge);
+        it->edge = calloc((size_t)n, sizeof(int));
+        for (int i = 0; i < n; i++) {
+            if (it->edge)
+                it->edge[i] = edges[i];
+            if (i >= it->count)
+                items_add(wnd, "");
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case SB_SETTEXTA: {
+        int i = (int)(wp & 0xff);
+        it = items_of(wnd);
+        while (it && it->count <= i)
+            items_add(wnd, "");
+        if (it && i < it->count) {
+            const char *src = (const char *)lp;
+            size_t n = strlen(src ? src : "") + 1;
+            char *copy = malloc(n);
+            if (copy) {
+                memcpy(copy, src ? src : "", n);
+                free(it->item[i]);
+                it->item[i] = copy;
+            }
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
 /* ---- registration --------------------------------------------------------- */
 
 void ween_register_controls(void)
@@ -511,6 +616,9 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = progress_proc;
     wc.lpszClassName = PROGRESS_CLASSA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = status_proc;
+    wc.lpszClassName = STATUSCLASSNAMEA;
     RegisterClassA(&wc);
 }
 

@@ -426,3 +426,32 @@ void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
         }
     draw_polygon(s, ln, 3, inactive ? WEEN_SHADOW : WEEN_BLACK);
 }
+
+/* The size grip in a status bar's corner: three diagonal bands, each a white
+ * quad with a shadow one behind it (Wine's DFCS_SCROLLSIZEGRIP). */
+void ween_classic_sizegrip(ween_surface *s, int x, int y, int w, int h)
+{
+    static const int bands[] = { 586, 398, 210 };
+    int sx = x, sy = y;
+    int d = make_square(&sx, &sy, w, h);
+    int d46 = 46 * d / 750, d93 = 93 * d / 750;
+    int right = x + w, bottom = y + h;
+    POINT ln[4];
+
+    ween_classic_edge(s, x, y, w, h, EDGE_BUMP, BF_MIDDLE, NULL);
+    ln[0].x = ln[1].x = right - 1;
+    ln[2].y = ln[3].y = bottom - 1;
+    for (size_t b = 0; b < sizeof(bands) / sizeof(bands[0]); b++) {
+        int i = bands[b] * d / 750;
+        ln[0].y = bottom - i - 1;
+        ln[3].x = right - i - 1;
+        ln[1].y = ln[0].y + d46;
+        ln[2].x = ln[3].x + d46;
+        draw_polygon(s, ln, 4, WEEN_WHITE);
+        ln[1].y++;
+        ln[2].x++;
+        ln[0].y = ln[1].y + d93;
+        ln[3].x = ln[2].x + d93;
+        draw_polygon(s, ln, 4, WEEN_SHADOW);
+    }
+}
