@@ -15,8 +15,12 @@ Renders come from:
 import sys
 from PIL import Image
 
-REF = "tools/refcapture/reference.png"
-OUR = "/tmp/ours.png"
+import os
+
+# The control sampler by default; PXDIFF_REF/PXDIFF_OUR point it at another
+# pair, such as the menu sampler.
+REF = os.environ.get("PXDIFF_REF", "tools/refcapture/reference.png")
+OUR = os.environ.get("PXDIFF_OUR", "/tmp/ours.png")
 
 # The classic palette, so the maps read as colours rather than numbers.
 LEGEND = {

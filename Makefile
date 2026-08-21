@@ -10,7 +10,7 @@ CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o \
-       src/gdi.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
+       src/gdi.o src/menu.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
 ifeq ($(X11),1)
@@ -64,9 +64,12 @@ tests/timer_test: tests/timer_test.c libween32.a
 tests/keys_test: tests/keys_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/keys_test.c libween32.a $(LIBS)
 
+tests/menu_test: tests/menu_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/menu_test.c libween32.a $(LIBS)
+
 test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
       tests/resize_test tests/multiwin_test tests/timer_test \
-      tests/keys_test
+      tests/keys_test tests/menu_test
 	./tests/render_test
 	./tests/api_test
 	./tests/dlg_test
@@ -75,10 +78,11 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	./tests/multiwin_test
 	./tests/timer_test
 	./tests/keys_test
+	./tests/menu_test
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \
 	      tests/render_test tests/api_test tests/dlg_test tests/input_test \
-	      tests/resize_test tests/multiwin_test tests/timer_test tests/keys_test tests/timer_test
+	      tests/resize_test tests/multiwin_test tests/timer_test tests/keys_test tests/menu_test tests/timer_test
 
 .PHONY: all test clean

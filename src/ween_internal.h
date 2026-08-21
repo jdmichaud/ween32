@@ -155,6 +155,33 @@ struct ween_dc {
     struct ween_gdiobj initial_font;
 };
 
+/* ---- menus ---------------------------------------------------------------
+ *
+ * The item rectangles are filled in by the layout pass and then used by both
+ * the drawing and the hit-testing, so the two can never disagree. */
+typedef struct ween_menuitem {
+    char *text;   /* NULL for a separator; "label\taccelerator" otherwise */
+    UINT id;
+    UINT flags;   /* MF_* */
+    HMENU popup;  /* the submenu, for MF_POPUP */
+    int x, y, w, h;
+} ween_menuitem;
+
+int ween_menu_bar_height(const struct ween_wnd *w);
+int ween_menu_count(HMENU menu);
+ween_menuitem *ween_menu_item(HMENU menu, int i);
+void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width);
+void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h);
+int ween_menu_hit(HMENU menu, int x, int y);
+int ween_menu_mnemonic(HMENU menu, unsigned ch);
+void ween_menu_draw_bar(HMENU menu, ween_surface *s, int ox, int oy, int width,
+                        const ween_strike *f, int hot);
+void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
+                          int w, int h, int hot);
+/* Runs the modal loop over an open drop-down. Returns the command chosen, or
+ * 0 if it was dismissed. */
+UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y);
+
 /* ---- windows ------------------------------------------------------------- */
 
 
@@ -194,6 +221,8 @@ struct ween_wnd {
     UINT defid; /* default-command id, for Enter (DM_SETDEFID) */
 
     /* top-level only */
+    HMENU menu;    /* the menu bar, drawn above the client area */
+    int menu_hot;  /* the bar item whose drop-down is open, -1 for none */
     struct ween_wnd *next_top; /* the process's top-level windows, newest first */
     ween_surface surface;
     void *backend_win;
@@ -210,6 +239,10 @@ struct ween_wnd {
 /* Caption strip: 19px at 96 dpi, of which the gradient paints the top 18 and
  * the last row stays face-coloured — what win32 does for CaptionHeight=18. */
 #define WEEN_NC_CAPTION 19
+/* The menu bar: 19px at 96 dpi, measured off the wine reference — the caption
+ * ends and the client area begins exactly that far apart. */
+#define WEEN_NC_MENU 19
+#define WEEN_NC_MENUCHECK 13 /* SM_CXMENUCHECK: the tick column in a popup */
 #define WEEN_NC_BTN_W 16
 #define WEEN_NC_BTN_H 14
 

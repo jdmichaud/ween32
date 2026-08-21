@@ -237,21 +237,92 @@ int ween_frame_width(const struct ween_wnd *w)
                                                : WEEN_NC_FRAME);
 }
 
+/* The strip the menu bar occupies, 0 when the window has no menu. */
+int ween_menu_bar_height(const struct ween_wnd *w)
+{
+    return w->menu ? ween_ncm(WEEN_NC_MENU) : 0;
+}
+
 /* Client origin within the window's own rectangle. */
 static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
 {
     if (has_caption(w)) {
         *ox = ween_frame_width(w);
-        *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION);
+        *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION) +
+              ween_menu_bar_height(w);
     } else {
         *ox = ween_ex_edge(w);
         *oy = ween_ex_edge(w);
     }
 }
 
+BOOL SetMenu(HWND wnd, HMENU menu)
+{
+    if (!wnd)
+        return FALSE;
+    wnd->menu = menu;
+    wnd->menu_hot = -1;
+    ween_top_level(wnd)->dirty = 1;
+    return TRUE;
+}
+
+HMENU GetMenu(HWND wnd)
+{
+    return wnd ? wnd->menu : NULL;
+}
+
+BOOL GetWindowRect(HWND wnd, LPRECT rect)
+{
+    if (!wnd || !rect)
+        return FALSE;
+    /* A top-level window's rectangle is where the backend put it; a child's is
+     * relative to the same origin, reached through its parents. */
+    int x = 0, y = 0;
+    for (const struct ween_wnd *w = wnd; w; w = w->parent) {
+        if (w->parent) {
+            int cox, coy;
+            own_client_origin(w->parent, &cox, &coy);
+            x += w->x + cox;
+            y += w->y + coy;
+        } else {
+            x += w->x;
+            y += w->y;
+        }
+    }
+    rect->left = x;
+    rect->top = y;
+    rect->right = x + wnd->w;
+    rect->bottom = y + wnd->h;
+    return TRUE;
+}
+
+int GetSystemMetrics(int index)
+{
+    switch (index) {
+    case SM_CYCAPTION:
+        return ween_ncm(WEEN_NC_CAPTION);
+    case SM_CYMENU:
+        return ween_ncm(WEEN_NC_MENU);
+    case SM_CXBORDER:
+    case SM_CYBORDER:
+        return 1;
+    case SM_CXVSCROLL:
+    case SM_CYHSCROLL:
+        return ween_scroll_metric();
+    case SM_CXMENUCHECK:
+    case SM_CYMENUCHECK:
+        return ween_ncm(WEEN_NC_MENUCHECK);
+    case SM_CXSCREEN:
+        return 1024; /* no display query yet; a plausible classic desktop */
+    case SM_CYSCREEN:
+        return 768;
+    default:
+        return 0;
+    }
+}
+
 BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style)
 {
-    (void)menu;
     (void)ex_style;
     if (!rect)
         return FALSE;
@@ -260,7 +331,8 @@ BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style)
                                                      : WEEN_NC_FRAME);
         rect->left -= frame;
         rect->right += frame;
-        rect->top -= frame + ween_ncm(WEEN_NC_CAPTION);
+        rect->top -= frame + ween_ncm(WEEN_NC_CAPTION) +
+                     (menu ? ween_ncm(WEEN_NC_MENU) : 0);
         rect->bottom += frame;
     }
     return TRUE;
@@ -282,6 +354,7 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     int trail = has_caption(wnd) ? ween_frame_width(wnd) : ween_ex_edge(wnd);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
+    (void)0;
     return TRUE;
 }
 
@@ -1013,6 +1086,14 @@ static void post_msg(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     g_qtail = next;
 }
 
+BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (!wnd)
+        return FALSE;
+    post_msg(wnd, msg, wp, lp);
+    return TRUE;
+}
+
 void PostQuitMessage(int code)
 {
     g_quit = 1;
@@ -1193,6 +1274,38 @@ static void nc_track_close(struct ween_wnd *top)
     }
 }
 
+/* A press on the menu bar: the item under it opens, and stays open while the
+ * drop-down is tracked. win32 keeps the bar item drawn selected throughout,
+ * which is what menu_hot is for. */
+static void nc_track_menu(struct ween_wnd *top, const ween_event *ev)
+{
+    int frame = ween_frame_width(top);
+    int bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    int index;
+
+    ween_menu_layout_bar(top->menu, ween_gui_font(), top->w - 2 * frame);
+    index = ween_menu_hit(top->menu, ev->x - frame, ev->y - bar_y);
+    while (index >= 0) {
+        ween_menuitem *it = ween_menu_item(top->menu, index);
+        if (!it || !it->popup || (it->flags & MF_GRAYED))
+            break;
+        SendMessageA(top, WM_INITMENU, (WPARAM)top->menu, 0);
+        top->menu_hot = index;
+        top->dirty = 1;
+        ween_flush_paint();
+        UINT cmd = ween_menu_track(it->popup, top, top->x + frame + it->x,
+                                   top->y + bar_y + ween_ncm(WEEN_NC_MENU));
+        top->menu_hot = -1;
+        top->dirty = 1;
+        ween_flush_paint();
+        if (cmd) {
+            post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+            break;
+        }
+        break;
+    }
+}
+
 /* Translate one backend event into posted messages. */
 static void pump_event(struct ween_wnd *top, const ween_event *ev)
 {
@@ -1206,7 +1319,9 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
             break;
         hit = SendMessageA(top, WM_NCHITTEST, 0,
                            MAKELPARAM((WORD)ev->x, (WORD)ev->y));
-        if (hit == HTCAPTION)
+        if (hit == HTMENU)
+            nc_track_menu(top, ev);
+        else if (hit == HTCAPTION)
             nc_drag_caption(top, ev);
         else if (hit == HTCLOSE)
             nc_track_close(top);
@@ -1352,6 +1467,10 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (b)
                 return HTBOTTOM;
         }
+        if (wnd->menu && y >= frame + ween_ncm(WEEN_NC_CAPTION) &&
+            y < frame + ween_ncm(WEEN_NC_CAPTION) + ween_ncm(WEEN_NC_MENU) &&
+            x >= frame && x < wnd->w - frame)
+            return HTMENU;
         if (y < frame + ween_ncm(WEEN_NC_CAPTION) && y >= frame && x >= frame &&
             x < wnd->w - frame)
             return HTCAPTION;
@@ -1397,6 +1516,13 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             DrawFrameControl(&dc, &c, DFC_CAPTION,
                              DFCS_CAPTIONCLOSE |
                                  (wnd->nc_close_pressed ? DFCS_PUSHED : 0));
+        }
+        if (wnd->menu) { /* the bar sits between the caption and the client */
+            const ween_strike *mf = ween_gui_font();
+            int bar_w = wnd->w - 2 * frame;
+            ween_menu_layout_bar(wnd->menu, mf, bar_w);
+            ween_menu_draw_bar(wnd->menu, s, frame, frame + cap, bar_w, mf,
+                               wnd->menu_hot);
         }
         return 0;
     }

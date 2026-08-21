@@ -62,7 +62,11 @@ typedef struct ween_gdiobj *HFONT;
 typedef void *HINSTANCE;
 typedef void *HICON;
 typedef void *HCURSOR;
-typedef void *HMENU;
+/* A real menu, or a control id squeezed into the same parameter — win32 uses
+ * one slot for both, and CreateWindowEx says which by whether the window is a
+ * child. */
+struct ween_menu;
+typedef struct ween_menu *HMENU;
 
 typedef struct tagPOINT {
     LONG x;
@@ -221,6 +225,11 @@ typedef struct tagCREATESTRUCTA {
 #define WM_CHAR 0x0102
 #define WM_COMMAND 0x0111
 #define WM_TIMER 0x0113
+#define WM_SYSCOMMAND 0x0112
+#define WM_INITMENU 0x0116
+#define WM_INITMENUPOPUP 0x0117
+#define WM_MENUSELECT 0x011F
+#define SC_KEYMENU 0xF100
 #define WM_NOTIFY 0x004E
 #define WM_VSCROLL 0x0115
 #define WM_HSCROLL 0x0114
@@ -494,6 +503,7 @@ typedef struct tagTCITEMA {
 #define HTNOWHERE 0
 #define HTCLIENT 1
 #define HTCAPTION 2
+#define HTMENU 5
 #define HTLEFT 10
 #define HTRIGHT 11
 #define HTTOP 12
@@ -641,6 +651,7 @@ typedef struct tagTCITEMA {
 #define WEEN32_HAS_TREEVIEW 1
 #define WEEN32_HAS_LISTVIEW 1
 #define WEEN32_HAS_TRACKBAR 1
+#define WEEN32_HAS_MENU 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 
@@ -681,6 +692,54 @@ typedef void(CALLBACK *TIMERPROC)(HWND, UINT, UINT_PTR, DWORD);
 UINT_PTR SetTimer(HWND wnd, UINT_PTR id, UINT elapse_ms, TIMERPROC fn);
 BOOL KillTimer(HWND wnd, UINT_PTR id);
 
+/* ---- menus ---------------------------------------------------------------
+ *
+ * A menu is a list of items: a string, a separator (MF_SEPARATOR), or a
+ * submenu (MF_POPUP, with the HMENU passed in the id). A window's menu is
+ * drawn above its client area and opens its drop-downs on a click; a popup
+ * can also be tracked anywhere on screen with TrackPopupMenu. An item's text
+ * may hold a tab, and what follows it is right-aligned as the accelerator. */
+#define MF_STRING 0x0000
+#define MF_ENABLED 0x0000
+#define MF_UNCHECKED 0x0000
+#define MF_BYCOMMAND 0x0000
+#define MF_GRAYED 0x0001
+#define MF_DISABLED 0x0002
+#define MF_CHECKED 0x0008
+#define MF_POPUP 0x0010
+#define MF_SEPARATOR 0x0800
+
+#define TPM_LEFTALIGN 0x0000
+#define TPM_RIGHTBUTTON 0x0002
+#define TPM_RETURNCMD 0x0100
+
+HMENU CreateMenu(void);
+HMENU CreatePopupMenu(void);
+BOOL DestroyMenu(HMENU menu);
+BOOL AppendMenuA(HMENU menu, UINT flags, UINT_PTR id, LPCSTR text);
+BOOL SetMenu(HWND wnd, HMENU menu);
+HMENU GetMenu(HWND wnd);
+HMENU GetSubMenu(HMENU menu, int pos);
+DWORD CheckMenuItem(HMENU menu, UINT id, UINT check);
+BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
+BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
+                    HWND owner, const RECT *unused);
+
+/* ---- system metrics ----------------------------------------------------- */
+#define SM_CXSCREEN 0
+#define SM_CYSCREEN 1
+#define SM_CYCAPTION 4
+#define SM_CXBORDER 5
+#define SM_CYBORDER 6
+#define SM_CYMENU 15
+#define SM_CXVSCROLL 2
+#define SM_CYHSCROLL 3
+#define SM_CXMENUCHECK 71
+#define SM_CYMENUCHECK 72
+int GetSystemMetrics(int index);
+BOOL GetWindowRect(HWND wnd, LPRECT rect);
+
+BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 BOOL TranslateMessage(const MSG *msg);
 LRESULT DispatchMessageA(const MSG *msg);
 void PostQuitMessage(int code);

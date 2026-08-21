@@ -411,11 +411,12 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     ween_strike_draw(f, dc->s, dc->org_x + x, dc->org_y + y, text, len,
                      cr_to_px(dc->text_color));
     if (underline >= 0 && underline < len) {
-        /* a one-pixel rule under the mnemonic character, on the cell's last
-         * row, where the classic shell put it */
+        /* A one-pixel rule under the mnemonic character, on the row below the
+         * cell — one lower than the descenders, which is where the reference
+         * capture puts it. */
         int x0 = ween_strike_pen(f, text, underline);
         int x1 = ween_strike_pen(f, text, underline + 1);
-        ween_surface_hline(dc->s, dc->org_x + x + x0, dc->org_y + y + th - 1,
+        ween_surface_hline(dc->s, dc->org_x + x + x0, dc->org_y + y + th,
                            x1 - x0, cr_to_px(dc->text_color));
     }
     return th;
