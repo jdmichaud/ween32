@@ -331,6 +331,7 @@ typedef struct {
     unsigned ch;    /* the character the key produced, 0 for none */
     int shift;      /* Shift held, for back-tab and typing */
     int alt;        /* Alt held, which is what makes a mnemonic fire */
+    int ctrl;       /* Ctrl held, for the clipboard shortcuts */
 } ween_event;
 
 typedef struct {

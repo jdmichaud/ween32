@@ -70,10 +70,13 @@ tests/menu_test: tests/menu_test.c libween32.a
 tests/modal_test: tests/modal_test.c examples/win32_dlg.h libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/modal_test.c libween32.a $(LIBS)
 
+tests/clip_test: tests/clip_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/clip_test.c libween32.a $(LIBS)
+
 test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
       tests/resize_test tests/multiwin_test tests/timer_test \
       tests/keys_test tests/menu_test \
-      tests/modal_test
+      tests/modal_test tests/clip_test
 	./tests/render_test
 	./tests/api_test
 	./tests/dlg_test
@@ -84,6 +87,7 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	./tests/keys_test
 	./tests/menu_test
 	./tests/modal_test
+	./tests/clip_test
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \

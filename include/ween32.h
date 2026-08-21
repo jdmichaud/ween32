@@ -236,6 +236,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_MOUSEMOVE 0x0200
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
+#define WM_LBUTTONDBLCLK 0x0203
 #define WM_MOUSEWHEEL 0x020A
 #define WM_MOUSELEAVE 0x02A3
 
@@ -756,6 +757,27 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
 #define SM_CYMENUCHECK 72
 int GetSystemMetrics(int index);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);
+
+/* ---- the clipboard -------------------------------------------------------
+ *
+ * Open it, empty it, put something in, close it. The data belongs to the
+ * clipboard once handed over — do not free it — and what GetClipboardData
+ * returns stays valid until the next thing replaces it.
+ *
+ * WM_CUT/WM_COPY/WM_PASTE are what a control acts on; an EDIT also takes
+ * Ctrl+X, Ctrl+C, Ctrl+V and Ctrl+A directly. */
+typedef void *HANDLE;
+#define CF_TEXT 1
+#define WM_CUT 0x0300
+#define WM_COPY 0x0301
+#define WM_PASTE 0x0302
+#define WM_CLEAR 0x0303
+BOOL OpenClipboard(HWND owner);
+BOOL CloseClipboard(void);
+BOOL EmptyClipboard(void);
+HANDLE SetClipboardData(UINT format, HANDLE data);
+HANDLE GetClipboardData(UINT format);
+BOOL IsClipboardFormatAvailable(UINT format);
 
 BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 BOOL TranslateMessage(const MSG *msg);

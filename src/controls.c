@@ -470,6 +470,80 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
+/* The parent hears about every edit the same way. */
+static void edit_changed(HWND wnd)
+{
+    if (wnd->parent)
+        SendMessageA(wnd->parent, WM_COMMAND,
+                     MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
+}
+
+/* A word, for double-click selection: a run of letters and digits, or a run
+ * of anything else. Windows takes the trailing space with the word; the edit
+ * control's own rule is the same one Notepad uses. */
+static int is_word_char(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') || c == '_' ||
+           (unsigned char)c >= 0x80;
+}
+
+static void edit_select_word(HWND wnd, ween_edit *e)
+{
+    const char *t = wnd->text;
+    int len = (int)strlen(t), at = e->caret, from, to;
+    if (!len)
+        return;
+    if (at >= len)
+        at = len - 1;
+    if (is_word_char(t[at])) {
+        for (from = at; from > 0 && is_word_char(t[from - 1]); from--)
+            ;
+        for (to = at; to < len && is_word_char(t[to]); to++)
+            ;
+        while (to < len && t[to] == ' ') /* the trailing space goes with it */
+            to++;
+    } else { /* a run of whatever this is instead */
+        for (from = at; from > 0 && !is_word_char(t[from - 1]) &&
+                        t[from - 1] != ' ';
+             from--)
+            ;
+        for (to = at; to < len && !is_word_char(t[to]) && t[to] != ' '; to++)
+            ;
+    }
+    e->anchor = from;
+    e->caret = to;
+}
+
+/* The selection, as a string the caller owns. NULL if nothing is selected. */
+static char *edit_selected_text(HWND wnd, ween_edit *e)
+{
+    int from, to;
+    edit_range(e, &from, &to);
+    if (from == to)
+        return NULL;
+    char *copy = malloc((size_t)(to - from) + 1);
+    if (!copy)
+        return NULL;
+    memcpy(copy, wnd->text + from, (size_t)(to - from));
+    copy[to - from] = 0;
+    return copy;
+}
+
+static void edit_insert(HWND wnd, ween_edit *e, const char *text)
+{
+    int len, add = (int)strlen(text);
+    edit_delete_selection(wnd, e);
+    len = (int)strlen(wnd->text);
+    if (!add || !ween_wnd_reserve_text(wnd, len + add))
+        return;
+    memmove(wnd->text + e->caret + add, wnd->text + e->caret,
+            (size_t)(len - e->caret) + 1);
+    memcpy(wnd->text + e->caret, text, (size_t)add);
+    e->caret += add;
+    e->anchor = e->caret;
+}
+
 /* Typing or moving the caret makes it solid again and restarts the blink, so
  * it never vanishes just as you are looking for it — what win32 does. */
 static void edit_show_caret(HWND wnd, ween_edit *e)
@@ -520,6 +594,53 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (GetCapture() == wnd)
             ReleaseCapture();
         return 0;
+    case WM_LBUTTONDBLCLK:
+        if (e && !(wnd->style & WS_DISABLED)) {
+            e->caret = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            edit_select_word(wnd, e);
+            edit_show_caret(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+
+    case WM_COPY:
+    case WM_CUT: {
+        char *sel = e ? edit_selected_text(wnd, e) : NULL;
+        if (!sel)
+            return 0;
+        if (OpenClipboard(wnd)) {
+            EmptyClipboard();
+            SetClipboardData(CF_TEXT, sel); /* the clipboard owns it now */
+            CloseClipboard();
+        } else {
+            free(sel);
+            return 0;
+        }
+        if (msg == WM_CUT && !(wnd->style & (WS_DISABLED | ES_READONLY))) {
+            edit_delete_selection(wnd, e);
+            edit_changed(wnd);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
+    case WM_PASTE: {
+        if (!e || (wnd->style & (WS_DISABLED | ES_READONLY)))
+            return 0;
+        if (!OpenClipboard(wnd))
+            return 0;
+        const char *text = (const char *)GetClipboardData(CF_TEXT);
+        if (text)
+            edit_insert(wnd, e, text);
+        CloseClipboard();
+        if (text) {
+            edit_changed(wnd);
+            edit_show_caret(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
     case WM_SETFOCUS:
         if (e) {
             e->caret_on = 1; /* a caret appears the moment it is placed */
@@ -566,17 +687,36 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         edit_show_caret(wnd, e);
-        if (wnd->parent)
-            SendMessageA(wnd->parent, WM_COMMAND,
-                         MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
+        edit_changed(wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
     case WM_KEYDOWN: {
-        int shift = (lp & 1) != 0; /* the backend puts Shift in bit 0 */
+        int shift = (lp & 1) != 0;      /* the backend puts Shift in bit 0 */
+        int ctrl = (lp & (1L << 28)) != 0; /* and Ctrl in bit 28 */
         int moved = 1;
         if (!e)
             return 0;
+        if (ctrl) { /* the clipboard shortcuts, and select-all */
+            switch (wp) {
+            case 'C':
+                SendMessageA(wnd, WM_COPY, 0, 0);
+                return 0;
+            case 'X':
+                SendMessageA(wnd, WM_CUT, 0, 0);
+                return 0;
+            case 'V':
+                SendMessageA(wnd, WM_PASTE, 0, 0);
+                return 0;
+            case 'A':
+                e->anchor = 0;
+                e->caret = len;
+                InvalidateRect(wnd, NULL, FALSE);
+                return 0;
+            default:
+                break;
+            }
+        }
         switch (wp) {
         case VK_LEFT:
             if (e->caret > 0)

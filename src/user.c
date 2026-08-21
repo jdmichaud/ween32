@@ -110,6 +110,10 @@ static struct ween_wnd *g_active = NULL;
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
 static HWND g_hot = NULL; /* what the pointer was last over, for hover */
+static int g_dblclk = 0;  /* this press is the second of a pair */
+
+/* The classic default; win32 reads it from Control Panel. */
+#define WEEN_DOUBLE_CLICK_MS 500
 
 /* The message queue grows as needed. It was 64 entries and dropped whatever
  * did not fit, which is what USER32 does at its own (far higher) limit, but at
@@ -1058,6 +1062,67 @@ static void fire_due_timers(void)
     }
 }
 
+/* ---- the clipboard -------------------------------------------------------
+ *
+ * USER32's shape: open it, empty it, put something in, close it. The data
+ * belongs to the clipboard once handed over, and what comes back out stays
+ * valid until the next thing replaces it.
+ *
+ * This is the process's own clipboard. Nothing is shared with other X clients
+ * yet — that needs selection ownership and the round trip that goes with it —
+ * so cut and paste work within an application and not yet between them. */
+
+static char *g_clipboard;   /* CF_TEXT, owned here */
+static HWND g_clipboard_owner;
+static int g_clipboard_open;
+
+BOOL OpenClipboard(HWND owner)
+{
+    if (g_clipboard_open)
+        return FALSE;
+    g_clipboard_open = 1;
+    g_clipboard_owner = owner;
+    return TRUE;
+}
+
+BOOL CloseClipboard(void)
+{
+    if (!g_clipboard_open)
+        return FALSE;
+    g_clipboard_open = 0;
+    return TRUE;
+}
+
+BOOL EmptyClipboard(void)
+{
+    if (!g_clipboard_open)
+        return FALSE;
+    free(g_clipboard);
+    g_clipboard = NULL;
+    return TRUE;
+}
+
+HANDLE SetClipboardData(UINT format, HANDLE data)
+{
+    if (!g_clipboard_open || format != CF_TEXT)
+        return NULL;
+    free(g_clipboard);
+    g_clipboard = (char *)data; /* the clipboard owns it from here */
+    return data;
+}
+
+HANDLE GetClipboardData(UINT format)
+{
+    if (!g_clipboard_open || format != CF_TEXT)
+        return NULL;
+    return g_clipboard;
+}
+
+BOOL IsClipboardFormatAvailable(UINT format)
+{
+    return format == CF_TEXT && g_clipboard != NULL;
+}
+
 /* ---- messages ------------------------------------------------------------ */
 
 /* Doubles the ring, unrolling it so the entries come out in order. */
@@ -1364,6 +1429,24 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         LRESULT hit;
         if (ev->button != 1) /* the wheel arrives as buttons 4 and 5 */
             break;
+        /* Two presses close together in time and place are a double click.
+         * win32 measures both — a drag away and back is not one — and counts
+         * the pair, so a third press starts a new pair rather than making a
+         * triple. */
+        {
+            static unsigned long last_ms;
+            static int last_x, last_y;
+            static struct ween_wnd *last_top;
+            unsigned long now = now_ms();
+            int near = ev->x - last_x <= 4 && last_x - ev->x <= 4 &&
+                       ev->y - last_y <= 4 && last_y - ev->y <= 4;
+            g_dblclk = last_top == top && near &&
+                       now - last_ms <= WEEN_DOUBLE_CLICK_MS;
+            last_ms = g_dblclk ? 0 : now; /* a pair is a pair, not a run */
+            last_x = ev->x;
+            last_y = ev->y;
+            last_top = top;
+        }
         hit = SendMessageA(top, WM_NCHITTEST, 0,
                            MAKELPARAM((WORD)ev->x, (WORD)ev->y));
         if (hit == HTMENU)
@@ -1386,7 +1469,8 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
                 (top->style & WS_THICKFRAME))
                 nc_drag_size(top, ev, (int)ch);
             else
-                route_mouse(top, WM_LBUTTONDOWN, ev->x, ev->y);
+                route_mouse(top, g_dblclk ? WM_LBUTTONDBLCLK : WM_LBUTTONDOWN,
+                            ev->x, ev->y);
         }
         break;
     }
@@ -1420,7 +1504,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
          * code and repeat count; TranslateMessage turns it into WM_CHAR */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,
                  (LPARAM)(ev->ch << 16) | (ev->shift ? 1 : 0) |
-                     (ev->alt ? (1L << 29) : 0));
+                     (ev->ctrl ? (1L << 28) : 0) | (ev->alt ? (1L << 29) : 0));
         break;
     case WEEN_EV_CLOSE:
         post_msg(top, WM_CLOSE, 0, 0);

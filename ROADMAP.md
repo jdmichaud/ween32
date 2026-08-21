@@ -33,7 +33,9 @@ Marquee progress was on this list and has been struck off rather than built:
 `PBS_MARQUEE` arrived with comctl32 6.0, which is Windows XP. A Windows 2000
 progress bar has no marquee mode, so adding one would be a period mistake, not
 a missing feature.
-- [ ] **The clipboard, and double-click to select a word.**
+- [ ] **The clipboard between applications.** Cut, copy and paste work within
+  one; sharing with other X clients needs selection ownership and the round
+  trip that goes with it.
 - [ ] **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`,
   `LoadImage`, `DrawIconEx` for tree and list-view items.
 - [ ] **Accelerator tables** and `WM_NEXTDLGCTL`, the two keyboard pieces not
@@ -161,9 +163,8 @@ asserts where each control ends up, so CI covers it.
 
 ### What they still do not do
 
-- [ ] **The clipboard, and double-click to select a word** — the edit selects
-      by dragging and by Shift+arrows, but there is no cut, copy or paste, and
-      no horizontal scroll when the text outruns the field: it is clipped.
+- [ ] **Horizontal scrolling in an edit** — when the text outruns the field it
+      is clipped rather than scrolled.
 - [ ] **Scrolling the list view** — its rows do not scroll yet; the list box
       and tree view do.
 - [ ] **Auto-repeat** on a held scroll-bar arrow, and hot-tracking states.
