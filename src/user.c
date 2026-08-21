@@ -1357,8 +1357,15 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
     case WEEN_EV_MOUSE_MOVE:
         route_mouse(top, WM_MOUSEMOVE, ev->x, ev->y);
         break;
-    case WEEN_EV_RESIZE: /* the window manager resized us */
-        resize_top(top, ev->x, ev->y);
+    case WEEN_EV_RESIZE:
+        /* The window manager gave us a geometry. A window with a sizing border
+         * follows it — that is what resizable means. One without has told the
+         * window manager its size is fixed, and win32 semantics are that it
+         * cannot be resized at all; a tiling window manager hands back its
+         * tile regardless, and stretching to fill it would lay out a dialog at
+         * a size it was never written for. The backend centres it instead. */
+        if (top->style & WS_THICKFRAME)
+            resize_top(top, ev->x, ev->y);
         break;
     case WEEN_EV_WHEEL:
         /* win32 sends the wheel to the focused window, not the one under the

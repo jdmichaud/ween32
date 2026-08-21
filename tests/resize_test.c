@@ -99,6 +99,44 @@ int main(void)
     CHECK(g_status && g_status->w == cr.right,
           "the status bar followed the new width");
 
+    /* A window manager may hand back a geometry of its own — a tiling one
+     * always does. A window with a sizing border follows it; one without has
+     * told the window manager it is fixed, and win32 semantics are that it
+     * stays the size its app asked for however big the window it is given. */
+    {
+        ween_event ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = WEEN_EV_RESIZE;
+        ev.x = 900;
+        ev.y = 500;
+        ween_headless_inject(ev);
+        ween_event end;
+        memset(&end, 0, sizeof(end));
+        end.kind = WEEN_EV_END;
+        ween_headless_inject(end);
+
+        WNDCLASSA fixed;
+        memset(&fixed, 0, sizeof(fixed));
+        fixed.lpfnWndProc = DefWindowProcA;
+        fixed.lpszClassName = "weenfixed";
+        fixed.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+        RegisterClassA(&fixed);
+        HWND stuck = CreateWindowExA(0, "weenfixed", "fixed",
+                                     WS_POPUP | WS_CAPTION | WS_SYSMENU |
+                                         WS_VISIBLE,
+                                     0, 0, 320, 180, NULL, NULL, NULL, NULL);
+        MSG m;
+        while (GetMessageA(&m, NULL, 0, 0))
+            DispatchMessageA(&m);
+        CHECK(stuck && stuck->w == 320 && stuck->h == 180,
+              "a window with no sizing border keeps the size it asked for");
+        RECT cr2;
+        GetClientRect(stuck, &cr2);
+        CHECK(cr2.right == 320 - 2 * WEEN_NC_FRAME,
+              "and so does its client area, whatever it is given");
+        DestroyWindow(stuck);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

@@ -195,6 +195,9 @@ extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
                             unsigned, unsigned, int, int);
 extern int XPutImage(XDisplay *, XWindow, XGC *, XImage *, int, int, int, int,
                      unsigned, unsigned);
+extern int XSetForeground(XDisplay *, XGC *, unsigned long);
+extern int XFillRectangle(XDisplay *, XWindow, XGC *, int, int, unsigned,
+                          unsigned);
 extern int XNextEvent(XDisplay *, XEvent *);
 extern int XPending(XDisplay *);
 extern int XConnectionNumber(XDisplay *);
@@ -235,7 +238,10 @@ typedef struct x11_win_s {
     XImage *img;
     XAtom wm_delete;
     int pos_x, pos_y;
-    int w, h;    /* native (renderer) size */
+    int w, h;         /* native (renderer) size */
+    int win_w, win_h; /* what the window manager actually gave us, in device
+                       * pixels: a tiling one hands back its tile whatever the
+                       * window asked for */
     int zoom;    /* integer HiDPI magnification */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
     struct x11_win_s *next;
@@ -342,6 +348,8 @@ static void *x11_open(int x, int y, int w, int h, const char *title)
     xw->pos_y = py;
     xw->w = w;
     xw->h = h;
+    xw->win_w = ww;
+    xw->win_h = wh;
     xw->zoom = zoom;
     xw->next = g_list;
     g_list = xw;
@@ -367,8 +375,32 @@ static void x11_present(void *win, const ween_surface *s)
         xw->img->bytes_per_line = out->w * 4;
     }
     xw->img->data = (char *)out->px;
-    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, 0, 0, (unsigned)out->w,
-              (unsigned)out->h);
+
+    /* A window manager that will not respect a fixed size hands back a window
+     * bigger than the one the app asked for. Stretching the app to fill it
+     * would mean laying out a fixed dialog at a size it was never written for,
+     * so centre it instead and letterbox what is left over. */
+    int ox = xw->win_w > out->w ? (xw->win_w - out->w) / 2 : 0;
+    int oy = xw->win_h > out->h ? (xw->win_h - out->h) / 2 : 0;
+    if (ox > 0 || oy > 0) {
+        XSetForeground(xw->dpy, xw->gc, 0x00404040);
+        if (oy > 0) { /* above and below */
+            XFillRectangle(xw->dpy, xw->win, xw->gc, 0, 0,
+                           (unsigned)xw->win_w, (unsigned)oy);
+            XFillRectangle(xw->dpy, xw->win, xw->gc, 0, oy + out->h,
+                           (unsigned)xw->win_w,
+                           (unsigned)(xw->win_h - oy - out->h));
+        }
+        if (ox > 0) { /* left and right */
+            XFillRectangle(xw->dpy, xw->win, xw->gc, 0, oy, (unsigned)ox,
+                           (unsigned)out->h);
+            XFillRectangle(xw->dpy, xw->win, xw->gc, ox + out->w, oy,
+                           (unsigned)(xw->win_w - ox - out->w),
+                           (unsigned)out->h);
+        }
+    }
+    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, ox, oy,
+              (unsigned)out->w, (unsigned)out->h);
     XFlush(xw->dpy);
 }
 
@@ -389,6 +421,10 @@ static void x11_set_resizable(void *win, int resizable)
 static void x11_resize(void *win, int w, int h)
 {
     x11_win *xw = win;
+    /* This is the size the renderer works at from now on, whether or not the
+     * window manager grants the request. */
+    xw->w = w;
+    xw->h = h;
     XResizeWindow(xw->dpy, xw->win, (unsigned)(w * xw->zoom),
                   (unsigned)(h * xw->zoom));
     XFlush(xw->dpy);
@@ -440,6 +476,14 @@ static unsigned keysym_to_vk(unsigned long ks)
 
 /* The argument is only a hint about which connection to wait on: the event
  * that comes back names its own window, and every window shares the queue. */
+/* Where the surface sits inside the window, when the two differ. */
+static void surface_origin(const x11_win *xw, int *ox, int *oy)
+{
+    int sw = xw->w * xw->zoom, sh = xw->h * xw->zoom;
+    *ox = xw->win_w > sw ? (xw->win_w - sw) / 2 : 0;
+    *oy = xw->win_h > sh ? (xw->win_h - sh) / 2 : 0;
+}
+
 static ween_event x11_next_event(void *win, int timeout_ms)
 {
     ween_event out;
@@ -463,6 +507,7 @@ static ween_event x11_next_event(void *win, int timeout_ms)
         }
         XEvent ev;
         XNextEvent(g_dpy, &ev);
+        int sx = 0, sy = 0;
         x11_win *xw = find_window(ev.xany.window);
         if (!xw) /* a window closed while its events were still in flight */
             continue;
@@ -492,13 +537,11 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             /* Always report it, even when the size has not changed: a window
              * manager that refuses a resize answers with the geometry it is
              * keeping, and that is how the surface learns to go back. */
-            int w = ev.xconfigure.width / xw->zoom;
-            int h = ev.xconfigure.height / xw->zoom;
-            xw->w = w;
-            xw->h = h;
+            xw->win_w = ev.xconfigure.width;
+            xw->win_h = ev.xconfigure.height;
             out.kind = WEEN_EV_RESIZE;
-            out.x = w;
-            out.y = h;
+            out.x = ev.xconfigure.width / xw->zoom;
+            out.y = ev.xconfigure.height / xw->zoom;
             return out;
         }
         case X_ButtonPress:
@@ -508,22 +551,26 @@ static ween_event x11_next_event(void *win, int timeout_ms)
                     continue;
                 out.kind = WEEN_EV_WHEEL;
                 out.button = b->button == 4 ? 1 : -1;
-                out.x = b->x / xw->zoom;
-                out.y = b->y / xw->zoom;
+                surface_origin(xw, &sx, &sy);
+                out.x = (b->x - sx) / xw->zoom;
+                out.y = (b->y - sy) / xw->zoom;
                 return out;
             }
             out.kind = ev.type == X_ButtonPress ? WEEN_EV_MOUSE_DOWN
                                                 : WEEN_EV_MOUSE_UP;
-            out.x = b->x / xw->zoom; /* window px -> renderer px */
-            out.y = b->y / xw->zoom;
+            surface_origin(xw, &sx, &sy);
+            /* window px -> renderer px, past whatever letterbox is in front */
+            out.x = (b->x - sx) / xw->zoom;
+            out.y = (b->y - sy) / xw->zoom;
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             out.button = (int)b->button;
             return out;
         case X_MotionNotify:
             out.kind = WEEN_EV_MOUSE_MOVE;
-            out.x = b->x / xw->zoom;
-            out.y = b->y / xw->zoom;
+            surface_origin(xw, &sx, &sy);
+            out.x = (b->x - sx) / xw->zoom;
+            out.y = (b->y - sy) / xw->zoom;
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             return out;
