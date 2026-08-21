@@ -4,6 +4,7 @@
 examples/calc
 examples/controls
 examples/dialog
+examples/menu
 tests/*_test
 
 # build outputs (zig)
@@ -16,6 +17,9 @@ zig-cache/
 tools/refcapture/wineprefix/
 tools/refcapture/desktop.png
 tools/refcapture/reference.png
+tools/refcapture/menu-reference.png
+tools/refcapture/menu-popup-reference.png
+tools/refcapture/xclick
 
 # headless screenshots and cross-compiled examples
 *.bmp

@@ -18,7 +18,7 @@ src/x11.o: CFLAGS += -DWEEN_BACKEND_X11
 LIBS += -lX11
 endif
 
-all: libween32.a examples/dialog examples/calc examples/controls
+all: libween32.a examples/dialog examples/calc examples/controls examples/menu
 
 libween32.a: $(OBJS)
 	ar rcs $@ $(OBJS)
@@ -36,6 +36,9 @@ examples/calc: examples/calc.c examples/win32_dlg.h libween32.a
 # same file against real win32 to produce the reference render.
 examples/controls: examples/controls.c libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/controls.c libween32.a $(LIBS)
+
+examples/menu: examples/menu.c libween32.a
+	$(CC) $(CFLAGS) -o $@ examples/menu.c libween32.a $(LIBS)
 
 tests/render_test: tests/render_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
@@ -74,7 +77,7 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	./tests/keys_test
 
 clean:
-	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls \
+	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \
 	      tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	      tests/resize_test tests/multiwin_test tests/timer_test tests/keys_test tests/timer_test
 
