@@ -10,6 +10,12 @@ tests/*_test
 zig-out/
 .zig-cache/
 zig-cache/
+*.pdb
+
+# reference captures (tools/refcapture)
+tools/refcapture/wineprefix/
+tools/refcapture/desktop.png
+tools/refcapture/reference.png
 
 # headless screenshots and cross-compiled examples
 *.bmp
