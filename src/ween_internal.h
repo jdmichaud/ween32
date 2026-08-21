@@ -54,6 +54,11 @@ void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom
 
 /* ---- classic chrome (from classic.zig; the Wine DrawEdge algorithm) ---- */
 
+/* Wine's DrawEdge, faithfully: any BDR_ or EDGE_ type with any BF_ flags.
+ * Fills *inner with the interior rect when BF_ADJUST is set. */
+int ween_classic_edge(ween_surface *s, int x, int y, int w, int h,
+                      unsigned type, unsigned flags, RECT *inner);
+/* Shorthand for the button edge (EDGE_RAISED/SUNKEN | BF_RECT | BF_SOFT). */
 void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken);
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h);
 
@@ -158,7 +163,9 @@ struct ween_wnd {
  * buttons at y=6, 2px in from the frame). Scale through ween_ncm() for the
  * system dpi, like the classic SM_* system metrics did. */
 #define WEEN_NC_FRAME 3
-#define WEEN_NC_CAPTION 20 /* caption strip height, frame excluded */
+/* Caption strip: 19px at 96 dpi, of which the gradient paints the top 18 and
+ * the last row stays face-coloured — what win32 does for CaptionHeight=18. */
+#define WEEN_NC_CAPTION 19
 #define WEEN_NC_BTN_W 16
 #define WEEN_NC_BTN_H 14
 

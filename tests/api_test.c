@@ -111,7 +111,11 @@ int main(void)
     const ween_surface *s = ween_headless_surface();
     CHECK(s != NULL, "the surface was presented");
     if (s) {
-        CHECK(s->px[0] == WEEN_WHITE, "window frame top-left is raised white");
+        /* A window frame is the plain EDGE_RAISED: COLOR_3DLIGHT (face) on the
+         * outside, the white highlight one pixel in — as win32 draws it. */
+        CHECK(s->px[0] == WEEN_3DLIGHT, "window frame starts with the 3DLIGHT edge");
+        CHECK(s->px[(long)s->w + 1] == WEEN_WHITE,
+              "the white highlight sits inside that edge");
         CHECK(s->px[(long)4 * s->w + 3] == WEEN_CAP_LEFT,
               "caption gradient starts at #0A246A");
         /* a pixel inside the button face (avoid the bevel and the label) */

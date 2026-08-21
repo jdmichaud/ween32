@@ -796,13 +796,15 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_surface *s = &wnd->surface;
         /* raised frame + face border */
         ween_surface_clear(s, WEEN_FACE);
-        ween_classic_bevel(s, 0, 0, wnd->w, wnd->h, 0);
+        /* A window frame is the plain EDGE_RAISED: its outer line is
+         * COLOR_3DLIGHT (face), the white one sits inside it. */
+        ween_classic_edge(s, 0, 0, wnd->w, wnd->h, EDGE_RAISED, BF_RECT, NULL);
         if (!has_caption(wnd))
             return 0;
         /* caption gradient + title (bold, as Win2k captions were) + close */
         int frame = ween_ncm(WEEN_NC_FRAME);
         int cap = ween_ncm(WEEN_NC_CAPTION);
-        ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap);
+        ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1);
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
             int ty = frame + (cap - (f->ascent - f->descent)) / 2;
