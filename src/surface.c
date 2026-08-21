@@ -17,6 +17,7 @@ int ween_surface_init(ween_surface *s, int w, int h)
         return 0;
     s->w = w;
     s->h = h;
+    ween_surface_clip(s, 0, 0, w, h);
     return 1;
 }
 
@@ -27,6 +28,26 @@ void ween_surface_free(ween_surface *s)
     s->w = s->h = 0;
 }
 
+/* Every primitive draws through the clip rectangle: a window paints into its
+ * own area of the shared surface and no further, which is what stops a long
+ * tree-view label running out over its neighbour. */
+void ween_surface_clip(ween_surface *s, int x, int y, int w, int h)
+{
+    int x1 = x + w, y1 = y + h;
+    s->clip_x = x < 0 ? 0 : x;
+    s->clip_y = y < 0 ? 0 : y;
+    s->clip_r = x1 > s->w ? s->w : x1;
+    s->clip_b = y1 > s->h ? s->h : y1;
+}
+
+void ween_surface_get_clip(const ween_surface *s, RECT *r)
+{
+    r->left = s->clip_x;
+    r->top = s->clip_y;
+    r->right = s->clip_r;
+    r->bottom = s->clip_b;
+}
+
 void ween_surface_clear(ween_surface *s, ween_color c)
 {
     for (long i = 0; i < (long)s->w * s->h; i++)
@@ -35,17 +56,17 @@ void ween_surface_clear(ween_surface *s, ween_color c)
 
 void ween_surface_pixel(ween_surface *s, int x, int y, ween_color c)
 {
-    if (x < 0 || y < 0 || x >= s->w || y >= s->h)
+    if (x < s->clip_x || y < s->clip_y || x >= s->clip_r || y >= s->clip_b)
         return;
     s->px[(long)y * s->w + x] = c;
 }
 
 void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c)
 {
-    int x0 = x < 0 ? 0 : x;
-    int y0 = y < 0 ? 0 : y;
-    int x1 = x + w > s->w ? s->w : x + w;
-    int y1 = y + h > s->h ? s->h : y + h;
+    int x0 = x < s->clip_x ? s->clip_x : x;
+    int y0 = y < s->clip_y ? s->clip_y : y;
+    int x1 = x + w > s->clip_r ? s->clip_r : x + w;
+    int y1 = y + h > s->clip_b ? s->clip_b : y + h;
     for (int yy = y0; yy < y1; yy++) {
         ween_color *row = s->px + (long)yy * s->w;
         for (int xx = x0; xx < x1; xx++)

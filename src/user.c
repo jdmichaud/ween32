@@ -601,25 +601,53 @@ BOOL EndPaint(HWND wnd, const PAINTSTRUCT *ps)
     return TRUE; /* the surface is presented after the full paint pass */
 }
 
-/* Paint one window (background + WM_PAINT) and recurse into its children. */
+/* Paint one window (background + WM_PAINT) and recurse into its children.
+ *
+ * Each window paints through a clip rectangle: its non-client edge within the
+ * parent's clip, then its client area within that. Children of a shared
+ * surface would otherwise scribble over each other — a long tree-view label
+ * would run out past its own border. */
 static void paint_tree(struct ween_wnd *w)
 {
+    struct ween_wnd *top = ween_top_level(w);
+    RECT outer;
+    int ox, oy;
+    RECT cr;
+
     if (!w->visible)
         return;
-    if (w->parent)
+
+    ween_surface_get_clip(&top->surface, &outer);
+    ween_client_origin(w, &ox, &oy);
+    GetClientRect(w, &cr);
+
+    if (w->parent) {
+        /* the frame sits outside the client area: clip it to the window rect */
+        int edge = ween_ex_edge(w);
+        int wx = ox - edge, wy = oy - edge;
+        int l = wx > outer.left ? wx : outer.left;
+        int t = wy > outer.top ? wy : outer.top;
+        int r = wx + w->w < outer.right ? wx + w->w : outer.right;
+        int b = wy + w->h < outer.bottom ? wy + w->h : outer.bottom;
+        ween_surface_clip(&top->surface, l, t, r - l, b - t);
         ween_paint_ex_edge(w);
-    if (w->cls && w->cls->background) {
-        struct ween_wnd *top = ween_top_level(w);
-        int ox, oy;
-        ween_client_origin(w, &ox, &oy);
-        RECT cr;
-        GetClientRect(w, &cr);
+    }
+
+    {   /* the client area, within whatever the parent allows */
+        int l = ox > outer.left ? ox : outer.left;
+        int t = oy > outer.top ? oy : outer.top;
+        int r = ox + cr.right < outer.right ? ox + cr.right : outer.right;
+        int b = oy + cr.bottom < outer.bottom ? oy + cr.bottom : outer.bottom;
+        ween_surface_clip(&top->surface, l, t, r - l, b - t);
+    }
+    if (w->cls && w->cls->background)
         ween_surface_fill(&top->surface, ox, oy, cr.right, cr.bottom,
                           w->cls->background->color);
-    }
     SendMessageA(w, WM_PAINT, 0, 0);
     for (struct ween_wnd *c = w->first_child; c; c = c->next_sibling)
         paint_tree(c);
+    ween_surface_clip(&top->surface, outer.left, outer.top,
+                      outer.right - outer.left, outer.bottom - outer.top);
 }
 
 void ween_flush_paint(void)
@@ -628,6 +656,7 @@ void ween_flush_paint(void)
     if (!top || !top->dirty)
         return;
     top->dirty = 0;
+    ween_surface_clip(&top->surface, 0, 0, top->surface.w, top->surface.h);
     SendMessageA(top, WM_NCPAINT, 0, 0);
     paint_tree(top);
     if (ween_active_backend)

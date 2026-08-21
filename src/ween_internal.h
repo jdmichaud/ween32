@@ -23,6 +23,8 @@ typedef uint32_t ween_color; /* 0x00RRGGBB */
 typedef struct {
     ween_color *px;
     int w, h;
+    /* the clip rectangle every primitive draws through */
+    int clip_x, clip_y, clip_r, clip_b;
 } ween_surface;
 
 #define WEEN_RGBX(r, g, b) ((ween_color)(((r) << 16) | ((g) << 8) | (b)))
@@ -42,6 +44,9 @@ typedef struct {
 int ween_surface_init(ween_surface *s, int w, int h);
 void ween_surface_free(ween_surface *s);
 void ween_surface_clear(ween_surface *s, ween_color c);
+/* Restrict drawing to a rectangle; window painting sets this per window. */
+void ween_surface_clip(ween_surface *s, int x, int y, int w, int h);
+void ween_surface_get_clip(const ween_surface *s, RECT *r);
 void ween_surface_pixel(ween_surface *s, int x, int y, ween_color c);
 void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c);
 void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
