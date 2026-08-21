@@ -13,6 +13,8 @@
 
 #include <ween32.h>
 
+#include "win32_dlg.h" /* the DLGTEMPLATE builder, shared with the other example */
+
 #ifdef _WIN32
 #include <string.h>
 #include <stdio.h>
@@ -92,6 +94,19 @@ static void build_menu(HWND w)
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)edit, "&Edit");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)help, "&Help");
     SetMenu(w, bar);
+}
+#endif
+
+#if HAVE(DIALOGBOX)
+/* Any button ends the dialog, and its id is the answer. */
+static INT_PTR CALLBACK dialog_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    if (msg == WM_COMMAND) {
+        EndDialog(dlg, (INT_PTR)LOWORD(wp));
+        return TRUE;
+    }
+    return FALSE;
 }
 #endif
 
@@ -175,9 +190,29 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             say("Message box: not built yet");
 #endif
             return 0;
-        case ID_DIALOG:
+        case ID_DIALOG: {
+#if HAVE(DIALOGBOX)
+            static const dlg_item items[] = {
+                { WS_CHILD | WS_VISIBLE | SS_LEFT, 10, 10, 130, 8, 0,
+                  ATOM_STATIC, "Modal: the sampler is disabled." },
+                { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 30, 32,
+                  50, 14, IDOK, ATOM_BUTTON, "OK" },
+                { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 90, 32, 50,
+                  14, IDCANCEL, ATOM_BUTTON, "Cancel" },
+            };
+            static unsigned char tmpl[1024];
+            build_dialog_template(tmpl, sizeof(tmpl),
+                                  WS_POPUP | WS_CAPTION | WS_SYSMENU |
+                                      WS_VISIBLE,
+                                  150, 54, "A modal dialog", items, 3);
+            INT_PTR r = DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, w,
+                                                dialog_proc, 0);
+            say(r == IDOK ? "Dialog: OK" : "Dialog: cancelled");
+#else
             say("Modal dialog: not built yet");
+#endif
             return 0;
+        }
         case ID_EXIT:
             DestroyWindow(w);
             return 0;

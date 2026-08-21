@@ -198,6 +198,12 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
 {
     if (!wc || !wc->lpszClassName || !wc->lpfnWndProc)
         return 0;
+    /* Registering a name twice hands back the class already under it, so the
+     * ensure_*_class() idiom can be called from wherever it is needed without
+     * piling up entries that lookup would never reach. */
+    for (int i = 0; i < g_nclasses; i++)
+        if (name_ieq(g_classes[i]->name, wc->lpszClassName))
+            return (ATOM)(i + 1);
     if (g_nclasses == g_classes_cap) {
         int cap = g_classes_cap ? g_classes_cap * 2 : 32;
         ween_class **grown = realloc(g_classes, (size_t)cap * sizeof *grown);

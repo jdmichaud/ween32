@@ -652,6 +652,8 @@ typedef struct tagTCITEMA {
 #define WEEN32_HAS_LISTVIEW 1
 #define WEEN32_HAS_TRACKBAR 1
 #define WEEN32_HAS_MENU 1
+#define WEEN32_HAS_MESSAGEBOX 1
+#define WEEN32_HAS_DIALOGBOX 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 
@@ -761,7 +763,21 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     CreateDialogIndirectParamA(inst, tmpl, parent, proc, 0)
 BOOL IsDialogMessageA(HWND dlg, LPMSG msg);
 LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp);
+/* ---- message box --------------------------------------------------------- */
+#define MB_OK 0x00000000
+#define MB_OKCANCEL 0x00000001
+#define MB_YESNO 0x00000004
+#define IDYES 6
+#define IDNO 7
+int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type);
+
 BOOL EndDialog(HWND dlg, INT_PTR result);
+/* Modal: does not return until EndDialog is called, and the owner cannot be
+ * used in the meantime. */
+INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
+                                HWND owner, DLGPROC proc, LPARAM param);
+#define DialogBoxIndirectA(inst, tmpl, parent, proc)                           \
+    DialogBoxIndirectParamA(inst, tmpl, parent, proc, 0)
 
 /* ---- GDI ------------------------------------------------------------------ */
 

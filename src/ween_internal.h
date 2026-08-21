@@ -218,6 +218,9 @@ struct ween_wnd {
     /* dialog frame (created by CreateDialogIndirect) */
     DLGPROC dlgproc;
     int is_dialog;
+    int is_modal;          /* DialogBox is running a loop over it */
+    int dlg_ended;         /* EndDialog was called: the modal loop stops */
+    INT_PTR dlg_result;    /* and this is what DialogBox returns */
     UINT defid; /* default-command id, for Enter (DM_SETDEFID) */
 
     /* top-level only */

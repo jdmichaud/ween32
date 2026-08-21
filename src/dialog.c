@@ -230,6 +230,10 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         CreateWindowExA(0, cls, itext, istyle | WS_CHILD, px, py,
                         MX(ix + icx) - px, MY(iy + icy) - py, dlg,
                         (HMENU)(UINT_PTR)id, inst, NULL);
+        /* The first BS_DEFPUSHBUTTON in the template is the dialog's default
+         * command, which is what Enter presses. */
+        if (!dlg->defid && (istyle & BS_DEFPUSHBUTTON) == BS_DEFPUSHBUTTON)
+            dlg->defid = id;
     }
 
     /* WM_INITDIALOG (after the controls exist). TRUE => set default focus. */
@@ -309,6 +313,204 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
 
 BOOL EndDialog(HWND dlg, INT_PTR result)
 {
-    (void)result; /* modal loop (DialogBox) awaits multi-window support */
-    return DestroyWindow(dlg);
+    if (!dlg)
+        return FALSE;
+    /* A modal dialog is torn down by the loop that owns it, once it has the
+     * result; a modeless one has no such loop and goes now. */
+    dlg->dlg_result = result;
+    dlg->dlg_ended = 1;
+    if (!dlg->is_modal)
+        return DestroyWindow(dlg);
+    return TRUE;
+}
+
+/* The modal loop. The owner is disabled for as long as the dialog is up —
+ * that is the whole of what "modal" means in win32 — and the loop runs the
+ * dialog's own keyboard conventions before dispatching, as an app's would. */
+INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
+                                HWND owner, DLGPROC proc, LPARAM param)
+{
+    /* The owner goes down before the dialog exists, so that a DLGPROC seeing
+     * WM_INITDIALOG already finds the window it belongs to disabled. */
+    int reenable = owner && !(owner->style & WS_DISABLED);
+    if (reenable)
+        EnableWindow(owner, FALSE);
+
+    HWND dlg = CreateDialogIndirectParamA(inst, tmpl, owner, proc, param);
+    if (!dlg) {
+        if (reenable)
+            EnableWindow(owner, TRUE);
+        return -1;
+    }
+    dlg->is_modal = 1;
+
+    MSG msg;
+    while (!dlg->dlg_ended && GetMessageA(&msg, NULL, 0, 0)) {
+        if (IsDialogMessageA(dlg, &msg))
+            continue;
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    INT_PTR result = dlg->dlg_result;
+    if (reenable)
+        EnableWindow(owner, TRUE);
+    if (!dlg->destroyed)
+        DestroyWindow(dlg);
+    return result;
+}
+
+/* ---- MessageBoxA ----------------------------------------------------------
+ *
+ * The one dialog every app has. It is built here rather than from a template
+ * because its size comes from the text: win32 measures the message, wraps it,
+ * and sizes the box around it, then centres the buttons under it.
+ */
+
+#define MB_MARGIN 12   /* text inset from the client edge */
+#define MB_BTN_W 75    /* the classic 50x14 DLU button, in pixels at 96 dpi */
+#define MB_BTN_H 23
+#define MB_BTN_GAP 6
+
+static int line_count(const char *text, const ween_strike *f, int *widest)
+{
+    int lines = 1;
+    const char *start = text;
+    *widest = 0;
+    for (const char *p = text;; p++) {
+        if (*p == '\n' || !*p) {
+            int w = ween_strike_text_extent(f, start, (int)(p - start));
+            if (w > *widest)
+                *widest = w;
+            if (!*p)
+                break;
+            lines++;
+            start = p + 1;
+        }
+    }
+    return lines;
+}
+
+/* The box's own dialog procedure: any command from its buttons is the answer,
+ * whether it came from a click, from Enter on the default button, or from Esc.
+ * Going through the DLGPROC rather than watching the queue means every one of
+ * those paths ends the box the same way. */
+static INT_PTR CALLBACK msgbox_proc(HWND box, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    if (msg == WM_COMMAND) {
+        EndDialog(box, (INT_PTR)LOWORD(wp));
+        return TRUE;
+    }
+    if (msg == WM_CLOSE) {
+        EndDialog(box, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
+{
+    const ween_strike *f = ween_gui_font();
+    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    int widest = 0, lines;
+    int nbuttons = (type & MB_OKCANCEL) == MB_OKCANCEL ? 2 : 1;
+    int ids[2] = { IDOK, IDCANCEL };
+    const char *labels[2] = { "OK", "Cancel" };
+
+    if (!text)
+        text = "";
+    lines = line_count(text, f, &widest);
+    if ((type & MB_YESNO) == MB_YESNO) {
+        nbuttons = 2;
+        ids[0] = IDYES;
+        ids[1] = IDNO;
+        labels[0] = "&Yes";
+        labels[1] = "&No";
+    }
+
+    int text_h = lines * (cell + 2);
+    int buttons_w = nbuttons * MB_BTN_W + (nbuttons - 1) * MB_BTN_GAP;
+    int client_w = widest + 2 * MB_MARGIN;
+    if (client_w < buttons_w + 2 * MB_MARGIN)
+        client_w = buttons_w + 2 * MB_MARGIN;
+    int client_h = MB_MARGIN + text_h + MB_MARGIN + MB_BTN_H + MB_MARGIN;
+
+    RECT wr = { 0, 0, client_w, client_h };
+    DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
+    AdjustWindowRect(&wr, style, FALSE);
+
+    /* centred on the owner, as win32 puts it */
+    int x = 60, y = 60;
+    if (owner) {
+        RECT o;
+        GetWindowRect(owner, &o);
+        x = o.left + ((o.right - o.left) - (wr.right - wr.left)) / 2;
+        y = o.top + ((o.bottom - o.top) - (wr.bottom - wr.top)) / 2;
+    }
+
+    ensure_dialog_class();
+    HWND box = CreateWindowExA(WS_EX_DLGMODALFRAME, "#32770",
+                               caption ? caption : "", style, x, y,
+                               wr.right - wr.left, wr.bottom - wr.top, owner,
+                               NULL, NULL, NULL);
+    if (!box)
+        return 0;
+    box->is_dialog = 1;
+    box->is_modal = 1;
+    box->dlgproc = msgbox_proc;
+
+    /* One static per line: a newline in the message is a line break, and the
+     * STATIC control itself draws a single line. */
+    {
+        const char *start = text;
+        int ly = MB_MARGIN;
+        for (const char *p = text;; p++) {
+            if (*p != '\n' && *p)
+                continue;
+            char line[512];
+            int n = (int)(p - start);
+            if (n > (int)sizeof(line) - 1)
+                n = (int)sizeof(line) - 1;
+            memcpy(line, start, (size_t)n);
+            line[n] = 0;
+            CreateWindowExA(0, "STATIC", line, WS_CHILD | WS_VISIBLE, MB_MARGIN,
+                            ly, widest + 2, cell + 2, box, NULL, NULL, NULL);
+            ly += cell + 2;
+            if (!*p)
+                break;
+            start = p + 1;
+        }
+    }
+    int bx = (client_w - buttons_w) / 2;
+    for (int i = 0; i < nbuttons; i++) {
+        DWORD bs = WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                   (i == 0 ? BS_DEFPUSHBUTTON : 0);
+        HWND b = CreateWindowExA(0, "BUTTON", labels[i], bs, bx,
+                                 client_h - MB_MARGIN - MB_BTN_H, MB_BTN_W,
+                                 MB_BTN_H, box, (HMENU)(UINT_PTR)ids[i], NULL,
+                                 NULL);
+        if (i == 0 && b)
+            SetFocus(b);
+        bx += MB_BTN_W + MB_BTN_GAP;
+    }
+    box->defid = (UINT)ids[0];
+
+    int reenable = owner && !(owner->style & WS_DISABLED);
+    if (reenable)
+        EnableWindow(owner, FALSE);
+
+    MSG msg;
+    while (!box->dlg_ended && GetMessageA(&msg, NULL, 0, 0)) {
+        if (IsDialogMessageA(box, &msg))
+            continue;
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+
+    int result = (int)box->dlg_result;
+    if (reenable)
+        EnableWindow(owner, TRUE);
+    if (!box->destroyed)
+        DestroyWindow(box);
+    return result ? result : ids[0];
 }

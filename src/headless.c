@@ -2,6 +2,7 @@
  * events and read the presented surface (or a BMP dump) back — the whole
  * win32 layer is exercised end to end without a window system. */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -116,6 +117,16 @@ static void hl_present(void *win, const ween_surface *s)
     g_last = *s; /* the surface outlives the pump in tests */
     if (!g_bmp_path[0])
         return;
+    /* A path holding %d is written once per frame instead of once per run —
+     * the only way to see a modal window, which is gone again by the time the
+     * run ends. */
+    char numbered[300];
+    const char *path = g_bmp_path;
+    if (strstr(g_bmp_path, "%d")) {
+        static int frame;
+        snprintf(numbered, sizeof(numbered), g_bmp_path, frame++);
+        path = numbered;
+    }
     int zoom = ween_zoom();
     if (zoom > 1) { /* capture what the screen would show */
         static ween_surface zbuf;
@@ -125,10 +136,10 @@ static void hl_present(void *win, const ween_surface *s)
                 return;
         }
         ween_surface_zoom_into(&zbuf, s, zoom);
-        ween_surface_write_bmp(&zbuf, g_bmp_path);
+        ween_surface_write_bmp(&zbuf, path);
         return;
     }
-    ween_surface_write_bmp(s, g_bmp_path);
+    ween_surface_write_bmp(s, path);
 }
 
 static void hl_resize(void *win, int w, int h)
