@@ -77,6 +77,7 @@ void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned fl
  * 1 down, 2 left, 3 right). */
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_sizegrip(ween_surface *s, int x, int y, int w, int h);
+void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
                                int dir, int inactive, int pushed);
 void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags);
@@ -168,6 +169,7 @@ typedef struct ween_menuitem {
 } ween_menuitem;
 
 int ween_menu_bar_height(const struct ween_wnd *w);
+int ween_menu_key(HWND top, unsigned vk, unsigned ch); /* Alt / Alt+letter */
 int ween_menu_count(HMENU menu);
 ween_menuitem *ween_menu_item(HMENU menu, int i);
 void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width);
@@ -181,6 +183,9 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
 /* Runs the modal loop over an open drop-down. Returns the command chosen, or
  * 0 if it was dismissed. */
 UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y);
+/* The same, started from a window's menu bar, so the arrows can walk between
+ * drop-downs. from_keyboard highlights the first item, as Alt does. */
+UINT ween_menu_track_bar(HWND top, int index, int from_keyboard);
 
 /* ---- windows ------------------------------------------------------------- */
 

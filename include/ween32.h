@@ -526,6 +526,8 @@ typedef struct tagTCITEMA {
 #define VK_TAB 0x09
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
+#define VK_MENU 0x12 /* Alt */
+#define VK_F10 0x79
 #define VK_SPACE 0x20
 #define VK_END 0x23
 #define VK_HOME 0x24

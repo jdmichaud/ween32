@@ -22,7 +22,7 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-enum { ID_NEW = 300, ID_OPEN, ID_EXIT, ID_SUB_A };
+enum { ID_NEW = 300, ID_OPEN, ID_EXIT, ID_SUB_A, ID_EDIT_A };
 
 static HMENU g_bar, g_file, g_sub;
 static int g_command;
@@ -163,6 +163,120 @@ int main(void)
         BOOL cmd = TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD, 0, 0,
                                   0, w, NULL);
         CHECK(cmd == 0, "releasing over a grey item chooses nothing");
+    }
+
+    /* A cascade keeps its parent open: hovering "More" opens the submenu
+     * beside it, and the item stays highlighted so you can walk back out. */
+    {
+        int sw, sh;
+        ween_menu_popup_size(g_sub, ween_gui_font(), &sw, &sh); /* lay it out */
+        ween_menuitem *more = ween_menu_item(g_file, 3);
+        ween_menuitem *deeper = ween_menu_item(g_sub, 0);
+        mouse(WEEN_EV_MOUSE_MOVE, 10, more->y + more->h / 2);
+        /* the cascade is a window of its own, so the move into it names no
+         * window and lands on the deepest level — which is the submenu */
+        mouse(WEEN_EV_MOUSE_MOVE, 10, deeper->y + deeper->h / 2);
+        mouse(WEEN_EV_MOUSE_UP, 10, deeper->y + deeper->h / 2);
+        BOOL cmd = TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD, 0, 0,
+                                  0, w, NULL);
+        CHECK(cmd == ID_SUB_A, "an item was chosen from a cascaded submenu");
+    }
+
+    /* The keyboard, inside a drop-down: Down walks it, Right opens a cascade
+     * and Left comes back out of one, Escape closes a level at a time. */
+    {
+        ween_event k;
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);  /* onto "New" */
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);  /* onto "Open..." */
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);  /* the separator is skipped: "More" */
+        k.vk = VK_RIGHT;
+        ween_headless_inject(k);  /* into the cascade, on its first item */
+        k.vk = VK_RETURN;
+        ween_headless_inject(k);
+        BOOL cmd = TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD, 0, 0,
+                                  0, w, NULL);
+        CHECK(cmd == ID_SUB_A, "the arrows reached the submenu and chose from it");
+    }
+
+    {
+        ween_event k;
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);
+        k.vk = 'O'; /* the mnemonic in "&Open..." */
+        k.ch = 'o';
+        ween_headless_inject(k);
+        BOOL cmd = TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD, 0, 0,
+                                  0, w, NULL);
+        CHECK(cmd == ID_OPEN, "a letter picks the item its label marks");
+    }
+
+    /* Escape backs out of a cascade rather than the whole menu. */
+    {
+        ween_event k;
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);  /* "More" */
+        k.vk = VK_RIGHT;
+        ween_headless_inject(k);  /* into the cascade */
+        k.vk = VK_ESCAPE;
+        ween_headless_inject(k);  /* out of it, still in "File" */
+        k.vk = VK_RETURN;
+        ween_headless_inject(k);  /* so this opens the cascade again */
+        k.vk = VK_RETURN;
+        ween_headless_inject(k);  /* and this chooses from it */
+        BOOL cmd = TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD, 0, 0,
+                                  0, w, NULL);
+        CHECK(cmd == ID_SUB_A, "Escape leaves the cascade, not the menu");
+    }
+
+    /* Walking the bar from the keyboard: Right off the end of one drop-down's
+     * items moves to the next drop-down, which needs a second bar item. */
+    {
+        HMENU edit = CreatePopupMenu();
+        AppendMenuA(edit, MF_STRING, ID_EDIT_A, "&Wrap");
+        AppendMenuA(g_bar, MF_POPUP, (UINT_PTR)edit, "&Edit");
+
+        ween_event k;
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_RIGHT; /* "New" has no cascade, so this goes to the bar */
+        ween_headless_inject(k);
+        k.vk = VK_DOWN;
+        ween_headless_inject(k);
+        k.vk = VK_RETURN;
+        ween_headless_inject(k);
+        UINT cmd = ween_menu_track_bar(w, 0, 1);
+        CHECK(cmd == ID_EDIT_A, "Right walked from one drop-down to the next");
+        CHECK(w->menu_hot == -1, "and the bar is not left held open");
+    }
+
+    /* Alt is what starts that: IsDialogMessageA hands it to the menu bar
+     * rather than to a control's mnemonic. */
+    {
+        ween_event k;
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_ESCAPE; /* so the session it opens ends at once */
+        ween_headless_inject(k);
+
+        MSG msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.hwnd = w;
+        msg.message = WM_KEYDOWN;
+        msg.wParam = VK_MENU;
+        CHECK(IsDialogMessageA(w, &msg), "Alt is taken by the menu bar");
     }
 
     DestroyWindow(w);

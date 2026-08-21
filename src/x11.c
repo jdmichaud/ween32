@@ -465,6 +465,11 @@ static unsigned keysym_to_vk(unsigned long ks)
         return VK_RIGHT;
     case 0xff54:
         return VK_DOWN;
+    case 0xffe9: /* Alt_L */
+    case 0xffea: /* Alt_R */
+        return 0x12; /* VK_MENU */
+    case 0xffc7:
+        return 0x79; /* VK_F10 */
     default:
         if (ks >= 'a' && ks <= 'z')
             return (unsigned)(ks - 32); /* VK codes are uppercase ASCII */

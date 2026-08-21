@@ -1291,25 +1291,33 @@ static void nc_track_menu(struct ween_wnd *top, const ween_event *ev)
 
     ween_menu_layout_bar(top->menu, ween_gui_font(), top->w - 2 * frame);
     index = ween_menu_hit(top->menu, ev->x - frame, ev->y - bar_y);
-    while (index >= 0) {
-        ween_menuitem *it = ween_menu_item(top->menu, index);
-        if (!it || !it->popup || (it->flags & MF_GRAYED))
-            break;
-        SendMessageA(top, WM_INITMENU, (WPARAM)top->menu, 0);
-        top->menu_hot = index;
-        top->dirty = 1;
-        ween_flush_paint();
-        UINT cmd = ween_menu_track(it->popup, top, top->x + frame + it->x,
-                                   top->y + bar_y + ween_ncm(WEEN_NC_MENU));
-        top->menu_hot = -1;
-        top->dirty = 1;
-        ween_flush_paint();
-        if (cmd) {
-            post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
-            break;
-        }
-        break;
+    if (index < 0)
+        return;
+    UINT cmd = ween_menu_track_bar(top, index, 0);
+    if (cmd)
+        post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+}
+
+/* Alt, or Alt+letter, opens the bar from the keyboard. Returns whether the
+ * key was one the menu wanted. */
+int ween_menu_key(HWND top, unsigned vk, unsigned ch)
+{
+    int index = 0;
+    if (!top || !top->menu)
+        return 0;
+    ween_menu_layout_bar(top->menu, ween_gui_font(),
+                         top->w - 2 * ween_frame_width(top));
+    if (ch) {
+        index = ween_menu_mnemonic(top->menu, ch);
+        if (index < 0)
+            return 0;
+    } else if (vk != VK_MENU && vk != VK_F10) {
+        return 0;
     }
+    UINT cmd = ween_menu_track_bar(top, index, 1);
+    if (cmd)
+        post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+    return 1;
 }
 
 /* Translate one backend event into posted messages. */

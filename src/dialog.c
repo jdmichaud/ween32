@@ -262,9 +262,21 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     int shift = (msg->lParam & 1) != 0;
     int alt = (msg->lParam & (1L << 29)) != 0;
 
+    /* Alt on its own, or F10, opens the window's menu bar; Alt+letter opens
+     * the drop-down that letter marks. The bar gets first refusal, because a
+     * control's mnemonic and a menu's can be the same letter and win32 gives
+     * the menu that key while Alt is down. */
+    HWND top = ween_top_level(dlg);
+    if (msg->wParam == VK_MENU || msg->wParam == VK_F10) {
+        if (ween_menu_key(top, (unsigned)msg->wParam, 0))
+            return TRUE;
+    }
     if (alt) {
         unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
-        HWND target = ween_mnemonic_target(dlg, ch ? ch : (unsigned)msg->wParam);
+        unsigned key = ch ? ch : (unsigned)msg->wParam;
+        if (ween_menu_key(top, 0, key))
+            return TRUE;
+        HWND target = ween_mnemonic_target(dlg, key);
         if (target) {
             SetFocus(target);
             SendMessageA(target, BM_CLICK, 0, 0);

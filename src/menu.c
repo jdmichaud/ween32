@@ -376,9 +376,8 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
                                 text_width(f, acc, (int)strlen(acc)) -
                                 ween_ncm(6),
                        ty, acc, (int)strlen(acc), fg);
-        if (it->popup) /* the submenu arrow, from Marlett's right triangle */
-            ween_marlett_draw(ween_caption_font(), s, '8',
-                              it->x + it->w - check, ty, cell, fg);
+        if (it->popup) /* the mark that says a cascade opens from here */
+            ween_classic_menu_arrow(s, it->x + it->w - check, ty, cell, fg);
     }
 }
 
@@ -421,106 +420,323 @@ static void ensure_menu_class(void)
     RegisterClassA(&wc);
 }
 
-UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y)
+/* One open drop-down. A menu that is being walked is a stack of these: the
+ * bar item that started it, then a level for every cascade opened under it.
+ * The parent stays up and keeps its item highlighted, which is what makes a
+ * submenu usable — you can walk back out of one. */
+typedef struct {
+    HMENU menu;
+    HWND wnd;
+    int hot;
+} menu_level;
+
+#define WEEN_MENU_MAX_DEPTH 8
+#define WEEN_MENU_CASCADE_OVERLAP 3 /* a cascade sits this far over its parent */
+
+typedef struct {
+    HWND owner;    /* who hears WM_COMMAND */
+    HWND bar_wnd;  /* the window whose bar is open, NULL for TrackPopupMenu */
+    HMENU bar;
+    int bar_index;
+    menu_level level[WEEN_MENU_MAX_DEPTH];
+    int depth;
+    UINT chosen;
+    int done;
+} menu_session;
+
+static void level_close(menu_session *s)
+{
+    menu_level *l = &s->level[--s->depth];
+    l->wnd->menu = NULL; /* the menu outlives the window showing it */
+    DestroyWindow(l->wnd);
+    l->wnd = NULL;
+}
+
+static void level_close_to(menu_session *s, int depth)
+{
+    while (s->depth > depth)
+        level_close(s);
+}
+
+static int level_open(menu_session *s, HMENU menu, int x, int y)
 {
     const ween_strike *f = ween_gui_font();
-    int w = 0, h = 0, chosen = 0, done = 0;
-
-    if (!menu || !ween_menu_count(menu) || !ween_active_backend)
+    int w = 0, h = 0;
+    if (s->depth >= WEEN_MENU_MAX_DEPTH || !ween_menu_count(menu))
         return 0;
-    ensure_menu_class();
     ween_menu_popup_size(menu, f, &w, &h);
-
-    if (owner)
-        SendMessageA(owner, WM_INITMENUPOPUP, (WPARAM)menu, 0);
-
-    HWND popup = CreateWindowExA(0, WEEN_MENU_CLASS, "", WS_POPUP | WS_VISIBLE,
-                                 screen_x, screen_y, w, h, NULL, NULL, NULL,
-                                 NULL);
-    if (!popup)
+    if (s->owner)
+        SendMessageA(s->owner, WM_INITMENUPOPUP, (WPARAM)menu, 0);
+    HWND wnd = CreateWindowExA(0, WEEN_MENU_CLASS, "", WS_POPUP | WS_VISIBLE, x,
+                               y, w, h, NULL, NULL, NULL, NULL);
+    if (!wnd)
         return 0;
-    popup->menu = menu;
-    popup->menu_hot = -1;
-    ween_flush_paint();
+    wnd->menu = menu;
+    wnd->menu_hot = -1;
+    s->level[s->depth].menu = menu;
+    s->level[s->depth].wnd = wnd;
+    s->level[s->depth].hot = -1;
+    s->depth++;
+    return 1;
+}
 
-    while (!done) {
-        ween_event ev = ween_active_backend->next_event(popup->backend_win, -1);
-        int mine = !ev.win || ev.win == popup->backend_win;
-        int hot;
+/* Open the cascade belonging to the highlighted item of `depth`, beside it. */
+static void level_open_cascade(menu_session *s, int depth)
+{
+    menu_level *l = &s->level[depth];
+    ween_menuitem *it = ween_menu_item(l->menu, l->hot);
+    if (!it || !it->popup || (it->flags & MF_GRAYED))
+        return;
+    level_close_to(s, depth + 1);
+    level_open(s, it->popup, l->wnd->x + l->wnd->w - WEEN_MENU_CASCADE_OVERLAP,
+               l->wnd->y + it->y - WEEN_MENU_CASCADE_OVERLAP);
+}
+
+static void level_set_hot(menu_session *s, int depth, int hot)
+{
+    menu_level *l = &s->level[depth];
+    if (l->hot == hot)
+        return;
+    l->hot = hot;
+    l->wnd->menu_hot = hot;
+    l->wnd->dirty = 1;
+    /* anything opened under the old item goes with it */
+    level_close_to(s, depth + 1);
+}
+
+/* Step the highlight through a popup, skipping what cannot be chosen. */
+static void level_step(menu_session *s, int depth, int step)
+{
+    menu_level *l = &s->level[depth];
+    int n = ween_menu_count(l->menu), hot = l->hot;
+    if (n <= 0)
+        return;
+    if (hot < 0)
+        hot = step > 0 ? -1 : 0;
+    for (int i = 0; i < n; i++) {
+        hot = (hot + step + n) % n;
+        ween_menuitem *it = ween_menu_item(l->menu, hot);
+        if (it && !(it->flags & (MF_SEPARATOR | MF_GRAYED)))
+            break;
+    }
+    level_set_hot(s, depth, hot);
+}
+
+/* Which open level an event belongs to; -1 for anything else. A headless
+ * event names no window and belongs to the deepest, which is where a script's
+ * attention is. */
+static int level_of(const menu_session *s, const void *backend_win)
+{
+    if (!backend_win)
+        return s->depth - 1;
+    for (int i = s->depth - 1; i >= 0; i--)
+        if (s->level[i].wnd->backend_win == backend_win)
+            return i;
+    return -1;
+}
+
+/* Open the bar item at `index`, closing whatever was open before it. */
+static void bar_open(menu_session *s, int index)
+{
+    ween_menuitem *it;
+    int frame, bar_y;
+    if (!s->bar_wnd || index < 0 || index >= ween_menu_count(s->bar))
+        return;
+    it = ween_menu_item(s->bar, index);
+    if (!it || !it->popup || (it->flags & MF_GRAYED))
+        return;
+    level_close_to(s, 0);
+    s->bar_index = index;
+    s->bar_wnd->menu_hot = index;
+    s->bar_wnd->dirty = 1;
+    frame = ween_frame_width(s->bar_wnd);
+    bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    level_open(s, it->popup, s->bar_wnd->x + frame + it->x,
+               s->bar_wnd->y + bar_y + ween_ncm(WEEN_NC_MENU));
+}
+
+/* Left and right at the top of a menu walk the bar, as they do on Windows. */
+static void bar_step(menu_session *s, int step)
+{
+    int n = ween_menu_count(s->bar), index = s->bar_index;
+    if (!s->bar_wnd || n <= 0)
+        return;
+    for (int i = 0; i < n; i++) {
+        index = (index + step + n) % n;
+        ween_menuitem *it = ween_menu_item(s->bar, index);
+        if (it && it->popup && !(it->flags & MF_GRAYED))
+            break;
+    }
+    bar_open(s, index);
+}
+
+/* Choose the item, or open it if it is a cascade. */
+static void level_activate(menu_session *s, int depth, int index)
+{
+    menu_level *l = &s->level[depth];
+    ween_menuitem *it = ween_menu_item(l->menu, index);
+    if (!it || (it->flags & (MF_SEPARATOR | MF_GRAYED)))
+        return;
+    level_set_hot(s, depth, index);
+    if (it->popup) {
+        level_open_cascade(s, depth);
+        if (s->depth > depth + 1)
+            level_step(s, depth + 1, 1); /* the keyboard lands on the first */
+        return;
+    }
+    s->chosen = it->id;
+    s->done = 1;
+}
+
+static void session_run(menu_session *s)
+{
+    while (!s->done && s->depth > 0) {
+        ween_flush_paint();
+        ween_event ev =
+            ween_active_backend->next_event(s->level[0].wnd->backend_win, -1);
+        int lvl = level_of(s, ev.win);
+        int on_bar = s->bar_wnd && ev.win == s->bar_wnd->backend_win;
+        int deepest = s->depth - 1;
+
         switch (ev.kind) {
         case WEEN_EV_MOUSE_MOVE:
-            if (!mine)
-                break;
-            hot = ween_menu_hit(menu, ev.x, ev.y);
-            if (hot != popup->menu_hot) {
-                popup->menu_hot = hot;
-                popup->dirty = 1;
-                ween_flush_paint();
+            if (lvl >= 0) {
+                int hot = ween_menu_hit(s->level[lvl].menu, ev.x, ev.y);
+                if (hot >= 0 || s->depth == lvl + 1) {
+                    level_set_hot(s, lvl, hot);
+                    if (hot >= 0)
+                        level_open_cascade(s, lvl);
+                }
+            } else if (on_bar) {
+                /* sliding along the bar with the button down switches
+                 * drop-downs, which is how win32 menus are used */
+                int frame = ween_frame_width(s->bar_wnd);
+                int bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+                int hit = ween_menu_hit(s->bar, ev.x - frame, ev.y - bar_y);
+                if (hit >= 0 && hit != s->bar_index)
+                    bar_open(s, hit);
             }
             break;
+
+        case WEEN_EV_MOUSE_DOWN:
+            if (lvl < 0 && !on_bar)
+                s->done = 1; /* a press outside puts the whole menu away */
+            break;
+
         case WEEN_EV_MOUSE_UP:
-        case WEEN_EV_MOUSE_DOWN: {
-            if (!mine) { /* a press anywhere else puts the menu away */
-                done = 1;
-                break;
-            }
-            hot = ween_menu_hit(menu, ev.x, ev.y);
-            ween_menuitem *it = ween_menu_item(menu, hot);
-            if (!it || (it->flags & MF_GRAYED))
-                break;
-            if (ev.kind == WEEN_EV_MOUSE_DOWN)
-                break; /* win32 chooses on the release */
-            if (it->popup) {
-                /* a cascade opens beside the item it belongs to */
-                chosen = ween_menu_track(it->popup, owner, screen_x + it->w,
-                                         screen_y + it->y);
-                done = 1;
-            } else {
-                chosen = it->id;
-                done = 1;
+            if (lvl >= 0) {
+                int hot = ween_menu_hit(s->level[lvl].menu, ev.x, ev.y);
+                if (hot >= 0)
+                    level_activate(s, lvl, hot);
             }
             break;
-        }
+
         case WEEN_EV_KEY:
-            if (ev.vk == VK_ESCAPE) {
-                done = 1;
-            } else if (ev.vk == VK_DOWN || ev.vk == VK_UP) {
-                int n = ween_menu_count(menu), step = ev.vk == VK_DOWN ? 1 : -1;
-                hot = popup->menu_hot;
-                for (int i = 0; i < n; i++) { /* skip separators and grey ones */
-                    hot = (hot + step + n) % n;
-                    ween_menuitem *it = ween_menu_item(menu, hot);
-                    if (it && !(it->flags & (MF_SEPARATOR | MF_GRAYED)))
-                        break;
+            switch (ev.vk) {
+            case VK_ESCAPE:
+                if (s->depth > 1)
+                    level_close(s); /* out of the cascade, not out of the menu */
+                else
+                    s->done = 1;
+                break;
+            case VK_DOWN:
+                level_step(s, deepest, 1);
+                break;
+            case VK_UP:
+                level_step(s, deepest, -1);
+                break;
+            case VK_RIGHT: {
+                ween_menuitem *it =
+                    ween_menu_item(s->level[deepest].menu, s->level[deepest].hot);
+                if (it && it->popup) {
+                    level_open_cascade(s, deepest);
+                    if (s->depth > deepest + 1)
+                        level_step(s, deepest + 1, 1);
+                } else {
+                    bar_step(s, 1);
                 }
-                popup->menu_hot = hot;
-                popup->dirty = 1;
-                ween_flush_paint();
-            } else if (ev.vk == VK_RETURN) {
-                ween_menuitem *it = ween_menu_item(menu, popup->menu_hot);
-                if (it && !(it->flags & MF_GRAYED)) {
-                    chosen = it->popup ? 0 : it->id;
-                    done = 1;
-                }
+                break;
+            }
+            case VK_LEFT:
+                if (s->depth > 1)
+                    level_close(s);
+                else
+                    bar_step(s, -1);
+                break;
+            case VK_RETURN:
+                level_activate(s, deepest, s->level[deepest].hot);
+                break;
+            default: {
+                /* a letter picks the item whose label marks it */
+                int hit = ween_menu_mnemonic(s->level[deepest].menu,
+                                             ev.ch ? ev.ch : ev.vk);
+                if (hit >= 0)
+                    level_activate(s, deepest, hit);
+                break;
+            }
             }
             break;
+
         case WEEN_EV_EXPOSE:
-            popup->dirty = 1;
-            ween_flush_paint();
+            for (int i = 0; i < s->depth; i++)
+                s->level[i].wnd->dirty = 1;
             break;
+
         case WEEN_EV_END:
         case WEEN_EV_CLOSE:
-            done = 1;
+            s->done = 1;
             break;
         default:
             break;
         }
     }
 
-    popup->menu = NULL; /* the menu outlives the window showing it */
-    DestroyWindow(popup);
+    level_close_to(s, 0);
+    if (s->bar_wnd) {
+        s->bar_wnd->menu_hot = -1;
+        s->bar_wnd->dirty = 1;
+    }
     ween_flush_paint();
-    return (UINT)chosen;
+}
+
+UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y)
+{
+    menu_session s;
+    if (!menu || !ween_menu_count(menu) || !ween_active_backend)
+        return 0;
+    ensure_menu_class();
+    memset(&s, 0, sizeof(s));
+    s.owner = owner;
+    s.bar_index = -1;
+    if (!level_open(&s, menu, screen_x, screen_y))
+        return 0;
+    session_run(&s);
+    return s.chosen;
+}
+
+/* Walking a window's menu bar: the same session, started from a bar item, so
+ * the arrows can move between drop-downs and a cascade keeps its parent. */
+UINT ween_menu_track_bar(HWND top, int index, int from_keyboard)
+{
+    menu_session s;
+    if (!top || !top->menu || !ween_active_backend)
+        return 0;
+    ensure_menu_class();
+    memset(&s, 0, sizeof(s));
+    s.owner = top;
+    s.bar_wnd = top;
+    s.bar = top->menu;
+    s.bar_index = -1;
+    SendMessageA(top, WM_INITMENU, (WPARAM)top->menu, 0);
+    ween_menu_layout_bar(top->menu, ween_gui_font(),
+                         top->w - 2 * ween_frame_width(top));
+    bar_open(&s, index);
+    if (!s.depth)
+        return 0;
+    if (from_keyboard) /* a menu opened by key starts on its first item */
+        level_step(&s, 0, 1);
+    session_run(&s);
+    return s.chosen;
 }
 
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,

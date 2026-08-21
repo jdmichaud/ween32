@@ -383,6 +383,26 @@ static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
 }
 
 /* One scroll-bar arrow button. `dir`: 0 up, 1 down, 2 left, 3 right. */
+/* The triangle at the right of an item that opens a submenu. Windows draws a
+ * small solid one pointing the way the cascade will open — no bevel, no
+ * button, just the mark. */
+void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h,
+                             ween_color c)
+{
+    int half = h / 4;          /* half its height: 3 for a 12px cell */
+    int cy = y + h / 2;
+    POINT tri[3];
+    if (half < 2)
+        half = 2;
+    tri[0].x = x;
+    tri[0].y = cy - half;
+    tri[1].x = x;
+    tri[1].y = cy + half;
+    tri[2].x = x + half;
+    tri[2].y = cy;
+    fill_polygon(s, tri, 3, c);
+}
+
 void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
                                int dir, int inactive, int pushed)
 {
