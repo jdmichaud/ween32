@@ -12,30 +12,24 @@ theme, and every control is checked against a real win32 render (see
 
 ## Next
 
-In order, and why that order. Each is a task in its own right; the first is the
-only one that blocks work that cannot otherwise be written.
+The five tasks that stood between the library and an application that is not
+this one are done — a second top-level window, text and tables that grow
+instead of truncating, `SelectObject`'s contract, timers, and the keyboard
+conventions. What is left, in the order it is worth doing:
 
-- [ ] **A second top-level window** (`src/user.c:315`). Not one limitation but
-  the shared prerequisite for menus, modal `DialogBox`, `MessageBoxA`, tooltips
-  and any drop-down taller than its parent. The combo box already carries the
-  workaround — it paints its list over the parent, which holds only while the
-  list fits inside the window — so it is also the immediate test case.
-- [ ] **Window text that is not silently truncated.** 128 bytes is not the
-  problem; losing the tail with no error and no `EN_MAXTEXT` is. Same for the
-  other caps that fail quietly (32 classes, the 64-message queue): make them
-  grow, or make them say so.
-- [ ] **`SelectObject` must return what was actually selected**
-  (`src/gdi.c:146`). It hands back the stock GUI font instead, so the universal
-  `old = SelectObject(dc, f); ...; SelectObject(dc, old)` idiom quietly drops a
-  bold selection. A contract apps rely on, and a few lines to honour.
-- [ ] **Timers** — `SetTimer`/`KillTimer`/`WM_TIMER`. Small, self-contained,
-  and three visible-at-a-glance gaps hang off it: the caret is drawn solid
-  because it cannot blink, scroll-bar arrows do not auto-repeat, and progress
-  bars have no marquee.
-- [ ] **Keyboard conventions**, not just more keysyms. Tab/Shift+Tab
-  navigation, `&File` mnemonics under Alt, accelerators, arrow keys inside a
-  radio group and a list. The missing key codes are ten lines; these are what
-  make a window behave like Windows.
+- [ ] **Menus** (`HMENU`, `WM_INITMENU`, popup tracking) and modal
+  `DialogBox`/`MessageBoxA`. These were the reason the second top-level window
+  came first; nothing blocks them now.
+- [ ] **Mouse routing into nested children**, plus hover tracking
+  (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today only
+  direct children of the top-level window are hit-tested.
+- [ ] **Scroll-bar auto-repeat on a held arrow**, and marquee progress — both
+  are timers now, so both are small.
+- [ ] **The clipboard, and double-click to select a word.**
+- [ ] **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`,
+  `LoadImage`, `DrawIconEx` for tree and list-view items.
+- [ ] **Accelerator tables** and `WM_NEXTDLGCTL`, the two keyboard pieces not
+  covered by IsDialogMessageA.
 
 Arbitrary font sizes and faces are deliberately *not* on this list.
 `CreateFontA` honours `weight` and picks between the regular and bold Tahoma
@@ -44,7 +38,8 @@ rasteriser, and no application here has asked for one yet.
 
 ## Implemented
 
-**Windowing** — `RegisterClassA`, `CreateWindowExA`, `DestroyWindow`,
+**Windowing** — any number of top-level windows, each with its own surface and
+native window; `RegisterClassA`, `CreateWindowExA`, `DestroyWindow`,
 `ShowWindow`, `MoveWindow`, `GetClientRect`, `AdjustWindowRect(Ex)`,
 `SetWindowTextA`/`GetWindowTextA`, `GetDlgItem`, `SetFocus`,
 `SetCapture`/`ReleaseCapture`/`GetCapture`, `InvalidateRect`, `UpdateWindow`,
@@ -57,12 +52,19 @@ the disabled state), `STATIC`, `EDIT`, `LISTBOX`, `COMBOBOX`, `SCROLLBAR`, and
 the common controls `msctls_progress32`, `msctls_trackbar32`,
 `msctls_statusbar32`, `SysTabControl32`, `SysTreeView32` and `SysListView32`.
 
+**Timers and the keyboard** — `SetTimer`/`KillTimer`/`WM_TIMER` (with the
+`TIMERPROC` called from `DispatchMessage`), a caret that blinks on one, and
+`IsDialogMessageA` carrying Tab/Shift+Tab, Space, the arrows within a group of
+option buttons, `&`-mnemonics under Alt, Enter and Esc. Focused buttons draw
+the dotted focus rectangle.
+
 **GDI** — `BeginPaint`/`EndPaint`, `FillRect`, `FrameRect`, `DrawEdge` (Wine's
 tables, every `BDR_`/`EDGE_` type and `BF_` flag), `DrawFrameControl`
 (`DFC_CAPTION` and `DFC_BUTTON`), `TextOutA`, `DrawTextA`,
 `GetTextExtentPoint32A`, `SetTextColor`, `SetBkMode`, `GetSysColor(Brush)`,
 `CreateSolidBrush`, `CreateFontA`, `DeleteObject`,
-`GetStockObject(DEFAULT_GUI_FONT)`, `SelectObject`.
+`GetStockObject` (the GUI font and the stock brushes), `SelectObject`
+(returning what was really selected).
 
 **Dialogs** — `CreateDialogIndirectParamA` (+ `CreateDialogIndirectA`) builds a
 dialog from a `DLGTEMPLATE`/`DLGITEMTEMPLATE`, instantiating each control and
@@ -160,26 +162,28 @@ asserts where each control ends up, so CI covers it.
 
 ## Core machinery these need
 
-- **A second top-level window.** Only one exists today (`src/user.c:303`).
-  The combo box's list works around it by painting over the parent, which is
-  enough while the list fits inside the window; menus and modal dialogs will
-  need the real thing.
-- **Timers** — `SetTimer`/`KillTimer`/`WM_TIMER`: caret blink, scroll-bar
-  auto-repeat, marquee progress.
-- **Shift and the other modifiers** in more than typing: Shift+Tab, shift-click
-  selection, Ctrl shortcuts.
+- **Timers** are done — `SetTimer`/`KillTimer`/`WM_TIMER`, with the caret
+  blinking on one. Scroll-bar auto-repeat and marquee progress still want
+  writing, but the machinery under them exists.
+- **More than one top-level window** is done, each with its own surface and
+  backend window. The combo box still paints its list over the parent; a list
+  taller than the window is now fixable rather than blocked.
+- **Ctrl shortcuts and shift-click selection.** Shift and Alt reach the app
+  (Shift+Tab and mnemonics use them); Ctrl does not yet.
 - **Mouse routing into nested children**, plus hover tracking
   (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today
   only direct children of the top-level window are hit-tested
   (`src/user.c:644`).
-- **Drawing primitives still missing** — `DrawFocusRect`, `DrawState` as a
-  public call, `WM_ERASEBKGND`, `WM_CTLCOLORSTATIC`/`WM_CTLCOLOREDIT`, and the
+- **Drawing primitives still missing** — `DrawFocusRect` and `DrawState` as
+  public calls (a focused button draws its own rectangle, but the API is not
+  exposed), `WM_ERASEBKGND`, `WM_CTLCOLORSTATIC`/`WM_CTLCOLOREDIT`, and the
   inactive-caption colours (`COLOR_INACTIVECAPTION(TEXT)`,
   `COLOR_GRADIENTINACTIVECAPTION`) with `WM_NCACTIVATE` behind them.
 - **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`, `LoadImage`,
   `DrawIconEx` for tree and list-view items.
-- **Keyboard conventions** — mnemonics (`&Text` + Alt), accelerators,
-  `WM_NEXTDLGCTL`, arrow-key navigation inside radio groups and lists.
+- **Keyboard conventions** — mnemonics, Tab/Shift+Tab, Space and the arrows
+  inside a group are done, through `IsDialogMessageA`. Accelerator tables,
+  `WM_NEXTDLGCTL` and arrow navigation inside a list are not.
 
 ## Beyond the 98.css list
 
@@ -197,17 +201,16 @@ manager so, which is why one could not be resized before.
 
 Shortcuts the current code takes deliberately; each is a candidate task.
 
-- **`SelectObject` returns the stock GUI font as the previous object**
-  (`src/gdi.c:141`), so the usual save/restore idiom loses a bold selection.
 - **`CreateFontA` honours only `weight`**; `height` and `face_name` are
   accepted and ignored.
 - **`SetBkMode(OPAQUE)` is accepted but unimplemented** (`src/gdi.c:322`):
   text is always drawn transparent.
 - **No subclassing** (`src/ween_internal.h:131`); no `SetWindowLongPtr`,
-  `PostMessageA` or `GetDC`/`ReleaseDC`.
-- **Fixed caps, silent when exceeded**: 32 window classes (`RegisterClassA`
-  then returns 0), 128-byte window text, a 64-message queue, 64 tab stops per
-  dialog, four columns in a list view.
+  `PostMessageA`, `PeekMessageA` or `GetDC`/`ReleaseDC`. Without `PeekMessage`
+  a message loop can only be run once per process, since `WM_QUIT` is final.
+- **Fixed caps still left**: four columns in a list view, and 64 buttons in one
+  group of option buttons. Window text, the class table and the message queue
+  grow; a window may have any number of tab stops.
 - **The dpi is latched on first use** — the font strikes are static
   singletons, so `WEEN32_DPI` must be set before the first API call.
 - **Text is measured differently from how it is drawn.** GDI reports character
@@ -263,8 +266,9 @@ the trackbars — is within a handful of pixels or exact.
 
 ## Testing
 
-`make test` covers the engine pixels, the API path and the dialog manager, all
-headless. Gaps worth closing:
+`make test` covers the engine pixels, the API path, the dialog manager, input
+and resizing, two windows at once, timers and the keyboard conventions — 103
+assertions, all headless, so CI runs the lot. Gaps worth closing:
 
 - the tests pin `WEEN32_DPI=96`; only the `Xft.dpi` *parser* is covered, so
   the 120/144 strike snapping and the 192 pixel-doubling have no assertions;
