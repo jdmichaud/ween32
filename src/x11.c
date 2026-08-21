@@ -9,6 +9,7 @@
  * Compiled only when WEEN_BACKEND_X11 is defined (link with -lX11); otherwise
  * ween_backend_x11() reports the backend unavailable. */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,6 +34,7 @@ int ween_x11_probe_dpi(void)
 typedef struct XDisplay XDisplay;
 typedef unsigned long XWindow;
 typedef unsigned long XAtom;
+typedef unsigned long XPixmap;
 typedef struct XGC XGC;
 
 typedef struct {
@@ -103,6 +105,26 @@ typedef struct {
     unsigned char rest[200];
 } XImage;
 
+/* Xlib's XSetWindowAttributes, declared in full: the two fields that matter
+ * here sit in the middle of it, so the tail has to be the right size. */
+typedef struct {
+    XPixmap background_pixmap;
+    unsigned long background_pixel;
+    XPixmap border_pixmap;
+    unsigned long border_pixel;
+    int bit_gravity;
+    int win_gravity;
+    int backing_store;
+    unsigned long backing_planes;
+    unsigned long backing_pixel;
+    int save_under;
+    long event_mask;
+    long do_not_propagate_mask;
+    int override_redirect;
+    unsigned long colormap;
+    unsigned long cursor;
+} XSetWindowAttributes;
+
 typedef struct {
     long flags;
     int x, y;
@@ -133,6 +155,8 @@ enum {
 #define X_KeyPressMask (1L << 0)
 #define X_StructureNotifyMask (1L << 17)
 #define X_ZPixmap 2
+#define X_CWBitGravity (1L << 4)
+#define X_NorthWestGravity 1
 #define X_PPosition (1L << 2)
 #define X_PSize (1L << 3)
 #define X_PMinSize (1L << 4)
@@ -158,6 +182,9 @@ extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
 extern int XPutImage(XDisplay *, XWindow, XGC *, XImage *, int, int, int, int,
                      unsigned, unsigned);
 extern int XNextEvent(XDisplay *, XEvent *);
+extern int XCheckTypedWindowEvent(XDisplay *, XWindow, int, XEvent *);
+extern int XChangeWindowAttributes(XDisplay *, XWindow, unsigned long,
+                                   XSetWindowAttributes *);
 extern int XFlush(XDisplay *);
 extern XAtom XInternAtom(XDisplay *, const char *, int);
 extern int XSetWMProtocols(XDisplay *, XWindow, XAtom *, int);
@@ -224,6 +251,20 @@ static void *x11_open(int w, int h, const char *title)
     XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)ww,
                                       (unsigned)wh, 0, 0, 0x00c0c0c0);
     XStoreName(dpy, win, title);
+
+    /* Keep what is already on screen across a resize. The default gravity is
+     * Forget: the server throws the contents away and tiles the whole window
+     * with the background at every single step of a drag, so what you see is a
+     * run of grey flashes with our frames in between — the flicker. North-west
+     * pins the old pixels to the corner the window grows from, and only the
+     * newly uncovered strip is filled, in the face grey it is about to be
+     * painted anyway. The background is deliberately left as it is: on a
+     * forwarded display a frame takes long enough to arrive that no background
+     * at all would show the framebuffer's leftovers instead. */
+    XSetWindowAttributes attrs;
+    memset(&attrs, 0, sizeof(attrs));
+    attrs.bit_gravity = X_NorthWestGravity;
+    XChangeWindowAttributes(dpy, win, X_CWBitGravity, &attrs);
 
     /* fixed size: no WM resize handles */
     /* fixed size until the window says otherwise: a window whose style has
@@ -371,10 +412,25 @@ static ween_event x11_next_event(void *win)
         XNextEvent(xw->dpy, &ev);
         XButtonEvent *b = &ev.xbutton;
         switch (ev.type) {
-        case X_Expose:
+        case X_Expose: {
+            /* One present covers the window, so the rest of the burst is work
+             * we would only throw away. */
+            XEvent drop;
+            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_Expose, &drop))
+                ;
             out.kind = WEEN_EV_EXPOSE;
             return out;
+        }
         case X_ConfigureNotify: {
+            /* Keep the last geometry of a drag's burst and drop the exposes it
+             * dragged along: repainting at each size the pointer swept through
+             * is what makes a resize crawl and tear. */
+            XEvent newer;
+            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_ConfigureNotify,
+                                          &newer))
+                ev = newer;
+            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_Expose, &newer))
+                ;
             /* Always report it, even when the size has not changed: a window
              * manager that refuses a resize answers with the geometry it is
              * keeping, and that is how the surface learns to go back. */
