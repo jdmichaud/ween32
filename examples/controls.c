@@ -355,8 +355,12 @@ int main(void)
     RECT r = { 0, 0, 660, 420 };
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
     AdjustWindowRect(&r, style, FALSE);
-    HWND w = CreateWindowExA(0, "ween32ref", "win32 control sampler", style, 40,
-                             40, r.right - r.left, r.bottom - r.top, NULL, NULL,
+    /* WS_EX_DLGMODALFRAME: no system-menu icon in the caption. The icon
+     * win32 would otherwise draw is its own bitmap, which ween32 has no way
+     * to reproduce — so the sampler asks for a caption without one. */
+    HWND w = CreateWindowExA(WS_EX_DLGMODALFRAME, "ween32ref",
+                             "win32 control sampler", style, 40, 40,
+                             r.right - r.left, r.bottom - r.top, NULL, NULL,
                              NULL, NULL);
     ShowWindow(w, SW_SHOWNORMAL);
     UpdateWindow(w);

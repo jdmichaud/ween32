@@ -39,6 +39,9 @@ REGEDIT4
 [HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics]
 "BorderWidth"="-15"
 "CaptionHeight"="-270"
-"ScrollHeight"="-255"
-"ScrollWidth"="-255"
+"ScrollHeight"="-240"
+"ScrollWidth"="-240"
 "SmCaptionHeight"="-240"
+
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"FontSmoothing"="0"

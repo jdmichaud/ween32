@@ -857,12 +857,20 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* caption gradient + title (bold, as Win2k captions were) + close */
         int frame = ween_ncm(WEEN_NC_FRAME);
         int cap = ween_ncm(WEEN_NC_CAPTION);
-        ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1);
+        /* the gradient holds its end colours behind the icon and the
+         * buttons; see ween_classic_caption */
+        int icon_w = (wnd->style & WS_SYSMENU) ? ween_ncm(WEEN_NC_SMICON) : 0;
+        int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
+        ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
+                             icon_w, buttons_w);
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
             int ty = frame + (cap - (f->ascent - f->descent)) / 2;
-            ween_strike_draw(f, s, frame + ween_ncm(5), ty, wnd->text,
-                             (int)strlen(wnd->text), WEEN_CAP_TEXT);
+            /* the title starts two pixels in — after the system-menu icon,
+             * when there is one */
+            int tx = frame + ween_ncm(2);
+            ween_strike_draw(f, s, tx, ty, wnd->text, (int)strlen(wnd->text),
+                             WEEN_CAP_TEXT);
         }
         if (wnd->style & WS_SYSMENU) {
             RECT c = nc_close_rect(wnd);

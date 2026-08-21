@@ -60,7 +60,9 @@ int ween_classic_edge(ween_surface *s, int x, int y, int w, int h,
                       unsigned type, unsigned flags, RECT *inner);
 /* Shorthand for the button edge (EDGE_RAISED/SUNKEN | BF_RECT | BF_SOFT). */
 void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken);
-void ween_classic_caption(ween_surface *s, int x, int y, int w, int h);
+void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
+                          int icon_w, int buttons_w);
+#define WEEN_NC_SMICON 16 /* SM_CXSMICON: the caption icon, and its gradient stop */
 /* DrawFrameControl's DFC_BUTTON glyphs (DFCS_* flags as in the SDK). */
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
 /* Scroll-bar parts: the dithered track, and one arrow button (dir: 0 up,

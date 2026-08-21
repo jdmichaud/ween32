@@ -267,8 +267,8 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
     /* Wine's UITOOLS95_DrawFrameCaption: the button face + bevel on the full
      * rect, then Marlett at SmallDiam = short side - 2, centred — and NOT
      * shifted when pushed (only the bevel flips to sunken). */
-    ween_surface_fill(dc->s, x, y, w, h, WEEN_FACE);
-    ween_classic_bevel(dc->s, x, y, w, h, pushed);
+    ween_classic_edge(dc->s, x, y, w, h, pushed ? EDGE_SUNKEN : EDGE_RAISED,
+                      BF_RECT | BF_MIDDLE, NULL);
     const ween_marlett *m = ween_caption_font();
     if (m) {
         int size = (w < h ? w : h) - 2;

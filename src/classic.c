@@ -167,24 +167,42 @@ void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken)
                       BF_RECT | BF_SOFT, NULL);
 }
 
-/* The classic navy -> light-blue horizontal caption gradient. Interpolated per
- * channel across the strip, as GradientFill does; quantising through a 0..255
- * ramp first would coarsen it visibly. */
-void ween_classic_caption(ween_surface *s, int x, int y, int w, int h)
+/* The classic caption fill: solid behind the icon, the navy -> light-blue
+ * ramp behind the title, solid behind the buttons. Wine feeds GradientFill a
+ * four-vertex mesh with exactly those three regions, so a caption is not one
+ * ramp across its whole width — miss that and every pixel of it is a shade
+ * out. `icon_w` is the strip on the left held at the start colour (0 when the
+ * window has no system menu); `buttons_w` the strip on the right held at the
+ * end colour. */
+void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
+                          int icon_w, int buttons_w)
 {
     int ar = (WEEN_CAP_LEFT >> 16) & 0xff, ag = (WEEN_CAP_LEFT >> 8) & 0xff;
     int ab = WEEN_CAP_LEFT & 0xff;
     int br = (WEEN_CAP_RIGHT >> 16) & 0xff, bg = (WEEN_CAP_RIGHT >> 8) & 0xff;
     int bb = WEEN_CAP_RIGHT & 0xff;
+    int x1 = x + (icon_w < w ? icon_w : w);
+    int x2 = x + w - buttons_w;
+    int span;
     if (w <= 0)
         return;
-    for (int i = 0; i < w; i++) {
-        int d = w == 1 ? 0 : i;
-        int n = w == 1 ? 1 : w - 1;
-        unsigned r = (unsigned)(ar + (br - ar) * d / n);
-        unsigned g = (unsigned)(ag + (bg - ag) * d / n);
-        unsigned b = (unsigned)(ab + (bb - ab) * d / n);
-        ween_surface_vline(s, x + i, y, h, (r << 16) | (g << 8) | b);
+    if (x2 < x1)
+        x2 = x1;
+    span = x2 - x1;
+    for (int i = x; i < x + w; i++) {
+        ween_color c;
+        if (i < x1 || span <= 0)
+            c = WEEN_CAP_LEFT;
+        else if (i >= x2)
+            c = WEEN_CAP_RIGHT;
+        else {
+            int d = i - x1;
+            unsigned r = (unsigned)(ar + (br - ar) * d / span);
+            unsigned g = (unsigned)(ag + (bg - ag) * d / span);
+            unsigned b = (unsigned)(ab + (bb - ab) * d / span);
+            c = (r << 16) | (g << 8) | b;
+        }
+        ween_surface_vline(s, i, y, h, c);
     }
 }
 

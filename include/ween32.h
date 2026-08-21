@@ -232,6 +232,7 @@ typedef struct tagCREATESTRUCTA {
 #define WS_TABSTOP 0x00010000L
 
 /* extended styles: the two field borders */
+#define WS_EX_DLGMODALFRAME 0x00000001L
 #define WS_EX_CLIENTEDGE 0x00000200L
 #define WS_EX_STATICEDGE 0x00020000L
 
