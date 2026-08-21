@@ -492,6 +492,436 @@ static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- the tree view --------------------------------------------------------
+ *
+ * Items on 16-pixel rows, each level indented 19; a 9x9 button with a plus or
+ * minus where an item has children, and dotted lines — every other pixel —
+ * joining a parent to its children. */
+
+typedef struct ween_tvitem {
+    char *text;
+    struct ween_tvitem *parent, *child, *next;
+    int expanded;
+} ween_tvitem;
+
+typedef struct {
+    ween_tvitem *root;
+} ween_tree;
+
+#define WEEN_TV_ITEM_H 16
+#define WEEN_TV_INDENT 19
+#define WEEN_TV_BUTTON 9
+
+static ween_tree *tree_of(HWND w)
+{
+    if (!w->ctl)
+        w->ctl = calloc(1, sizeof(ween_tree));
+    return w->ctl;
+}
+
+static void tree_free(ween_tvitem *it)
+{
+    while (it) {
+        ween_tvitem *next = it->next;
+        tree_free(it->child);
+        free(it->text);
+        free(it);
+        it = next;
+    }
+}
+
+static void dotted_v(ween_surface *s, int x, int y0, int y1, ween_color c)
+{
+    for (int y = y0; y < y1; y++)
+        if (!((x + y) & 1))
+            ween_surface_pixel(s, x, y, c);
+}
+
+static void dotted_h(ween_surface *s, int y, int x0, int x1, ween_color c)
+{
+    for (int x = x0; x < x1; x++)
+        if (!((x + y) & 1))
+            ween_surface_pixel(s, x, y, c);
+}
+
+/* Draw one level of the tree; returns the row after the last one drawn. */
+static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
+                     int ox, int oy, int depth, int row, int lines)
+{
+    int th = f ? f->ascent - f->descent : 13;
+    for (ween_tvitem *it = first; it; it = it->next) {
+        int y = oy + row * WEEN_TV_ITEM_H;
+        int bx = ox + 5 + depth * WEEN_TV_INDENT;
+        int cx = bx + WEEN_TV_BUTTON / 2;
+        int cy = y + WEEN_TV_ITEM_H / 2 - 1;
+        int tx = bx + WEEN_TV_BUTTON + 7;
+
+        if (lines) {
+            /* the stub joining this item to its parent's line, and the run
+             * down to the sibling below */
+            dotted_h(s, cy, cx, tx - 3, WEEN_SHADOW);
+            if (it->next)
+                dotted_v(s, cx, y, y + WEEN_TV_ITEM_H, WEEN_SHADOW);
+            else
+                dotted_v(s, cx, y, cy + 1, WEEN_SHADOW);
+        }
+        if (it->child) {
+            /* the button: a grey box with a plus or minus in it */
+            ween_surface_rect(s, bx, cy - 4, WEEN_TV_BUTTON, WEEN_TV_BUTTON,
+                              WEEN_SHADOW);
+            ween_surface_fill(s, bx + 1, cy - 3, WEEN_TV_BUTTON - 2,
+                              WEEN_TV_BUTTON - 2, WEEN_WHITE);
+            ween_surface_hline(s, bx + 2, cy, WEEN_TV_BUTTON - 4, WEEN_BLACK);
+            if (!it->expanded)
+                ween_surface_vline(s, cx, cy - 2, WEEN_TV_BUTTON - 4, WEEN_BLACK);
+        }
+        if (f && it->text)
+            ween_strike_draw(f, s, tx, y + (WEEN_TV_ITEM_H - th) / 2 - 1,
+                             it->text, (int)strlen(it->text), WEEN_BLACK);
+        row++;
+        if (it->expanded && it->child) {
+            int start = row;
+            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines);
+            if (lines) /* the parent's line down past its children */
+                dotted_v(s, cx, y + WEEN_TV_ITEM_H,
+                         oy + (start + 0) * WEEN_TV_ITEM_H, WEEN_SHADOW);
+        }
+    }
+    return row;
+}
+
+static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_tree *t = tree_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT r = ps->rcPaint;
+    int ox, oy;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
+    if (t && t->root)
+        tree_draw(&top->surface, f, t->root, ox, oy, 0, 0,
+                  (wnd->style & TVS_HASLINES) != 0);
+}
+
+static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_tree *t;
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        treeview_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TVM_INSERTITEMA: {
+        const TVINSERTSTRUCTA *is = (const TVINSERTSTRUCTA *)lp;
+        ween_tvitem *item, **link;
+        size_t n;
+        if (!is || !(t = tree_of(wnd)))
+            return 0;
+        item = calloc(1, sizeof(*item));
+        if (!item)
+            return 0;
+        n = strlen(is->item.pszText ? is->item.pszText : "") + 1;
+        item->text = malloc(n);
+        if (item->text)
+            memcpy(item->text, is->item.pszText ? is->item.pszText : "", n);
+        if (is->hParent && is->hParent != TVI_ROOT) {
+            item->parent = is->hParent;
+            link = &is->hParent->child;
+        } else {
+            link = &t->root;
+        }
+        while (*link)
+            link = &(*link)->next;
+        *link = item;
+        InvalidateRect(wnd, NULL, FALSE);
+        return (LRESULT)(UINT_PTR)item;
+    }
+    case TVM_EXPAND: {
+        ween_tvitem *item = (ween_tvitem *)lp;
+        if (item)
+            item->expanded = (wp & TVE_EXPAND) != 0;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case WM_DESTROY:
+        t = wnd->ctl;
+        if (t) {
+            tree_free(t->root);
+            free(t);
+            wnd->ctl = NULL;
+        }
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the list view, in report mode ---------------------------------------
+ *
+ * A header of raised buttons over rows of text, one column per header item. */
+
+#define WEEN_LV_HEADER_H 17
+#define WEEN_LV_ITEM_H 14
+
+typedef struct {
+    char *text[4];
+} ween_lvrow;
+
+typedef struct {
+    char *col[4];
+    int width[4], ncol;
+    ween_lvrow *row;
+    int nrow, caprow;
+} ween_list;
+
+static ween_list *list_of(HWND w)
+{
+    if (!w->ctl)
+        w->ctl = calloc(1, sizeof(ween_list));
+    return w->ctl;
+}
+
+static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_list *l = list_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT r = ps->rcPaint;
+    int ox, oy, th = f ? f->ascent - f->descent : 13, x;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
+    if (!l)
+        return;
+
+    x = 0;
+    for (int c = 0; c < l->ncol; c++) {
+        ween_classic_edge(&top->surface, ox + x, oy, l->width[c],
+                          WEEN_LV_HEADER_H, EDGE_RAISED,
+                          BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+        if (f && l->col[c])
+            ween_strike_draw(f, &top->surface, ox + x + 7,
+                             oy + (WEEN_LV_HEADER_H - th) / 2, l->col[c],
+                             (int)strlen(l->col[c]), WEEN_BLACK);
+        x += l->width[c];
+    }
+
+    for (int i = 0; i < l->nrow; i++) {
+        int y = oy + WEEN_LV_HEADER_H + i * WEEN_LV_ITEM_H;
+        x = 0;
+        for (int c = 0; c < l->ncol; c++) {
+            if (f && l->row[i].text[c])
+                ween_strike_draw(f, &top->surface, ox + x + 7,
+                                 y + (WEEN_LV_ITEM_H - th) / 2, l->row[i].text[c],
+                                 (int)strlen(l->row[i].text[c]), WEEN_BLACK);
+            x += l->width[c];
+        }
+    }
+}
+
+static char *dup_str(const char *src)
+{
+    size_t n = strlen(src ? src : "") + 1;
+    char *copy = malloc(n);
+    if (copy)
+        memcpy(copy, src ? src : "", n);
+    return copy;
+}
+
+static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_list *l;
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        listview_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case LVM_INSERTCOLUMNA: {
+        const LVCOLUMNA *col = (const LVCOLUMNA *)lp;
+        int i = (int)wp;
+        l = list_of(wnd);
+        if (!l || !col || i < 0 || i >= 4)
+            return -1;
+        l->col[i] = dup_str(col->pszText);
+        l->width[i] = (col->mask & LVCF_WIDTH) ? col->cx : 50;
+        if (i >= l->ncol)
+            l->ncol = i + 1;
+        InvalidateRect(wnd, NULL, FALSE);
+        return i;
+    }
+    case LVM_INSERTITEMA: {
+        const LVITEMA *item = (const LVITEMA *)lp;
+        ween_lvrow *rows;
+        l = list_of(wnd);
+        if (!l || !item)
+            return -1;
+        rows = realloc(l->row, (size_t)(l->nrow + 1) * sizeof(*rows));
+        if (!rows)
+            return -1;
+        l->row = rows;
+        memset(&l->row[l->nrow], 0, sizeof(*rows));
+        l->row[l->nrow].text[0] = dup_str(item->pszText);
+        InvalidateRect(wnd, NULL, FALSE);
+        return l->nrow++;
+    }
+    case LVM_SETITEMTEXTA: {
+        const LVITEMA *item = (const LVITEMA *)lp;
+        int i = (int)wp;
+        l = list_of(wnd);
+        if (!l || !item || i < 0 || i >= l->nrow || item->iSubItem >= 4)
+            return FALSE;
+        free(l->row[i].text[item->iSubItem]);
+        l->row[i].text[item->iSubItem] = dup_str(item->pszText);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case LVM_SETITEMSTATE:
+        return TRUE; /* the selection only shows when the control has focus */
+    case WM_DESTROY:
+        l = wnd->ctl;
+        if (l) {
+            for (int c = 0; c < 4; c++)
+                free(l->col[c]);
+            for (int i = 0; i < l->nrow; i++)
+                for (int c = 0; c < 4; c++)
+                    free(l->row[i].text[c]);
+            free(l->row);
+            free(l);
+            wnd->ctl = NULL;
+        }
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the trackbar ---------------------------------------------------------
+ *
+ * A sunken channel with a pointed thumb riding it and a row of ticks below.
+ * The thumb's centre travels between half a thumb in from each end of the
+ * channel, and the ticks mark the same span. */
+
+#define WEEN_TB_THUMB_W 11
+#define WEEN_TB_THUMB_H 21
+#define WEEN_TB_CHANNEL 4
+
+static void trackbar_thumb(ween_surface *s, int x, int y, int vert)
+{
+    int w = WEEN_TB_THUMB_W, body = WEEN_TB_THUMB_H - 5;
+    if (!vert) {
+        /* body */
+        ween_surface_hline(s, x, y, w - 1, WEEN_WHITE);
+        ween_surface_vline(s, x, y, body, WEEN_WHITE);
+        ween_surface_fill(s, x + 1, y + 1, w - 3, body - 1, WEEN_FACE);
+        ween_surface_vline(s, x + w - 2, y + 1, body - 1, WEEN_SHADOW);
+        ween_surface_vline(s, x + w - 1, y, body + 1, WEEN_DKSHADOW);
+        /* the point */
+        for (int i = 0; i < 5; i++) {
+            int l = x + 1 + i, r = x + w - 2 - i;
+            int py = y + body + i;
+            if (l > r)
+                break;
+            ween_surface_pixel(s, l, py, WEEN_WHITE);
+            ween_surface_fill(s, l + 1, py, r - l - 1, 1, WEEN_FACE);
+            ween_surface_pixel(s, r, py, WEEN_SHADOW);
+            ween_surface_pixel(s, r + 1, py, WEEN_DKSHADOW);
+        }
+    } else {
+        ween_surface_vline(s, x, y, w - 1, WEEN_WHITE);
+        ween_surface_hline(s, x, y, body, WEEN_WHITE);
+        ween_surface_fill(s, x + 1, y + 1, body - 1, w - 3, WEEN_FACE);
+        ween_surface_hline(s, x + 1, y + w - 2, body - 1, WEEN_SHADOW);
+        ween_surface_hline(s, x, y + w - 1, body + 1, WEEN_DKSHADOW);
+        for (int i = 0; i < 5; i++) {
+            int t = y + 1 + i, b = y + w - 2 - i;
+            int pxx = x + body + i;
+            if (t > b)
+                break;
+            ween_surface_pixel(s, pxx, t, WEEN_WHITE);
+            ween_surface_fill(s, pxx, t + 1, 1, b - t - 1, WEEN_FACE);
+            ween_surface_pixel(s, pxx, b, WEEN_SHADOW);
+            ween_surface_pixel(s, pxx, b + 1, WEEN_DKSHADOW);
+        }
+    }
+}
+
+static void trackbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    struct ween_wnd *top = ween_top_level(wnd);
+    RECT r = ps->rcPaint;
+    int vert = (wnd->style & TBS_VERT) != 0;
+    int ox, oy, half = WEEN_TB_THUMB_W / 2;
+    int min = wnd->scroll_min, max = wnd->scroll_max, pos = wnd->scroll_pos;
+    int len = vert ? r.bottom - r.top : r.right - r.left;
+    int chan0 = 8, chan1 = len - 8; /* the channel's ends */
+    int span = chan1 - chan0 - 2 * half;
+    int at = max > min ? chan0 + half + span * (pos - min) / (max - min)
+                       : chan0 + half;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+
+    if (!vert) {
+        ween_classic_edge(&top->surface, ox + chan0, oy + 9, chan1 - chan0,
+                          WEEN_TB_CHANNEL, EDGE_SUNKEN, BF_RECT, NULL);
+        if (!(wnd->style & TBS_NOTICKS))
+            for (int i = min; i <= max; i++) {
+                int tx = ox + chan0 + half + span * (i - min) / (max - min);
+                int h = (i == min || i == max) ? 4 : 3;
+                ween_surface_vline(&top->surface, tx, oy + 25, h, WEEN_DKSHADOW);
+            }
+        trackbar_thumb(&top->surface, ox + at - half, oy + 2, 0);
+    } else {
+        ween_classic_edge(&top->surface, ox + 9, oy + chan0, WEEN_TB_CHANNEL,
+                          chan1 - chan0, EDGE_SUNKEN, BF_RECT, NULL);
+        if (!(wnd->style & TBS_NOTICKS))
+            for (int i = min; i <= max; i++) {
+                int ty = oy + chan0 + half + span * (i - min) / (max - min);
+                int h = (i == min || i == max) ? 4 : 3;
+                ween_surface_hline(&top->surface, ox + 25, ty, h, WEEN_DKSHADOW);
+            }
+        trackbar_thumb(&top->surface, ox + 2, oy + at - half, 1);
+    }
+}
+
+static LRESULT trackbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE:
+        wnd->scroll_min = 0;
+        wnd->scroll_max = 100;
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        trackbar_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TBM_SETPOS:
+        wnd->scroll_pos = (int)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case TBM_GETPOS:
+        return wnd->scroll_pos;
+    case TBM_SETRANGE:
+        wnd->scroll_min = (int)(short)LOWORD(lp);
+        wnd->scroll_max = (int)(short)HIWORD(lp);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
 /* ---- the tab control -----------------------------------------------------
  *
  * Tabs sit in a strip along the top: the selected one two pixels taller and
@@ -741,6 +1171,15 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = tab_proc;
     wc.lpszClassName = WC_TABCONTROLA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = treeview_proc;
+    wc.lpszClassName = WC_TREEVIEWA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = listview_proc;
+    wc.lpszClassName = WC_LISTVIEWA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = trackbar_proc;
+    wc.lpszClassName = TRACKBAR_CLASSA;
     RegisterClassA(&wc);
 }
 

@@ -272,6 +272,90 @@ typedef struct tagCREATESTRUCTA {
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
 
+/* trackbar (comctl32) */
+#define TRACKBAR_CLASSA "msctls_trackbar32"
+#define TBS_AUTOTICKS 0x0001L
+#define TBS_VERT 0x0002L
+#define TBS_HORZ 0x0000L
+#define TBS_BOTH 0x0008L
+#define TBS_NOTICKS 0x0010L
+#define TBM_GETPOS (WM_USER)
+#define TBM_SETPOS (WM_USER + 5)
+#define TBM_SETRANGE (WM_USER + 6)
+#define TBM_SETRANGEMIN (WM_USER + 7)
+#define TBM_SETRANGEMAX (WM_USER + 8)
+#define TBM_SETTICFREQ (WM_USER + 20)
+
+/* tree view and list view (comctl32) */
+#define WC_TREEVIEWA "SysTreeView32"
+#define WC_LISTVIEWA "SysListView32"
+#define TVS_HASBUTTONS 0x0001L
+#define TVS_HASLINES 0x0002L
+#define TVS_LINESATROOT 0x0004L
+#define TVS_SHOWSELALWAYS 0x0020L
+#define TVIF_TEXT 0x0001
+#define TVI_ROOT ((HTREEITEM)(UINT_PTR)-0x10000)
+#define TVI_FIRST ((HTREEITEM)(UINT_PTR)-0x0FFFF)
+#define TVI_LAST ((HTREEITEM)(UINT_PTR)-0x0FFFE)
+#define TVE_COLLAPSE 0x0001
+#define TVE_EXPAND 0x0002
+#define TV_FIRST 0x1100
+#define TVM_INSERTITEMA (TV_FIRST + 0)
+#define TVM_EXPAND (TV_FIRST + 2)
+#define TVM_SELECTITEM (TV_FIRST + 11)
+
+typedef struct ween_tvitem *HTREEITEM;
+typedef struct tagTVITEMA {
+    UINT mask;
+    HTREEITEM hItem;
+    UINT state, stateMask;
+    LPSTR pszText;
+    int cchTextMax, iImage, iSelectedImage, cChildren;
+    LPARAM lParam;
+} TVITEMA;
+typedef struct tagTVINSERTSTRUCTA {
+    HTREEITEM hParent;
+    HTREEITEM hInsertAfter;
+    TVITEMA item;
+} TVINSERTSTRUCTA;
+
+#define LVS_REPORT 0x0001L
+#define LVS_SINGLESEL 0x0004L
+#define LVS_SHOWSELALWAYS 0x0008L
+#define LVIF_TEXT 0x0001
+#define LVIS_FOCUSED 0x0001
+#define LVIS_SELECTED 0x0002
+#define LVCF_WIDTH 0x0002
+#define LVCF_TEXT 0x0004
+#define LVM_FIRST 0x1000
+#define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
+#define LVM_INSERTITEMA (LVM_FIRST + 7)
+#define LVM_SETITEMTEXTA (LVM_FIRST + 46)
+#define LVM_SETITEMSTATE (LVM_FIRST + 43)
+
+typedef struct tagLVCOLUMNA {
+    UINT mask;
+    int fmt, cx;
+    LPSTR pszText;
+    int cchTextMax, iSubItem, iImage, iOrder;
+} LVCOLUMNA;
+typedef struct tagLVITEMA {
+    UINT mask;
+    int iItem, iSubItem;
+    UINT state, stateMask;
+    LPSTR pszText;
+    int cchTextMax, iImage;
+    LPARAM lParam;
+} LVITEMA;
+#define ListView_SetItemState(w, i, data, mask)                                \
+    do {                                                                       \
+        LVITEMA lv_;                                                           \
+        memset(&lv_, 0, sizeof lv_);                                           \
+        lv_.state = (data);                                                    \
+        lv_.stateMask = (mask);                                                \
+        SendMessageA((w), LVM_SETITEMSTATE, (WPARAM)(i), (LPARAM)&lv_);        \
+    } while (0)
+
 /* tab control (comctl32) */
 #define WC_TABCONTROLA "SysTabControl32"
 #define TCS_MULTILINE 0x0200L
@@ -491,6 +575,9 @@ typedef struct tagTCITEMA {
 #define WEEN32_HAS_PROGRESS 1
 #define WEEN32_HAS_STATUSBAR 1
 #define WEEN32_HAS_TABS 1
+#define WEEN32_HAS_TREEVIEW 1
+#define WEEN32_HAS_LISTVIEW 1
+#define WEEN32_HAS_TRACKBAR 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 

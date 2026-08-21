@@ -145,7 +145,7 @@ struct ween_dc {
 
 /* ---- windows ------------------------------------------------------------- */
 
-#define WEEN_MAX_CLASSES 16
+#define WEEN_MAX_CLASSES 32
 #define WEEN_MAX_TEXT 128
 
 typedef struct ween_class {
