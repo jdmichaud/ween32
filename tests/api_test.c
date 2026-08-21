@@ -134,6 +134,35 @@ int main(void)
     CHECK(g_got_click, "BN_CLICKED arrived via WM_COMMAND");
     CHECK(msg.message == WM_QUIT, "the loop ended on WM_QUIT");
 
+    /* SelectObject gives back what was really selected, so the save/restore
+     * idiom round-trips instead of collapsing to the stock font. */
+    {
+        PAINTSTRUCT ps;
+        HWND w = CreateWindowExA(0, "weentest", "gdi", WS_POPUP, 0, 0, 80, 40,
+                                 NULL, NULL, NULL, NULL);
+        HDC dc = w ? BeginPaint(w, &ps) : NULL;
+        CHECK(dc != NULL, "a DC to select into");
+        if (dc) {
+            HFONT bold = CreateFontA(0, 0, 0, 0, FW_BOLD, 0, 0, 0, 0, 0, 0, 0,
+                                     0, "Tahoma");
+            HFONT plain = CreateFontA(0, 0, 0, 0, FW_NORMAL, 0, 0, 0, 0, 0, 0,
+                                      0, 0, "Tahoma");
+            HGDIOBJ first = SelectObject(dc, bold);
+            CHECK(first != NULL, "selecting a font returns the previous one");
+            HGDIOBJ second = SelectObject(dc, plain);
+            CHECK(second == bold, "and that is the font actually selected");
+            SelectObject(dc, second); /* the usual restore */
+            CHECK(dc->font == bold->font, "restoring puts the bold font back");
+            SelectObject(dc, first);
+            CHECK(dc->font == w->font, "and unwinding reaches the DC's own");
+            EndPaint(w, &ps);
+            DeleteObject(bold);
+            DeleteObject(plain);
+        }
+        if (w)
+            DestroyWindow(w);
+    }
+
     /* Nothing that used to be a fixed cap fails quietly any more. */
     {
         WNDCLASSA many;

@@ -663,7 +663,7 @@ HDC BeginPaint(HWND wnd, PAINTSTRUCT *ps)
     g_dc.clip_h = cr.bottom;
     g_dc.text_color = GetSysColor(COLOR_BTNTEXT);
     g_dc.bk_mode = TRANSPARENT;
-    g_dc.font = wnd->font;
+    ween_dc_set_font(&g_dc, wnd->font);
 
     memset(ps, 0, sizeof(*ps));
     ps->hdc = &g_dc;

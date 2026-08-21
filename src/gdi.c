@@ -126,24 +126,65 @@ BOOL DeleteObject(HGDIOBJ obj)
 HGDIOBJ GetStockObject(int what)
 {
     static ween_gdiobj gui_font = { WEEN_OBJ_FONT, 0, NULL, 1 };
+    static ween_gdiobj white = { WEEN_OBJ_BRUSH, 0x00ffffff, NULL, 1 };
+    static ween_gdiobj black = { WEEN_OBJ_BRUSH, 0x00000000, NULL, 1 };
+    static ween_gdiobj gray = { WEEN_OBJ_BRUSH, 0x00808080, NULL, 1 };
+    static ween_gdiobj ltgray = { WEEN_OBJ_BRUSH, 0x00c0c0c0, NULL, 1 };
+    static ween_gdiobj dkgray = { WEEN_OBJ_BRUSH, 0x00404040, NULL, 1 };
     switch (what) {
     case DEFAULT_GUI_FONT:
     case SYSTEM_FONT:
         gui_font.font = ween_gui_font();
         return &gui_font;
+    case WHITE_BRUSH:
+        return &white;
+    case BLACK_BRUSH:
+        return &black;
+    case GRAY_BRUSH:
+        return &gray;
+    case LTGRAY_BRUSH:
+        return &ltgray;
+    case DKGRAY_BRUSH:
+        return &dkgray;
     default:
         return NULL;
     }
 }
 
+/* The font a DC starts with, as a selectable object: a paint DC comes with
+ * the window's font already in it, and restoring a "previous" object has to
+ * put that back rather than the stock one. */
+void ween_dc_set_font(struct ween_dc *dc, const ween_strike *font)
+{
+    dc->initial_font.kind = WEEN_OBJ_FONT;
+    dc->initial_font.font = font;
+    dc->initial_font.is_static = 1;
+    dc->font_obj = &dc->initial_font;
+    dc->font = font;
+}
+
+/* Returns what was selected before, which is the whole point of the call: the
+ * usual idiom is old = SelectObject(dc, f); ...; SelectObject(dc, old), and
+ * handing back the stock font instead quietly dropped a bold selection on the
+ * way out. A fresh DC holds the stock objects, as GDI's does. */
 HGDIOBJ SelectObject(HDC dc, HGDIOBJ obj)
 {
     if (!dc || !obj)
         return NULL;
     if (obj->kind == WEEN_OBJ_FONT) {
-        ween_gdiobj *prev = GetStockObject(DEFAULT_GUI_FONT);
+        HGDIOBJ prev = dc->font_obj ? dc->font_obj
+                                    : GetStockObject(DEFAULT_GUI_FONT);
+        dc->font_obj = obj;
         dc->font = obj->font;
-        return prev; /* v1: the GUI font is the only selectable font */
+        return prev;
+    }
+    if (obj->kind == WEEN_OBJ_BRUSH) {
+        /* Nothing draws with the DC's brush yet — FillRect and the rest take
+         * one explicitly — but the selection is tracked so the idiom works. */
+        HGDIOBJ prev = dc->brush_obj ? dc->brush_obj
+                                     : GetStockObject(WHITE_BRUSH);
+        dc->brush_obj = obj;
+        return prev;
     }
     return NULL;
 }

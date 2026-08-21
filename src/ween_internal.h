@@ -147,7 +147,12 @@ struct ween_dc {
     int clip_w, clip_h; /* drawing area (window size) */
     ween_color text_color;
     int bk_mode;
-    const ween_strike *font;
+    const ween_strike *font;    /* the strike drawing uses, from font_obj */
+    struct ween_gdiobj *font_obj;  /* what SelectObject was handed, so the */
+    struct ween_gdiobj *brush_obj; /* previous one can be given back */
+    /* The font a fresh DC comes with, as an object, so that restoring the
+     * "previous" one puts back what was really there. */
+    struct ween_gdiobj initial_font;
 };
 
 /* ---- windows ------------------------------------------------------------- */
@@ -237,6 +242,7 @@ void ween_controls_free(HWND w); /* per-class state, on destroy */
 
 /* Window text. Grows to fit whatever is stored; both return 0 only if the
  * allocation failed, and leave the old text intact when they do. */
+void ween_dc_set_font(struct ween_dc *dc, const ween_strike *font);
 int ween_wnd_set_text(struct ween_wnd *w, const char *text);
 int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
 

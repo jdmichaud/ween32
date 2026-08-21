@@ -599,6 +599,11 @@ typedef struct tagTCITEMA {
 
 #define TRANSPARENT 1
 #define OPAQUE 2
+#define WHITE_BRUSH 0
+#define LTGRAY_BRUSH 1
+#define GRAY_BRUSH 2
+#define DKGRAY_BRUSH 3
+#define BLACK_BRUSH 4
 #define SYSTEM_FONT 13
 #define DEFAULT_GUI_FONT 17
 
