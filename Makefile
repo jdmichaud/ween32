@@ -18,7 +18,7 @@ src/x11.o: CFLAGS += -DWEEN_BACKEND_X11
 LIBS += -lX11
 endif
 
-all: libween32.a examples/dialog examples/calc
+all: libween32.a examples/dialog examples/calc examples/controls
 
 libween32.a: $(OBJS)
 	ar rcs $@ $(OBJS)
@@ -31,6 +31,11 @@ examples/dialog: examples/dialog.c libween32.a
 
 examples/calc: examples/calc.c examples/win32_dlg.h libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/calc.c libween32.a $(LIBS) -lm
+
+# The control sampler is shared with tools/refcapture, which builds the very
+# same file against real win32 to produce the reference render.
+examples/controls: examples/controls.c libween32.a
+	$(CC) $(CFLAGS) -o $@ examples/controls.c libween32.a $(LIBS)
 
 tests/render_test: tests/render_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
@@ -47,7 +52,7 @@ test: tests/render_test tests/api_test tests/dlg_test
 	./tests/dlg_test
 
 clean:
-	rm -f $(OBJS) libween32.a examples/dialog examples/calc \
+	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls \
 	      tests/render_test tests/api_test tests/dlg_test
 
 .PHONY: all test clean

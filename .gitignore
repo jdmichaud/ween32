@@ -2,6 +2,7 @@
 *.o
 *.a
 examples/calc
+examples/controls
 examples/dialog
 tests/*_test
 
