@@ -147,6 +147,7 @@ static void ensure_builtins(void)
 {
     register_builtin("BUTTON", button_proc);
     register_builtin("STATIC", static_proc);
+    ween_register_controls();
 }
 
 ATOM RegisterClassA(const WNDCLASSA *wc)
@@ -180,8 +181,8 @@ static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
         *ox = ween_ncm(WEEN_NC_FRAME);
         *oy = ween_ncm(WEEN_NC_FRAME) + ween_ncm(WEEN_NC_CAPTION);
     } else {
-        *ox = 0;
-        *oy = 0;
+        *ox = ween_ex_edge(w);
+        *oy = ween_ex_edge(w);
     }
 }
 
@@ -214,8 +215,9 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    rect->right = wnd->w - ox - (has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : 0);
-    rect->bottom = wnd->h - oy - (has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : 0);
+    int trail = has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : ween_ex_edge(wnd);
+    rect->right = wnd->w - ox - trail;
+    rect->bottom = wnd->h - oy - trail;
     return TRUE;
 }
 
@@ -265,7 +267,6 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
                      DWORD style, int x, int y, int w, int h,
                      HWND parent, HMENU menu, HINSTANCE inst, LPVOID param)
 {
-    (void)ex_style;
     (void)inst;
     ensure_builtins();
     const ween_class *cls = find_class(class_name ? class_name : "");
@@ -278,6 +279,8 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     wnd->cls = cls;
     wnd->proc = cls->proc;
     wnd->style = style;
+    wnd->ex_style = ex_style;
+    wnd->scroll_max = 100;
     wnd->x = x == CW_USEDEFAULT ? 0 : x;
     wnd->y = y == CW_USEDEFAULT ? 0 : y;
     wnd->w = w;
@@ -602,6 +605,8 @@ static void paint_tree(struct ween_wnd *w)
 {
     if (!w->visible)
         return;
+    if (w->parent)
+        ween_paint_ex_edge(w);
     if (w->cls && w->cls->background) {
         struct ween_wnd *top = ween_top_level(w);
         int ox, oy;
@@ -914,7 +919,7 @@ static void button_label(HWND wnd, HDC dc, RECT *r, UINT fmt)
     DrawTextA(dc, wnd->text, -1, r, fmt);
 }
 
-/* The cell height GDI measures with — not the strike's own. */
+/* The cell a label is centred within: the strike's, not the outline's. */
 static int label_height(const struct ween_wnd *w)
 {
     const ween_strike *f = w->font ? w->font : ween_gui_font();

@@ -63,6 +63,11 @@ void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken)
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h);
 /* DrawFrameControl's DFC_BUTTON glyphs (DFCS_* flags as in the SDK). */
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
+/* Scroll-bar parts: the dithered track, and one arrow button (dir: 0 up,
+ * 1 down, 2 left, 3 right). */
+void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
+void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
+                               int dir, int inactive, int pushed);
 void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags);
 
 /* ---- fonts -------------------------------------------------------------- */
@@ -80,7 +85,7 @@ typedef struct {
     int descent;  /* negative, as in the font */
     int embolden; /* synthetic bold: overstrike 1px (weak bold strikes) */
     /* the logical (outline) metrics GDI reports, as opposed to the strike's */
-    int cell_h;   /* tmHeight: what text is measured and centred with */
+    int cell_h;   /* the cell labels are centred within (tmHeight) */
     int ppem;
     size_t hmtx;
     int nhmtx;
@@ -97,6 +102,9 @@ int ween_strike_text_extent(const ween_strike *f, const char *s, int len);
 /* y is the top of the text cell (TA_TOP); baseline = y + ascent. */
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
                       const char *text, int len, ween_color color);
+/* As above, but stepping by the reported advances — how EDIT spaces text. */
+void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
+                              int y, const char *text, int len, ween_color color);
 
 /* Marlett caption glyphs from glyf outlines, even-odd scanline fill (from
  * marlett.zig). code: 0x72 close, 0x30 min, 0x31 max, 0x32 restore. */
@@ -151,6 +159,7 @@ struct ween_wnd {
     struct ween_wnd *first_child;
     struct ween_wnd *next_sibling;
     DWORD style;
+    DWORD ex_style;
     int x, y, w, h; /* window rect; children: in parent CLIENT coordinates */
     char text[WEEN_MAX_TEXT];
     UINT_PTR id; /* (HMENU) child id */
@@ -158,6 +167,8 @@ struct ween_wnd {
     int visible;
     int pressed; /* BUTTON down-state */
     UINT check;  /* BUTTON check state (BST_*) */
+    int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
+    void *ctl;   /* per-class state, freed with the window */
     int destroyed;
 
     /* dialog frame (created by CreateDialogIndirect) */
@@ -195,6 +206,15 @@ int ween_ncm(int base96);  /* scale a 96-dpi non-client metric */
 int ween_parse_xft_dpi(const char *resources);
 /* Ask the display for its dpi (Xft.dpi); 0 if no display / not compiled. */
 int ween_x11_probe_dpi(void);
+
+/* ---- controls (controls.c) ----------------------------------------------- */
+
+int ween_ex_edge(const struct ween_wnd *w); /* field-border width, 0 if none */
+void ween_paint_ex_edge(struct ween_wnd *w);
+int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
+void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
+                         int enabled, int pos, int page, int min, int max);
+void ween_register_controls(void);
 
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);

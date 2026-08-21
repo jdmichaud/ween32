@@ -331,3 +331,98 @@ void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned fl
                      (flags & DFCS_INACTIVE) ? WEEN_SHADOW : WEEN_BLACK);
     }
 }
+
+/* ---- scroll bars (Wine's UITOOLS95_DrawFrameScroll) ---------------------- */
+
+/* The 55AA dither the scroll-bar track is painted with: face and window
+ * white on alternating pixels. */
+void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h)
+{
+    for (int py = y; py < y + h; py++)
+        for (int px = x; px < x + w; px++)
+            ween_surface_pixel(s, px, py,
+                               ((px + py) & 1) ? WEEN_FACE : WEEN_WHITE);
+}
+
+/* A polygon drawn the way GDI does with a pen and brush of one colour: the
+ * interior plus the outline, which is a pixel wider than the fill alone. */
+static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
+{
+    fill_polygon(s, pt, n, c);
+    for (int i = 0; i < n; i++) {
+        POINT a = pt[i], b = pt[(i + 1) % n];
+        int dx = b.x - a.x, dy = b.y - a.y;
+        int steps = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy)
+                        ? (dx < 0 ? -dx : dx)
+                        : (dy < 0 ? -dy : dy);
+        if (!steps) {
+            ween_surface_pixel(s, a.x, a.y, c);
+            continue;
+        }
+        for (int k = 0; k <= steps; k++)
+            ween_surface_pixel(s, a.x + dx * k / steps, a.y + dy * k / steps, c);
+    }
+}
+
+/* One scroll-bar arrow button. `dir`: 0 up, 1 down, 2 left, 3 right. */
+void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
+                               int dir, int inactive, int pushed)
+{
+    int sx = x, sy = y;
+    int d = make_square(&sx, &sy, w, h);
+    int small = d - 2;
+    int tri = 290 * small / 1000 - 1;
+    int left = sx, top = sy, right = sx + d, bottom = sy + d;
+    POINT ln[3];
+
+    if (tri < 2)
+        tri = 2;
+
+    /* An enabled arrow button gets the plain raised edge; a disabled or
+     * pushed one goes through the push-button path, which is soft. */
+    if (!inactive && !pushed)
+        ween_classic_edge(s, x, y, w, h, EDGE_RAISED, BF_RECT | BF_MIDDLE, NULL);
+    else
+        ween_classic_edge(s, x, y, w, h, pushed ? EDGE_SUNKEN : EDGE_RAISED,
+                          BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+
+    switch (dir) {
+    case 1: /* down */
+        ln[2].x = left + 470 * small / 1000 + 2;
+        ln[2].y = top + 687 * small / 1000 + 1;
+        ln[0].x = ln[2].x - tri;
+        ln[1].x = ln[2].x + tri;
+        ln[0].y = ln[1].y = ln[2].y - tri;
+        break;
+    case 2: /* left */
+        ln[2].x = right - (687 * small / 1000 + 1);
+        ln[2].y = top + 470 * small / 1000 + 2;
+        ln[0].y = ln[2].y - tri;
+        ln[1].y = ln[2].y + tri;
+        ln[0].x = ln[1].x = ln[2].x + tri;
+        break;
+    case 3: /* right */
+        ln[2].x = left + 687 * small / 1000 + 1;
+        ln[2].y = top + 470 * small / 1000 + 2;
+        ln[0].y = ln[2].y - tri;
+        ln[1].y = ln[2].y + tri;
+        ln[0].x = ln[1].x = ln[2].x - tri;
+        break;
+    default: /* up */
+        ln[2].x = left + 470 * small / 1000 + 2;
+        ln[2].y = bottom - (687 * small / 1000 + 1);
+        ln[0].x = ln[2].x - tri;
+        ln[1].x = ln[2].x + tri;
+        ln[0].y = ln[1].y = ln[2].y + tri;
+        break;
+    }
+
+    if (inactive) /* the white emboss goes first, at the unshifted position */
+        draw_polygon(s, ln, 3, WEEN_WHITE);
+    if (inactive || !pushed)
+        for (int i = 0; i < 3; i++) {
+            ln[i].x--;
+            ln[i].y--;
+        }
+    draw_polygon(s, ln, 3, inactive ? WEEN_SHADOW : WEEN_BLACK);
+}

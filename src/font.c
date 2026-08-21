@@ -86,11 +86,15 @@ int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int p
     f->nidx = rd32(ttf, chosen + 8);
     f->ascent = rdi8(ttf, chosen + 16); /* hori sbitLineMetrics: the baseline */
 
-    /* GDI reports the *logical* font's metrics, not the strike's: the cell
-     * height it measures text with, and character widths taken from the
-     * outline (hmtx) and rounded up. Drawing still uses the strike's own
-     * advances, so a measured string comes out a shade wider than it renders
-     * — a discrepancy real GDI has too, and one that moves centred labels. */
+    /* Two heights are in play, and both are measured from the reference: the
+     * strike's own cell (ascender + descender + 1) is what labels are centred
+     * within, while multi-line text is laid out on the outline's taller cell.
+     *
+     * GDI reports the *logical* font's character widths, not the strike's:
+     * they come from the outline (hmtx), rounded up. Drawing still uses the
+     * strike's own advances, so a measured string comes out a shade wider than
+     * it renders — a discrepancy real GDI has too, and one that visibly moves
+     * centred labels. */
     f->cell_h = rdi8(ttf, chosen + 16) - rdi8(ttf, chosen + 17) + 1;
     f->ppem = ttf[chosen + 45];
     f->hmtx = find_table(ttf, "hmtx");
@@ -251,4 +255,19 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
     int pen = x;
     for (int i = 0; i < len; i++)
         pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
+}
+
+/* The same glyphs, stepped by the *reported* advances rather than the
+ * strike's. The classic EDIT lays its text out this way — its characters sit
+ * a pixel apart from where a button label's would — and a caret has to land
+ * between them, so the spacing is part of the control, not a detail. */
+void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
+                              int y, const char *text, int len, ween_color color)
+{
+    int baseline = y + f->ascent;
+    int pen = x;
+    for (int i = 0; i < len; i++) {
+        draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
+        pen += ween_strike_char_extent(f, (unsigned char)text[i]);
+    }
 }

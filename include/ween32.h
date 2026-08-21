@@ -226,8 +226,27 @@ typedef struct tagCREATESTRUCTA {
 #define WS_DLGFRAME 0x00400000L
 #define WS_SYSMENU 0x00080000L
 #define WS_DISABLED 0x08000000L
+#define WS_VSCROLL 0x00200000L
+#define WS_HSCROLL 0x00100000L
 #define WS_GROUP 0x00020000L
 #define WS_TABSTOP 0x00010000L
+
+/* extended styles: the two field borders */
+#define WS_EX_CLIENTEDGE 0x00000200L
+#define WS_EX_STATICEDGE 0x00020000L
+
+/* EDIT styles */
+#define ES_LEFT 0x0000L
+#define ES_CENTER 0x0001L
+#define ES_RIGHT 0x0002L
+#define ES_MULTILINE 0x0004L
+#define ES_AUTOVSCROLL 0x0040L
+#define ES_AUTOHSCROLL 0x0080L
+#define ES_READONLY 0x0800L
+
+/* SCROLLBAR styles */
+#define SBS_HORZ 0x0000L
+#define SBS_VERT 0x0001L
 
 /* dialog styles */
 #define DS_3DLOOK 0x0004L
@@ -395,6 +414,8 @@ typedef struct tagCREATESTRUCTA {
 #define WEEN32_HAS_CHECKBOX 1
 #define WEEN32_HAS_RADIO 1
 #define WEEN32_HAS_GROUPBOX 1
+#define WEEN32_HAS_EDIT 1
+#define WEEN32_HAS_SCROLLBAR 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 
