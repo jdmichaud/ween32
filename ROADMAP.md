@@ -10,6 +10,38 @@ take that **list**, not that **look**: ween32 targets the Windows 2000 classic
 theme, and every control is checked against a real win32 render (see
 [Reference captures](#reference-captures) below), never against the 98 styling.
 
+## Next
+
+In order, and why that order. Each is a task in its own right; the first is the
+only one that blocks work that cannot otherwise be written.
+
+- [ ] **A second top-level window** (`src/user.c:315`). Not one limitation but
+  the shared prerequisite for menus, modal `DialogBox`, `MessageBoxA`, tooltips
+  and any drop-down taller than its parent. The combo box already carries the
+  workaround — it paints its list over the parent, which holds only while the
+  list fits inside the window — so it is also the immediate test case.
+- [ ] **Window text that is not silently truncated.** 128 bytes is not the
+  problem; losing the tail with no error and no `EN_MAXTEXT` is. Same for the
+  other caps that fail quietly (32 classes, the 64-message queue): make them
+  grow, or make them say so.
+- [ ] **`SelectObject` must return what was actually selected**
+  (`src/gdi.c:146`). It hands back the stock GUI font instead, so the universal
+  `old = SelectObject(dc, f); ...; SelectObject(dc, old)` idiom quietly drops a
+  bold selection. A contract apps rely on, and a few lines to honour.
+- [ ] **Timers** — `SetTimer`/`KillTimer`/`WM_TIMER`. Small, self-contained,
+  and three visible-at-a-glance gaps hang off it: the caret is drawn solid
+  because it cannot blink, scroll-bar arrows do not auto-repeat, and progress
+  bars have no marquee.
+- [ ] **Keyboard conventions**, not just more keysyms. Tab/Shift+Tab
+  navigation, `&File` mnemonics under Alt, accelerators, arrow keys inside a
+  radio group and a list. The missing key codes are ten lines; these are what
+  make a window behave like Windows.
+
+Arbitrary font sizes and faces are deliberately *not* on this list.
+`CreateFontA` honours `weight` and picks between the regular and bold Tahoma
+strikes, which is what classic dialogs actually used; anything else needs a
+rasteriser, and no application here has asked for one yet.
+
 ## Implemented
 
 **Windowing** — `RegisterClassA`, `CreateWindowExA`, `DestroyWindow`,
