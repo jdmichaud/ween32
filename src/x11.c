@@ -78,8 +78,17 @@ typedef struct {
     int override_redirect;
 } XConfigureEvent;
 
+typedef struct {
+    int type;
+    unsigned long serial;
+    int send_event;
+    XDisplay *display;
+    XWindow window;
+} XAnyEvent;
+
 typedef union {
     int type;
+    XAnyEvent xany;
     XButtonEvent xbutton;
     XClientMessageEvent xclient;
     XConfigureEvent xconfigure;
@@ -164,6 +173,8 @@ enum {
 
 extern XDisplay *XOpenDisplay(const char *);
 extern int XCloseDisplay(XDisplay *);
+extern int XDestroyWindow(XDisplay *, XWindow);
+extern int XFreeGC(XDisplay *, XGC *);
 extern int XDefaultScreen(XDisplay *);
 extern void *XDefaultVisual(XDisplay *, int);
 extern int XDefaultDepth(XDisplay *, int);
@@ -212,7 +223,7 @@ int ween_x11_probe_dpi(void)
     return dpi;
 }
 
-typedef struct {
+typedef struct x11_win_s {
     XDisplay *dpy;
     XWindow win;
     XGC *gc;
@@ -222,31 +233,48 @@ typedef struct {
     int w, h;    /* native (renderer) size */
     int zoom;    /* integer HiDPI magnification */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
+    struct x11_win_s *next;
 } x11_win;
 
-static void *x11_open(int w, int h, const char *title)
+/* One connection for the whole process, and every window on it. X delivers a
+ * display's events through a single queue, so waiting on one window would mean
+ * never hearing from the others; the pump takes them all and hands each event
+ * back tagged with the window it names. */
+static XDisplay *g_dpy;
+static int g_windows;
+static x11_win *g_list;
+
+static x11_win *find_window(XWindow id)
 {
-    XDisplay *dpy = XOpenDisplay(NULL);
+    for (x11_win *w = g_list; w; w = w->next)
+        if (w->win == id)
+            return w;
+    return NULL;
+}
+
+static void *x11_open(int x, int y, int w, int h, const char *title)
+{
+    if (!g_dpy)
+        g_dpy = XOpenDisplay(NULL);
+    XDisplay *dpy = g_dpy;
     if (!dpy)
         return NULL;
     x11_win *xw = calloc(1, sizeof(*xw));
-    if (!xw) {
-        XCloseDisplay(dpy);
+    if (!xw)
         return NULL;
-    }
     int zoom = ween_zoom();
     int ww = w * zoom, wh = h * zoom;
     if (zoom > 1 && !ween_surface_init(&xw->zbuf, ww, wh)) {
-        XCloseDisplay(dpy);
         free(xw);
         return NULL;
     }
     int scr = XDefaultScreen(dpy);
     XWindow root = XDefaultRootWindow(dpy);
 
-    /* centred on the primary screen */
-    int px = (XDisplayWidth(dpy, scr) - ww) / 2;
-    int py = (XDisplayHeight(dpy, scr) - wh) / 2;
+    /* where the app asked for, or centred on the primary screen when it did
+     * not care — two windows that both centre would sit on top of each other */
+    int px = x == CW_USEDEFAULT ? (XDisplayWidth(dpy, scr) - ww) / 2 : x * zoom;
+    int py = y == CW_USEDEFAULT ? (XDisplayHeight(dpy, scr) - wh) / 2 : y * zoom;
 
     XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)ww,
                                       (unsigned)wh, 0, 0, 0x00c0c0c0);
@@ -296,7 +324,7 @@ static void *x11_open(int w, int h, const char *title)
                                (unsigned)XDefaultDepth(dpy, scr), X_ZPixmap, 0,
                                NULL, (unsigned)ww, (unsigned)wh, 32, ww * 4);
     if (!gc || !img) {
-        XCloseDisplay(dpy);
+        XDestroyWindow(dpy, win);
         free(xw);
         return NULL;
     }
@@ -310,6 +338,9 @@ static void *x11_open(int w, int h, const char *title)
     xw->w = w;
     xw->h = h;
     xw->zoom = zoom;
+    xw->next = g_list;
+    g_list = xw;
+    g_windows++;
     return xw;
 }
 
@@ -402,21 +433,27 @@ static unsigned keysym_to_vk(unsigned long ks)
     }
 }
 
+/* The argument is only a hint about which connection to wait on: the event
+ * that comes back names its own window, and every window shares the queue. */
 static ween_event x11_next_event(void *win)
 {
-    x11_win *xw = win;
     ween_event out;
     for (;;) {
         memset(&out, 0, sizeof(out));
         XEvent ev;
-        XNextEvent(xw->dpy, &ev);
+        XNextEvent(g_dpy, &ev);
+        x11_win *xw = find_window(ev.xany.window);
+        if (!xw) /* a window closed while its events were still in flight */
+            continue;
+        out.win = xw;
+        (void)win;
         XButtonEvent *b = &ev.xbutton;
         switch (ev.type) {
         case X_Expose: {
             /* One present covers the window, so the rest of the burst is work
              * we would only throw away. */
             XEvent drop;
-            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_Expose, &drop))
+            while (XCheckTypedWindowEvent(g_dpy, xw->win, X_Expose, &drop))
                 ;
             out.kind = WEEN_EV_EXPOSE;
             return out;
@@ -426,10 +463,10 @@ static ween_event x11_next_event(void *win)
              * dragged along: repainting at each size the pointer swept through
              * is what makes a resize crawl and tear. */
             XEvent newer;
-            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_ConfigureNotify,
+            while (XCheckTypedWindowEvent(g_dpy, xw->win, X_ConfigureNotify,
                                           &newer))
                 ev = newer;
-            while (XCheckTypedWindowEvent(xw->dpy, xw->win, X_Expose, &newer))
+            while (XCheckTypedWindowEvent(g_dpy, xw->win, X_Expose, &newer))
                 ;
             /* Always report it, even when the size has not changed: a window
              * manager that refuses a resize answers with the geometry it is
@@ -505,10 +542,23 @@ static ween_event x11_next_event(void *win)
 static void x11_close(void *win)
 {
     x11_win *xw = win;
-    XCloseDisplay(xw->dpy);
+    for (x11_win **link = &g_list; *link; link = &(*link)->next) {
+        if (*link == xw) {
+            *link = xw->next;
+            break;
+        }
+    }
+    XFreeGC(xw->dpy, xw->gc);
+    XDestroyWindow(xw->dpy, xw->win);
+    xw->img->data = NULL; /* the pixels belong to the surface */
+    free(xw->img);
     if (xw->zoom > 1)
         ween_surface_free(&xw->zbuf);
     free(xw);
+    if (--g_windows == 0) { /* the last window takes the connection with it */
+        XCloseDisplay(g_dpy);
+        g_dpy = NULL;
+    }
 }
 
 const ween_backend *ween_backend_x11(void)

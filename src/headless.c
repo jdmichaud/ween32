@@ -79,8 +79,15 @@ static void inject_script(const char *script)
     }
 }
 
-static void *hl_open(int w, int h, const char *title)
+/* A handle per window, so the two can be told apart the way the X11 backend's
+ * can. Injected events carry no window: they go to the active one, which is
+ * the newest — a script drives one window at a time. Each handle is allocated
+ * so a closed window's address is never handed to the next one. */
+
+static void *hl_open(int x, int y, int w, int h, const char *title)
 {
+    (void)x;
+    (void)y;
     (void)w;
     (void)h;
     (void)title;
@@ -89,11 +96,13 @@ static void *hl_open(int w, int h, const char *title)
         if (env)
             ween_headless_set_bmp_path(env);
     }
+    static int scripted;
     const char *script = getenv("WEEN32_SCRIPT");
-    if (script)
+    if (script && !scripted) { /* once for the process, not once per window */
+        scripted = 1;
         inject_script(script);
-    static int marker;
-    return &marker;
+    }
+    return calloc(1, sizeof(int));
 }
 
 static void hl_present(void *win, const ween_surface *s)
@@ -153,7 +162,7 @@ static ween_event hl_next_event(void *win)
 
 static void hl_close(void *win)
 {
-    (void)win;
+    free(win);
 }
 
 const ween_backend *ween_backend_headless(void)

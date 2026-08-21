@@ -189,6 +189,7 @@ struct ween_wnd {
     UINT defid; /* default-command id, for Enter (DM_SETDEFID) */
 
     /* top-level only */
+    struct ween_wnd *next_top; /* the process's top-level windows, newest first */
     ween_surface surface;
     void *backend_win;
     int dirty;
@@ -264,6 +265,7 @@ typedef enum {
 
 typedef struct {
     ween_ev_kind kind;
+    void *win;          /* the backend window it belongs to (NULL: any) */
     int x, y;           /* window coordinates */
     int x_root, y_root; /* desktop coordinates (caption drag) */
     int button;
@@ -273,14 +275,16 @@ typedef struct {
 } ween_event;
 
 typedef struct {
-    void *(*open)(int w, int h, const char *title);
+    /* x, y are the requested desktop position, or CW_USEDEFAULT to let the
+     * backend place the window (it centres it, as a lone window wants). */
+    void *(*open)(int x, int y, int w, int h, const char *title);
     void (*present)(void *win, const ween_surface *s);
     void (*move_by)(void *win, int dx, int dy);
     /* Ask the window system for a new size, and say whether the user may
      * resize the window themselves. */
     void (*resize)(void *win, int w, int h);
     void (*set_resizable)(void *win, int resizable);
-    /* Blocks until the next event. */
+    /* Blocks until the next event on any window; the event says which one. */
     ween_event (*next_event)(void *win);
     void (*close)(void *win);
 } ween_backend;

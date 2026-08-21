@@ -94,7 +94,11 @@ UINT GetDpiForSystem(void)
 }
 
 static ween_class g_classes[WEEN_MAX_CLASSES];
-static struct ween_wnd *g_top = NULL;
+/* Every top-level window, newest first. g_active is the one an event with no
+ * window of its own belongs to — a headless script's input, and the focus
+ * fallback. */
+static struct ween_wnd *g_tops = NULL;
+static struct ween_wnd *g_active = NULL;
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
 
@@ -312,10 +316,6 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             link = &(*link)->next_sibling;
         *link = wnd;
     } else {
-        if (g_top) { /* v1: a single top-level window */
-            free(wnd);
-            return NULL;
-        }
         if (!ween_active_backend) {
             /* WEEN32_HEADLESS=1 runs any app without a display (present goes
              * to $WEEN32_BMP if set) — used to screenshot examples in CI. */
@@ -332,7 +332,7 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             free(wnd);
             return NULL;
         }
-        wnd->backend_win = ween_active_backend->open(w, h, wnd->text);
+        wnd->backend_win = ween_active_backend->open(x, y, w, h, wnd->text);
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
@@ -341,7 +341,9 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             free(wnd);
             return NULL;
         }
-        g_top = wnd;
+        wnd->next_top = g_tops;
+        g_tops = wnd;
+        g_active = wnd;
         g_focus = wnd;
     }
 
@@ -388,11 +390,17 @@ BOOL DestroyWindow(HWND wnd)
         if (ween_active_backend && wnd->backend_win)
             ween_active_backend->close(wnd->backend_win);
         ween_surface_free(&wnd->surface);
-        if (g_top == wnd)
-            g_top = NULL;
+        for (struct ween_wnd **link = &g_tops; *link; link = &(*link)->next_top) {
+            if (*link == wnd) {
+                *link = wnd->next_top;
+                break;
+            }
+        }
+        if (g_active == wnd)
+            g_active = g_tops;
     }
     if (g_focus == wnd)
-        g_focus = g_top;
+        g_focus = g_active;
     if (g_capture == wnd)
         g_capture = NULL;
     ween_controls_free(wnd);
@@ -668,9 +676,8 @@ static void paint_tree(struct ween_wnd *w)
                       outer.right - outer.left, outer.bottom - outer.top);
 }
 
-void ween_flush_paint(void)
+static void flush_one(struct ween_wnd *top)
 {
-    struct ween_wnd *top = g_top;
     if (!top || !top->dirty)
         return;
     top->dirty = 0;
@@ -681,6 +688,17 @@ void ween_flush_paint(void)
     ween_popup_paint(); /* a dropped-down list goes over everything */
     if (ween_active_backend)
         ween_active_backend->present(top->backend_win, &top->surface);
+}
+
+void ween_flush_paint(void)
+{
+    /* Each top-level owns a surface and a backend window, so they are painted
+     * and presented one at a time; nothing is shared but the paint code. */
+    for (struct ween_wnd *t = g_tops; t;) {
+        struct ween_wnd *next = t->next_top; /* a proc may destroy its window */
+        flush_one(t);
+        t = next;
+    }
 }
 
 BOOL UpdateWindow(HWND wnd)
@@ -973,12 +991,21 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
         /* Idle: paint (WM_PAINT is lowest priority, as in USER32), then block
          * for input. */
         ween_flush_paint();
-        if (!g_top || !ween_active_backend) {
-            g_quit = 1;
+        if (!g_tops || !ween_active_backend) {
+            g_quit = 1; /* the last window closed and nothing can arrive now */
             continue;
         }
-        ween_event ev = ween_active_backend->next_event(g_top->backend_win);
-        pump_event(g_top, &ev);
+        ween_event ev = ween_active_backend->next_event(g_tops->backend_win);
+        struct ween_wnd *target = g_active;
+        if (ev.win) {
+            for (struct ween_wnd *t = g_tops; t; t = t->next_top)
+                if (t->backend_win == ev.win)
+                    target = t;
+        }
+        if (!target)
+            continue;
+        g_active = target;
+        pump_event(target, &ev);
     }
 }
 
