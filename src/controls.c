@@ -475,8 +475,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         } else if ((unsigned char)ch >= ' ') {
             edit_delete_selection(wnd, e);
             len = (int)strlen(wnd->text);
-            if (len + 1 >= WEEN_MAX_TEXT)
-                return 0;
+            if (!ween_wnd_reserve_text(wnd, len + 1))
+                return 0; /* out of memory is the only way a character is lost */
             memmove(wnd->text + e->caret + 1, wnd->text + e->caret,
                     (size_t)(len - e->caret) + 1);
             wnd->text[e->caret] = ch;

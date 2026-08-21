@@ -134,6 +134,34 @@ int main(void)
     CHECK(g_got_click, "BN_CLICKED arrived via WM_COMMAND");
     CHECK(msg.message == WM_QUIT, "the loop ended on WM_QUIT");
 
+    /* Nothing that used to be a fixed cap fails quietly any more. */
+    {
+        WNDCLASSA many;
+        memset(&many, 0, sizeof(many));
+        many.lpfnWndProc = DefWindowProcA;
+        int registered = 0;
+        for (int i = 0; i < 200; i++) { /* past the old table of 32 */
+            char name[64];
+            sprintf(name, "weenclass%d", i);
+            many.lpszClassName = name;
+            if (RegisterClassA(&many))
+                registered++;
+        }
+        CHECK(registered == 200, "the class table grows past its old 32");
+
+        /* a class name longer than the old 32-byte field, round-tripped */
+        char longname[200];
+        memset(longname, 'c', sizeof(longname) - 1);
+        longname[sizeof(longname) - 1] = 0;
+        many.lpszClassName = longname;
+        CHECK(RegisterClassA(&many) != 0, "a long class name registers");
+        HWND lw = CreateWindowExA(0, longname, "x", WS_POPUP, 0, 0, 40, 20,
+                                  NULL, NULL, NULL, NULL);
+        CHECK(lw != NULL, "and is found again in full, not truncated");
+        if (lw)
+            DestroyWindow(lw);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

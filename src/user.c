@@ -93,7 +93,12 @@ UINT GetDpiForSystem(void)
     return (UINT)(g_render_dpi * g_zoom);
 }
 
-static ween_class g_classes[WEEN_MAX_CLASSES];
+/* Registered classes. Each is allocated on its own because a window holds a
+ * pointer to its class for life, so the table cannot move them; the table of
+ * pointers is what grows. There used to be room for 32, and RegisterClassA
+ * returned 0 with no other sign once they were gone. */
+static ween_class **g_classes;
+static int g_nclasses, g_classes_cap;
 /* Every top-level window, newest first. g_active is the one an event with no
  * window of its own belongs to — a headless script's input, and the focus
  * fallback. */
@@ -102,9 +107,11 @@ static struct ween_wnd *g_active = NULL;
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
 
-#define QUEUE_LEN 64
-static MSG g_queue[QUEUE_LEN];
-static int g_qhead = 0, g_qtail = 0;
+/* The message queue grows as needed. It was 64 entries and dropped whatever
+ * did not fit, which is what USER32 does at its own (far higher) limit, but at
+ * 64 a burst of mouse moves could swallow a keystroke behind it. */
+static MSG *g_queue;
+static int g_qcap = 0, g_qhead = 0, g_qtail = 0;
 static int g_quit = 0, g_quit_code = 0;
 
 static LRESULT button_proc(HWND, UINT, WPARAM, LPARAM);
@@ -129,9 +136,9 @@ static int name_ieq(const char *a, const char *b)
 
 static const ween_class *find_class(LPCSTR name)
 {
-    for (int i = 0; i < WEEN_MAX_CLASSES; i++) {
-        if (g_classes[i].in_use && name_ieq(g_classes[i].name, name))
-            return &g_classes[i];
+    for (int i = 0; i < g_nclasses; i++) {
+        if (g_classes[i]->in_use && name_ieq(g_classes[i]->name, name))
+            return g_classes[i];
     }
     return NULL;
 }
@@ -155,21 +162,62 @@ static void ensure_builtins(void)
     ween_register_controls();
 }
 
+/* Window text grows to fit. It used to be a fixed 128 bytes that truncated in
+ * silence — the tail of a string simply went missing, with nothing returned to
+ * say so. Capacity doubles, so repeated typing does not reallocate per key. */
+int ween_wnd_reserve_text(struct ween_wnd *w, int len)
+{
+    if (len + 1 <= w->text_cap)
+        return 1;
+    int cap = w->text_cap ? w->text_cap : 32;
+    while (cap < len + 1)
+        cap *= 2;
+    char *grown = realloc(w->text, (size_t)cap);
+    if (!grown)
+        return 0; /* the old text is still there and still valid */
+    w->text = grown;
+    w->text_cap = cap;
+    return 1;
+}
+
+int ween_wnd_set_text(struct ween_wnd *w, const char *text)
+{
+    if (!text)
+        text = "";
+    int len = (int)strlen(text);
+    if (!ween_wnd_reserve_text(w, len))
+        return 0;
+    memcpy(w->text, text, (size_t)len + 1);
+    return 1;
+}
+
 ATOM RegisterClassA(const WNDCLASSA *wc)
 {
     if (!wc || !wc->lpszClassName || !wc->lpfnWndProc)
         return 0;
-    for (int i = 0; i < WEEN_MAX_CLASSES; i++) {
-        if (!g_classes[i].in_use) {
-            ween_class *c = &g_classes[i];
-            strncpy(c->name, wc->lpszClassName, sizeof(c->name) - 1);
-            c->proc = wc->lpfnWndProc;
-            c->background = wc->hbrBackground;
-            c->in_use = 1;
-            return (ATOM)(i + 1);
-        }
+    if (g_nclasses == g_classes_cap) {
+        int cap = g_classes_cap ? g_classes_cap * 2 : 32;
+        ween_class **grown = realloc(g_classes, (size_t)cap * sizeof *grown);
+        if (!grown)
+            return 0;
+        g_classes = grown;
+        g_classes_cap = cap;
     }
-    return 0;
+    ween_class *c = calloc(1, sizeof(*c));
+    if (!c)
+        return 0;
+    size_t n = strlen(wc->lpszClassName) + 1;
+    c->name = malloc(n);
+    if (!c->name) {
+        free(c);
+        return 0;
+    }
+    memcpy(c->name, wc->lpszClassName, n);
+    c->proc = wc->lpfnWndProc;
+    c->background = wc->hbrBackground;
+    c->in_use = 1;
+    g_classes[g_nclasses++] = c;
+    return (ATOM)g_nclasses;
 }
 
 /* ---- geometry ---------------------------------------------------------- */
@@ -301,8 +349,10 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     wnd->id = (UINT_PTR)menu;
     wnd->font = ween_gui_font();
     wnd->visible = (style & WS_VISIBLE) != 0;
-    if (window_name)
-        strncpy(wnd->text, window_name, WEEN_MAX_TEXT - 1);
+    if (!ween_wnd_set_text(wnd, window_name)) {
+        free(wnd);
+        return NULL;
+    }
 
     if (style & WS_CHILD) {
         if (!parent) {
@@ -404,6 +454,7 @@ BOOL DestroyWindow(HWND wnd)
     if (g_capture == wnd)
         g_capture = NULL;
     ween_controls_free(wnd);
+    free(wnd->text);
     free(wnd);
     return TRUE;
 }
@@ -422,8 +473,8 @@ BOOL SetWindowTextA(HWND wnd, LPCSTR text)
 {
     if (!wnd)
         return FALSE;
-    strncpy(wnd->text, text ? text : "", WEEN_MAX_TEXT - 1);
-    wnd->text[WEEN_MAX_TEXT - 1] = 0;
+    if (!ween_wnd_set_text(wnd, text))
+        return FALSE;
     SendMessageA(wnd, WM_SETTEXT, 0, (LPARAM)text);
     ween_top_level(wnd)->dirty = 1;
     return TRUE;
@@ -711,11 +762,34 @@ BOOL UpdateWindow(HWND wnd)
 
 /* ---- messages ------------------------------------------------------------ */
 
+/* Doubles the ring, unrolling it so the entries come out in order. */
+static int queue_grow(void)
+{
+    int cap = g_qcap ? g_qcap * 2 : 64;
+    MSG *grown = malloc((size_t)cap * sizeof *grown);
+    if (!grown)
+        return 0;
+    int n = 0;
+    for (int i = g_qhead; i != g_qtail; i = (i + 1) % g_qcap)
+        grown[n++] = g_queue[i];
+    free(g_queue);
+    g_queue = grown;
+    g_qcap = cap;
+    g_qhead = 0;
+    g_qtail = n;
+    return 1;
+}
+
 static void post_msg(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    int next = (g_qtail + 1) % QUEUE_LEN;
-    if (next == g_qhead)
-        return; /* full: drop, as USER32 drops posts to a full queue */
+    if (!g_qcap && !queue_grow())
+        return;
+    int next = (g_qtail + 1) % g_qcap;
+    if (next == g_qhead) { /* full */
+        if (!queue_grow())
+            return; /* out of memory: drop, as USER32 drops to a full queue */
+        next = (g_qtail + 1) % g_qcap;
+    }
     g_queue[g_qtail].hwnd = wnd;
     g_queue[g_qtail].message = msg;
     g_queue[g_qtail].wParam = wp;
@@ -977,7 +1051,7 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
     for (;;) {
         if (g_qhead != g_qtail) {
             *msg = g_queue[g_qhead];
-            g_qhead = (g_qhead + 1) % QUEUE_LEN;
+            g_qhead = (g_qhead + 1) % g_qcap;
             if (msg->hwnd && msg->hwnd->destroyed)
                 continue;
             return TRUE;

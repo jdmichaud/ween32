@@ -162,6 +162,19 @@ int main(void)
     char text[64] = "";
     GetWindowTextA(g_edit, text, sizeof text);
     CHECK(strcmp(text, "abcd") == 0, "typing and backspace edited the text");
+
+    /* Window text is not capped: it used to stop at 128 bytes, silently. */
+    {
+        char big[4000];
+        memset(big, 'w', sizeof(big) - 1);
+        big[sizeof(big) - 1] = 0;
+        CHECK(SetWindowTextA(g_edit, big), "a 4000-byte string is accepted");
+        char back[4096];
+        int n = GetWindowTextA(g_edit, back, sizeof back);
+        CHECK(n == (int)sizeof(big) - 1 && strcmp(back, big) == 0,
+              "and comes back whole, not truncated");
+        SetWindowTextA(g_edit, "abcd");
+    }
     CHECK(g_edit_changed == 3, "each edit sent EN_CHANGE");
 
     CHECK(SendMessageA(g_check, BM_GETCHECK, 0, 0) == BST_CHECKED,

@@ -152,11 +152,9 @@ struct ween_dc {
 
 /* ---- windows ------------------------------------------------------------- */
 
-#define WEEN_MAX_CLASSES 32
-#define WEEN_MAX_TEXT 128
 
 typedef struct ween_class {
-    char name[32];
+    char *name;
     WNDPROC proc;
     HBRUSH background;
     int in_use;
@@ -171,7 +169,8 @@ struct ween_wnd {
     DWORD style;
     DWORD ex_style;
     int x, y, w, h; /* window rect; children: in parent CLIENT coordinates */
-    char text[WEEN_MAX_TEXT];
+    char *text;    /* never NULL; grows to fit, see ween_wnd_set_text */
+    int text_cap;  /* bytes allocated, including the terminator */
     UINT_PTR id; /* (HMENU) child id */
     const ween_strike *font;
     int visible;
@@ -235,6 +234,11 @@ void ween_register_controls(void);
 void ween_popup_paint(void);
 HWND ween_popup_hit(int x, int y);
 void ween_controls_free(HWND w); /* per-class state, on destroy */
+
+/* Window text. Grows to fit whatever is stored; both return 0 only if the
+ * allocation failed, and leave the old text intact when they do. */
+int ween_wnd_set_text(struct ween_wnd *w, const char *text);
+int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
 
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);
