@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and test (gcc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libX11
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
+      - name: Build (library + examples)
+        run: make
+
+      - name: Test (headless suite)
+        run: make test
+
+      # The headless backend is how examples are screenshotted with no display;
+      # the pixel sizes below are the 96-dpi dialog-unit layout, so a drift in
+      # base units or non-client metrics fails here.
+      - name: Screenshot the examples headless
+        env:
+          WEEN32_HEADLESS: 1
+          WEEN32_DPI: 96
+        run: |
+          WEEN32_BMP=calc.bmp WEEN32_SCRIPT="d:113,169 u:113,169" ./examples/calc
+          WEEN32_BMP=dialog.bmp WEEN32_SCRIPT="m:10,10" ./examples/dialog
+          WEEN32_BMP=controls.bmp ./examples/controls
+          file calc.bmp dialog.bmp controls.bmp
+          file calc.bmp | grep -q '261 x 224'
+          file dialog.bmp | grep -q '320 x 180'
+          file controls.bmp | grep -q '666 x 446'
+
+      - name: Build without the X11 backend
+        run: make clean && make X11=0
+
+      - name: Test under AddressSanitizer / UBSan
+        run: |
+          make clean
+          make X11=0 test \
+            CC=gcc \
+            CFLAGS="-O1 -g -std=c99 -Iinclude -fsanitize=address,undefined -fno-sanitize-recover=all"
+
+  zig:
+    name: zig package and dual-compile gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libX11
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
+      # "master" is 0.17.0-dev, which is what build.zig.zon's
+      # minimum_zig_version asks for; pin it to 0.17.x once 0.17.0 ships.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: master
+
+      - run: zig version
+
+      - name: Build the Zig package
+        run: zig build
+
+      # The fidelity contract: every example must also compile unchanged
+      # against the real <windows.h>, where ween32.h defers to win32 itself.
+      - name: Dual-compile the examples against real win32
+        run: |
+          for ex in examples/*.c; do
+            zig cc -target x86_64-windows-gnu -std=c99 -Iinclude \
+              "$ex" -luser32 -lgdi32 -lcomctl32 -o "$(basename "$ex" .c).exe"
+          done
