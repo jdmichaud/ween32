@@ -220,6 +220,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_KEYUP 0x0101
 #define WM_CHAR 0x0102
 #define WM_COMMAND 0x0111
+#define WM_TIMER 0x0113
 #define WM_NOTIFY 0x004E
 #define WM_VSCROLL 0x0115
 #define WM_HSCROLL 0x0114
@@ -671,6 +672,13 @@ BOOL ReleaseCapture(void);
 HWND GetCapture(void);
 
 BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max);
+/* Timers. SetTimer with an id that is already running resets it; with a NULL
+ * window it allocates an id and returns it. lpTimerFunc, when given, is called
+ * by DispatchMessage instead of the window procedure. */
+typedef void(CALLBACK *TIMERPROC)(HWND, UINT, UINT_PTR, DWORD);
+UINT_PTR SetTimer(HWND wnd, UINT_PTR id, UINT elapse_ms, TIMERPROC fn);
+BOOL KillTimer(HWND wnd, UINT_PTR id);
+
 BOOL TranslateMessage(const MSG *msg);
 LRESULT DispatchMessageA(const MSG *msg);
 void PostQuitMessage(int code);

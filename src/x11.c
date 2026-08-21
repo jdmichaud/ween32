@@ -10,7 +10,10 @@
  * ween_backend_x11() reports the backend unavailable. */
 
 #include <stdio.h>
+#define _POSIX_C_SOURCE 200112L /* select */
+
 #include <stdlib.h>
+#include <sys/select.h>
 #include <string.h>
 
 #include "ween_internal.h"
@@ -193,6 +196,8 @@ extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
 extern int XPutImage(XDisplay *, XWindow, XGC *, XImage *, int, int, int, int,
                      unsigned, unsigned);
 extern int XNextEvent(XDisplay *, XEvent *);
+extern int XPending(XDisplay *);
+extern int XConnectionNumber(XDisplay *);
 extern int XCheckTypedWindowEvent(XDisplay *, XWindow, int, XEvent *);
 extern int XChangeWindowAttributes(XDisplay *, XWindow, unsigned long,
                                    XSetWindowAttributes *);
@@ -435,11 +440,27 @@ static unsigned keysym_to_vk(unsigned long ks)
 
 /* The argument is only a hint about which connection to wait on: the event
  * that comes back names its own window, and every window shares the queue. */
-static ween_event x11_next_event(void *win)
+static ween_event x11_next_event(void *win, int timeout_ms)
 {
     ween_event out;
     for (;;) {
         memset(&out, 0, sizeof(out));
+        /* A timeout means a timer is waiting to run, so the wait cannot be the
+         * indefinite one XNextEvent does. Xlib buffers events of its own, so
+         * ask it first and only then sleep on the connection. */
+        if (timeout_ms >= 0 && !XPending(g_dpy)) {
+            int fd = XConnectionNumber(g_dpy);
+            fd_set r;
+            FD_ZERO(&r);
+            FD_SET(fd, &r);
+            struct timeval tv;
+            tv.tv_sec = timeout_ms / 1000;
+            tv.tv_usec = (timeout_ms % 1000) * 1000;
+            if (select(fd + 1, &r, NULL, NULL, &tv) <= 0) {
+                out.kind = WEEN_EV_NONE; /* expired, or interrupted */
+                return out;
+            }
+        }
         XEvent ev;
         XNextEvent(g_dpy, &ev);
         x11_win *xw = find_window(ev.xany.window);

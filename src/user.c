@@ -5,11 +5,14 @@
  * Model: a top-level window owns one backend (native) window and one software
  * surface; child windows are rectangles painted into the parent's surface and
  * receive their input via hit-testing, exactly the USER32 shape. v1 scope:
- * one top-level window, non-overlapping children, no subclassing.
+ * non-overlapping children, no subclassing.
  */
+
+#define _POSIX_C_SOURCE 200112L /* clock_gettime */
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ween_internal.h"
 
@@ -454,6 +457,7 @@ BOOL DestroyWindow(HWND wnd)
     if (g_capture == wnd)
         g_capture = NULL;
     ween_controls_free(wnd);
+    ween_kill_timers_of(wnd);
     free(wnd->text);
     free(wnd);
     return TRUE;
@@ -760,6 +764,132 @@ BOOL UpdateWindow(HWND wnd)
     return TRUE;
 }
 
+/* ---- timers ---------------------------------------------------------------
+ *
+ * A due timer posts WM_TIMER; the message loop asks how long it may wait
+ * before the next one is due and hands that to the backend as its timeout.
+ * Time is milliseconds from a monotonic clock, except under the headless
+ * backend, where it only moves when a test says so (WEEN_EV_TIME) — that keeps
+ * scripted runs deterministic, and keeps a repeating timer from making a
+ * screenshot run that never ends. */
+
+typedef struct ween_timer {
+    HWND wnd;
+    UINT_PTR id;
+    UINT elapse;
+    unsigned long due;
+    TIMERPROC fn;
+    struct ween_timer *next;
+} ween_timer;
+
+static ween_timer *g_timers;
+static unsigned long g_virtual_ms; /* headless only */
+
+
+static int clock_is_virtual(void)
+{
+    return ween_active_backend == ween_backend_headless();
+}
+
+static unsigned long now_ms(void)
+{
+    if (clock_is_virtual())
+        return g_virtual_ms;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long)ts.tv_sec * 1000 + (unsigned long)(ts.tv_nsec / 1000000);
+}
+
+UINT_PTR SetTimer(HWND wnd, UINT_PTR id, UINT elapse_ms, TIMERPROC fn)
+{
+    if (!wnd) { /* no window: the id is ours to choose */
+        static UINT_PTR next_free = 1;
+        id = next_free++;
+    }
+    ween_timer *t = NULL;
+    for (ween_timer *p = g_timers; p; p = p->next) {
+        if (p->wnd == wnd && p->id == id) {
+            t = p; /* an id already running is reset, not duplicated */
+            break;
+        }
+    }
+    if (!t) {
+        t = calloc(1, sizeof(*t));
+        if (!t)
+            return 0;
+        t->next = g_timers;
+        g_timers = t;
+    }
+    t->wnd = wnd;
+    t->id = id;
+    t->elapse = elapse_ms;
+    t->fn = fn;
+    t->due = now_ms() + elapse_ms;
+    return id ? id : 1;
+}
+
+BOOL KillTimer(HWND wnd, UINT_PTR id)
+{
+    for (ween_timer **link = &g_timers; *link; link = &(*link)->next) {
+        if ((*link)->wnd == wnd && (*link)->id == id) {
+            ween_timer *dead = *link;
+            *link = dead->next;
+            free(dead);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+void ween_kill_timers_of(HWND wnd)
+{
+    for (ween_timer **link = &g_timers; *link;) {
+        if ((*link)->wnd == wnd) {
+            ween_timer *dead = *link;
+            *link = dead->next;
+            free(dead);
+        } else {
+            link = &(*link)->next;
+        }
+    }
+}
+
+/* How long the loop may sleep: 0 if a timer is already due, -1 if none. */
+static int timer_timeout(void)
+{
+    if (!g_timers)
+        return -1;
+    unsigned long now = now_ms(), soonest = 0;
+    int have = 0;
+    for (ween_timer *t = g_timers; t; t = t->next) {
+        if (t->due <= now)
+            return 0;
+        if (!have || t->due < soonest) {
+            soonest = t->due;
+            have = 1;
+        }
+    }
+    return (int)(soonest - now);
+}
+
+static void post_msg(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
+
+static void fire_due_timers(void)
+{
+    unsigned long now = now_ms();
+    for (ween_timer *t = g_timers; t; t = t->next) {
+        if (t->due > now)
+            continue;
+        /* Step by the period rather than from now, so a timer keeps its
+         * cadence instead of drifting by however late the loop was; if it has
+         * fallen a whole period behind, give up the lost ticks and resync. */
+        t->due += t->elapse;
+        if (t->due <= now)
+            t->due = now + t->elapse;
+        post_msg(t->wnd, WM_TIMER, (WPARAM)t->id, (LPARAM)t->fn);
+    }
+}
+
 /* ---- messages ------------------------------------------------------------ */
 
 /* Doubles the ring, unrolling it so the entries come out in order. */
@@ -814,6 +944,12 @@ LRESULT DispatchMessageA(const MSG *msg)
 {
     if (!msg || !msg->hwnd)
         return 0;
+    if (msg->message == WM_TIMER && msg->lParam) {
+        /* win32 calls the TIMERPROC from here, not the window procedure */
+        ((TIMERPROC)msg->lParam)(msg->hwnd, WM_TIMER, (UINT_PTR)msg->wParam,
+                                 (DWORD)now_ms());
+        return 0;
+    }
     return SendMessageA(msg->hwnd, msg->message, msg->wParam, msg->lParam);
 }
 
@@ -902,7 +1038,7 @@ static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
 {
     int last_x = down->x_root, last_y = down->y_root;
     for (;;) {
-        ween_event ev = ween_active_backend->next_event(top->backend_win);
+        ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             int dx = ev.x_root - last_x, dy = ev.y_root - last_y;
             int w = top->w, h = top->h;
@@ -932,7 +1068,7 @@ static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
 {
     int last_x = down->x_root, last_y = down->y_root;
     for (;;) {
-        ween_event ev = ween_active_backend->next_event(top->backend_win);
+        ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             ween_active_backend->move_by(top->backend_win, ev.x_root - last_x,
                                          ev.y_root - last_y);
@@ -950,7 +1086,7 @@ static void nc_track_close(struct ween_wnd *top)
     top->dirty = 1;
     ween_flush_paint();
     for (;;) {
-        ween_event ev = ween_active_backend->next_event(top->backend_win);
+        ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             RECT c = nc_close_rect(top);
             int in = ev.x >= c.left && ev.x < c.right && ev.y >= c.top && ev.y < c.bottom;
@@ -1036,6 +1172,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
     case WEEN_EV_END:
         g_quit = 1;
         break;
+    case WEEN_EV_TIME: /* both are handled by the loop, before dispatch */
     case WEEN_EV_NONE:
         break;
     }
@@ -1069,7 +1206,17 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
             g_quit = 1; /* the last window closed and nothing can arrive now */
             continue;
         }
-        ween_event ev = ween_active_backend->next_event(g_tops->backend_win);
+        ween_event ev =
+            ween_active_backend->next_event(g_tops->backend_win, timer_timeout());
+        if (ev.kind == WEEN_EV_NONE) { /* the wait expired: a timer is due */
+            fire_due_timers();
+            continue;
+        }
+        if (ev.kind == WEEN_EV_TIME) { /* a test moved the clock forward */
+            g_virtual_ms += (unsigned long)ev.x;
+            fire_due_timers();
+            continue;
+        }
         struct ween_wnd *target = g_active;
         if (ev.win) {
             for (struct ween_wnd *t = g_tops; t; t = t->next_top)

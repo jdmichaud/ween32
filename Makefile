@@ -55,18 +55,22 @@ tests/resize_test: tests/resize_test.c libween32.a
 tests/multiwin_test: tests/multiwin_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/multiwin_test.c libween32.a $(LIBS)
 
+tests/timer_test: tests/timer_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/timer_test.c libween32.a $(LIBS)
+
 test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
-      tests/resize_test tests/multiwin_test
+      tests/resize_test tests/multiwin_test tests/timer_test
 	./tests/render_test
 	./tests/api_test
 	./tests/dlg_test
 	./tests/input_test
 	./tests/resize_test
 	./tests/multiwin_test
+	./tests/timer_test
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls \
 	      tests/render_test tests/api_test tests/dlg_test tests/input_test \
-	      tests/resize_test tests/multiwin_test
+	      tests/resize_test tests/multiwin_test tests/timer_test tests/timer_test
 
 .PHONY: all test clean

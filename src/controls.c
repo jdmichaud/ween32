@@ -268,11 +268,18 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * scroll bars its styles ask for. Typing needs WM_CHAR and a caret, which the
  * core does not have yet — see ROADMAP.md. */
 
-/* The EDIT's own state: the caret, and the anchor a selection runs from.
- * They are equal when nothing is selected. */
+/* The EDIT's own state: the caret, the anchor a selection runs from (the two
+ * are equal when nothing is selected), and whether the caret is showing this
+ * half of its blink. */
 typedef struct {
     int caret, anchor;
+    int caret_on;
 } ween_edit;
+
+/* Win2000's default caret blink rate, the one Control Panel's slider sits at
+ * in the middle of; win32 apps read it with GetCaretBlinkTime. */
+#define WEEN_CARET_BLINK_MS 530
+#define WEEN_CARET_TIMER 0x57454549 /* an id an app is unlikely to also pick */
 
 static ween_edit *edit_state(HWND w)
 {
@@ -408,12 +415,26 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         }
     }
 
-    /* the caret: a one-pixel bar where the next character will go */
+    /* the caret: a one-pixel bar where the next character will go, on for
+     * half of each blink period */
     if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && !multi) {
         ween_edit *e = edit_state(wnd);
-        int cx = tx + (e ? ween_strike_pen(f, wnd->text, e->caret) : 0);
-        ween_surface_vline(&top->surface, ox + cx, oy + inset, line, WEEN_BLACK);
+        if (e && e->caret_on) {
+            int cx = tx + ween_strike_pen(f, wnd->text, e->caret);
+            ween_surface_vline(&top->surface, ox + cx, oy + inset, line,
+                               WEEN_BLACK);
+        }
     }
+}
+
+/* Typing or moving the caret makes it solid again and restarts the blink, so
+ * it never vanishes just as you are looking for it — what win32 does. */
+static void edit_show_caret(HWND wnd, ween_edit *e)
+{
+    if (!e || ween_focus_get() != wnd)
+        return;
+    e->caret_on = 1;
+    SetTimer(wnd, WEEN_CARET_TIMER, WEEN_CARET_BLINK_MS, NULL);
 }
 
 static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -437,6 +458,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (f && e) {
             e->caret = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
             e->anchor = e->caret; /* a fresh click starts a new selection */
+            edit_show_caret(wnd, e);
             SetCapture(wnd);
         }
         InvalidateRect(wnd, NULL, FALSE);
@@ -456,8 +478,23 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             ReleaseCapture();
         return 0;
     case WM_SETFOCUS:
-    case WM_KILLFOCUS:
+        if (e) {
+            e->caret_on = 1; /* a caret appears the moment it is placed */
+            SetTimer(wnd, WEEN_CARET_TIMER, WEEN_CARET_BLINK_MS, NULL);
+        }
         InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case WM_KILLFOCUS:
+        KillTimer(wnd, WEEN_CARET_TIMER);
+        if (e)
+            e->caret_on = 0;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case WM_TIMER:
+        if (wp == WEEN_CARET_TIMER && e) {
+            e->caret_on = !e->caret_on;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         return 0;
     case WM_CHAR: {
         char ch = (char)wp;
@@ -485,6 +522,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         } else {
             return 0;
         }
+        edit_show_caret(wnd, e);
         if (wnd->parent)
             SendMessageA(wnd->parent, WM_COMMAND,
                          MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
@@ -525,6 +563,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (moved && !shift) /* moving without Shift drops the selection */
             e->anchor = e->caret;
+        edit_show_caret(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -556,6 +595,8 @@ static void notify_parent(HWND wnd, UINT code)
 
 /* ---- item lists (LISTBOX, COMBOBOX) -------------------------------------- */
 
+static void items_free(void *p); /* defined with ween_controls_free */
+
 typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
@@ -568,6 +609,7 @@ static ween_items *items_of(HWND w)
 {
     if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_items));
+        w->ctl_free = items_free;
         if (w->ctl) {
             ((ween_items *)w->ctl)->cursel = -1;
             ((ween_items *)w->ctl)->track = -1;
@@ -601,16 +643,28 @@ static int items_add(HWND w, const char *text)
     return it->count++;
 }
 
-void ween_controls_free(HWND w)
+/* Per-class state is not all one shape: an EDIT holds a caret, a list box
+ * holds strings it owns, a tree holds a node graph. Each says how it is freed
+ * when it allocates itself, and reading one as another walked off the end of
+ * the allocation. */
+static void items_free(void *p)
 {
-    ween_items *it = w->ctl;
-    if (!it)
-        return;
+    ween_items *it = p;
     for (int i = 0; i < it->count; i++)
         free(it->item[i]);
     free(it->item);
     free(it->edge);
     free(it);
+}
+
+void ween_controls_free(HWND w)
+{
+    if (!w->ctl)
+        return;
+    if (w->ctl_free)
+        w->ctl_free(w->ctl);
+    else
+        free(w->ctl); /* a flat struct owning nothing else */
     w->ctl = NULL;
 }
 
@@ -1142,10 +1196,14 @@ typedef struct {
 #define WEEN_TV_INDENT 19
 #define WEEN_TV_BUTTON 9
 
+static void tree_ctl_free(void *p);
+
 static ween_tree *tree_of(HWND w)
 {
-    if (!w->ctl)
+    if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_tree));
+        w->ctl_free = tree_ctl_free;
+    }
     return w->ctl;
 }
 
@@ -1158,6 +1216,14 @@ static void tree_free(ween_tvitem *it)
         free(it);
         it = next;
     }
+}
+
+/* The whole node graph hangs off the root. */
+static void tree_ctl_free(void *p)
+{
+    ween_tree *t = p;
+    tree_free(t->root);
+    free(t);
 }
 
 static void dotted_v(ween_surface *s, int x, int y0, int y1, ween_color c)
@@ -1487,10 +1553,8 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case WM_DESTROY:
-        t = wnd->ctl;
-        if (t) {
-            tree_free(t->root);
-            free(t);
+        if (wnd->ctl) {
+            tree_ctl_free(wnd->ctl);
             wnd->ctl = NULL;
         }
         return 0;
@@ -1517,11 +1581,28 @@ typedef struct {
     int nrow, caprow, sel;
 } ween_list;
 
+static void list_ctl_free(void *p);
+
 static ween_list *list_of(HWND w)
 {
-    if (!w->ctl)
+    if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_list));
+        w->ctl_free = list_ctl_free;
+    }
     return w->ctl;
+}
+
+/* Columns, and every row's cells: the list view owns all of those strings. */
+static void list_ctl_free(void *p)
+{
+    ween_list *l = p;
+    for (int c = 0; c < 4; c++)
+        free(l->col[c]);
+    for (int i = 0; i < l->nrow; i++)
+        for (int c = 0; c < 4; c++)
+            free(l->row[i].text[c]);
+    free(l->row);
+    free(l);
 }
 
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
@@ -1656,15 +1737,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case WM_DESTROY:
-        l = wnd->ctl;
-        if (l) {
-            for (int c = 0; c < 4; c++)
-                free(l->col[c]);
-            for (int i = 0; i < l->nrow; i++)
-                for (int c = 0; c < 4; c++)
-                    free(l->row[i].text[c]);
-            free(l->row);
-            free(l);
+        if (wnd->ctl) {
+            list_ctl_free(wnd->ctl);
             wnd->ctl = NULL;
         }
         return 0;

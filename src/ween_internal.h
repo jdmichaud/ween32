@@ -185,6 +185,7 @@ struct ween_wnd {
     int drag_offset;   /* where a drag grabbed the thumb */
     int drag_vertical; /* which of a view's two bars is being dragged */
     void *ctl;   /* per-class state, freed with the window */
+    void (*ctl_free)(void *); /* how to free it; plain free() when NULL */
     int destroyed;
 
     /* dialog frame (created by CreateDialogIndirect) */
@@ -242,6 +243,7 @@ void ween_controls_free(HWND w); /* per-class state, on destroy */
 
 /* Window text. Grows to fit whatever is stored; both return 0 only if the
  * allocation failed, and leave the old text intact when they do. */
+void ween_kill_timers_of(HWND w); /* a destroyed window's timers, on destroy */
 void ween_dc_set_font(struct ween_dc *dc, const ween_strike *font);
 int ween_wnd_set_text(struct ween_wnd *w, const char *text);
 int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
@@ -261,7 +263,7 @@ void ween_flush_paint(void);
  * raw input events. It never draws. */
 
 typedef enum {
-    WEEN_EV_NONE,
+    WEEN_EV_NONE, /* nothing to report: a zeroed event, and an expired wait */
     WEEN_EV_EXPOSE,
     WEEN_EV_MOUSE_DOWN,
     WEEN_EV_MOUSE_UP,
@@ -270,6 +272,7 @@ typedef enum {
     WEEN_EV_WHEEL,  /* button: +1 away from the user, -1 toward */
     WEEN_EV_RESIZE, /* x, y: the window's new size */
     WEEN_EV_CLOSE,
+    WEEN_EV_TIME, /* x: virtual milliseconds elapsed (headless timer tests) */
     WEEN_EV_END /* event source exhausted (headless) / connection lost */
 } ween_ev_kind;
 
@@ -294,8 +297,10 @@ typedef struct {
      * resize the window themselves. */
     void (*resize)(void *win, int w, int h);
     void (*set_resizable)(void *win, int resizable);
-    /* Blocks until the next event on any window; the event says which one. */
-    ween_event (*next_event)(void *win);
+    /* Blocks until the next event on any window; the event says which one.
+     * timeout_ms < 0 waits indefinitely; otherwise it gives up after that
+     * long and returns WEEN_EV_NONE, which is how a timer gets to run. */
+    ween_event (*next_event)(void *win, int timeout_ms);
     void (*close)(void *win);
 } ween_backend;
 

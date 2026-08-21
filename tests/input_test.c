@@ -27,6 +27,7 @@ enum { ID_EDIT = 100, ID_CHECK, ID_LIST, ID_TRACK };
 static HWND g_edit, g_check, g_list, g_track;
 static int g_edit_changed, g_check_clicked, g_list_changed, g_scrolled;
 
+
 static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {

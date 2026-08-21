@@ -36,7 +36,8 @@ const ween_surface *ween_headless_surface(void)
 
 /* WEEN32_SCRIPT: space-separated scripted input, e.g. "d:110,146 u:110,146
  * k:27" — d/u/m = mouse down/up/move at window coordinates, k = a virtual-key
- * press. Lets any example run and be screenshotted with no display. */
+ * press, w = milliseconds of timer time to let pass. Lets any example run and
+ * be screenshotted with no display. */
 static void inject_script(const char *script)
 {
     const char *p = script;
@@ -62,6 +63,10 @@ static void inject_script(const char *script)
                 ev.vk = ev.ch >= 'a' && ev.ch <= 'z' ? ev.ch - 32 : ev.ch;
                 ween_headless_inject(ev);
             }
+        } else if (kind == 'w' && p[1] == ':') {
+            ev.kind = WEEN_EV_TIME; /* w:500 — let 500ms of timer time pass */
+            ev.x = (int)strtol(p + 2, (char **)&p, 10);
+            ween_headless_inject(ev);
         } else if ((kind == 'd' || kind == 'u' || kind == 'm') && p[1] == ':') {
             char *end;
             ev.x = (int)strtol(p + 2, &end, 10);
@@ -146,9 +151,10 @@ static void hl_move_by(void *win, int dx, int dy)
     (void)dy;
 }
 
-static ween_event hl_next_event(void *win)
+static ween_event hl_next_event(void *win, int timeout_ms)
 {
     (void)win;
+    (void)timeout_ms; /* nothing arrives on its own here: time is scripted */
     ween_event ev;
     if (g_ev_head == g_ev_tail) {
         memset(&ev, 0, sizeof(ev));
