@@ -22,9 +22,33 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-enum { ID_EDIT = 100, ID_CHECK, ID_LIST, ID_TRACK };
+enum { ID_EDIT = 100, ID_CHECK, ID_LIST, ID_TRACK, ID_GROUP, ID_NESTED };
 
-static HWND g_edit, g_check, g_list, g_track;
+static HWND g_edit, g_check, g_list, g_track, g_group, g_nested;
+static int g_nested_clicked, g_left;
+
+/* A control that wants a hot state: it asks to hear when the pointer goes. */
+static LRESULT CALLBACK nested_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_MOUSEMOVE) {
+        TRACKMOUSEEVENT tme;
+        memset(&tme, 0, sizeof(tme));
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = w;
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    if (msg == WM_MOUSELEAVE) {
+        g_left++;
+        return 0;
+    }
+    if (msg == WM_LBUTTONDOWN) {
+        g_nested_clicked++;
+        return 0;
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
 static int g_edit_changed, g_check_clicked, g_list_changed, g_scrolled;
 
 
@@ -47,6 +71,14 @@ static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "three");
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "four");
         SendMessageA(g_list, LB_ADDSTRING, 0, (LPARAM) "five");
+        /* a control inside a control: only the innermost should be hit */
+        g_group = CreateWindowA("BUTTON", "Group",
+                                WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 130, 10,
+                                60, 60, hwnd, (HMENU)(UINT_PTR)ID_GROUP, NULL,
+                                NULL);
+        g_nested = CreateWindowA("weennested", "", WS_CHILD | WS_VISIBLE, 10, 20,
+                                 40, 20, g_group, (HMENU)(UINT_PTR)ID_NESTED,
+                                 NULL, NULL);
         g_track = CreateWindowA(TRACKBAR_CLASSA, "",
                                 WS_CHILD | WS_VISIBLE | TBS_HORZ, 10, 130, 100,
                                 30, hwnd, (HMENU)(UINT_PTR)ID_TRACK, NULL, NULL);
@@ -119,6 +151,12 @@ int main(void)
 
     WNDCLASSA wc;
     memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = nested_proc;
+    wc.lpszClassName = "weennested";
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    RegisterClassA(&wc);
+
+    memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = host_proc;
     wc.lpszClassName = "weeninput";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
@@ -143,6 +181,14 @@ int main(void)
 
     /* the wheel scrolls the focused list box, and does not select */
     wheel(-1, cx + 40, cy + 80);
+
+    /* the nested control is inside the group box: the click belongs to it,
+     * and the group box must not swallow it */
+    inject(WEEN_EV_MOUSE_MOVE, cx + 130 + 20, cy + 10 + 30);
+    inject(WEEN_EV_MOUSE_DOWN, cx + 130 + 20, cy + 10 + 30);
+    inject(WEEN_EV_MOUSE_UP, cx + 130 + 20, cy + 10 + 30);
+    /* and moving off it is what WM_MOUSELEAVE is for */
+    inject(WEEN_EV_MOUSE_MOVE, cx + 5, cy + 5);
 
     /* drag the trackbar's thumb to the far end */
     inject(WEEN_EV_MOUSE_DOWN, cx + 30, cy + 145);
@@ -194,6 +240,10 @@ int main(void)
     CHECK(SendMessageA(g_track, TBM_GETPOS, 0, 0) == 10,
           "dragging the trackbar moved it to the end of its range");
     CHECK(g_scrolled > 0, "the trackbar sent WM_HSCROLL while dragging");
+
+    CHECK(g_nested_clicked == 1,
+          "a control nested inside another got the click, not its parent");
+    CHECK(g_left == 1, "and heard WM_MOUSELEAVE when the pointer went away");
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

@@ -109,6 +109,7 @@ static struct ween_wnd *g_tops = NULL;
 static struct ween_wnd *g_active = NULL;
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
+static HWND g_hot = NULL; /* what the pointer was last over, for hover */
 
 /* The message queue grows as needed. It was 64 entries and dropped whatever
  * did not fit, which is what USER32 does at its own (far higher) limit, but at
@@ -535,6 +536,8 @@ BOOL DestroyWindow(HWND wnd)
         g_focus = g_active;
     if (g_capture == wnd)
         g_capture = NULL;
+    if (g_hot == wnd)
+        g_hot = NULL;
     ween_controls_free(wnd);
     ween_kill_timers_of(wnd);
     free(wnd->text);
@@ -1157,20 +1160,48 @@ BOOL TranslateMessage(const MSG *msg)
 
 /* Route a mouse event to the child under the point (or the capture), sending
  * `msg` with client-relative coordinates. */
-/* The child under a point, or the window itself. A newly created child sits
- * at the top of the z-order, so the last one in the list that contains the
- * point is the one on top — the group box created before its radio buttons
- * must not swallow their clicks. */
-static struct ween_wnd *child_at(struct ween_wnd *top, int x, int y)
+/* The window under a point, however deep. A newly created child sits at the
+ * top of the z-order, so the last one in the list that contains the point is
+ * the one on top — the group box created before its radio buttons must not
+ * swallow their clicks. Having found one, look inside it the same way: a
+ * control may hold controls of its own, and it is the innermost that the
+ * mouse belongs to. */
+static struct ween_wnd *child_at(struct ween_wnd *parent, int x, int y)
 {
     int cx0, cy0;
-    struct ween_wnd *hit = top;
-    ween_client_origin(top, &cx0, &cy0);
-    for (struct ween_wnd *c = top->first_child; c; c = c->next_sibling)
+    struct ween_wnd *hit = NULL;
+    ween_client_origin(parent, &cx0, &cy0);
+    for (struct ween_wnd *c = parent->first_child; c; c = c->next_sibling)
         if (c->visible && x - cx0 >= c->x && x - cx0 < c->x + c->w &&
             y - cy0 >= c->y && y - cy0 < c->y + c->h)
             hit = c;
-    return hit;
+    return hit ? child_at(hit, x, y) : parent;
+}
+
+/* Hover tracking. A window that asked for it with TrackMouseEvent hears
+ * WM_MOUSELEAVE once, when the pointer next goes somewhere else — the
+ * one-shot win32 gives, so a control re-arms it each time it is entered. */
+
+BOOL TrackMouseEvent(TRACKMOUSEEVENT *track)
+{
+    if (!track || !track->hwndTrack)
+        return FALSE;
+    if (track->dwFlags & TME_CANCEL)
+        track->hwndTrack->track_leave = 0;
+    else if (track->dwFlags & TME_LEAVE)
+        track->hwndTrack->track_leave = 1;
+    return TRUE;
+}
+
+static void hover_moved_to(struct ween_wnd *now)
+{
+    if (g_hot == now)
+        return;
+    if (g_hot && !g_hot->destroyed && g_hot->track_leave) {
+        g_hot->track_leave = 0; /* one shot, as win32 does */
+        post_msg(g_hot, WM_MOUSELEAVE, 0, 0);
+    }
+    g_hot = now;
 }
 
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
@@ -1181,6 +1212,8 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
         dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst)
         dst = child_at(top, x, y);
+    if (msg == WM_MOUSEMOVE)
+        hover_moved_to(dst);
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
     post_msg(dst, msg, 0, MAKELPARAM((WORD)(x - ox), (WORD)(y - oy)));

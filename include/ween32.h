@@ -237,6 +237,20 @@ typedef struct tagCREATESTRUCTA {
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
 #define WM_MOUSEWHEEL 0x020A
+#define WM_MOUSELEAVE 0x02A3
+
+/* Hover tracking: ask, once, to be told when the pointer leaves. The reply is
+ * a single WM_MOUSELEAVE, so a control that wants a hot state re-arms this
+ * every time it is entered. */
+#define TME_LEAVE 0x00000002
+#define TME_CANCEL 0x80000000
+typedef struct {
+    DWORD cbSize;
+    DWORD dwFlags;
+    HWND hwndTrack;
+    DWORD dwHoverTime;
+} TRACKMOUSEEVENT, *LPTRACKMOUSEEVENT;
+BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
 #define WHEEL_DELTA 120
 #define GET_WHEEL_DELTA_WPARAM(wp) ((short)HIWORD(wp))
 

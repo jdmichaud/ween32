@@ -211,6 +211,7 @@ struct ween_wnd {
     UINT_PTR id; /* (HMENU) child id */
     const ween_strike *font;
     int visible;
+    int track_leave; /* asked for WM_MOUSELEAVE (TrackMouseEvent) */
     int pressed; /* BUTTON down-state */
     UINT check;  /* BUTTON check state (BST_*) */
     int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
