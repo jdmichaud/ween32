@@ -272,6 +272,28 @@ typedef struct tagCREATESTRUCTA {
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
 
+/* tab control (comctl32) */
+#define WC_TABCONTROLA "SysTabControl32"
+#define TCS_MULTILINE 0x0200L
+#define TCM_FIRST 0x1300
+#define TCM_INSERTITEMA (TCM_FIRST + 7)
+#define TCM_SETCURSEL (TCM_FIRST + 12)
+#define TCM_GETCURSEL (TCM_FIRST + 11)
+#define TCM_ADJUSTRECT (TCM_FIRST + 40)
+#define TCIF_TEXT 0x0001
+#define TCIF_IMAGE 0x0002
+#define TCN_SELCHANGE (0U - 551U)
+
+typedef struct tagTCITEMA {
+    UINT mask;
+    DWORD dwState;
+    DWORD dwStateMask;
+    LPSTR pszText;
+    int cchTextMax;
+    int iImage;
+    LPARAM lParam;
+} TCITEMA;
+
 /* status bar (comctl32) */
 #define STATUSCLASSNAMEA "msctls_statusbar32"
 #define SBARS_SIZEGRIP 0x0100L
@@ -468,6 +490,7 @@ typedef struct tagCREATESTRUCTA {
 #define WEEN32_HAS_COMBOBOX 1
 #define WEEN32_HAS_PROGRESS 1
 #define WEEN32_HAS_STATUSBAR 1
+#define WEEN32_HAS_TABS 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 

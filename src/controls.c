@@ -492,6 +492,125 @@ static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- the tab control -----------------------------------------------------
+ *
+ * Tabs sit in a strip along the top: the selected one two pixels taller and
+ * two wider on each side, its bottom merged into the body below. Each tab is
+ * a white top and left with a shadow/dark right, corners stepped. Widths come
+ * from Wine's tab.c: the reported text width plus twice the six-pixel padding,
+ * never less than six average characters plus the same padding. */
+
+static int tab_min_width(const ween_strike *f)
+{
+    static const char alpha[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    int sum = 0;
+    if (!f)
+        return 54;
+    for (int i = 0; i < 52; i++)
+        sum += ween_strike_char_extent(f, (unsigned char)alpha[i]);
+    return ((sum + 26) / 52) * 6 + 12;
+}
+
+static int tab_width(const ween_strike *f, const char *text, int min)
+{
+    int w = f ? ween_strike_text_extent(f, text, (int)strlen(text)) + 12 : min;
+    return w < min ? min : w;
+}
+
+static void tab_shape(ween_surface *s, int x, int y, int l, int r, int bottom)
+{
+    /* white top and left, stepped into the corner */
+    ween_surface_hline(s, l + 2, y, r - 2 - (l + 2), WEEN_WHITE);
+    ween_surface_pixel(s, l + 1, y + 1, WEEN_WHITE);
+    ween_surface_vline(s, l, y + 2, bottom - (y + 2), WEEN_WHITE);
+    /* shadow and dark right, its top pixel dark alone */
+    ween_surface_pixel(s, r - 2, y + 1, WEEN_DKSHADOW);
+    ween_surface_vline(s, r - 2, y + 2, bottom - (y + 2), WEEN_SHADOW);
+    ween_surface_vline(s, r - 1, y + 2, bottom - (y + 2), WEEN_DKSHADOW);
+    (void)x;
+}
+
+static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_items *it = items_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT r = ps->rcPaint;
+    int ox, oy, th = f ? f->ascent - f->descent : 13;
+    int tabh = th + 5, body = 2 + tabh;
+    int min = tab_min_width(f);
+    int sel = it ? it->cursel : 0;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+
+    /* the page below the tabs */
+    ween_classic_edge(&top->surface, ox, oy + body, r.right, r.bottom - body,
+                      EDGE_RAISED, BF_RECT | BF_SOFT, NULL);
+
+    /* right to left, so each tab's dark edge covers the next one's white */
+    for (int pass = 0; pass < 2; pass++) {
+        int l = 2;
+        for (int i = 0; it && i < it->count; i++) {
+            int w = tab_width(f, it->item[i], min);
+            int selected = i == sel;
+            if ((pass == 1) == selected) {
+                int tl = selected ? l - 2 : l;
+                int tr = selected ? l + w + 2 : l + w;
+                int ty = selected ? 0 : 2;
+                int tb = body + (selected ? 1 : 0);
+                ween_surface_fill(&top->surface, ox + tl, oy + ty, tr - tl,
+                                  tb - ty, WEEN_FACE);
+                tab_shape(&top->surface, ox, oy + ty, ox + tl, ox + tr,
+                          oy + tb);
+                if (f) {
+                    int visible = selected ? tabh + 2 : tabh;
+                    ween_strike_draw(f, &top->surface, ox + l + 6,
+                                     oy + ty + (visible - th) / 2, it->item[i],
+                                     (int)strlen(it->item[i]), WEEN_BLACK);
+                }
+            }
+            l += w;
+        }
+    }
+}
+
+static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_items *it;
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        tab_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TCM_INSERTITEMA: {
+        const TCITEMA *ti = (const TCITEMA *)lp;
+        it = items_of(wnd);
+        if (it && it->cursel < 0)
+            it->cursel = 0;
+        return items_add(wnd, ti && (ti->mask & TCIF_TEXT) ? ti->pszText : "");
+    }
+    case TCM_SETCURSEL:
+        it = items_of(wnd);
+        if (it) {
+            int old = it->cursel;
+            it->cursel = (int)wp;
+            InvalidateRect(wnd, NULL, FALSE);
+            return old;
+        }
+        return -1;
+    case TCM_GETCURSEL:
+        it = items_of(wnd);
+        return it ? it->cursel : -1;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
 /* ---- the status bar -------------------------------------------------------
  *
  * A strip along the bottom of its parent's client area, divided into parts,
@@ -619,6 +738,9 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = status_proc;
     wc.lpszClassName = STATUSCLASSNAMEA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = tab_proc;
+    wc.lpszClassName = WC_TABCONTROLA;
     RegisterClassA(&wc);
 }
 
