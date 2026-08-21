@@ -257,17 +257,28 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
         pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
 }
 
-/* The same glyphs, stepped by the *reported* advances rather than the
- * strike's. The classic EDIT lays its text out this way — its characters sit
- * a pixel apart from where a button label's would — and a caret has to land
- * between them, so the spacing is part of the control, not a detail. */
+/* Text laid out to its *reported* width rather than the strike's.
+ *
+ * GDI reports a string wider than the strike draws it (see the character
+ * extents above), and the classic EDIT lays its text out to the reported
+ * width — its characters sit a little further apart than a label's, and a
+ * caret has to land between them. The difference is spread evenly along the
+ * run, as justification does: stepping each glyph by its own rounded-up
+ * advance instead would bunch whole pixels onto a few pairs and read as
+ * uneven, which is not what the control looks like. */
 void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
                               int y, const char *text, int len, ween_color color)
 {
     int baseline = y + f->ascent;
-    int pen = x;
+    int extra = ween_strike_text_extent(f, text, len) -
+                ween_strike_text_width(f, text, len);
+    int pen = 0;
+    if (len <= 0)
+        return;
     for (int i = 0; i < len; i++) {
-        draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
-        pen += ween_strike_char_extent(f, (unsigned char)text[i]);
+        int spread = (2 * extra * i + len) / (2 * len); /* rounded share */
+        draw_char(f, s, x + pen + spread, baseline, (unsigned char)text[i],
+                  color);
+        pen += ween_strike_char_advance(f, (unsigned char)text[i]);
     }
 }
