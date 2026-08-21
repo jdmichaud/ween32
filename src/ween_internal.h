@@ -217,6 +217,7 @@ struct ween_wnd {
     int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
     int drag_offset;   /* where a drag grabbed the thumb */
     int drag_vertical; /* which of a view's two bars is being dragged */
+    int sb_repeat;     /* the SB_ code a held scroll-bar arrow is repeating */
     void *ctl;   /* per-class state, freed with the window */
     void (*ctl_free)(void *); /* how to free it; plain free() when NULL */
     int destroyed;

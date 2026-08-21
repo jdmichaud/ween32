@@ -111,9 +111,28 @@ int main(void)
                                0, 0, 200, 120, NULL, NULL, NULL, NULL);
     CHECK(wnd != NULL, "a window with two timers on it");
 
+    /* A held scroll-bar arrow keeps scrolling: one step on the press, then a
+     * pause, then a steady repeat for as long as the button is down. It rides
+     * on the same scripted second as the timers above. */
+    HWND sb = CreateWindowA("SCROLLBAR", "", WS_CHILD | WS_VISIBLE | SBS_VERT,
+                            10, 40, 16, 80, wnd, NULL, NULL, NULL);
+    CHECK(sb != NULL, "a scroll bar to hold");
+    SendMessageA(sb, WM_LBUTTONDOWN, 0, MAKELPARAM(8, 76)); /* bottom arrow */
+    int after_press = sb->scroll_pos;
+    SetFocus(g_edit); /* the press took the focus; the caret is what samples it,
+                       * and the repeat does not depend on having it */
+    CHECK(after_press == 1, "the press alone scrolls one line");
+
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0))
         DispatchMessageA(&msg);
+
+    CHECK(sb->scroll_pos > after_press,
+          "holding it kept scrolling, once the first delay was up");
+    CHECK(sb->sb_repeat != 0, "and it is still repeating while held");
+    SendMessageA(sb, WM_LBUTTONUP, 0, MAKELPARAM(8, 76));
+    CHECK(sb->sb_repeat == 0, "letting go stops it");
+    DestroyWindow(sb);
 
     CHECK(g_ticks == 10, "a 100ms timer fired ten times in a second");
     CHECK(g_proc_ticks == 2,

@@ -130,6 +130,11 @@ static void sb_thumb(int len, const ween_sbstate *st, int *tpos, int *tsize)
 }
 
 /* Act on a click. Sets *grab to where within the thumb it landed, or -1. */
+/* Wine's scroll.c: one step, then a pause, then a steady repeat. */
+#define WEEN_SCROLL_FIRST_DELAY 200
+#define WEEN_SCROLL_REPEAT_DELAY 50
+#define WEEN_SB_TIMER 0x5343524C /* an id an app is unlikely to also pick */
+
 static int sb_click(int at, int len, const ween_sbstate *st, int *grab)
 {
     int sz = ween_scroll_metric(), tpos, tsize;
@@ -197,6 +202,27 @@ static void scroll_notify(HWND wnd, int code)
                      (LPARAM)wnd);
 }
 
+static void scroll_set(HWND wnd, int pos, int code);
+
+/* One more step of whatever a held button started. A line moves by one, a
+ * page by the page size — and once the thumb reaches the end there is nothing
+ * left to repeat, so the timer is dropped rather than firing into a wall. */
+static void scroll_repeat(HWND wnd, const ween_sbstate *st)
+{
+    int step = 1, pos = wnd->scroll_pos;
+    if (wnd->sb_repeat == SB_PAGEUP || wnd->sb_repeat == SB_PAGEDOWN)
+        step = st->page > 0 ? st->page : 1;
+    if (wnd->sb_repeat == SB_LINEUP || wnd->sb_repeat == SB_PAGEUP)
+        pos -= step;
+    else
+        pos += step;
+    scroll_set(wnd, pos, wnd->sb_repeat);
+    if (wnd->scroll_pos == sb_clamp(pos, st) && pos != wnd->scroll_pos) {
+        KillTimer(wnd, WEEN_SB_TIMER);
+        wnd->sb_repeat = 0;
+    }
+}
+
 static void scroll_set(HWND wnd, int pos, int code)
 {
     ween_sbstate st = scroll_state(wnd);
@@ -217,7 +243,7 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
     switch (msg) {
     case WM_LBUTTONDOWN: {
-        int grab, pos;
+        int grab, pos, code;
         SetFocus(wnd);
         pos = sb_click(at, len, &st, &grab);
         if (grab >= 0) {
@@ -225,20 +251,37 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             wnd->drag_offset = grab;
             return 0;
         }
-        scroll_set(wnd, pos,
-                   pos < st.pos ? (at < ween_scroll_metric() ? SB_LINEUP
-                                                             : SB_PAGEUP)
-                                : (at >= len - ween_scroll_metric()
-                                       ? SB_LINEDOWN
-                                       : SB_PAGEDOWN));
+        code = pos < st.pos
+                   ? (at < ween_scroll_metric() ? SB_LINEUP : SB_PAGEUP)
+                   : (at >= len - ween_scroll_metric() ? SB_LINEDOWN
+                                                       : SB_PAGEDOWN);
+        scroll_set(wnd, pos, code);
+        /* Holding the button keeps it going: one step, a pause, then a
+         * repeat — Wine's SCROLL_FIRST_DELAY and SCROLL_REPEAT_DELAY. */
+        SetCapture(wnd);
+        wnd->sb_repeat = code;
+        SetTimer(wnd, WEEN_SB_TIMER, WEEN_SCROLL_FIRST_DELAY, NULL);
         return 0;
     }
+    case WM_TIMER:
+        if (wp != WEEN_SB_TIMER || !wnd->sb_repeat)
+            return 0;
+        scroll_repeat(wnd, &st);
+        SetTimer(wnd, WEEN_SB_TIMER, WEEN_SCROLL_REPEAT_DELAY, NULL);
+        return 0;
     case WM_MOUSEMOVE:
-        if (GetCapture() == wnd)
+        if (GetCapture() == wnd && !wnd->sb_repeat)
             scroll_set(wnd, sb_drag(at, len, &st, wnd->drag_offset),
                        SB_THUMBTRACK);
         return 0;
     case WM_LBUTTONUP:
+        if (wnd->sb_repeat) {
+            KillTimer(wnd, WEEN_SB_TIMER);
+            wnd->sb_repeat = 0;
+            ReleaseCapture();
+            scroll_notify(wnd, SB_ENDSCROLL);
+            return 0;
+        }
         if (GetCapture() == wnd) {
             ReleaseCapture();
             scroll_notify(wnd, SB_THUMBPOSITION);

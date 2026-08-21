@@ -25,8 +25,14 @@ conventions. What is left, in the order it is worth doing:
 - [ ] **Mouse routing into nested children**, plus hover tracking
   (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today only
   direct children of the top-level window are hit-tested.
-- [ ] **Scroll-bar auto-repeat on a held arrow**, and marquee progress — both
-  are timers now, so both are small.
+- [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
+  repeats a held arrow; the list box, tree view and list view draw and handle
+  their bars inline and do not.
+
+Marquee progress was on this list and has been struck off rather than built:
+`PBS_MARQUEE` arrived with comctl32 6.0, which is Windows XP. A Windows 2000
+progress bar has no marquee mode, so adding one would be a period mistake, not
+a missing feature.
 - [ ] **The clipboard, and double-click to select a word.**
 - [ ] **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`,
   `LoadImage`, `DrawIconEx` for tree and list-view items.
