@@ -178,6 +178,7 @@ struct ween_wnd {
     int pressed; /* BUTTON down-state */
     UINT check;  /* BUTTON check state (BST_*) */
     int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
+    int drag_offset; /* where a drag grabbed the thumb */
     void *ctl;   /* per-class state, freed with the window */
     int destroyed;
 
@@ -225,6 +226,11 @@ int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
 void ween_register_controls(void);
+/* A control showing a drop-down paints it after everything else and gets
+ * first refusal on the mouse: this is how a combo box's list escapes its
+ * own client area without a second top-level window. */
+void ween_popup_paint(void);
+HWND ween_popup_hit(int x, int y);
 void ween_controls_free(HWND w); /* per-class state, on destroy */
 
 /* The client origin of a window within its top-level surface. */

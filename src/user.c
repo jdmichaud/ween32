@@ -659,6 +659,8 @@ void ween_flush_paint(void)
     ween_surface_clip(&top->surface, 0, 0, top->surface.w, top->surface.h);
     SendMessageA(top, WM_NCPAINT, 0, 0);
     paint_tree(top);
+    ween_surface_clip(&top->surface, 0, 0, top->surface.w, top->surface.h);
+    ween_popup_paint(); /* a dropped-down list goes over everything */
     if (ween_active_backend)
         ween_active_backend->present(top->backend_win, &top->surface);
 }
@@ -740,6 +742,8 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
     int ox, oy;
     struct ween_wnd *dst = g_capture;
+    if (!dst)
+        dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst) {
         /* find the child containing the point (client coords of top) */
         int cx0, cy0;

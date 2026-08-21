@@ -151,6 +151,13 @@ typedef struct tagDRAWITEMSTRUCT {
     UINT_PTR itemData;
 } DRAWITEMSTRUCT, *LPDRAWITEMSTRUCT;
 
+/* What a common control sends its parent through WM_NOTIFY. */
+typedef struct tagNMHDR {
+    HWND hwndFrom;
+    UINT_PTR idFrom;
+    UINT code;
+} NMHDR;
+
 typedef struct tagCREATESTRUCTA {
     LPVOID lpCreateParams;
     HINSTANCE hInstance;
@@ -211,6 +218,9 @@ typedef struct tagCREATESTRUCTA {
 #define WM_KEYUP 0x0101
 #define WM_CHAR 0x0102
 #define WM_COMMAND 0x0111
+#define WM_NOTIFY 0x004E
+#define WM_VSCROLL 0x0115
+#define WM_HSCROLL 0x0114
 #define WM_MOUSEMOVE 0x0200
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
@@ -369,6 +379,22 @@ typedef struct tagLVITEMA {
 #define TCIF_TEXT 0x0001
 #define TCIF_IMAGE 0x0002
 #define TCN_SELCHANGE (0U - 551U)
+#define TVN_SELCHANGEDA (0U - 401U)
+#define TVN_ITEMEXPANDEDA (0U - 406U)
+#define LVN_ITEMCHANGED (0U - 101U)
+
+/* scroll-bar notification codes */
+#define SB_LINEUP 0
+#define SB_LINELEFT 0
+#define SB_LINEDOWN 1
+#define SB_LINERIGHT 1
+#define SB_PAGEUP 2
+#define SB_PAGELEFT 2
+#define SB_PAGEDOWN 3
+#define SB_PAGERIGHT 3
+#define SB_THUMBPOSITION 4
+#define SB_THUMBTRACK 5
+#define SB_ENDSCROLL 8
 
 typedef struct tagTCITEMA {
     UINT mask;

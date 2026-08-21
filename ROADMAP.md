@@ -74,35 +74,56 @@ implement the class, then add `#define WEEN32_HAS_<NAME> 1` to
 | Field borders | `WS_EX_CLIENTEDGE`/`STATICEDGE` | yes | — |
 | Title bar | close box, gradient | yes | Wine antialiases the glyph |
 
-### What they do not do yet
+### What they do
 
-Drawing is not behaving. What remains is interaction, and the core machinery
-it needs:
+Every control responds to the mouse and keyboard, and reports through the
+message its win32 counterpart uses:
 
-- [ ] **Typing** — `EDIT` has no caret and no `WM_CHAR` to feed it, so its
-      text can be set but not edited. Needs `TranslateMessage`, modifier state
-      from the backend, timers for the caret blink, selection and clipboard.
-- [ ] **The drop-down list** — a combo box's list is a popup window that
-      escapes the parent's client area, which the single-top-level model
-      cannot express (`src/user.c:303`).
-- [ ] **Scrolling and selection** — the scroll bars, list box, tree and list
-      views draw their state but do not respond to the mouse or keyboard:
-      no thumb dragging, no click-to-select, no expand/collapse, no `WM_NOTIFY`
-      to report any of it.
+- **EDIT** — click to place the caret, type, backspace, delete, arrows and
+  Home/End; `EN_CHANGE` to the parent. It draws a caret when focused.
+- **BUTTON** — press and release tracking, auto check boxes and radio groups,
+  `BN_CLICKED`.
+- **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`.
+- **COMBOBOX** — click to drop the list, click an item to pick it,
+  `CBN_SELCHANGE`. The list is painted over everything else and gets first
+  refusal on the mouse, which is how it escapes its own client area without a
+  second top-level window.
+- **SCROLLBAR** — arrows scroll a line, the track a page, and the thumb drags;
+  `WM_HSCROLL`/`WM_VSCROLL` with `SB_LINEUP`, `SB_PAGEUP`, `SB_THUMBTRACK`,
+  `SB_THUMBPOSITION` and `SB_ENDSCROLL`.
+- **Trackbar** — click or drag to a position, arrow keys to step.
+- **Tabs** — click to switch, `TCN_SELCHANGE` through `WM_NOTIFY`.
+- **TreeView** — click the button to expand or collapse, click an item to
+  select it; `TVN_SELCHANGED` and `TVN_ITEMEXPANDED`.
+- **ListView** — click a row to select it, `LVN_ITEMCHANGED`.
+
+`tests/input_test.c` drives all of this through the headless backend and
+asserts where each control ends up, so CI covers it.
+
+### What they still do not do
+
+- [ ] **Selection and the clipboard in EDIT** — no shift-select, no cut, copy
+      or paste, and no horizontal scroll when the text outruns the field: it
+      is clipped instead.
+- [ ] **A blinking caret** — the caret is drawn solid, because there are no
+      timers (`SetTimer`/`WM_TIMER`).
+- [ ] **Scrolling the views** — the list box, tree and list views draw their
+      scroll bars but do not scroll: no wheel, no thumb wired to the content,
+      no keyboard paging.
+- [ ] **Auto-repeat** on a held scroll-bar arrow, and hot-tracking states.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), item images from an image list,
       and column resizing in the list view.
 
 ## Core machinery these need
 
 - **A second top-level window.** Only one exists today (`src/user.c:303`).
-  Blocks the combo drop-down, and later menus and modal dialogs.
-- **`WM_NOTIFY`/`NMHDR`.** Every common control (tree, tabs, list view, status
-  bar) reports through it; ween32 has no notification path at all.
-- **`WM_CHAR` and modifier state.** `TranslateMessage` is a no-op
-  (`src/user.c:626`) and the X11 backend takes the unshifted keysym only
-  (`src/x11.c:317`), so there is no typed text and no Shift+Tab.
+  The combo box's list works around it by painting over the parent, which is
+  enough while the list fits inside the window; menus and modal dialogs will
+  need the real thing.
 - **Timers** — `SetTimer`/`KillTimer`/`WM_TIMER`: caret blink, scroll-bar
   auto-repeat, marquee progress.
+- **Shift and the other modifiers** in more than typing: Shift+Tab, shift-click
+  selection, Ctrl shortcuts.
 - **Mouse routing into nested children**, plus hover tracking
   (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today
   only direct children of the top-level window are hit-tested

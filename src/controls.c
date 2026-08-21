@@ -92,11 +92,100 @@ void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                           BF_RECT | BF_MIDDLE, NULL);
 }
 
-/* ---- the SCROLLBAR class -------------------------------------------------- */
+/* ---- the SCROLLBAR class --------------------------------------------------
+ *
+ * Clicking an arrow scrolls a line, the track a page, and the thumb can be
+ * dragged; each tells the parent through WM_HSCROLL/WM_VSCROLL, as win32
+ * does — the control itself owns no content. */
+
+/* Thumb extent along the bar, in pixels from the first arrow. */
+static void scroll_thumb(HWND wnd, int *pos, int *size, int *track)
+{
+    int sz = ween_scroll_metric();
+    int vert = (wnd->style & SBS_VERT) != 0;
+    int len = vert ? wnd->h : wnd->w;
+    int min = wnd->scroll_min, max = wnd->scroll_max;
+    int page = wnd->scroll_page;
+    *track = len - 2 * sz;
+    *size = sz;
+    if (page > 0 && max > min) {
+        *size = MulDiv(page, *track, max - min + 1);
+        if (*size < sz)
+            *size = sz;
+    }
+    *pos = max > min ? MulDiv(wnd->scroll_pos - min, *track - *size, max - min)
+                     : 0;
+}
+
+static void scroll_notify(HWND wnd, int code)
+{
+    UINT msg = (wnd->style & SBS_VERT) ? WM_VSCROLL : WM_HSCROLL;
+    if (wnd->parent)
+        SendMessageA(wnd->parent, msg,
+                     MAKEWPARAM((WORD)code, (WORD)wnd->scroll_pos),
+                     (LPARAM)wnd);
+}
+
+static void scroll_set(HWND wnd, int pos, int code)
+{
+    if (pos < wnd->scroll_min)
+        pos = wnd->scroll_min;
+    if (pos > wnd->scroll_max)
+        pos = wnd->scroll_max;
+    if (pos != wnd->scroll_pos) {
+        wnd->scroll_pos = pos;
+        InvalidateRect(wnd, NULL, FALSE);
+    }
+    scroll_notify(wnd, code);
+}
 
 static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    int sz = ween_scroll_metric();
+    int vert = (wnd->style & SBS_VERT) != 0;
+    int len = vert ? wnd->h : wnd->w;
+    int at = vert ? GET_Y_LPARAM(lp) : GET_X_LPARAM(lp);
+    int tpos, tsize, track;
+
     switch (msg) {
+    case WM_LBUTTONDOWN:
+        SetFocus(wnd);
+        scroll_thumb(wnd, &tpos, &tsize, &track);
+        if (at < sz) {
+            scroll_set(wnd, wnd->scroll_pos - 1, SB_LINEUP);
+        } else if (at >= len - sz) {
+            scroll_set(wnd, wnd->scroll_pos + 1, SB_LINEDOWN);
+        } else if (at < sz + tpos) {
+            scroll_set(wnd, wnd->scroll_pos - (wnd->scroll_page ? wnd->scroll_page : 1),
+                       SB_PAGEUP);
+        } else if (at >= sz + tpos + tsize) {
+            scroll_set(wnd, wnd->scroll_pos + (wnd->scroll_page ? wnd->scroll_page : 1),
+                       SB_PAGEDOWN);
+        } else {
+            SetCapture(wnd);
+            wnd->drag_offset = at - (sz + tpos); /* grab point within the thumb */
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (GetCapture() == wnd) {
+            scroll_thumb(wnd, &tpos, &tsize, &track);
+            if (track > tsize) {
+                int want = at - wnd->drag_offset - sz;
+                scroll_set(wnd,
+                           wnd->scroll_min + MulDiv(want,
+                                                    wnd->scroll_max - wnd->scroll_min,
+                                                    track - tsize),
+                           SB_THUMBTRACK);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd) {
+            ReleaseCapture();
+            scroll_notify(wnd, SB_THUMBPOSITION);
+            scroll_notify(wnd, SB_ENDSCROLL);
+        }
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         struct ween_wnd *top = ween_top_level(wnd);
@@ -304,6 +393,22 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* The one control showing a drop-down list, if any. Only a combo box does
+ * this today, and only one can be open at a time — as on Windows. */
+static HWND g_dropped;
+
+/* Tell the parent something happened, the way a common control does. */
+static void notify_parent(HWND wnd, UINT code)
+{
+    NMHDR nm;
+    if (!wnd->parent)
+        return;
+    nm.hwndFrom = wnd;
+    nm.idFrom = wnd->id;
+    nm.code = code;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
 /* ---- item lists (LISTBOX, COMBOBOX) -------------------------------------- */
 
 typedef struct {
@@ -436,6 +541,42 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_LBUTTONDOWN: {
+        int ih = item_height(wnd), i;
+        RECT cr;
+        it = items_of(wnd);
+        GetClientRect(wnd, &cr);
+        SetFocus(wnd);
+        i = (it ? it->top : 0) + GET_Y_LPARAM(lp) / (ih ? ih : 1);
+        if (it && i >= 0 && i < it->count && GET_X_LPARAM(lp) < cr.right) {
+            it->cursel = i;
+            InvalidateRect(wnd, NULL, FALSE);
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_COMMAND,
+                             MAKEWPARAM((WORD)wnd->id, LBN_SELCHANGE),
+                             (LPARAM)wnd);
+        }
+        return 0;
+    }
+    case WM_KEYDOWN:
+        it = items_of(wnd);
+        if (it && (wp == VK_UP || wp == VK_DOWN)) {
+            int next = it->cursel + (wp == VK_DOWN ? 1 : -1);
+            if (next >= 0 && next < it->count) {
+                it->cursel = next;
+                InvalidateRect(wnd, NULL, FALSE);
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_COMMAND,
+                                 MAKEWPARAM((WORD)wnd->id, LBN_SELCHANGE),
+                                 (LPARAM)wnd);
+            }
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case LB_ADDSTRING:
         return items_add(wnd, (const char *)lp);
     case LB_SETCURSEL:
@@ -484,10 +625,108 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
+static int combo_list_height(HWND wnd)
+{
+    ween_items *it = wnd->ctl;
+    int n = it ? it->count : 0;
+    if (n > 8)
+        n = 8;
+    return n * item_height(wnd) + 2;
+}
+
+/* Where the dropped list sits, in surface coordinates: directly under the
+ * control, its own width. */
+static void combo_list_rect(HWND wnd, int *x, int *y, int *w, int *h)
+{
+    int ox, oy;
+    ween_client_origin(wnd, &ox, &oy);
+    *x = ox - ween_ex_edge(wnd);
+    *y = oy - ween_ex_edge(wnd) + wnd->h;
+    *w = wnd->w;
+    *h = combo_list_height(wnd);
+}
+
+void ween_popup_paint(void)
+{
+    struct ween_wnd *top;
+    ween_items *it;
+    const ween_strike *f;
+    int x, y, w, h, ih;
+    if (!g_dropped)
+        return;
+    top = ween_top_level(g_dropped);
+    it = g_dropped->ctl;
+    f = g_dropped->font ? g_dropped->font : ween_gui_font();
+    ih = item_height(g_dropped);
+    combo_list_rect(g_dropped, &x, &y, &w, &h);
+
+    ween_classic_edge(&top->surface, x, y, w, h, BDR_SUNKENOUTER, BF_RECT, NULL);
+    ween_surface_fill(&top->surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
+    for (int i = 0; it && i < it->count; i++) {
+        int iy = y + 1 + i * ih;
+        int selected = i == it->cursel;
+        if (iy + ih > y + h - 1)
+            break;
+        if (selected)
+            ween_surface_fill(&top->surface, x + 1, iy, w - 2, ih, WEEN_CAP_LEFT);
+        if (f)
+            ween_strike_draw(f, &top->surface, x + 2, iy, it->item[i],
+                             (int)strlen(it->item[i]),
+                             selected ? WEEN_WHITE : WEEN_BLACK);
+    }
+}
+
+HWND ween_popup_hit(int x, int y)
+{
+    int px, py, pw, ph;
+    if (!g_dropped)
+        return NULL;
+    combo_list_rect(g_dropped, &px, &py, &pw, &ph);
+    if (x >= px && x < px + pw && y >= py && y < py + ph)
+        return g_dropped;
+    return NULL;
+}
+
 static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_items *it;
     switch (msg) {
+    case WM_LBUTTONDOWN: {
+        int px, py, pw, ph, y = GET_Y_LPARAM(lp);
+        it = items_of(wnd);
+        SetFocus(wnd);
+        combo_list_rect(wnd, &px, &py, &pw, &ph);
+        if (g_dropped == wnd) {
+            /* a click while open: on the list it picks, elsewhere it closes.
+             * The point arrives relative to our client area. */
+            int ox, oy;
+            ween_client_origin(wnd, &ox, &oy);
+            int sy = y + oy - py - 1;
+            int i = sy / (item_height(wnd) ? item_height(wnd) : 1);
+            if (sy >= 0 && it && i >= 0 && i < it->count) {
+                it->cursel = i;
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_COMMAND,
+                                 MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE),
+                                 (LPARAM)wnd);
+            }
+            g_dropped = NULL;
+        } else {
+            g_dropped = wnd;
+        }
+        ween_top_level(wnd)->dirty = 1;
+        return 0;
+    }
+    case WM_KILLFOCUS:
+        if (g_dropped == wnd) {
+            g_dropped = NULL;
+            ween_top_level(wnd)->dirty = 1;
+        }
+        return 0;
+    case WM_DESTROY:
+        if (g_dropped == wnd)
+            g_dropped = NULL;
+        return 0;
     case WM_CREATE:
         /* The combo box wears the field border itself, whatever ex-style it
          * was created with, and a closed drop-down list is one item tall
@@ -623,6 +862,7 @@ typedef struct ween_tvitem {
 
 typedef struct {
     ween_tvitem *root;
+    ween_tvitem *sel;
 } ween_tree;
 
 #define WEEN_TV_ITEM_H 16
@@ -662,7 +902,8 @@ static void dotted_h(ween_surface *s, int y, int x0, int x1, ween_color c)
 
 /* Draw one level of the tree; returns the row after the last one drawn. */
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
-                     int ox, int oy, int depth, int row, int lines)
+                     int ox, int oy, int depth, int row, int lines,
+                     const ween_tvitem *sel)
 {
     int th = f ? f->ascent - f->descent : 13;
     for (ween_tvitem *it = first; it; it = it->next) {
@@ -691,19 +932,47 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             if (!it->expanded)
                 ween_surface_vline(s, cx, cy - 2, WEEN_TV_BUTTON - 4, WEEN_BLACK);
         }
-        if (f && it->text)
-            ween_strike_draw(f, s, tx, y + (WEEN_TV_ITEM_H - th) / 2,
-                             it->text, (int)strlen(it->text), WEEN_BLACK);
+        if (f && it->text) {
+            int ty = y + (WEEN_TV_ITEM_H - th) / 2;
+            int selected = it == sel;
+            if (selected) {
+                int tw = ween_strike_text_width(f, it->text,
+                                                (int)strlen(it->text));
+                ween_surface_fill(s, tx - 1, ty, tw + 3, th, WEEN_CAP_LEFT);
+            }
+            ween_strike_draw(f, s, tx, ty, it->text, (int)strlen(it->text),
+                             selected ? WEEN_WHITE : WEEN_BLACK);
+        }
         row++;
         if (it->expanded && it->child) {
             int start = row;
-            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines);
+            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines, sel);
             if (lines) /* the parent's line down past its children */
                 dotted_v(s, cx, y + WEEN_TV_ITEM_H,
                          oy + (start + 0) * WEEN_TV_ITEM_H, WEEN_SHADOW);
         }
     }
     return row;
+}
+
+/* The item on a given visible row, and how deep it sits. */
+static ween_tvitem *tree_at_row(ween_tvitem *first, int depth, int want,
+                                int *row, int *depth_out)
+{
+    for (ween_tvitem *it = first; it; it = it->next) {
+        if (*row == want) {
+            *depth_out = depth;
+            return it;
+        }
+        (*row)++;
+        if (it->expanded && it->child) {
+            ween_tvitem *hit =
+                tree_at_row(it->child, depth + 1, want, row, depth_out);
+            if (hit)
+                return hit;
+        }
+    }
+    return NULL;
 }
 
 /* How far right the widest item reaches — what the horizontal scroll bar
@@ -739,7 +1008,7 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (!t || !t->root)
         return;
     tree_draw(&top->surface, f, t->root, ox, oy, 0, 0,
-              (wnd->style & TVS_HASLINES) != 0);
+              (wnd->style & TVS_HASLINES) != 0, t->sel);
 
     content = tree_extent(f, t->root, 0) + 8;
     if (content > r.right) /* a bar along the bottom, as wide as it needs */
@@ -758,6 +1027,36 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_LBUTTONDOWN: {
+        int row = 0, depth = 0;
+        int want = GET_Y_LPARAM(lp) / WEEN_TV_ITEM_H;
+        ween_tvitem *hit;
+        t = tree_of(wnd);
+        SetFocus(wnd);
+        if (!t || !t->root)
+            return 0;
+        hit = tree_at_row(t->root, 0, want, &row, &depth);
+        if (!hit)
+            return 0;
+        {   /* the button toggles, anywhere else selects */
+            int bx = 5 + depth * WEEN_TV_INDENT, x = GET_X_LPARAM(lp);
+            if (hit->child && x >= bx && x < bx + WEEN_TV_BUTTON) {
+                hit->expanded = !hit->expanded;
+                notify_parent(wnd, TVN_ITEMEXPANDEDA);
+            } else {
+                t->sel = hit;
+                notify_parent(wnd, TVN_SELCHANGEDA);
+            }
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case TVM_SELECTITEM:
+        t = tree_of(wnd);
+        if (t)
+            t->sel = (ween_tvitem *)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
     case TVM_INSERTITEMA: {
         const TVINSERTSTRUCTA *is = (const TVINSERTSTRUCTA *)lp;
         ween_tvitem *item, **link;
@@ -818,7 +1117,7 @@ typedef struct {
     char *col[4];
     int width[4], ncol;
     ween_lvrow *row;
-    int nrow, caprow;
+    int nrow, caprow, sel;
 } ween_list;
 
 static ween_list *list_of(HWND w)
@@ -855,13 +1154,21 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     for (int i = 0; i < l->nrow; i++) {
         int y = oy + WEEN_LV_HEADER_H + i * WEEN_LV_ITEM_H;
+        int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         x = 0;
+        if (selected && f && l->row[i].text[0]) {
+            int tw = ween_strike_text_width(f, l->row[i].text[0],
+                                            (int)strlen(l->row[i].text[0]));
+            ween_surface_fill(&top->surface, ox + 5, y, tw + 4, WEEN_LV_ITEM_H,
+                              WEEN_CAP_LEFT);
+        }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             if (f && l->row[i].text[c])
                 ween_strike_draw(f, &top->surface, ox + x + (c ? 5 : 7), y + 1,
                                  l->row[i].text[c],
-                                 (int)strlen(l->row[i].text[c]), WEEN_BLACK);
+                                 (int)strlen(l->row[i].text[c]),
+                                 selected && !c ? WEEN_WHITE : WEEN_BLACK);
             x += l->width[c];
         }
     }
@@ -885,6 +1192,17 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc = BeginPaint(wnd, &ps);
         listview_paint(wnd, dc, &ps);
         EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        int i = (GET_Y_LPARAM(lp) - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
+        l = list_of(wnd);
+        SetFocus(wnd);
+        if (l && GET_Y_LPARAM(lp) >= WEEN_LV_HEADER_H && i >= 0 && i < l->nrow) {
+            l->sel = i + 1;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, LVN_ITEMCHANGED);
+        }
         return 0;
     }
     case LVM_INSERTCOLUMNA: {
@@ -926,8 +1244,16 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
     }
-    case LVM_SETITEMSTATE:
-        return TRUE; /* the selection only shows when the control has focus */
+    case LVM_SETITEMSTATE: {
+        const LVITEMA *item = (const LVITEMA *)lp;
+        l = list_of(wnd);
+        /* the selection only shows once the control has been clicked, as an
+         * unfocused list view does not paint one */
+        if (l && item && (item->state & LVIS_SELECTED) &&
+            ween_focus_get() == wnd)
+            l->sel = (int)wp + 1;
+        return TRUE;
+    }
     case WM_DESTROY:
         l = wnd->ctl;
         if (l) {
@@ -1028,9 +1354,75 @@ static void trackbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
+/* The position a point along the bar corresponds to. */
+static int trackbar_pos_at(HWND wnd, int at)
+{
+    int vert = (wnd->style & TBS_VERT) != 0;
+    int box = (wnd->style & (TBS_BOTH | TBS_NOTICKS)) != 0;
+    int travel = vert ? (box ? 11 : WEEN_TB_THUMB_W) : WEEN_TB_THUMB_W;
+    int half = travel / 2;
+    int chan0 = 8, chan1 = (vert ? wnd->h : wnd->w) - (vert ? 9 : 8);
+    int span = chan1 - chan0 - 2 * half;
+    int rel = at - chan0 - half;
+    if (span <= 0)
+        return wnd->scroll_min;
+    if (rel < 0)
+        rel = 0;
+    if (rel > span)
+        rel = span;
+    return wnd->scroll_min +
+           MulDiv(rel, wnd->scroll_max - wnd->scroll_min, span);
+}
+
 static LRESULT trackbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    int vert = (wnd->style & TBS_VERT) != 0;
+    int at = vert ? GET_Y_LPARAM(lp) : GET_X_LPARAM(lp);
+
     switch (msg) {
+    case WM_LBUTTONDOWN:
+        SetFocus(wnd);
+        SetCapture(wnd);
+        wnd->scroll_pos = trackbar_pos_at(wnd, at);
+        InvalidateRect(wnd, NULL, FALSE);
+        if (wnd->parent)
+            SendMessageA(wnd->parent, vert ? WM_VSCROLL : WM_HSCROLL,
+                         MAKEWPARAM(SB_THUMBTRACK, (WORD)wnd->scroll_pos),
+                         (LPARAM)wnd);
+        return 0;
+    case WM_MOUSEMOVE:
+        if (GetCapture() == wnd) {
+            int pos = trackbar_pos_at(wnd, at);
+            if (pos != wnd->scroll_pos) {
+                wnd->scroll_pos = pos;
+                InvalidateRect(wnd, NULL, FALSE);
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, vert ? WM_VSCROLL : WM_HSCROLL,
+                                 MAKEWPARAM(SB_THUMBTRACK, (WORD)pos),
+                                 (LPARAM)wnd);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd) {
+            ReleaseCapture();
+            if (wnd->parent)
+                SendMessageA(wnd->parent, vert ? WM_VSCROLL : WM_HSCROLL,
+                             MAKEWPARAM(SB_THUMBPOSITION, (WORD)wnd->scroll_pos),
+                             (LPARAM)wnd);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (wp == VK_LEFT || wp == VK_DOWN || wp == VK_RIGHT || wp == VK_UP) {
+            int d = (wp == VK_LEFT || wp == VK_UP) ? -1 : 1;
+            int pos = wnd->scroll_pos + d;
+            if (pos >= wnd->scroll_min && pos <= wnd->scroll_max) {
+                wnd->scroll_pos = pos;
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_CREATE:
         wnd->scroll_min = 0;
         wnd->scroll_max = 100;
@@ -1151,6 +1543,28 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc = BeginPaint(wnd, &ps);
         tab_paint(wnd, dc, &ps);
         EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        int min = tab_min_width(f), l = 2, x = GET_X_LPARAM(lp);
+        int y = GET_Y_LPARAM(lp), tabh = (f ? f->ascent - f->descent : 13) + 5;
+        it = items_of(wnd);
+        SetFocus(wnd);
+        if (y > tabh + 2)
+            return 0;
+        for (int i = 0; it && i < it->count; i++) {
+            int w = tab_width(f, it->item[i], min);
+            if (x >= l && x < l + w) {
+                if (it->cursel != i) {
+                    it->cursel = i;
+                    InvalidateRect(wnd, NULL, FALSE);
+                    notify_parent(wnd, TCN_SELCHANGE);
+                }
+                break;
+            }
+            l += w;
+        }
         return 0;
     }
     case TCM_INSERTITEMA: {
