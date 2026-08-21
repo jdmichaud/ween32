@@ -1366,9 +1366,11 @@ typedef struct ween_tvitem {
     char *text;
     struct ween_tvitem *parent, *child, *next;
     int expanded;
+    int image; /* index into the view's image list, -1 for none */
 } ween_tvitem;
 
 typedef struct {
+    HIMAGELIST images; /* the icons items name by index */
     ween_tvitem *root;
     ween_tvitem *sel;
     int scroll_x, content_w; /* horizontal scroll, and what there is to scroll */
@@ -1425,9 +1427,12 @@ static void dotted_h(ween_surface *s, int y, int x0, int x1, ween_color c)
 /* Draw one level of the tree; returns the row after the last one drawn. */
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                      int ox, int oy, int depth, int row, int lines,
-                     const ween_tvitem *sel)
+                     const ween_tvitem *sel, HIMAGELIST images)
 {
     int th = f ? f->ascent - f->descent : 13;
+    int icon_w = 0, icon_h = 0;
+    if (images)
+        ImageList_GetIconSize(images, &icon_w, &icon_h);
     for (ween_tvitem *it = first; it; it = it->next) {
         int y = oy + row * WEEN_TV_ITEM_H;
         int bx = ox + 5 + depth * WEEN_TV_INDENT;
@@ -1454,6 +1459,13 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             if (!it->expanded)
                 ween_surface_vline(s, cx, cy - 2, WEEN_TV_BUTTON - 4, WEEN_BLACK);
         }
+        if (images && it->image >= 0) {
+            /* the icon goes between the button and the label, and the label
+             * moves over to make room for it */
+            ween_imagelist_draw(images, it->image, s, tx,
+                                y + (WEEN_TV_ITEM_H - icon_h) / 2);
+            tx += icon_w + 2;
+        }
         if (f && it->text) {
             int ty = y + (WEEN_TV_ITEM_H - th) / 2;
             int selected = it == sel;
@@ -1468,7 +1480,8 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         row++;
         if (it->expanded && it->child) {
             int start = row;
-            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines, sel);
+            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines, sel,
+                            images);
             if (lines) /* the parent's line down past its children */
                 dotted_v(s, cx, y + WEEN_TV_ITEM_H,
                          oy + (start + 0) * WEEN_TV_ITEM_H, WEEN_SHADOW);
@@ -1568,7 +1581,7 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                           clip.top);
     tree_draw(&top->surface, f, t->root, ox - t->scroll_x,
               oy - t->scroll_row * WEEN_TV_ITEM_H, 0, 0,
-              (wnd->style & TVS_HASLINES) != 0, t->sel);
+              (wnd->style & TVS_HASLINES) != 0, t->sel, t->images);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -1712,6 +1725,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         item = calloc(1, sizeof(*item));
         if (!item)
             return 0;
+        item->image = (is->item.mask & TVIF_IMAGE) ? is->item.iImage : -1;
         n = strlen(is->item.pszText ? is->item.pszText : "") + 1;
         item->text = malloc(n);
         if (item->text)
@@ -1728,6 +1742,14 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)(UINT_PTR)item;
     }
+    case TVM_SETIMAGELIST:
+        if ((t = tree_of(wnd))) {
+            HIMAGELIST was = t->images;
+            t->images = (HIMAGELIST)lp;
+            InvalidateRect(wnd, NULL, FALSE);
+            return (LRESULT)(UINT_PTR)was;
+        }
+        return 0;
     case TVM_EXPAND: {
         ween_tvitem *item = (ween_tvitem *)lp;
         if (item)
@@ -1755,9 +1777,11 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 typedef struct {
     char *text[4];
+    int image; /* index into the view's image list, -1 for none */
 } ween_lvrow;
 
 typedef struct {
+    HIMAGELIST images;
     char *col[4];
     int width[4], ncol;
     ween_lvrow *row;
@@ -1813,24 +1837,33 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         x += l->width[c];
     }
 
+    int icon_w = 0, icon_h = 0;
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+
     for (int i = 0; i < l->nrow; i++) {
         int y = oy + WEEN_LV_HEADER_H + i * WEEN_LV_ITEM_H;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
+        int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
         x = 0;
         if (selected && f && l->row[i].text[0]) {
             /* the label rect: the text inflated five pixels each side, with
              * the focus rectangle drawn over it */
             int tw = ween_strike_text_extent(f, l->row[i].text[0],
                                              (int)strlen(l->row[i].text[0]));
-            ween_surface_fill(&top->surface, ox + 2, y, tw + 10,
+            ween_surface_fill(&top->surface, ox + 2 + indent, y, tw + 10,
                               WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
-            ween_surface_focus_rect(&top->surface, ox + 2, y, tw + 10,
+            ween_surface_focus_rect(&top->surface, ox + 2 + indent, y, tw + 10,
                                     WEEN_LV_ITEM_H);
         }
+        if (indent)
+            ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
+                                ox + 2, y + (WEEN_LV_ITEM_H - icon_h) / 2);
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             if (f && l->row[i].text[c])
-                ween_strike_draw(f, &top->surface, ox + x + (c ? 5 : 7), y + 1,
+                ween_strike_draw(f, &top->surface,
+                                 ox + x + (c ? 5 : 7) + (c ? 0 : indent), y + 1,
                                  l->row[i].text[c],
                                  (int)strlen(l->row[i].text[c]),
                                  selected && !c ? WEEN_WHITE : WEEN_BLACK);
@@ -1894,10 +1927,20 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return -1;
         l->row = rows;
         memset(&l->row[l->nrow], 0, sizeof(*rows));
+        l->row[l->nrow].image = (item->mask & LVIF_IMAGE) ? item->iImage : -1;
         l->row[l->nrow].text[0] = dup_str(item->pszText);
         InvalidateRect(wnd, NULL, FALSE);
         return l->nrow++;
     }
+    case LVM_SETIMAGELIST:
+        l = list_of(wnd);
+        if (l) {
+            HIMAGELIST was = l->images;
+            l->images = (HIMAGELIST)lp;
+            InvalidateRect(wnd, NULL, FALSE);
+            return (LRESULT)(UINT_PTR)was;
+        }
+        return 0;
     case LVM_SETITEMTEXTA: {
         const LVITEMA *item = (const LVITEMA *)lp;
         int i = (int)wp;

@@ -20,6 +20,11 @@ static COLORREF px_to_cr(ween_color p)
     return RGB((p >> 16) & 0xff, (p >> 8) & 0xff, p & 0xff);
 }
 
+ween_color ween_cr_to_px(COLORREF c)
+{
+    return cr_to_px(c);
+}
+
 /* ---- system colors (Wine Win2000 GetSysColor defaults) ------------------- */
 
 static ween_color sys_color_px(int index)
@@ -118,19 +123,23 @@ BOOL DeleteObject(HGDIOBJ obj)
 {
     if (!obj)
         return FALSE;
-    if (!obj->is_static)
-        free(obj);
+    if (obj->is_static)
+        return TRUE;
+    if (obj->kind == WEEN_OBJ_BITMAP)
+        ween_surface_free(&obj->bitmap);
+    free(obj);
     return TRUE;
 }
 
 HGDIOBJ GetStockObject(int what)
 {
-    static ween_gdiobj gui_font = { WEEN_OBJ_FONT, 0, NULL, 1 };
-    static ween_gdiobj white = { WEEN_OBJ_BRUSH, 0x00ffffff, NULL, 1 };
-    static ween_gdiobj black = { WEEN_OBJ_BRUSH, 0x00000000, NULL, 1 };
-    static ween_gdiobj gray = { WEEN_OBJ_BRUSH, 0x00808080, NULL, 1 };
-    static ween_gdiobj ltgray = { WEEN_OBJ_BRUSH, 0x00c0c0c0, NULL, 1 };
-    static ween_gdiobj dkgray = { WEEN_OBJ_BRUSH, 0x00404040, NULL, 1 };
+    /* is_static is what keeps DeleteObject from freeing these. */
+    static ween_gdiobj gui_font = { WEEN_OBJ_FONT, 0, NULL, { 0 }, 1 };
+    static ween_gdiobj white = { WEEN_OBJ_BRUSH, 0x00ffffff, NULL, { 0 }, 1 };
+    static ween_gdiobj black = { WEEN_OBJ_BRUSH, 0x00000000, NULL, { 0 }, 1 };
+    static ween_gdiobj gray = { WEEN_OBJ_BRUSH, 0x00808080, NULL, { 0 }, 1 };
+    static ween_gdiobj ltgray = { WEEN_OBJ_BRUSH, 0x00c0c0c0, NULL, { 0 }, 1 };
+    static ween_gdiobj dkgray = { WEEN_OBJ_BRUSH, 0x00404040, NULL, { 0 }, 1 };
     switch (what) {
     case DEFAULT_GUI_FONT:
     case SYSTEM_FONT:

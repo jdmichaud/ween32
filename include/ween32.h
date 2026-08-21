@@ -61,6 +61,9 @@ typedef struct ween_gdiobj *HBRUSH;
 typedef struct ween_gdiobj *HFONT;
 typedef void *HINSTANCE;
 typedef void *HICON;
+struct ween_imagelist;
+typedef struct ween_imagelist *HIMAGELIST;
+typedef struct ween_gdiobj *HBITMAP;
 typedef void *HCURSOR;
 /* A real menu, or a control id squeezed into the same parameter — win32 uses
  * one slot for both, and CreateWindowEx says which by whether the window is a
@@ -342,6 +345,8 @@ BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
 #define TVS_LINESATROOT 0x0004L
 #define TVS_SHOWSELALWAYS 0x0020L
 #define TVIF_TEXT 0x0001
+#define TVIF_IMAGE 0x0002
+#define TVSIL_NORMAL 0
 #define TVI_ROOT ((HTREEITEM)(UINT_PTR)-0x10000)
 #define TVI_FIRST ((HTREEITEM)(UINT_PTR)-0x0FFFF)
 #define TVI_LAST ((HTREEITEM)(UINT_PTR)-0x0FFFE)
@@ -349,6 +354,7 @@ BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
 #define TVE_EXPAND 0x0002
 #define TV_FIRST 0x1100
 #define TVM_INSERTITEMA (TV_FIRST + 0)
+#define TVM_SETIMAGELIST (TV_FIRST + 9)
 #define TVM_EXPAND (TV_FIRST + 2)
 #define TVM_SELECTITEM (TV_FIRST + 11)
 
@@ -371,6 +377,8 @@ typedef struct tagTVINSERTSTRUCTA {
 #define LVS_SINGLESEL 0x0004L
 #define LVS_SHOWSELALWAYS 0x0008L
 #define LVIF_TEXT 0x0001
+#define LVIF_IMAGE 0x0002
+#define LVSIL_SMALL 1
 #define LVIS_FOCUSED 0x0001
 #define LVIS_SELECTED 0x0002
 #define LVCF_WIDTH 0x0002
@@ -378,6 +386,7 @@ typedef struct tagTVINSERTSTRUCTA {
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
 #define LVM_INSERTITEMA (LVM_FIRST + 7)
+#define LVM_SETIMAGELIST (LVM_FIRST + 3)
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
 
@@ -778,6 +787,33 @@ BOOL EmptyClipboard(void);
 HANDLE SetClipboardData(UINT format, HANDLE data);
 HANDLE GetClipboardData(UINT format);
 BOOL IsClipboardFormatAvailable(UINT format);
+
+/* ---- bitmaps and image lists ---------------------------------------------
+ *
+ * An image list holds any number of images, all one size, and a control names
+ * one by index — which is how a tree or list view shows an icon beside a
+ * label. Transparency is one bit per pixel, as the classic shell had it.
+ *
+ * LoadImageA reads a .bmp from disk (LR_LOADFROMFILE): there are no resources
+ * to load from, ween32 having no .exe to hold them. */
+#define IMAGE_BITMAP 0
+#define LR_LOADFROMFILE 0x0010
+#define CLR_NONE 0xFFFFFFFF
+#define ILC_COLOR 0x0000
+#define ILC_MASK 0x0001
+#define ILD_NORMAL 0x0000
+#define ILD_TRANSPARENT 0x0001
+
+HBITMAP CreateBitmap(int w, int h, UINT planes, UINT bpp, const void *bits);
+HANDLE LoadImageA(HINSTANCE inst, LPCSTR name, UINT type, int cx, int cy,
+                  UINT flags);
+HIMAGELIST ImageList_Create(int cx, int cy, UINT flags, int initial, int grow);
+BOOL ImageList_Destroy(HIMAGELIST il);
+int ImageList_Add(HIMAGELIST il, HBITMAP image, HBITMAP mask);
+int ImageList_AddMasked(HIMAGELIST il, HBITMAP image, COLORREF transparent);
+int ImageList_GetImageCount(HIMAGELIST il);
+BOOL ImageList_GetIconSize(HIMAGELIST il, int *cx, int *cy);
+BOOL ImageList_Draw(HIMAGELIST il, int index, HDC dc, int x, int y, UINT style);
 
 BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 BOOL TranslateMessage(const MSG *msg);

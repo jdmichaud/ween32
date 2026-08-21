@@ -36,8 +36,9 @@ a missing feature.
 - [ ] **The clipboard between applications.** Cut, copy and paste work within
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
-- [ ] **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`,
-  `LoadImage`, `DrawIconEx` for tree and list-view items.
+- [ ] **Icons proper** — `HICON`, `LoadIcon`, `DrawIconEx`. Image lists exist
+  and the views draw from them, but an icon needs a `.ico` decoder (several
+  sizes and depths in one file) that a `.bmp` reader does not give.
 - [ ] **Accelerator tables** and `WM_NEXTDLGCTL`, the two keyboard pieces not
   covered by IsDialogMessageA.
 
@@ -74,6 +75,12 @@ ticks, accelerator text and submenu arrows. Modal `DialogBoxIndirectParamA`
 `IsDialogMessageA` carrying Tab/Shift+Tab, Space, the arrows within a group of
 option buttons, `&`-mnemonics under Alt, Enter and Esc. Focused buttons draw
 the dotted focus rectangle.
+
+**Images** — `CreateBitmap` from pixels in memory, `LoadImageA` for a `.bmp`
+on disk (the format the headless backend writes, so a screenshot loads back),
+and image lists — `ImageList_Create`/`Add`/`AddMasked`/`Draw`/`Destroy` with
+one-bit transparency, which is what the classic shell had. The tree view and
+list view draw the image an item names.
 
 **GDI** — `BeginPaint`/`EndPaint`, `FillRect`, `FrameRect`, `DrawEdge` (Wine's
 tables, every `BDR_`/`EDGE_` type and `BF_` flag), `DrawFrameControl`
@@ -171,8 +178,9 @@ asserts where each control ends up, so CI covers it.
 - [ ] **A focus rectangle on the tree view's focused item** — buttons and the
       list view draw one; the tree view does not, and `DrawFocusRect` is still
       not a public call.
-- [ ] **Multi-row tabs** (`TCS_MULTILINE`), item images from an image list,
-      and column resizing in the list view.
+- [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
+      the list view. The tree and list views take item images now; the tab
+      control does not.
 
 ## Core machinery these need
 
