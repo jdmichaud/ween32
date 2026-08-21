@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **188 `ok` lines and no `FAIL`**, ending with each suite reporting
+Expect **196 `ok` lines and no `FAIL`**, ending with each suite reporting
 `all passed`. The count only goes up — if it has dropped, a test file stopped
 being built rather than a test starting to pass.
 
@@ -59,7 +59,7 @@ CLICK_AT=55,80 tools/refcapture/capture.sh menu.c /dev/null
 where the window manager put things — find the window's corner in the shot
 first rather than trusting a remembered number.
 
-Those two numbers are the ones to watch. **Going up is a regression** even if
+Those numbers are the ones to watch. **Going up is a regression** even if
 every test still passes — the suite asserts behaviour, the diff asserts
 appearance. When it moves, find out where before doing anything else:
 
