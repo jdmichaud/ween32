@@ -17,9 +17,11 @@ this one are done — a second top-level window, text and tables that grow
 instead of truncating, `SelectObject`'s contract, timers, and the keyboard
 conventions. What is left, in the order it is worth doing:
 
-- [ ] **Menus** (`HMENU`, `WM_INITMENU`, popup tracking) and modal
-  `DialogBox`/`MessageBoxA`. These were the reason the second top-level window
-  came first; nothing blocks them now.
+- [ ] **Menu keyboard access**: Alt opens the bar, the arrows walk between
+  drop-downs, and a letter picks an item. Inside an open drop-down the arrows,
+  Enter and Escape already work; getting *into* one from the keyboard does not.
+- [ ] **Cascading submenus stay up**: a submenu opens beside its parent, but
+  the parent closes behind it rather than remaining tracked.
 - [ ] **Mouse routing into nested children**, plus hover tracking
   (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today only
   direct children of the top-level window are hit-tested.
@@ -51,6 +53,13 @@ the message loop (`GetMessageA`/`TranslateMessage`/`DispatchMessageA`,
 the disabled state), `STATIC`, `EDIT`, `LISTBOX`, `COMBOBOX`, `SCROLLBAR`, and
 the common controls `msctls_progress32`, `msctls_trackbar32`,
 `msctls_statusbar32`, `SysTabControl32`, `SysTreeView32` and `SysListView32`.
+
+**Menus and dialogs** — `CreateMenu`/`CreatePopupMenu`/`AppendMenuA`/`SetMenu`
+/`GetMenu`/`GetSubMenu`/`CheckMenuItem`/`EnableMenuItem`/`DestroyMenu`, a menu
+bar drawn above the client area that opens its drop-downs on a click, and
+`TrackPopupMenu` for a popup anywhere on screen — separators, grey items,
+ticks, accelerator text and submenu arrows. Modal `DialogBoxIndirectParamA`
+(the owner disabled while it is up) and `MessageBoxA`, sized to its message.
 
 **Timers and the keyboard** — `SetTimer`/`KillTimer`/`WM_TIMER` (with the
 `TIMERPROC` called from `DispatchMessage`), a caret that blinks on one, and
@@ -230,7 +239,8 @@ The fidelity target is a real win32 render, not a memory of one.
 ween32 example is built from — under Wine, against the real win32 controls:
 
 ```sh
-tools/refcapture/capture.sh          # -> tools/refcapture/reference.png
+tools/refcapture/capture.sh                        # -> reference.png
+tools/refcapture/capture.sh menu.c menu-reference.png   # the other sampler
 make && WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=ours.bmp ./examples/controls
 ```
 
@@ -242,12 +252,21 @@ Wine draws the caption and frame itself instead of handing the window to the
 host window manager, and the finished window is read back with `import` and
 cropped. Only Wine's own window is ever read.
 
+Cropping is `crop_window.py`, not a trim: a window manager that resizes Wine's
+desktop window gives it chrome of its own, which reaches the edges of the shot
+and leaves no uniform border to trim away. What is always true instead is that
+the sampler's window floats, touching no edge, so everything connected to the
+border is dropped and what remains is the window.
+
 To check the sampler against its reference, render it headless and diff:
 
 ```sh
 make && WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=ours.bmp ./examples/controls
 tools/refcapture/pxdiff.py                 # summary, or a region as ASCII maps
 tools/refcapture/pxdiff.py 15 34 75 23     # one control, pixel by pixel
+
+PXDIFF_REF=tools/refcapture/menu-reference.png \
+PXDIFF_OUR=/tmp/menu_ween.png tools/refcapture/pxdiff.py   # the menu sampler
 ```
 
 As of the last pass, 2435 of 296370 pixels differ — 0.8% — and every one of
@@ -260,6 +279,14 @@ them is in one of four places:
 | the close box | 509 | Wine antialiases the Marlett glyph; classic Windows drew it aliased, and so do we |
 | a disabled label | ~400 | the same measuring difference, on a centred push-button label |
 
+`examples/menu.c` is the second sampler, and its reference is a window with a
+menu bar. 532 of its 39200 pixels differ — 1.4% — and nearly all of that is the
+caption's bold title, which ween32 synthesises by overstriking the regular
+strike where Wine has the real Tahoma Bold. That difference is not new; it
+shows up here because this window's title has different letters in it. The menu
+bar's own geometry lands on Wine's pixels, and where it did not, the reference
+said so by a pixel and was followed.
+
 The rest — check boxes, option buttons, group box, list box, combo box, both
 progress bars, the scroll bar, the tree view, the list view, the status bar and
 the trackbars — is within a handful of pixels or exact.
@@ -267,10 +294,15 @@ the trackbars — is within a handful of pixels or exact.
 ## Testing
 
 `make test` covers the engine pixels, the API path, the dialog manager, input
-and resizing, two windows at once, timers and the keyboard conventions — 103
-assertions, all headless, so CI runs the lot. Gaps worth closing:
+and resizing, two windows at once, timers, the keyboard conventions, menus and
+modal dialogs — 130 assertions, all headless, so CI runs the lot. Gaps worth
+closing:
 
 - the tests pin `WEEN32_DPI=96`; only the `Xft.dpi` *parser* is covered, so
   the 120/144 strike snapping and the 192 pixel-doubling have no assertions;
 - the headless screenshots are only checked for size in CI, not compared
-  against the reference captures above.
+  against the reference captures above;
+- a message box and a modal dialog have no reference capture of their own. The
+  capture needs the window to take the input focus, and the display this was
+  built on would not give it one; `WEEN32_BMP=/tmp/frame%d.bmp` is how their
+  ween32 side gets looked at meanwhile.
