@@ -366,7 +366,9 @@ int main(void)
     UpdateWindow(w);
 
     MSG msg;
-    while (GetMessageA(&msg, NULL, 0, 0))
+    while (GetMessageA(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg); /* key presses -> WM_CHAR, for the edits */
         DispatchMessageA(&msg);
+    }
     return 0;
 }

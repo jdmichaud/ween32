@@ -705,10 +705,33 @@ LRESULT DispatchMessageA(const MSG *msg)
     return SendMessageA(msg->hwnd, msg->message, msg->wParam, msg->lParam);
 }
 
+/* Turn a key press into the character message that follows it, as win32's
+ * TranslateMessage does — the EDIT control lives on these. */
 BOOL TranslateMessage(const MSG *msg)
 {
-    (void)msg; /* WM_CHAR generation: not in v1 */
-    return FALSE;
+    unsigned ch;
+    if (!msg || msg->message != WM_KEYDOWN)
+        return FALSE;
+    ch = (unsigned)((msg->lParam >> 16) & 0xffff);
+    if (!ch)
+        switch (msg->wParam) { /* keys a layout always turns into characters */
+        case VK_BACK:
+            ch = '\b';
+            break;
+        case VK_TAB:
+            ch = '\t';
+            break;
+        case VK_RETURN:
+            ch = '\r';
+            break;
+        case VK_ESCAPE:
+            ch = 27;
+            break;
+        default:
+            return FALSE;
+        }
+    post_msg(msg->hwnd, WM_CHAR, (WPARAM)ch, msg->lParam);
+    return TRUE;
 }
 
 /* Route a mouse event to the child under the point (or the capture), sending
@@ -806,7 +829,10 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         route_mouse(top, WM_MOUSEMOVE, ev->x, ev->y);
         break;
     case WEEN_EV_KEY:
-        post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk, 0);
+        /* the character rides in the high word, where win32 keeps the scan
+         * code and repeat count; TranslateMessage turns it into WM_CHAR */
+        post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,
+                 (LPARAM)(ev->ch << 16) | (ev->shift ? 1 : 0));
         break;
     case WEEN_EV_CLOSE:
         post_msg(top, WM_CLOSE, 0, 0);

@@ -271,6 +271,8 @@ typedef struct tagCREATESTRUCTA {
 #define CB_RESETCONTENT 0x014B
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
+#define EN_CHANGE 0x0300
+#define EN_UPDATE 0x0400
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"
@@ -467,6 +469,14 @@ typedef struct tagTCITEMA {
 #define VK_TAB 0x09
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
+#define VK_SPACE 0x20
+#define VK_END 0x23
+#define VK_HOME 0x24
+#define VK_LEFT 0x25
+#define VK_UP 0x26
+#define VK_RIGHT 0x27
+#define VK_DOWN 0x28
+#define VK_DELETE 0x2E
 
 /* ---- system colors (indices as on Windows) ------------------------------ */
 

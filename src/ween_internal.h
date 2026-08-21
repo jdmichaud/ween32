@@ -113,6 +113,8 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
 /* As above, but stepping by the reported advances — how EDIT spaces text. */
 void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
                               int y, const char *text, int len, ween_color color);
+int ween_strike_logical_pen(const ween_strike *f, const char *text, int len,
+                            int index);
 
 /* Marlett caption glyphs from glyf outlines, even-odd scanline fill (from
  * marlett.zig). code: 0x72 close, 0x30 min, 0x31 max, 0x32 restore. */
@@ -255,6 +257,8 @@ typedef struct {
     int x_root, y_root; /* desktop coordinates (caption drag) */
     int button;
     unsigned vk;
+    unsigned ch;    /* the character the key produced, 0 for none */
+    int shift;      /* Shift held, for back-tab and typing */
 } ween_event;
 
 typedef struct {

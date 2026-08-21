@@ -50,8 +50,18 @@ static void inject_script(const char *script)
         memset(&ev, 0, sizeof(ev));
         if (kind == 'k' && p[1] == ':') {
             ev.kind = WEEN_EV_KEY;
+            /* a virtual key only: VK_END and '#' share a code, so typing is
+             * what t: is for */
             ev.vk = (unsigned)strtol(p + 2, (char **)&p, 10);
             ween_headless_inject(ev);
+        } else if (kind == 't' && p[1] == ':') {
+            for (p += 2; *p && *p != ' '; p++) {
+                memset(&ev, 0, sizeof(ev));
+                ev.kind = WEEN_EV_KEY;
+                ev.ch = (unsigned char)(*p == '_' ? ' ' : *p);
+                ev.vk = ev.ch >= 'a' && ev.ch <= 'z' ? ev.ch - 32 : ev.ch;
+                ween_headless_inject(ev);
+            }
         } else if ((kind == 'd' || kind == 'u' || kind == 'm') && p[1] == ':') {
             char *end;
             ev.x = (int)strtol(p + 2, &end, 10);

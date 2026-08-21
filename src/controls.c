@@ -120,6 +120,32 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * scroll bars its styles ask for. Typing needs WM_CHAR and a caret, which the
  * core does not have yet — see ROADMAP.md. */
 
+/* The EDIT's own state: where the caret sits, in characters. */
+static int *edit_caret(HWND w)
+{
+    if (!w->ctl)
+        w->ctl = calloc(1, sizeof(int));
+    return w->ctl;
+}
+
+/* The character index nearest an x offset within the text. */
+static int edit_index_at(HWND wnd, int x)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int len = (int)strlen(wnd->text), best = 0, bestd = 1 << 30;
+    if (!f)
+        return 0;
+    for (int i = 0; i <= len; i++) {
+        int pen = ween_strike_logical_pen(f, wnd->text, len, i);
+        int d = pen > x ? pen - x : x - pen;
+        if (d < bestd) {
+            bestd = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
 static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
@@ -167,10 +193,23 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         p = nl + 1;
         ty += line;
     }
+
+    /* the caret: a one-pixel bar where the next character will go */
+    if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && !multi) {
+        int *caret = edit_caret(wnd);
+        int cx = tx + (caret ? ween_strike_logical_pen(f, wnd->text,
+                                                       (int)strlen(wnd->text),
+                                                       *caret)
+                             : 0);
+        ween_surface_vline(&top->surface, ox + cx, oy + inset, line, WEEN_BLACK);
+    }
 }
 
 static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    int *caret = edit_caret(wnd);
+    int len = (int)strlen(wnd->text);
+
     switch (msg) {
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -179,7 +218,85 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_LBUTTONDOWN: {
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        int margin = 1;
+        if (wnd->style & WS_DISABLED)
+            return 0;
+        SetFocus(wnd);
+        if (f && caret) {
+            static const char alpha[] =
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            int sum = 0;
+            for (int i = 0; i < 52; i++)
+                sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
+            margin = (ween_ex_edge(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
+            *caret = edit_index_at(wnd, GET_X_LPARAM(lp) - margin);
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case WM_CHAR: {
+        char ch = (char)wp;
+        if (wnd->style & (WS_DISABLED | ES_READONLY))
+            return 0;
+        if (!caret)
+            return 0;
+        if (ch == '\b') { /* backspace deletes what is behind the caret */
+            if (*caret > 0) {
+                memmove(wnd->text + *caret - 1, wnd->text + *caret,
+                        (size_t)(len - *caret) + 1);
+                (*caret)--;
+            }
+        } else if ((unsigned char)ch >= ' ' && len + 1 < WEEN_MAX_TEXT) {
+            memmove(wnd->text + *caret + 1, wnd->text + *caret,
+                    (size_t)(len - *caret) + 1);
+            wnd->text[*caret] = ch;
+            (*caret)++;
+        } else {
+            return 0;
+        }
+        if (wnd->parent)
+            SendMessageA(wnd->parent, WM_COMMAND,
+                         MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case WM_KEYDOWN:
+        if (!caret)
+            return 0;
+        switch (wp) {
+        case VK_LEFT:
+            if (*caret > 0)
+                (*caret)--;
+            break;
+        case VK_RIGHT:
+            if (*caret < len)
+                (*caret)++;
+            break;
+        case VK_HOME:
+            *caret = 0;
+            break;
+        case VK_END:
+            *caret = len;
+            break;
+        case VK_DELETE:
+            if (*caret < len && !(wnd->style & (WS_DISABLED | ES_READONLY)))
+                memmove(wnd->text + *caret, wnd->text + *caret + 1,
+                        (size_t)(len - *caret));
+            break;
+        default:
+            return DefWindowProcA(wnd, msg, wp, lp);
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case WM_SETTEXT:
+        if (caret)
+            *caret = 0;
         InvalidateRect(wnd, NULL, FALSE);
         return DefWindowProcA(wnd, msg, wp, lp);
     default:

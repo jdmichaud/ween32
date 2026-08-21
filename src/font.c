@@ -266,6 +266,20 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
  * run, as justification does: stepping each glyph by its own rounded-up
  * advance instead would bunch whole pixels onto a few pairs and read as
  * uneven, which is not what the control looks like. */
+/* Where the caret sits before character `index`, under the same layout. */
+int ween_strike_logical_pen(const ween_strike *f, const char *text, int len,
+                            int index)
+{
+    int extra = ween_strike_text_extent(f, text, len) -
+                ween_strike_text_width(f, text, len);
+    int pen = 0;
+    if (len <= 0)
+        return 0;
+    for (int i = 0; i < index && i < len; i++)
+        pen += ween_strike_char_advance(f, (unsigned char)text[i]);
+    return pen + (2 * extra * index + len) / (2 * len);
+}
+
 void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
                               int y, const char *text, int len, ween_color color)
 {

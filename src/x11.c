@@ -314,11 +314,24 @@ static ween_event x11_next_event(void *win)
             out.y_root = b->y_root;
             return out;
         case X_KeyPress: {
+            /* index 1 of the keysym list is the shifted symbol, which is what
+             * the character (but not the virtual key) depends on */
+            int shift = (b->state & 1) != 0;
+            unsigned long sym = XLookupKeysym(b, shift);
             unsigned vk = keysym_to_vk(XLookupKeysym(b, 0));
             if (!vk)
                 continue;
             out.kind = WEEN_EV_KEY;
             out.vk = vk;
+            out.shift = shift;
+            if (sym >= 0x20 && sym <= 0x7e) /* Latin-1 keysyms are their code */
+                out.ch = (unsigned)sym;
+            else if (vk == VK_RETURN)
+                out.ch = '\r';
+            else if (vk == VK_BACK)
+                out.ch = '\b';
+            else if (vk == VK_TAB)
+                out.ch = '\t';
             return out;
         }
         case X_ClientMessage:
