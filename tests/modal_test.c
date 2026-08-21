@@ -30,6 +30,7 @@ static int g_failures = 0;
 static HWND g_owner;
 static int g_owner_disabled_during = -1;
 static int g_init_seen;
+static int g_dlg_x, g_dlg_y;
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -47,6 +48,8 @@ static INT_PTR CALLBACK dlg_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         g_init_seen++;
         /* the whole of what modal means: the owner is disabled meanwhile */
         g_owner_disabled_during = (g_owner->style & WS_DISABLED) != 0;
+        g_dlg_x = dlg->x;
+        g_dlg_y = dlg->y;
         return TRUE;
     }
     if (msg == WM_COMMAND) {
@@ -103,6 +106,9 @@ int main(void)
     INT_PTR r = DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, g_owner,
                                         dlg_proc, 0);
     CHECK(g_init_seen == 1, "the dialog was initialised");
+    CHECK(g_dlg_x == g_owner->x + WEEN_NC_FRAME &&
+              g_dlg_y == g_owner->y + WEEN_NC_FRAME + WEEN_NC_CAPTION,
+          "a template's 0,0 is the owner's client corner, not the screen's");
     CHECK(r == IDOK, "Enter on the default button is what DialogBox returned");
     CHECK(g_owner_disabled_during == 1, "the owner was disabled while it was up");
     CHECK((g_owner->style & WS_DISABLED) == 0, "and enabled again afterwards");

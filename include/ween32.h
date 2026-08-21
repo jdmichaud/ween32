@@ -221,6 +221,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_INITDIALOG 0x0110
 #define WM_USER 0x0400
 #define DM_GETDEFID (WM_USER + 0)
+#define DS_ABSALIGN 0x0001 /* the template's position is on the screen */
 #define DM_SETDEFID (WM_USER + 1)
 #define DC_HASDEFID 0x534B
 #define WM_KEYDOWN 0x0100

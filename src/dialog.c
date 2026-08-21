@@ -202,7 +202,21 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     int win_w = wr.right - wr.left;
     int win_h = wr.bottom - wr.top;
 
-    HWND dlg = CreateWindowExA(0, "#32770", title, style, MX(dx), MY(dy), win_w,
+    /* A template's position is relative to the owner's client area unless it
+     * says DS_ABSALIGN, in which case it is on the screen. Without this a
+     * dialog whose template says 0,0 — which is most of them — lands in the
+     * corner of the display instead of over the window that opened it. */
+    int px = MX(dx), py = MY(dy);
+    if (parent && !(style & DS_ABSALIGN)) {
+        RECT owner_rect;
+        int cox, coy;
+        GetWindowRect(ween_top_level(parent), &owner_rect);
+        ween_client_origin(parent, &cox, &coy);
+        px += owner_rect.left + cox;
+        py += owner_rect.top + coy;
+    }
+
+    HWND dlg = CreateWindowExA(0, "#32770", title, style, px, py, win_w,
                                win_h, parent, NULL, inst, NULL);
     if (!dlg)
         return NULL;
