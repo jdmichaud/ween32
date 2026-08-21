@@ -1,9 +1,15 @@
+# build outputs (make)
 *.o
 *.a
-examples/dialog
 examples/calc
-tests/render_test
-tests/api_test
+examples/dialog
+tests/*_test
+
+# build outputs (zig)
+zig-out/
+.zig-cache/
+zig-cache/
+
+# headless screenshots and cross-compiled examples
 *.bmp
 *.exe
-tests/dlg_test
