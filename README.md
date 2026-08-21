@@ -11,8 +11,8 @@ reproduced pixel for pixel. The same program compiles unchanged against real
 ![the classic calculator, recreated as plain win32 code](docs/calc.png)
 
 **This is a work in progress.** See [ROADMAP.md](ROADMAP.md) for what works
-today and what does not, and [docs/design.md](docs/design.md) for how it is
-built.
+today and what does not, [docs/design.md](docs/design.md) for how it is
+built, and [docs/testing.md](docs/testing.md) for how to check it.
 
 The library code is MIT. The embedded fonts are Wine's redistributable Tahoma
 and Marlett replacements and carry their own (LGPL) license.
