@@ -538,23 +538,103 @@ HWND ween_focus_get(void)
 
 /* Walk the child list in creation order to the next/previous WS_TABSTOP window
  * after `cur`, wrapping around — the dialog manager's Tab navigation. */
+/* The next control a Tab reaches, wrapping. Disabled controls are skipped, as
+ * win32 skips them; the list is walked rather than collected, so there is no
+ * limit on how many controls a window may have. */
+static int is_tabstop(const struct ween_wnd *c)
+{
+    return c->visible && (c->style & WS_TABSTOP) && !(c->style & WS_DISABLED);
+}
+
 HWND ween_tab_next(HWND dlg, HWND cur, int forward)
 {
-    HWND list[64];
-    int n = 0;
-    for (struct ween_wnd *c = dlg->first_child; c && n < 64; c = c->next_sibling)
-        if (c->visible && (c->style & WS_TABSTOP))
-            list[n++] = c;
-    if (n == 0)
+    HWND first = NULL, last = NULL, before = NULL, after = NULL;
+    int seen = 0;
+    for (struct ween_wnd *c = dlg->first_child; c; c = c->next_sibling) {
+        if (c == cur) {
+            seen = 1;
+            continue;
+        }
+        if (!is_tabstop(c))
+            continue;
+        if (!first)
+            first = c;
+        last = c;
+        if (!seen)
+            before = c; /* the last tab stop before cur */
+        else if (!after)
+            after = c; /* the first one after it */
+    }
+    if (!first)
         return NULL;
-    int idx = -1;
-    for (int i = 0; i < n; i++)
-        if (list[i] == cur)
-            idx = i;
-    if (idx < 0)
-        return list[0];
-    idx = (idx + (forward ? 1 : n - 1)) % n;
-    return list[idx];
+    if (!cur || !seen)
+        return forward ? first : last;
+    return forward ? (after ? after : first) : (before ? before : last);
+}
+
+/* The character a label marks with '&', lowercased, or 0 if it marks none. */
+static char mnemonic_of(const struct ween_wnd *w)
+{
+    for (const char *p = w->text; p && *p; p++) {
+        if (*p != '&')
+            continue;
+        if (p[1] == '&') { /* a literal ampersand, not a marker */
+            p++;
+            continue;
+        }
+        if (p[1] >= 'A' && p[1] <= 'Z')
+            return (char)(p[1] + 32);
+        return p[1];
+    }
+    return 0;
+}
+
+/* Alt+key: the control whose label marks that letter takes the key. A button
+ * is clicked; anything else just takes the focus, which is what win32 does
+ * with a static label's mnemonic pointing at the control after it. */
+HWND ween_mnemonic_target(HWND parent, unsigned ch)
+{
+    if (ch >= 'A' && ch <= 'Z')
+        ch += 32;
+    for (struct ween_wnd *c = parent->first_child; c; c = c->next_sibling) {
+        if (!c->visible || (c->style & WS_DISABLED))
+            continue;
+        if (mnemonic_of(c) == (char)ch)
+            return c;
+    }
+    return NULL;
+}
+
+static UINT button_type(const struct ween_wnd *w); /* defined with BUTTON */
+
+/* Arrow keys inside a group of auto-radio buttons move the selection, as they
+ * do on Windows: the group is the run between WS_GROUP markers. */
+HWND ween_radio_step(HWND cur, int forward)
+{
+    if (!cur || !cur->parent || button_type(cur) != BS_AUTORADIOBUTTON)
+        return NULL;
+    struct ween_wnd *start = cur->parent->first_child, *c;
+    for (c = cur->parent->first_child; c; c = c->next_sibling) {
+        if (c->style & WS_GROUP)
+            start = c;
+        if (c == cur)
+            break;
+    }
+    HWND list[64];
+    int n = 0, idx = -1;
+    for (c = start; c && n < 64; c = c->next_sibling) {
+        if (c != start && (c->style & WS_GROUP))
+            break;
+        if (button_type(c) != BS_AUTORADIOBUTTON || !c->visible ||
+            (c->style & WS_DISABLED))
+            continue;
+        if (c == cur)
+            idx = n;
+        list[n++] = c;
+    }
+    if (n < 2 || idx < 0)
+        return NULL;
+    return list[(idx + (forward ? 1 : n - 1)) % n];
 }
 
 HWND SetCapture(HWND wnd)
@@ -632,6 +712,12 @@ HWND SetFocus(HWND wnd)
     g_focus = wnd;
     if (wnd)
         SendMessageA(wnd, WM_SETFOCUS, (WPARAM)prev, 0);
+    /* Both ends of the move repaint: the focus rectangle has to appear on one
+     * and go from the other, and a control should not have to ask for that. */
+    if (prev)
+        InvalidateRect(prev, NULL, FALSE);
+    if (wnd)
+        InvalidateRect(wnd, NULL, FALSE);
     return prev;
 }
 
@@ -1164,7 +1250,8 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         /* the character rides in the high word, where win32 keeps the scan
          * code and repeat count; TranslateMessage turns it into WM_CHAR */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,
-                 (LPARAM)(ev->ch << 16) | (ev->shift ? 1 : 0));
+                 (LPARAM)(ev->ch << 16) | (ev->shift ? 1 : 0) |
+                     (ev->alt ? (1L << 29) : 0));
         break;
     case WEEN_EV_CLOSE:
         post_msg(top, WM_CLOSE, 0, 0);
@@ -1389,6 +1476,16 @@ static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         tr.bottom += 1;
     }
     button_label(wnd, dc, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
+        /* Wine's PB_Paint: the focus rectangle is the face, inset past the
+         * bevel — how a keyboard user sees where they are. */
+        struct ween_wnd *top = ween_top_level(wnd);
+        int ox, oy;
+        ween_client_origin(wnd, &ox, &oy);
+        int in = (wnd->style & BS_DEFPUSHBUTTON) ? 4 : 3;
+        ween_surface_focus_rect(&top->surface, ox + in, oy + in,
+                                wnd->w - 2 * in, wnd->h - 2 * in);
+    }
 }
 
 /* Wine's CB_Paint: a 13px box (at 96 dpi) on the left, the label beside it
@@ -1441,6 +1538,19 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     rtext.left++;
     rtext.right++;
     button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+    if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
+        /* Wine's CB_Paint puts the rectangle round the label, not the box */
+        const ween_strike *lf = wnd->font ? wnd->font : ween_gui_font();
+        int tw = lf ? ween_strike_text_extent(lf, wnd->text,
+                                              (int)strlen(wnd->text))
+                    : 0;
+        struct ween_wnd *top = ween_top_level(wnd);
+        int ox, oy;
+        ween_client_origin(wnd, &ox, &oy);
+        int ty = rtext.top + ((rtext.bottom - rtext.top) - lh) / 2;
+        ween_surface_focus_rect(&top->surface, ox + rtext.left - 1, oy + ty - 1,
+                                tw + 2, lh + 2);
+    }
 }
 
 /* Wine's GB_Paint: an etched frame starting half a text height down, with the
@@ -1522,6 +1632,18 @@ static void button_click(HWND wnd)
 static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case BM_CLICK: /* the keyboard's way in, and what a mnemonic sends */
+        if (!(wnd->style & WS_DISABLED)) {
+            button_click(wnd);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (wp == VK_SPACE && !(wnd->style & WS_DISABLED)) {
+            SendMessageA(wnd, BM_CLICK, 0, 0);
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);

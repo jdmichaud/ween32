@@ -255,6 +255,8 @@ int ween_frame_width(const struct ween_wnd *w); /* scaled, per style */
 HWND ween_focus_get(void);
 /* The next/previous focusable (WS_TABSTOP) child of `dlg`, wrapping. */
 HWND ween_tab_next(HWND dlg, HWND cur, int forward);
+HWND ween_mnemonic_target(HWND parent, unsigned ch); /* the '&' in a label */
+HWND ween_radio_step(HWND cur, int forward);         /* arrows within a group */
 /* Repaint the whole tree into the surface and present it, if dirty. */
 void ween_flush_paint(void);
 
@@ -285,6 +287,7 @@ typedef struct {
     unsigned vk;
     unsigned ch;    /* the character the key produced, 0 for none */
     int shift;      /* Shift held, for back-tab and typing */
+    int alt;        /* Alt held, which is what makes a mnemonic fire */
 } ween_event;
 
 typedef struct {

@@ -538,6 +538,7 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             out.kind = WEEN_EV_KEY;
             out.vk = vk;
             out.shift = shift;
+            out.alt = (b->state & (1 << 3)) != 0; /* Mod1: Alt */
             if (sym >= 0x20 && sym <= 0x7e) /* Latin-1 keysyms are their code */
                 out.ch = (unsigned)sym;
             else if (vk == VK_RETURN)

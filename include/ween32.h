@@ -474,6 +474,7 @@ typedef struct tagTCITEMA {
 
 /* button messages and check states */
 #define BM_GETCHECK 0x00F0
+#define BM_CLICK 0x00F5
 #define BM_SETCHECK 0x00F1
 #define BM_GETSTATE 0x00F2
 #define BM_SETSTATE 0x00F3
@@ -595,6 +596,7 @@ typedef struct tagTCITEMA {
 #define DT_RIGHT 0x00000002
 #define DT_VCENTER 0x00000004
 #define DT_SINGLELINE 0x00000020
+#define DT_NOPREFIX 0x00000800
 
 /* ---- GDI misc ------------------------------------------------------------ */
 

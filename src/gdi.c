@@ -352,6 +352,31 @@ BOOL GetTextExtentPoint32A(HDC dc, LPCSTR text, int len, SIZE *size)
     return TRUE;
 }
 
+/* '&' marks the next character as the label's mnemonic: it is not drawn, and
+ * the character after it is underlined. "&&" is a literal ampersand. Returns
+ * the stripped length, and where the underline goes (-1 for nowhere). */
+static int strip_prefix(const char *text, int len, char *out, int cap,
+                        int *underline)
+{
+    int n = 0;
+    *underline = -1;
+    for (int i = 0; i < len && n < cap - 1; i++) {
+        if (text[i] == '&' && i + 1 < len) {
+            if (text[i + 1] == '&') { /* && is one real ampersand */
+                out[n++] = '&';
+                i++;
+                continue;
+            }
+            if (*underline < 0)
+                *underline = n; /* the first & wins, as in win32 */
+            continue;
+        }
+        out[n++] = text[i];
+    }
+    out[n] = 0;
+    return n;
+}
+
 int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
 {
     const ween_strike *f = dc_font(dc);
@@ -359,6 +384,14 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
         return 0;
     if (len < 0)
         len = (int)strlen(text);
+
+    char stripped[512];
+    int underline = -1;
+    if (!(format & DT_NOPREFIX) && memchr(text, '&', (size_t)len)) {
+        len = strip_prefix(text, len, stripped, (int)sizeof(stripped),
+                           &underline);
+        text = stripped;
+    }
 
     /* Alignment is done with the *measured* width and cell height; the glyphs
      * are then drawn with the strike's own advances. */
@@ -377,6 +410,14 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
 
     ween_strike_draw(f, dc->s, dc->org_x + x, dc->org_y + y, text, len,
                      cr_to_px(dc->text_color));
+    if (underline >= 0 && underline < len) {
+        /* a one-pixel rule under the mnemonic character, on the cell's last
+         * row, where the classic shell put it */
+        int x0 = ween_strike_pen(f, text, underline);
+        int x1 = ween_strike_pen(f, text, underline + 1);
+        ween_surface_hline(dc->s, dc->org_x + x + x0, dc->org_y + y + th - 1,
+                           x1 - x0, cr_to_px(dc->text_color));
+    }
     return th;
 }
 

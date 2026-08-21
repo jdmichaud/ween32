@@ -381,6 +381,10 @@ int main(void)
 
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
+        /* Tab, the arrows, Space and Alt+letter, as any win32 app with
+         * controls in it gets them: by offering the message here first. */
+        if (IsDialogMessageA(w, &msg))
+            continue;
         TranslateMessage(&msg); /* key presses -> WM_CHAR, for the edits */
         DispatchMessageA(&msg);
     }

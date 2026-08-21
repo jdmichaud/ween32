@@ -242,18 +242,56 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     return dlg;
 }
 
-/* Dialog keyboard navigation: the app calls this in its loop before dispatch.
- * Tab moves focus across WS_TABSTOP controls; Enter fires the default command;
- * Esc cancels. */
+/* Dialog keyboard navigation: the app calls this in its loop before dispatch,
+ * and any window with controls in it wants to, not only a dialog. Tab and
+ * Shift+Tab move focus across WS_TABSTOP controls; the arrows move within a
+ * group of option buttons; Space presses the focused button; Alt+letter takes
+ * the control whose label marks that letter; Enter fires the default command
+ * and Esc cancels. */
 BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
 {
     if (!dlg || !msg || msg->message != WM_KEYDOWN)
         return FALSE;
+    HWND focus = ween_focus_get();
+    /* the backend puts Shift in bit 0 of lParam and Alt in bit 29, where win32
+     * keeps the context code */
+    int shift = (msg->lParam & 1) != 0;
+    int alt = (msg->lParam & (1L << 29)) != 0;
+
+    if (alt) {
+        unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
+        HWND target = ween_mnemonic_target(dlg, ch ? ch : (unsigned)msg->wParam);
+        if (target) {
+            SetFocus(target);
+            SendMessageA(target, BM_CLICK, 0, 0);
+            return TRUE;
+        }
+        return FALSE;
+    }
+
     switch (msg->wParam) {
     case VK_TAB: {
-        HWND nx = ween_tab_next(dlg, ween_focus_get(), 1);
+        HWND nx = ween_tab_next(dlg, focus, !shift);
         if (nx)
             SetFocus(nx);
+        return TRUE;
+    }
+    case VK_SPACE:
+        if (focus && focus != dlg) {
+            SendMessageA(focus, WM_KEYDOWN, VK_SPACE, msg->lParam);
+            return TRUE;
+        }
+        return FALSE;
+    case VK_UP:
+    case VK_LEFT:
+    case VK_DOWN:
+    case VK_RIGHT: {
+        int forward = msg->wParam == VK_DOWN || msg->wParam == VK_RIGHT;
+        HWND nx = ween_radio_step(focus, forward);
+        if (!nx)
+            return FALSE; /* not in a group: the control keeps its arrows */
+        SetFocus(nx);
+        SendMessageA(nx, BM_CLICK, 0, 0);
         return TRUE;
     }
     case VK_RETURN:
