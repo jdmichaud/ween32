@@ -158,14 +158,12 @@ asserts where each control ends up, so CI covers it.
 - [ ] **The clipboard, and double-click to select a word** — the edit selects
       by dragging and by Shift+arrows, but there is no cut, copy or paste, and
       no horizontal scroll when the text outruns the field: it is clipped.
-- [ ] **A blinking caret** — the caret is drawn solid, because there are no
-      timers (`SetTimer`/`WM_TIMER`).
 - [ ] **Scrolling the list view** — its rows do not scroll yet; the list box
       and tree view do.
 - [ ] **Auto-repeat** on a held scroll-bar arrow, and hot-tracking states.
-- [ ] **A focus rectangle on a focused button**, and the tree view's focused
-      item — `DrawFocusRect` exists on the surface but only the list view uses
-      it.
+- [ ] **A focus rectangle on the tree view's focused item** — buttons and the
+      list view draw one; the tree view does not, and `DrawFocusRect` is still
+      not a public call.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), item images from an image list,
       and column resizing in the list view.
 
