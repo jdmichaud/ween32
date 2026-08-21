@@ -262,6 +262,28 @@ int main(void)
         CHECK(w->menu_hot == -1, "and the bar is not left held open");
     }
 
+    /* A press on the window but off the bar puts the menu away — and does
+     * not get swallowed by the tracking loop, which is what left the close
+     * box unreachable for as long as a menu had ever been opened. Events name
+     * the window they are on, so the loop can tell the two apart. */
+    {
+        ween_event down;
+        memset(&down, 0, sizeof(down));
+        down.kind = WEEN_EV_MOUSE_DOWN;
+        down.button = 1;
+        down.win = w->backend_win;      /* on the owner... */
+        down.x = 140;
+        down.y = 100;                   /* ...well below the menu bar */
+        ween_headless_inject(down);
+        /* if the press is swallowed instead of closing the menu, the loop
+         * runs on to the end of the script and this never returns 0 for the
+         * right reason — so follow it with a second one that would be chosen
+         * if the menu were somehow still up */
+        UINT cmd = ween_menu_track_bar(w, 0, 0);
+        CHECK(cmd == 0, "a press off the menu bar closed the menu");
+        CHECK(w->menu_hot == -1, "and let the bar item go");
+    }
+
     /* Alt is what starts that: IsDialogMessageA hands it to the menu bar
      * rather than to a control's mnemonic. */
     {

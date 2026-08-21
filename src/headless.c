@@ -90,8 +90,10 @@ static void inject_script(const char *script)
  * the newest — a script drives one window at a time. Each handle is allocated
  * so a closed window's address is never handed to the next one. */
 
-static void *hl_open(int x, int y, int w, int h, const char *title)
+static void *hl_open(int x, int y, int w, int h, const char *title,
+                     unsigned flags)
 {
+    (void)flags;
     (void)x;
     (void)y;
     (void)w;

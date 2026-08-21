@@ -112,6 +112,32 @@ int main(void)
     CHECK(r == IDCANCEL, "Escape cancels, and that is returned too");
     CHECK(g_init_seen == 2, "a second dialog ran after the first returned");
 
+    /* Modal means the owner takes no input at all — not in its client area
+     * and not in its caption. Without that the owner can still be dragged and
+     * closed from under the dialog that is supposed to be blocking it. */
+    {
+        ween_event click;
+        memset(&click, 0, sizeof(click));
+        click.kind = WEEN_EV_MOUSE_DOWN;
+        click.button = 1;
+        click.win = g_owner->backend_win;
+        click.x = 30;
+        click.y = 8; /* the caption, which would start a drag */
+        g_owner->style |= WS_DISABLED;
+        int was_x = g_owner->x;
+        ween_headless_inject(click);
+        ween_event end;
+        memset(&end, 0, sizeof(end));
+        end.kind = WEEN_EV_END;
+        ween_headless_inject(end);
+        MSG m;
+        while (GetMessageA(&m, NULL, 0, 0))
+            DispatchMessageA(&m);
+        CHECK(g_owner->x == was_x,
+              "a disabled window cannot be dragged by its caption");
+        g_owner->style &= ~(DWORD)WS_DISABLED;
+    }
+
     int mb = MessageBoxA(g_owner, "Two lines\nof message.", "Title", MB_OK);
     CHECK(mb == IDOK, "the message box came back with its button's id");
     CHECK((g_owner->style & WS_DISABLED) == 0,

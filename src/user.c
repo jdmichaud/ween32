@@ -469,7 +469,14 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             free(wnd);
             return NULL;
         }
-        wnd->backend_win = ween_active_backend->open(x, y, w, h, wnd->text);
+        /* A top-level with neither caption nor border is a menu or a
+         * tooltip: the window system should place it exactly and leave it
+         * alone. Anything with a caption is a window a person manages. */
+        unsigned wflags = (style & WS_CAPTION) == WS_CAPTION
+                              ? 0u
+                              : WEEN_WIN_UNMANAGED;
+        wnd->backend_win =
+            ween_active_backend->open(x, y, w, h, wnd->text, wflags);
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
@@ -1310,6 +1317,11 @@ static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
     int last_x = down->x_root, last_y = down->y_root;
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
+        if (ev.kind == WEEN_EV_EXPOSE) {
+            ween_mark_exposed(&ev); /* whatever was uncovered still needs it */
+            ween_flush_paint();
+            continue;
+        }
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             int dx = ev.x_root - last_x, dy = ev.y_root - last_y;
             int w = top->w, h = top->h;
@@ -1340,6 +1352,11 @@ static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
     int last_x = down->x_root, last_y = down->y_root;
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
+        if (ev.kind == WEEN_EV_EXPOSE) {
+            ween_mark_exposed(&ev);
+            ween_flush_paint();
+            continue;
+        }
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             ween_active_backend->move_by(top->backend_win, ev.x_root - last_x,
                                          ev.y_root - last_y);
@@ -1358,6 +1375,11 @@ static void nc_track_close(struct ween_wnd *top)
     ween_flush_paint();
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
+        if (ev.kind == WEEN_EV_EXPOSE) {
+            ween_mark_exposed(&ev);
+            ween_flush_paint();
+            continue;
+        }
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
             RECT c = nc_close_rect(top);
             int in = ev.x >= c.left && ev.x < c.right && ev.y >= c.top && ev.y < c.bottom;
@@ -1418,9 +1440,35 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     return 1;
 }
 
+/* An expose that arrives inside a nested loop — a drag, a menu being tracked —
+ * belongs to whichever window it names, not to the loop. Swallowing it leaves
+ * that window holding whatever was on screen before, which is how a window
+ * ends up as a lump of grey after something in front of it goes away. */
+void ween_mark_exposed(const ween_event *ev)
+{
+    struct ween_wnd *target = g_active;
+    if (ev->win) {
+        for (struct ween_wnd *t = g_tops; t; t = t->next_top)
+            if (t->backend_win == ev->win)
+                target = t;
+    }
+    if (target)
+        target->dirty = 1;
+}
+
 /* Translate one backend event into posted messages. */
 static void pump_event(struct ween_wnd *top, const ween_event *ev)
 {
+    /* A disabled window takes no input — not in its client area and not in
+     * its caption either. That is the whole of what a modal dialog does to
+     * the window that owns it, and without it the owner can still be dragged
+     * and closed from under the dialog. */
+    if ((top->style & WS_DISABLED) &&
+        (ev->kind == WEEN_EV_MOUSE_DOWN || ev->kind == WEEN_EV_MOUSE_UP ||
+         ev->kind == WEEN_EV_MOUSE_MOVE || ev->kind == WEEN_EV_KEY ||
+         ev->kind == WEEN_EV_WHEEL || ev->kind == WEEN_EV_CLOSE))
+        return;
+
     switch (ev->kind) {
     case WEEN_EV_EXPOSE:
         top->dirty = 1;

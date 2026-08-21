@@ -168,6 +168,7 @@ enum {
 #define X_StructureNotifyMask (1L << 17)
 #define X_ZPixmap 2
 #define X_CWBitGravity (1L << 4)
+#define X_CWOverrideRedirect (1L << 9)
 #define X_NorthWestGravity 1
 #define X_PPosition (1L << 2)
 #define X_PSize (1L << 3)
@@ -263,7 +264,8 @@ static x11_win *find_window(XWindow id)
     return NULL;
 }
 
-static void *x11_open(int x, int y, int w, int h, const char *title)
+static void *x11_open(int x, int y, int w, int h, const char *title,
+                      unsigned flags)
 {
     if (!g_dpy)
         g_dpy = XOpenDisplay(NULL);
@@ -290,6 +292,17 @@ static void *x11_open(int x, int y, int w, int h, const char *title)
     XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)ww,
                                       (unsigned)wh, 0, 0, 0x00c0c0c0);
     XStoreName(dpy, win, title);
+
+    if (flags & WEEN_WIN_UNMANAGED) {
+        /* Override-redirect: the window manager does not see this window at
+         * all, so it cannot decorate it, stack it, or resize it to a tile.
+         * A menu has to appear exactly where and at exactly the size it was
+         * asked for, which is the whole reason this exists. */
+        XSetWindowAttributes over;
+        memset(&over, 0, sizeof(over));
+        over.override_redirect = 1;
+        XChangeWindowAttributes(dpy, win, X_CWOverrideRedirect, &over);
+    }
 
     /* Keep what is already on screen across a resize. The default gravity is
      * Forget: the server throws the contents away and tiles the whole window

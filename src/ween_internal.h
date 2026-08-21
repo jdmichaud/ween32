@@ -329,6 +329,8 @@ typedef enum {
     WEEN_EV_END /* event source exhausted (headless) / connection lost */
 } ween_ev_kind;
 
+#define WEEN_WIN_UNMANAGED 1u /* a menu: no decoration, no management */
+
 typedef struct {
     ween_ev_kind kind;
     void *win;          /* the backend window it belongs to (NULL: any) */
@@ -344,8 +346,10 @@ typedef struct {
 
 typedef struct {
     /* x, y are the requested desktop position, or CW_USEDEFAULT to let the
-     * backend place the window (it centres it, as a lone window wants). */
-    void *(*open)(int x, int y, int w, int h, const char *title);
+     * backend place the window (it centres it, as a lone window wants).
+     * WEEN_WIN_UNMANAGED asks for a window the window system places and sizes
+     * exactly as told and never decorates — what a menu is. */
+    void *(*open)(int x, int y, int w, int h, const char *title, unsigned flags);
     void (*present)(void *win, const ween_surface *s);
     void (*move_by)(void *win, int dx, int dy);
     /* Ask the window system for a new size, and say whether the user may
@@ -358,6 +362,9 @@ typedef struct {
     ween_event (*next_event)(void *win, int timeout_ms);
     void (*close)(void *win);
 } ween_backend;
+
+/* An expose arriving inside a nested loop belongs to the window it names. */
+void ween_mark_exposed(const ween_event *ev);
 
 extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
 const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */

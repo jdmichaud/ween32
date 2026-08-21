@@ -102,6 +102,26 @@ int main(void)
     CHECK(g_painted_b > 0, "the second window painted as well");
     CHECK(g_clicked_b == 1, "the click reached the window the event named");
 
+    /* An expose belongs to the window it names, whoever is looking at events
+     * at the time. A nested loop — a drag, a menu being tracked — used to
+     * swallow the ones meant for other windows, which left whatever had been
+     * covered up as a lump of grey. */
+    {
+        ween_event ex;
+        memset(&ex, 0, sizeof(ex));
+        ex.kind = WEEN_EV_EXPOSE;
+        ex.win = a->backend_win;
+        a->dirty = 0;
+        b->dirty = 0;
+        ween_mark_exposed(&ex);
+        CHECK(a->dirty && !b->dirty, "an expose marks the window it names");
+
+        ex.win = b->backend_win;
+        a->dirty = 0;
+        ween_mark_exposed(&ex);
+        CHECK(b->dirty && !a->dirty, "and only that one");
+    }
+
     /* closing one leaves the other alive and still able to paint */
     DestroyWindow(b);
     g_painted_a = 0;

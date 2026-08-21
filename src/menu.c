@@ -480,13 +480,18 @@ static int level_open(menu_session *s, HMENU menu, int x, int y)
     return 1;
 }
 
-/* Open the cascade belonging to the highlighted item of `depth`, beside it. */
+/* Open the cascade belonging to the highlighted item of `depth`, beside it.
+ * If it is already the one open, leave it alone: the pointer sitting on a
+ * submenu's parent sends a move for every pixel, and tearing the submenu down
+ * and building it again on each of those is what made it flicker. */
 static void level_open_cascade(menu_session *s, int depth)
 {
     menu_level *l = &s->level[depth];
     ween_menuitem *it = ween_menu_item(l->menu, l->hot);
     if (!it || !it->popup || (it->flags & MF_GRAYED))
         return;
+    if (s->depth > depth + 1 && s->level[depth + 1].menu == it->popup)
+        return; /* already showing, and showing the right one */
     level_close_to(s, depth + 1);
     level_open(s, it->popup, l->wnd->x + l->wnd->w - WEEN_MENU_CASCADE_OVERLAP,
                l->wnd->y + it->y - WEEN_MENU_CASCADE_OVERLAP);
@@ -520,6 +525,27 @@ static void level_step(menu_session *s, int depth, int step)
             break;
     }
     level_set_hot(s, depth, hot);
+}
+
+/* Whether a point on the owner window is within the menu bar strip, and which
+ * item it is over. This has to mean the strip and not the window: a press
+ * anywhere else on the owner puts the menu away, and treating the whole window
+ * as "the bar" swallowed those presses instead — so the menu never closed and
+ * nothing on the window, the close box included, could be reached again. */
+static int bar_hit(const menu_session *s, const ween_event *ev, int *index)
+{
+    int frame, bar_y, bar_h;
+    *index = -1;
+    if (!s->bar_wnd || ev->win != s->bar_wnd->backend_win)
+        return 0;
+    frame = ween_frame_width(s->bar_wnd);
+    bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    bar_h = ween_ncm(WEEN_NC_MENU);
+    if (ev->y < bar_y || ev->y >= bar_y + bar_h || ev->x < frame ||
+        ev->x >= s->bar_wnd->w - frame)
+        return 0;
+    *index = ween_menu_hit(s->bar, ev->x - frame, ev->y - bar_y);
+    return 1;
 }
 
 /* Which open level an event belongs to; -1 for anything else. A headless
@@ -595,32 +621,41 @@ static void session_run(menu_session *s)
         ween_event ev =
             ween_active_backend->next_event(s->level[0].wnd->backend_win, -1);
         int lvl = level_of(s, ev.win);
-        int on_bar = s->bar_wnd && ev.win == s->bar_wnd->backend_win;
+        int bar_index = -1;
+        int on_bar = bar_hit(s, &ev, &bar_index);
         int deepest = s->depth - 1;
 
         switch (ev.kind) {
         case WEEN_EV_MOUSE_MOVE:
             if (lvl >= 0) {
                 int hot = ween_menu_hit(s->level[lvl].menu, ev.x, ev.y);
-                if (hot >= 0 || s->depth == lvl + 1) {
+                if (hot >= 0) {
                     level_set_hot(s, lvl, hot);
-                    if (hot >= 0)
-                        level_open_cascade(s, lvl);
+                    level_open_cascade(s, lvl);
+                } else if (s->depth == lvl + 1) {
+                    /* off the items of the deepest menu: drop the highlight,
+                     * but only when nothing is cascaded off it — otherwise
+                     * the gap between a parent and its child would close the
+                     * child on the way across */
+                    level_set_hot(s, lvl, -1);
                 }
-            } else if (on_bar) {
-                /* sliding along the bar with the button down switches
-                 * drop-downs, which is how win32 menus are used */
-                int frame = ween_frame_width(s->bar_wnd);
-                int bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
-                int hit = ween_menu_hit(s->bar, ev.x - frame, ev.y - bar_y);
-                if (hit >= 0 && hit != s->bar_index)
-                    bar_open(s, hit);
+            } else if (on_bar && bar_index >= 0 &&
+                       bar_index != s->bar_index) {
+                /* sliding along the bar switches drop-downs, which is how
+                 * win32 menus are used */
+                bar_open(s, bar_index);
             }
             break;
 
         case WEEN_EV_MOUSE_DOWN:
-            if (lvl < 0 && !on_bar)
-                s->done = 1; /* a press outside puts the whole menu away */
+            if (lvl >= 0)
+                break; /* inside a drop-down: the release is what chooses */
+            if (on_bar && bar_index == s->bar_index)
+                s->done = 1; /* pressing the open one closes it, as win32 does */
+            else if (on_bar && bar_index >= 0)
+                bar_open(s, bar_index);
+            else
+                s->done = 1; /* anywhere else puts the whole menu away */
             break;
 
         case WEEN_EV_MOUSE_UP:
@@ -678,6 +713,9 @@ static void session_run(menu_session *s)
             break;
 
         case WEEN_EV_EXPOSE:
+            /* the owner is behind the menu and gets exposed too, most of all
+             * when a drop-down that was covering it goes away */
+            ween_mark_exposed(&ev);
             for (int i = 0; i < s->depth; i++)
                 s->level[i].wnd->dirty = 1;
             break;
