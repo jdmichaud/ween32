@@ -38,7 +38,9 @@ static void test_classic_dialog(void)
     /* dialog body + raised frame + caption + well (mirrors classic.zig test) */
     ween_surface_clear(&s, WEEN_FACE);
     ween_classic_bevel(&s, 0, 0, s.w, s.h, 0);
-    ween_classic_caption(&s, 3, 3, s.w - 6, 20);
+    /* icon strip and button strip held at the end colours, as win32 does */
+    ween_classic_caption(&s, 3, 3, s.w - 6, 20, WEEN_NC_SMICON,
+                         WEEN_NC_CAPTION - 1);
     const ween_strike *f = ween_gui_font();
     ween_strike_draw(f, &s, 8, 8, "ween32 - classic dialog", 23, WEEN_CAP_TEXT);
     ween_surface_fill(&s, 10, 30, 300, 110, WEEN_RGBX(58, 110, 165));
