@@ -371,6 +371,68 @@ INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     return result;
 }
 
+/* ---- accelerators ---------------------------------------------------------
+ *
+ * A table of key combinations and the command each sends. The app offers its
+ * messages here before dispatching, and a match becomes WM_COMMAND with the
+ * accelerator's id — with 1 in the high word, which is how a handler tells an
+ * accelerator from a menu pick or a button.
+ */
+
+struct ween_accel {
+    ACCEL *entry;
+    int count;
+};
+
+HACCEL CreateAcceleratorTableA(LPACCEL entries, int count)
+{
+    if (!entries || count <= 0)
+        return NULL;
+    struct ween_accel *t = calloc(1, sizeof(*t));
+    if (!t)
+        return NULL;
+    t->entry = malloc((size_t)count * sizeof(*t->entry));
+    if (!t->entry) {
+        free(t);
+        return NULL;
+    }
+    memcpy(t->entry, entries, (size_t)count * sizeof(*t->entry));
+    t->count = count;
+    return t;
+}
+
+BOOL DestroyAcceleratorTable(HACCEL table)
+{
+    if (!table)
+        return FALSE;
+    free(table->entry);
+    free(table);
+    return TRUE;
+}
+
+int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg)
+{
+    if (!wnd || !table || !msg || msg->message != WM_KEYDOWN)
+        return 0;
+    /* the pump packs the modifiers into lParam: Shift in bit 0, Ctrl in 28,
+     * Alt in 29 */
+    int shift = (msg->lParam & 1) != 0;
+    int ctrl = (msg->lParam & (1L << 28)) != 0;
+    int alt = (msg->lParam & (1L << 29)) != 0;
+    for (int i = 0; i < table->count; i++) {
+        const ACCEL *a = &table->entry[i];
+        if (a->key != (WORD)msg->wParam)
+            continue;
+        if (!!(a->fVirt & FSHIFT) != shift || !!(a->fVirt & FCONTROL) != ctrl ||
+            !!(a->fVirt & FALT) != alt)
+            continue;
+        /* 1 in the high word says an accelerator sent this, not a menu */
+        SendMessageA(wnd, WM_COMMAND, MAKEWPARAM(a->cmd, 1), 0);
+        return 1;
+    }
+    return 0;
+}
+
 /* ---- MessageBoxA ----------------------------------------------------------
  *
  * The one dialog every app has. It is built here rather than from a template

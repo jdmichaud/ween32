@@ -244,8 +244,23 @@ int main(void)
     ShowWindow(w, SW_SHOWNORMAL);
     UpdateWindow(w);
 
+    /* The accelerators the File menu advertises beside its items. An app
+     * offers every message here first, exactly as it does to
+     * IsDialogMessageA. */
+#if HAVE(ACCELERATORS)
+    static ACCEL accels[] = {
+        { FVIRTKEY | FCONTROL, 'N', ID_NEW },
+        { FVIRTKEY | FCONTROL, 'O', ID_OPEN },
+    };
+    HACCEL table = CreateAcceleratorTableA(accels, 2);
+#endif
+
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
+#if HAVE(ACCELERATORS)
+        if (TranslateAcceleratorA(w, table, &msg))
+            continue;
+#endif
         if (IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);

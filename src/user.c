@@ -1574,8 +1574,18 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 
 LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    (void)wp;
     switch (msg) {
+    case WM_NEXTDLGCTL: {
+        /* wParam is the control to focus when lParam says so, otherwise a
+         * direction: 0 forward, non-zero back. win32 handles this in the
+         * dialog procedure only; ween32 answers it from any window, for the
+         * same reason IsDialogMessageA works on any window — a window with
+         * controls in it wants the dialog keyboard whether or not it is one. */
+        HWND next = lp ? (HWND)wp : ween_tab_next(wnd, ween_focus_get(), !wp);
+        if (next)
+            SetFocus(next);
+        return 0;
+    }
     case WM_NCHITTEST: {
         if (!has_caption(wnd))
             return HTCLIENT;

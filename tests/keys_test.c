@@ -27,6 +27,7 @@ enum { ID_OK = 100, ID_SAVE, ID_DEAD, ID_CHECK, ID_R1, ID_R2, ID_R3 };
 
 static HWND g_ok, g_save, g_dead, g_check, g_r1, g_r2, g_r3;
 static int g_save_clicked;
+static int g_accel_cmd, g_accel_from;
 
 static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -62,6 +63,10 @@ static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         if (LOWORD(wp) == ID_SAVE && HIWORD(wp) == BN_CLICKED)
             g_save_clicked++;
+        if (HIWORD(wp) == 1) { /* an accelerator says so in the high word */
+            g_accel_cmd = LOWORD(wp);
+            g_accel_from = HIWORD(wp);
+        }
         return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -166,6 +171,55 @@ int main(void)
             DispatchMessageA(&msg);
         }
         CHECK(g_save_clicked == 1, "and the same key arriving as an event");
+    }
+
+    /* An accelerator table: a key combination that sends a command straight
+     * to the window, with 1 in the high word to say where it came from. */
+    {
+        static ACCEL accels[] = {
+            { FVIRTKEY | FCONTROL, 'S', ID_SAVE },
+            { FVIRTKEY, VK_F1, ID_OK },
+        };
+        HACCEL table = CreateAcceleratorTableA(accels, 2);
+        CHECK(table != NULL, "an accelerator table");
+
+        MSG msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.hwnd = g_host;
+        msg.message = WM_KEYDOWN;
+        msg.wParam = 'S';
+        msg.lParam = (LPARAM)(1L << 28); /* Ctrl */
+        g_save_clicked = 0;
+        g_accel_cmd = 0;
+        CHECK(TranslateAcceleratorA(g_host, table, &msg),
+              "Ctrl+S was taken by the table");
+        CHECK(g_accel_cmd == ID_SAVE, "and sent that entry's command");
+        CHECK(g_accel_from == 1, "marked as coming from an accelerator");
+
+        msg.lParam = 0; /* the same key without Ctrl is not the accelerator */
+        g_accel_cmd = 0;
+        CHECK(!TranslateAcceleratorA(g_host, table, &msg),
+              "without Ctrl it is not a match");
+        CHECK(g_accel_cmd == 0, "and nothing was sent");
+
+        msg.wParam = VK_F1;
+        CHECK(TranslateAcceleratorA(g_host, table, &msg),
+              "a plain function key matches too");
+        CHECK(g_accel_cmd == ID_OK, "with its own command");
+
+        CHECK(DestroyAcceleratorTable(table), "the table was destroyed");
+    }
+
+    /* WM_NEXTDLGCTL moves the focus the way a dialog does it. */
+    {
+        SetFocus(g_ok);
+        SendMessageA(g_host, WM_NEXTDLGCTL, 0, 0);
+        CHECK(ween_focus_get() == g_save, "WM_NEXTDLGCTL moved on");
+        SendMessageA(g_host, WM_NEXTDLGCTL, 1, 0);
+        CHECK(ween_focus_get() == g_ok, "and back with a non-zero wParam");
+        SendMessageA(g_host, WM_NEXTDLGCTL, (WPARAM)g_check, 1);
+        CHECK(ween_focus_get() == g_check,
+              "and straight to a named control when lParam says so");
     }
 
     /* An & in a label is a marker, not a character to draw. */

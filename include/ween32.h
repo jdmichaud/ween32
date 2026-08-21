@@ -551,6 +551,7 @@ typedef struct tagTCITEMA {
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
 #define VK_MENU 0x12 /* Alt */
+#define VK_F1 0x70
 #define VK_F10 0x79
 #define VK_SPACE 0x20
 #define VK_END 0x23
@@ -680,6 +681,9 @@ typedef struct tagTCITEMA {
 #define WEEN32_HAS_MENU 1
 #define WEEN32_HAS_MESSAGEBOX 1
 #define WEEN32_HAS_DIALOGBOX 1
+#define WEEN32_HAS_ACCELERATORS 1
+#define WEEN32_HAS_IMAGELIST 1
+#define WEEN32_HAS_CLIPBOARD 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 
@@ -814,6 +818,35 @@ int ImageList_AddMasked(HIMAGELIST il, HBITMAP image, COLORREF transparent);
 int ImageList_GetImageCount(HIMAGELIST il);
 BOOL ImageList_GetIconSize(HIMAGELIST il, int *cx, int *cy);
 BOOL ImageList_Draw(HIMAGELIST il, int index, HDC dc, int x, int y, UINT style);
+
+/* ---- accelerators ---------------------------------------------------------
+ *
+ * A table of key combinations and the command each one sends. The app offers
+ * every message to TranslateAcceleratorA before dispatching it, exactly as it
+ * offers them to IsDialogMessageA; a match becomes a WM_COMMAND and the
+ * message goes no further. */
+#define FVIRTKEY 0x01
+#define FSHIFT 0x04
+#define FCONTROL 0x08
+#define FALT 0x10
+
+typedef struct {
+    BYTE fVirt;
+    WORD key;
+    WORD cmd;
+} ACCEL, *LPACCEL;
+
+struct ween_accel;
+typedef struct ween_accel *HACCEL;
+
+HACCEL CreateAcceleratorTableA(LPACCEL entries, int count);
+BOOL DestroyAcceleratorTable(HACCEL table);
+int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg);
+
+/* Move the focus to the next or previous control, or to a named one — what a
+ * dialog sends itself rather than calling SetFocus, so the dialog manager can
+ * keep track of the default button. */
+#define WM_NEXTDLGCTL 0x0028
 
 BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 BOOL TranslateMessage(const MSG *msg);

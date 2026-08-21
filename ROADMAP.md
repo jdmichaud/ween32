@@ -12,40 +12,36 @@ theme, and every control is checked against a real win32 render (see
 
 ## Next
 
-The five tasks that stood between the library and an application that is not
-this one are done — a second top-level window, text and tables that grow
-instead of truncating, `SelectObject`'s contract, timers, and the keyboard
-conventions. What is left, in the order it is worth doing:
+Everything that was on this list has been built. What is left is the tail of
+each piece — the part that needs machinery the library does not have yet, or
+that no application has asked for:
 
-- [ ] **Menu keyboard access**: Alt opens the bar, the arrows walk between
-  drop-downs, and a letter picks an item. Inside an open drop-down the arrows,
-  Enter and Escape already work; getting *into* one from the keyboard does not.
-- [ ] **Cascading submenus stay up**: a submenu opens beside its parent, but
-  the parent closes behind it rather than remaining tracked.
-- [ ] **Mouse routing into nested children**, plus hover tracking
-  (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today only
-  direct children of the top-level window are hit-tested.
-- [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
-  repeats a held arrow; the list box, tree view and list view draw and handle
-  their bars inline and do not.
-
-Marquee progress was on this list and has been struck off rather than built:
-`PBS_MARQUEE` arrived with comctl32 6.0, which is Windows XP. A Windows 2000
-progress bar has no marquee mode, so adding one would be a period mistake, not
-a missing feature.
 - [ ] **The clipboard between applications.** Cut, copy and paste work within
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
 - [ ] **Icons proper** — `HICON`, `LoadIcon`, `DrawIconEx`. Image lists exist
-  and the views draw from them, but an icon needs a `.ico` decoder (several
+  and both views draw from them, but an icon needs a `.ico` decoder (several
   sizes and depths in one file) that a `.bmp` reader does not give.
-- [ ] **Accelerator tables** and `WM_NEXTDLGCTL`, the two keyboard pieces not
-  covered by IsDialogMessageA.
+- [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
+  repeats a held arrow; the list box, tree view and list view draw and handle
+  their bars inline and do not.
+- [ ] **Horizontal scrolling in an edit**, so text that outruns the field
+  scrolls rather than being clipped.
+- [ ] **Scrolling the list view's rows**, which the list box and tree view do
+  and it does not.
+- [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
+  the list view.
 
-Arbitrary font sizes and faces are deliberately *not* on this list.
-`CreateFontA` honours `weight` and picks between the regular and bold Tahoma
-strikes, which is what classic dialogs actually used; anything else needs a
-rasteriser, and no application here has asked for one yet.
+Two things are deliberately *not* on this list.
+
+Arbitrary font sizes and faces: `CreateFontA` honours `weight` and picks
+between the regular and bold Tahoma strikes, which is what classic dialogs
+actually used. Anything else needs a rasteriser, and no application here has
+asked for one.
+
+Marquee progress: `PBS_MARQUEE` arrived with comctl32 6.0, which is Windows
+XP. A Windows 2000 progress bar has no marquee mode, so building one would be
+a period mistake rather than a missing feature.
 
 ## Implemented
 
@@ -74,7 +70,14 @@ ticks, accelerator text and submenu arrows. Modal `DialogBoxIndirectParamA`
 `TIMERPROC` called from `DispatchMessage`), a caret that blinks on one, and
 `IsDialogMessageA` carrying Tab/Shift+Tab, Space, the arrows within a group of
 option buttons, `&`-mnemonics under Alt, Enter and Esc. Focused buttons draw
-the dotted focus rectangle.
+the dotted focus rectangle. Accelerator tables
+(`CreateAcceleratorTableA`/`TranslateAcceleratorA`) and `WM_NEXTDLGCTL`.
+
+**The clipboard** — `OpenClipboard`/`EmptyClipboard`/`SetClipboardData`/
+`GetClipboardData`/`CloseClipboard` over `CF_TEXT`, with an EDIT taking
+Ctrl+X/C/V/A and `WM_CUT`/`WM_COPY`/`WM_PASTE`, and a double click selecting
+the word under it. Within one process: sharing with other X clients still
+needs selection ownership.
 
 **Images** — `CreateBitmap` from pixels in memory, `LoadImageA` for a `.bmp`
 on disk (the format the headless backend writes, so a screenshot loads back),
