@@ -193,6 +193,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_PAINT 0x000F
 #define WM_CLOSE 0x0010
 #define WM_QUIT 0x0012
+#define WM_ENABLE 0x000A
 #define WM_SETFONT 0x0030
 #define WM_GETFONT 0x0031
 #define WM_NCHITTEST 0x0084
@@ -224,6 +225,7 @@ typedef struct tagCREATESTRUCTA {
 #define WS_BORDER 0x00800000L
 #define WS_DLGFRAME 0x00400000L
 #define WS_SYSMENU 0x00080000L
+#define WS_DISABLED 0x08000000L
 #define WS_GROUP 0x00020000L
 #define WS_TABSTOP 0x00010000L
 
@@ -240,13 +242,32 @@ typedef struct tagCREATESTRUCTA {
 /* button / static control styles */
 #define BS_PUSHBUTTON 0x00000000L
 #define BS_DEFPUSHBUTTON 0x00000001L
+#define BS_CHECKBOX 0x00000002L
+#define BS_AUTOCHECKBOX 0x00000003L
+#define BS_RADIOBUTTON 0x00000004L
+#define BS_3STATE 0x00000005L
+#define BS_AUTO3STATE 0x00000006L
+#define BS_GROUPBOX 0x00000007L
+#define BS_AUTORADIOBUTTON 0x00000009L
 #define BS_OWNERDRAW 0x0000000BL
+#define BS_TYPEMASK 0x0000000FL
+#define BS_LEFTTEXT 0x00000020L
 #define SS_LEFT 0x00000000L
 #define SS_CENTER 0x00000001L
 #define SS_RIGHT 0x00000002L
 
 /* button notifications */
 #define BN_CLICKED 0
+
+/* button messages and check states */
+#define BM_GETCHECK 0x00F0
+#define BM_SETCHECK 0x00F1
+#define BM_GETSTATE 0x00F2
+#define BM_SETSTATE 0x00F3
+#define BST_UNCHECKED 0x0000
+#define BST_CHECKED 0x0001
+#define BST_INDETERMINATE 0x0002
+#define BST_PUSHED 0x0004
 
 /* owner draw */
 #define ODT_BUTTON 4
@@ -282,6 +303,9 @@ typedef struct tagCREATESTRUCTA {
 #define COLOR_CAPTIONTEXT 9
 #define COLOR_BTNFACE 15
 #define COLOR_BTNSHADOW 16
+#define COLOR_HIGHLIGHT 13
+#define COLOR_HIGHLIGHTTEXT 14
+#define COLOR_GRAYTEXT 17
 #define COLOR_BTNTEXT 18
 #define COLOR_BTNHIGHLIGHT 20
 #define COLOR_3DDKSHADOW 21
@@ -316,11 +340,24 @@ typedef struct tagCREATESTRUCTA {
 #define BF_MONO 0x8000
 
 #define DFC_CAPTION 1
+#define DFC_BUTTON 4
 #define DFCS_CAPTIONCLOSE 0x0000
 #define DFCS_CAPTIONMIN 0x0001
 #define DFCS_CAPTIONMAX 0x0002
 #define DFCS_CAPTIONRESTORE 0x0003
 #define DFCS_PUSHED 0x0200
+
+/* DFC_BUTTON states */
+#define DFCS_BUTTONCHECK 0x0000
+#define DFCS_BUTTONRADIOIMAGE 0x0001
+#define DFCS_BUTTONRADIOMASK 0x0002
+#define DFCS_BUTTONRADIO 0x0004
+#define DFCS_BUTTON3STATE 0x0008
+#define DFCS_BUTTONPUSH 0x0010
+#define DFCS_INACTIVE 0x0100
+#define DFCS_CHECKED 0x0400
+#define DFCS_FLAT 0x4000
+#define DFCS_MONO 0x8000
 
 /* ---- DrawText ------------------------------------------------------------ */
 
@@ -350,6 +387,15 @@ typedef struct tagCREATESTRUCTA {
 #define FIXED_PITCH 1
 #define FF_DONTCARE (0 << 4)
 
+/* ---- implemented controls -------------------------------------------------
+ * examples/controls.c switches its blocks on these: a control is announced
+ * here once it renders like the real one. See ROADMAP.md. */
+
+#define WEEN32_HAS_DISABLED 1
+#define WEEN32_HAS_CHECKBOX 1
+#define WEEN32_HAS_RADIO 1
+#define WEEN32_HAS_GROUPBOX 1
+
 /* ---- USER32 -------------------------------------------------------------- */
 
 ATOM RegisterClassA(const WNDCLASSA *wc);
@@ -372,6 +418,11 @@ BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);
 int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
+BOOL EnableWindow(HWND wnd, BOOL enable);
+BOOL IsWindowEnabled(HWND wnd);
+BOOL CheckDlgButton(HWND dlg, int id, UINT check);
+UINT IsDlgButtonChecked(HWND dlg, int id);
+BOOL CheckRadioButton(HWND dlg, int first, int last, int check);
 HWND SetCapture(HWND wnd);
 BOOL ReleaseCapture(void);
 HWND GetCapture(void);

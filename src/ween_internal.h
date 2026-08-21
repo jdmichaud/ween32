@@ -61,6 +61,9 @@ int ween_classic_edge(ween_surface *s, int x, int y, int w, int h,
 /* Shorthand for the button edge (EDGE_RAISED/SUNKEN | BF_RECT | BF_SOFT). */
 void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken);
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h);
+/* DrawFrameControl's DFC_BUTTON glyphs (DFCS_* flags as in the SDK). */
+void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
+void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags);
 
 /* ---- fonts -------------------------------------------------------------- */
 
@@ -76,11 +79,21 @@ typedef struct {
     int ascent;
     int descent;  /* negative, as in the font */
     int embolden; /* synthetic bold: overstrike 1px (weak bold strikes) */
+    /* the logical (outline) metrics GDI reports, as opposed to the strike's */
+    int cell_h;   /* tmHeight: what text is measured and centred with */
+    int ppem;
+    size_t hmtx;
+    int nhmtx;
+    int upem;
 } ween_strike;
 
 int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int ppem);
 int ween_strike_text_width(const ween_strike *f, const char *s, int len);
 int ween_strike_char_advance(const ween_strike *f, unsigned char c);
+/* What GDI would *report* for a character or string — outline advances,
+ * rounded up; wider than the strike actually draws. */
+int ween_strike_char_extent(const ween_strike *f, unsigned char c);
+int ween_strike_text_extent(const ween_strike *f, const char *s, int len);
 /* y is the top of the text cell (TA_TOP); baseline = y + ascent. */
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
                       const char *text, int len, ween_color color);
@@ -144,6 +157,7 @@ struct ween_wnd {
     const ween_strike *font;
     int visible;
     int pressed; /* BUTTON down-state */
+    UINT check;  /* BUTTON check state (BST_*) */
     int destroyed;
 
     /* dialog frame (created by CreateDialogIndirect) */

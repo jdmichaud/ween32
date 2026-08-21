@@ -36,9 +36,9 @@ jobs:
           WEEN32_BMP=dialog.bmp WEEN32_SCRIPT="m:10,10" ./examples/dialog
           WEEN32_BMP=controls.bmp ./examples/controls
           file calc.bmp dialog.bmp controls.bmp
-          file calc.bmp | grep -q '261 x 224'
+          file calc.bmp | grep -q '261 x 223'
           file dialog.bmp | grep -q '320 x 180'
-          file controls.bmp | grep -q '666 x 446'
+          file controls.bmp | grep -q '666 x 445'
 
       - name: Build without the X11 backend
         run: make clean && make X11=0

@@ -40,7 +40,12 @@ static ween_color sys_color_px(int index)
     case COLOR_3DLIGHT:
         return WEEN_FACE;
     case COLOR_BTNSHADOW:
+    case COLOR_GRAYTEXT:
         return WEEN_SHADOW;
+    case COLOR_HIGHLIGHT:
+        return WEEN_CAP_LEFT; /* the Win2k selection navy is the caption navy */
+    case COLOR_HIGHLIGHTTEXT:
+        return WEEN_WHITE;
     case COLOR_BTNHIGHLIGHT:
         return WEEN_WHITE;
     case COLOR_3DDKSHADOW:
@@ -195,23 +200,49 @@ int FrameRect(HDC dc, const RECT *rect, HBRUSH brush)
 BOOL DrawEdge(HDC dc, LPRECT rect, UINT edge, UINT flags)
 {
     int x, y, w, h;
+    RECT inner;
     if (!dc || !rect || !dc_rect(dc, rect, &x, &y, &w, &h))
         return FALSE;
-    if ((flags & BF_RECT) != BF_RECT)
-        return FALSE; /* v1 draws full rectangles only */
-    if (edge == EDGE_RAISED)
-        ween_classic_bevel(dc->s, x, y, w, h, 0);
-    else if (edge == EDGE_SUNKEN)
-        ween_classic_bevel(dc->s, x, y, w, h, 1);
-    else
+    if (!ween_classic_edge(dc->s, x, y, w, h, edge, flags, &inner) &&
+        !(flags & BF_ADJUST))
         return FALSE;
+    if (flags & BF_ADJUST) {
+        /* hand back the interior, in the caller's coordinates */
+        rect->left = inner.left - dc->org_x;
+        rect->top = inner.top - dc->org_y;
+        rect->right = inner.right - dc->org_x;
+        rect->bottom = inner.bottom - dc->org_y;
+    }
     return TRUE;
 }
 
 BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
 {
     int x, y, w, h;
-    if (!dc || !rect || type != DFC_CAPTION || !dc_rect(dc, rect, &x, &y, &w, &h))
+    if (!dc || !rect || !dc_rect(dc, rect, &x, &y, &w, &h))
+        return FALSE;
+
+    if (type == DFC_BUTTON) {
+        switch (state & 0x1f) {
+        case DFCS_BUTTONCHECK:
+        case DFCS_BUTTON3STATE:
+            ween_classic_check(dc->s, x, y, w, h, state);
+            return TRUE;
+        case DFCS_BUTTONRADIO:
+        case DFCS_BUTTONRADIOIMAGE:
+        case DFCS_BUTTONRADIOMASK:
+            ween_classic_radio(dc->s, x, y, w, h, state);
+            return TRUE;
+        case DFCS_BUTTONPUSH:
+            ween_classic_edge(dc->s, x, y, w, h,
+                              (state & DFCS_PUSHED) ? EDGE_SUNKEN : EDGE_RAISED,
+                              BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+            return TRUE;
+        default:
+            return FALSE;
+        }
+    }
+    if (type != DFC_CAPTION)
         return FALSE;
 
     int pushed = (state & DFCS_PUSHED) != 0;
@@ -274,8 +305,9 @@ BOOL GetTextExtentPoint32A(HDC dc, LPCSTR text, int len, SIZE *size)
         return FALSE;
     if (len < 0)
         len = (int)strlen(text);
-    size->cx = ween_strike_text_width(f, text, len);
-    size->cy = f->ascent - f->descent;
+    /* what GDI reports, which is not what the strike draws */
+    size->cx = ween_strike_text_extent(f, text, len);
+    size->cy = f->cell_h ? f->cell_h : f->ascent - f->descent;
     return TRUE;
 }
 
@@ -287,8 +319,10 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     if (len < 0)
         len = (int)strlen(text);
 
-    int tw = ween_strike_text_width(f, text, len);
-    int th = f->ascent - f->descent;
+    /* Alignment is done with the *measured* width and cell height; the glyphs
+     * are then drawn with the strike's own advances. */
+    int tw = ween_strike_text_extent(f, text, len);
+    int th = f->cell_h ? f->cell_h : f->ascent - f->descent;
 
     LONG x = rect->left;
     if (format & DT_CENTER)

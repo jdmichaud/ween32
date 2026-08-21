@@ -490,6 +490,53 @@ HWND GetCapture(void)
     return g_capture;
 }
 
+BOOL EnableWindow(HWND wnd, BOOL enable)
+{
+    if (!wnd)
+        return FALSE;
+    BOOL was_disabled = (wnd->style & WS_DISABLED) != 0;
+    if (enable)
+        wnd->style &= ~(DWORD)WS_DISABLED;
+    else
+        wnd->style |= WS_DISABLED;
+    if (was_disabled != !enable) {
+        SendMessageA(wnd, WM_ENABLE, (WPARAM)enable, 0);
+        ween_top_level(wnd)->dirty = 1;
+    }
+    return was_disabled;
+}
+
+BOOL IsWindowEnabled(HWND wnd)
+{
+    return wnd && !(wnd->style & WS_DISABLED);
+}
+
+BOOL CheckDlgButton(HWND dlg, int id, UINT check)
+{
+    HWND c = GetDlgItem(dlg, id);
+    if (!c)
+        return FALSE;
+    SendMessageA(c, BM_SETCHECK, check, 0);
+    return TRUE;
+}
+
+UINT IsDlgButtonChecked(HWND dlg, int id)
+{
+    HWND c = GetDlgItem(dlg, id);
+    return c ? (UINT)SendMessageA(c, BM_GETCHECK, 0, 0) : 0;
+}
+
+BOOL CheckRadioButton(HWND dlg, int first, int last, int check)
+{
+    if (!dlg)
+        return FALSE;
+    for (struct ween_wnd *c = dlg->first_child; c; c = c->next_sibling)
+        if ((int)c->id >= first && (int)c->id <= last)
+            SendMessageA(c, BM_SETCHECK,
+                         (int)c->id == check ? BST_CHECKED : BST_UNCHECKED, 0);
+    return TRUE;
+}
+
 HWND SetFocus(HWND wnd)
 {
     HWND prev = g_focus;
@@ -837,7 +884,197 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
-/* ---- built-in BUTTON class --------------------------------------------------- */
+/* ---- built-in BUTTON class --------------------------------------------------
+ *
+ * Ports of Wine's button.c: PB_Paint for push buttons, CB_Paint for check
+ * boxes and radio buttons, GB_Paint for group boxes. The layout arithmetic is
+ * theirs verbatim, because it is what puts every pixel where win32 puts it. */
+
+static UINT button_type(const struct ween_wnd *w)
+{
+    return (UINT)(w->style & BS_TYPEMASK);
+}
+
+/* A disabled label is embossed: the text again in the highlight colour, one
+ * pixel down and right, with grey over it. */
+static void button_label(HWND wnd, HDC dc, RECT *r, UINT fmt)
+{
+    if (wnd->style & WS_DISABLED) {
+        RECT sh = *r;
+        sh.left++;
+        sh.top++;
+        sh.right++;
+        sh.bottom++;
+        SetTextColor(dc, GetSysColor(COLOR_BTNHIGHLIGHT));
+        DrawTextA(dc, wnd->text, -1, &sh, fmt);
+        SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
+    } else {
+        SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+    }
+    DrawTextA(dc, wnd->text, -1, r, fmt);
+}
+
+/* The cell height GDI measures with — not the strike's own. */
+static int label_height(const struct ween_wnd *w)
+{
+    const ween_strike *f = w->font ? w->font : ween_gui_font();
+    if (!f)
+        return 13;
+    return f->cell_h ? f->cell_h : f->ascent - f->descent;
+}
+
+static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    RECT r = ps->rcPaint;
+    if (wnd->style & BS_DEFPUSHBUTTON) {
+        /* the default ring: 1px black outline, button inset within */
+        struct ween_wnd *top = ween_top_level(wnd);
+        int ox, oy;
+        ween_client_origin(wnd, &ox, &oy);
+        ween_surface_rect(&top->surface, ox, oy, wnd->w, wnd->h, WEEN_BLACK);
+        r.left += 1;
+        r.top += 1;
+        r.right -= 1;
+        r.bottom -= 1;
+    }
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    DrawEdge(dc, &r, wnd->pressed ? EDGE_SUNKEN : EDGE_RAISED, BF_RECT | BF_SOFT);
+    RECT tr = r;
+    if (wnd->pressed) {
+        tr.left += 1;
+        tr.top += 1;
+        tr.right += 1;
+        tr.bottom += 1;
+    }
+    button_label(wnd, dc, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+/* Wine's CB_Paint: a 13px box (at 96 dpi) on the left, the label beside it
+ * half a '0' further right. */
+static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT client = ps->rcPaint, rbox = client, rtext = client;
+    int box = MulDiv(12, ween_render_dpi(), 96) + 1;
+    int offset = f ? ween_strike_char_advance(f, '0') / 2 : 3;
+    int lh = label_height(wnd), delta;
+    UINT flags;
+
+    FillRect(dc, &client, GetSysColorBrush(COLOR_BTNFACE));
+
+    rtext.left += box + offset;
+    rbox.right = rbox.left + box;
+
+    /* the label is vertically centred, and the box follows it */
+    rtext.top = client.top + ((client.bottom - client.top) - lh) / 2;
+    rtext.bottom = rtext.top + lh;
+    rbox.top = rtext.top;
+    rbox.bottom = rtext.bottom;
+    delta = (rbox.bottom - rbox.top) - box;
+    if (delta > 0) {
+        rbox.bottom -= delta / 2 + 1;
+        rbox.top = rbox.bottom - box;
+    } else if (delta < 0) {
+        rbox.top -= -delta / 2 + 1;
+        rbox.bottom = rbox.top + box;
+    }
+
+    if (button_type(wnd) == BS_RADIOBUTTON ||
+        button_type(wnd) == BS_AUTORADIOBUTTON)
+        flags = DFCS_BUTTONRADIO;
+    else if (wnd->check == BST_INDETERMINATE)
+        flags = DFCS_BUTTON3STATE;
+    else
+        flags = DFCS_BUTTONCHECK;
+    if (wnd->check == BST_CHECKED || wnd->check == BST_INDETERMINATE)
+        flags |= DFCS_CHECKED;
+    if (wnd->pressed)
+        flags |= DFCS_PUSHED;
+    if (wnd->style & WS_DISABLED)
+        flags |= DFCS_INACTIVE;
+    DrawFrameControl(dc, &rbox, DFC_BUTTON, flags);
+
+    /* Wine's BUTTON_CalcLabelRect shifts a side-aligned label one pixel away
+     * from its edge, to leave room for the focus rectangle. */
+    rtext.left++;
+    rtext.right++;
+    button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+}
+
+/* Wine's GB_Paint: an etched frame starting half a text height down, with the
+ * label punched out of it. */
+static void gb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT client = ps->rcPaint, frame = client, r;
+    int lh = label_height(wnd);
+    int tw = f ? ween_strike_text_extent(f, wnd->text, (int)strlen(wnd->text)) : 0;
+
+    frame.top += lh / 2 - 1;
+    DrawEdge(dc, &frame, EDGE_ETCHED, BF_RECT);
+
+    if (!wnd->text[0])
+        return;
+    r = client;
+    r.left += 7;
+    r.right -= 7;
+    r.top -= 1;
+    r.bottom += 1;
+    r.left++; /* the DT_LEFT / DT_TOP nudge, as in CalcLabelRect */
+    r.right++;
+    r.top++;
+    r.bottom = r.top + lh;
+    r.right = r.left + tw;
+    /* one pixel of margin left, right and below, so the frame is erased */
+    r.left--;
+    r.right++;
+    r.bottom++;
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    r.left++;
+    r.right--;
+    r.bottom--;
+    button_label(wnd, dc, &r, DT_LEFT | DT_SINGLELINE);
+}
+
+/* An auto button toggles on click; an auto radio also clears its group. */
+static void button_click(HWND wnd)
+{
+    switch (button_type(wnd)) {
+    case BS_AUTOCHECKBOX:
+        wnd->check = wnd->check == BST_CHECKED ? BST_UNCHECKED : BST_CHECKED;
+        break;
+    case BS_AUTO3STATE:
+        wnd->check = wnd->check == BST_UNCHECKED     ? BST_CHECKED
+                     : wnd->check == BST_CHECKED     ? BST_INDETERMINATE
+                                                     : BST_UNCHECKED;
+        break;
+    case BS_AUTORADIOBUTTON:
+        if (wnd->parent) {
+            /* the group runs from the previous WS_GROUP to the next one */
+            struct ween_wnd *g = NULL, *c;
+            for (c = wnd->parent->first_child; c; c = c->next_sibling) {
+                if (c->style & WS_GROUP)
+                    g = c;
+                if (c == wnd)
+                    break;
+            }
+            for (c = g ? g : wnd->parent->first_child; c; c = c->next_sibling) {
+                if (c != (g ? g : c) && (c->style & WS_GROUP) && c != wnd &&
+                    c != g)
+                    break;
+                if (button_type(c) == BS_AUTORADIOBUTTON)
+                    c->check = c == wnd ? BST_CHECKED : BST_UNCHECKED;
+            }
+        }
+        wnd->check = BST_CHECKED;
+        break;
+    default:
+        break;
+    }
+    if (wnd->parent)
+        SendMessageA(wnd->parent, WM_COMMAND,
+                     MAKEWPARAM((WORD)wnd->id, BN_CLICKED), (LPARAM)wnd);
+}
 
 static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -845,8 +1082,9 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
-        /* Owner-drawn: the parent paints it (WM_DRAWITEM), as on Windows. */
-        if ((wnd->style & 0x0F) == BS_OWNERDRAW) {
+        switch (button_type(wnd)) {
+        case BS_OWNERDRAW: {
+            /* the parent paints it (WM_DRAWITEM), as on Windows */
             DRAWITEMSTRUCT dis;
             memset(&dis, 0, sizeof(dis));
             dis.CtlType = ODT_BUTTON;
@@ -859,36 +1097,37 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (wnd->parent)
                 SendMessageA(wnd->parent, WM_DRAWITEM, (WPARAM)wnd->id,
                              (LPARAM)&dis);
-            EndPaint(wnd, &ps);
-            return 0;
+            break;
         }
-        RECT r = ps.rcPaint;
-        if (wnd->style & BS_DEFPUSHBUTTON) {
-            /* the default ring: 1px black outline, button inset within */
-            struct ween_wnd *top = ween_top_level(wnd);
-            int ox, oy;
-            ween_client_origin(wnd, &ox, &oy);
-            ween_surface_rect(&top->surface, ox, oy, wnd->w, wnd->h, WEEN_BLACK);
-            r.left += 1;
-            r.top += 1;
-            r.right -= 1;
-            r.bottom -= 1;
+        case BS_CHECKBOX:
+        case BS_AUTOCHECKBOX:
+        case BS_RADIOBUTTON:
+        case BS_3STATE:
+        case BS_AUTO3STATE:
+        case BS_AUTORADIOBUTTON:
+            cb_paint(wnd, dc, &ps);
+            break;
+        case BS_GROUPBOX:
+            gb_paint(wnd, dc, &ps);
+            break;
+        default:
+            pb_paint(wnd, dc, &ps);
+            break;
         }
-        FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
-        DrawEdge(dc, &r, wnd->pressed ? EDGE_SUNKEN : EDGE_RAISED, BF_RECT);
-        RECT tr = r;
-        if (wnd->pressed) {
-            tr.left += 1;
-            tr.top += 1;
-            tr.right += 1;
-            tr.bottom += 1;
-        }
-        SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
-        DrawTextA(dc, wnd->text, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         EndPaint(wnd, &ps);
         return 0;
     }
+    case BM_GETCHECK:
+        return (LRESULT)wnd->check;
+    case BM_SETCHECK:
+        wnd->check = (UINT)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case BM_GETSTATE:
+        return (LRESULT)(wnd->check | (wnd->pressed ? BST_PUSHED : 0));
     case WM_LBUTTONDOWN:
+        if (wnd->style & WS_DISABLED || button_type(wnd) == BS_GROUPBOX)
+            return 0;
         g_capture = wnd;
         wnd->pressed = 1;
         InvalidateRect(wnd, NULL, FALSE);
@@ -909,9 +1148,8 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int fire = wnd->pressed;
             wnd->pressed = 0;
             InvalidateRect(wnd, NULL, FALSE);
-            if (fire && wnd->parent)
-                SendMessageA(wnd->parent, WM_COMMAND,
-                             MAKEWPARAM((WORD)wnd->id, BN_CLICKED), (LPARAM)wnd);
+            if (fire)
+                button_click(wnd);
         }
         return 0;
     default:

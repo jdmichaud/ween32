@@ -86,6 +86,21 @@ int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int p
     f->nidx = rd32(ttf, chosen + 8);
     f->ascent = rdi8(ttf, chosen + 16); /* hori sbitLineMetrics: the baseline */
 
+    /* GDI reports the *logical* font's metrics, not the strike's: the cell
+     * height it measures text with, and character widths taken from the
+     * outline (hmtx) and rounded up. Drawing still uses the strike's own
+     * advances, so a measured string comes out a shade wider than it renders
+     * — a discrepancy real GDI has too, and one that moves centred labels. */
+    f->cell_h = rdi8(ttf, chosen + 16) - rdi8(ttf, chosen + 17) + 1;
+    f->ppem = ttf[chosen + 45];
+    f->hmtx = find_table(ttf, "hmtx");
+    {
+        size_t hh = find_table(ttf, "hhea");
+        size_t hd = find_table(ttf, "head");
+        f->nhmtx = hh ? rd16(ttf, hh + 34) : 0;
+        f->upem = hd ? rd16(ttf, hd + 18) : 0;
+    }
+
     /* The cell height (GDI's tmAscent/tmDescent) comes from the scaled hhea
      * metrics, not the strike (whose descender some fonts leave at 0). */
     size_t head = find_table(ttf, "head");
@@ -175,6 +190,29 @@ int ween_strike_char_advance(const ween_strike *f, unsigned char c)
     if (!glyph_bitmap(f, glyph_index(f, c), &g))
         return blank_advance();
     return g.adv + f->embolden;
+}
+
+/* The advance GDI would report for a character: the outline's, scaled to the
+ * strike's ppem and rounded up. */
+int ween_strike_char_extent(const ween_strike *f, unsigned char c)
+{
+    uint16_t g;
+    uint32_t units;
+    if (!f->hmtx || !f->upem || !f->nhmtx)
+        return ween_strike_char_advance(f, c);
+    g = glyph_index(f, c);
+    if (g >= f->nhmtx)
+        g = (uint16_t)(f->nhmtx - 1);
+    units = rd16(f->ttf, f->hmtx + 4u * g);
+    return (int)((units * (uint32_t)f->ppem + f->upem - 1) / f->upem);
+}
+
+int ween_strike_text_extent(const ween_strike *f, const char *s, int len)
+{
+    int w = 0;
+    for (int i = 0; i < len; i++)
+        w += ween_strike_char_extent(f, (unsigned char)s[i]);
+    return w;
 }
 
 int ween_strike_text_width(const ween_strike *f, const char *s, int len)

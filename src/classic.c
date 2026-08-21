@@ -187,3 +187,147 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h)
         ween_surface_vline(s, x + i, y, h, (r << 16) | (g << 8) | b);
     }
 }
+
+/* ---- DrawFrameControl's button glyphs (Wine's UITOOLS95_DFC_Button*) ----- */
+
+/* Wine's UITOOLS_MakeSquareRect: the largest centred square of a rect. */
+static int make_square(int *x, int *y, int w, int h)
+{
+    int d = w > h ? h : w;
+    if (w < h)
+        *y += (h - d) / 2;
+    else if (w > h)
+        *x += (w - d) / 2;
+    return d;
+}
+
+/* Even-odd scanline fill of an integer polygon, testing pixel centres — GDI's
+ * ALTERNATE mode, which is what Polygon() uses by default. */
+static void fill_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
+{
+    int ymin = pt[0].y, ymax = pt[0].y, i, j;
+    for (i = 1; i < n; i++) {
+        if (pt[i].y < ymin)
+            ymin = pt[i].y;
+        if (pt[i].y > ymax)
+            ymax = pt[i].y;
+    }
+    for (int y = ymin; y < ymax; y++) {
+        double cy = y + 0.5, xs[16];
+        int nx = 0;
+        for (i = 0, j = n - 1; i < n; j = i++) {
+            double y0 = pt[j].y, y1 = pt[i].y;
+            if ((y0 <= cy) == (y1 <= cy))
+                continue;
+            if (nx < 16)
+                xs[nx++] = pt[j].x + (cy - y0) * (pt[i].x - pt[j].x) / (y1 - y0);
+        }
+        for (i = 1; i < nx; i++) { /* insertion sort: at most a few crossings */
+            double v = xs[i];
+            for (j = i - 1; j >= 0 && xs[j] > v; j--)
+                xs[j + 1] = xs[j];
+            xs[j + 1] = v;
+        }
+        for (i = 0; i + 1 < nx; i += 2)
+            for (int x = (int)(xs[i] + 0.5); x < (int)(xs[i + 1] + 0.5); x++)
+                ween_surface_pixel(s, x, y, c);
+    }
+}
+
+/* A filled ellipse inscribed in the w x h box at (x,y). `half` picks one of
+ * the two halves Wine's DFC_ButtonRadio draws with Pie(): -1 the top-left, +1
+ * the bottom-right, 0 the whole disc. The split is not the diagonal — the
+ * radials run to (left-1, bottom) and (right+1, top), which is what puts the
+ * odd pixel of the rim where win32 puts it.
+ *
+ * The membership test is a shade tighter than "centre within the radius":
+ * GDI's integer rasteriser drops the pixels that only just qualify at the 45
+ * degree points, and so must we. */
+static void fill_ellipse(ween_surface *s, int x, int y, int w, int h, int half,
+                         ween_color c)
+{
+    double rx = w / 2.0, ry = h / 2.0, cx = x + rx, cy = y + ry;
+    double d1x = (x - 1) - cx, d1y = (y + h - 1) - cy;
+    double d2x = (x + w) - cx, d2y = y - cy;
+    for (int py = y; py < y + h; py++) {
+        for (int px = x; px < x + w; px++) {
+            double ux = (px + 0.5 - cx) / rx, uy = (py + 0.5 - cy) / ry;
+            double vx = px + 0.5 - cx, vy = py + 0.5 - cy;
+            double c1, c2;
+            int br;
+            if (ux * ux + uy * uy > 0.95)
+                continue;
+            c1 = d1x * vy - d1y * vx;
+            c2 = d2x * vy - d2y * vx;
+            br = c1 < 0 || c2 > 0;
+            if ((half < 0 && br) || (half > 0 && !br))
+                continue;
+            ween_surface_pixel(s, px, py, c);
+        }
+    }
+}
+
+/* DFCS_BUTTONCHECK / DFCS_BUTTON3STATE: a sunken field box with a tick. */
+void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags)
+{
+    RECT in;
+    int d = make_square(&x, &y, w, h);
+    unsigned bf = BF_RECT | BF_ADJUST;
+    if (flags & DFCS_FLAT)
+        bf |= BF_FLAT;
+    else if (flags & DFCS_MONO)
+        bf |= BF_MONO;
+    ween_classic_edge(s, x, y, d, d, EDGE_SUNKEN, bf, &in);
+
+    ween_surface_fill(s, in.left, in.top, in.right - in.left, in.bottom - in.top,
+                      (flags & (DFCS_INACTIVE | DFCS_PUSHED)) ? WEEN_FACE
+                                                             : WEEN_WINDOWBG);
+    if (flags & DFCS_CHECKED) {
+        /* Wine's six-point tick, in the adjusted interior. */
+        int t3 = (in.bottom - in.top) / 3;
+        POINT pt[6];
+        pt[0].x = in.right - 1;
+        pt[0].y = in.top;
+        pt[1].x = pt[0].x;
+        pt[1].y = pt[0].y + t3;
+        pt[2].x = in.left + (in.right - in.left) / 3;
+        pt[2].y = in.bottom - 1;
+        pt[3].x = in.left + 1;
+        pt[3].y = pt[2].y - (pt[2].x - pt[3].x);
+        pt[4].x = pt[3].x;
+        pt[4].y = pt[3].y - t3;
+        pt[5].x = pt[2].x;
+        pt[5].y = pt[2].y - t3;
+        fill_polygon(s, pt, 6,
+                     (flags & DFCS_INACTIVE) ? WEEN_SHADOW : WEEN_BLACK);
+    }
+}
+
+/* DFCS_BUTTONRADIO: two half-discs for the rim, a white face, and the dot. */
+void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags)
+{
+    int d = make_square(&x, &y, w, h);
+    int shrink = d / 16 < 1 ? 1 : d / 16;
+    int xc = x + d - d / 2, yc = y + d - d / 2;
+    int i = 14 * d / 16;
+    int l = xc - i + i / 2, t = yc - i + i / 2, sz = i + 1;
+
+    fill_ellipse(s, l, t, sz, sz, +1, WEEN_WHITE);
+    fill_ellipse(s, l, t, sz, sz, -1, WEEN_SHADOW);
+    fill_ellipse(s, l + shrink, t + shrink, sz - 2 * shrink, sz - 2 * shrink, +1,
+                 WEEN_3DLIGHT);
+    fill_ellipse(s, l + shrink, t + shrink, sz - 2 * shrink, sz - 2 * shrink, -1,
+                 WEEN_DKSHADOW);
+
+    i = 10 * d / 16;
+    fill_ellipse(s, xc - i + i / 2, yc - i + i / 2, i, i, 0,
+                 (flags & (DFCS_INACTIVE | DFCS_PUSHED)) ? WEEN_FACE
+                                                         : WEEN_WINDOWBG);
+    if (flags & DFCS_CHECKED) {
+        i = 6 * d / 16;
+        if (i < 1)
+            i = 1;
+        fill_ellipse(s, xc - i + i / 2, yc - i + i / 2, i, i, 0,
+                     (flags & DFCS_INACTIVE) ? WEEN_SHADOW : WEEN_BLACK);
+    }
+}
