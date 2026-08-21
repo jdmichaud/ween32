@@ -17,23 +17,29 @@
 
 #include "ween_internal.h"
 
-/* Measured off a wine capture of examples/menu.c with the File menu open —
- * tools/refcapture/menu-popup-reference.png. Every number here was taken from
- * those pixels rather than guessed, and the guesses they replaced were all
- * wrong: the drop-down came out fourteen pixels short and two narrow.
+/* Measured off a screenshot of Windows 2000 itself — a shell context menu,
+ * which is the same control an application menu drops down.
  *
- * A drop-down is: a one-pixel COLOR_3DSHADOW rectangle (not a 3D edge — wine
- * draws a flat line), two pixels of padding inside it, then the items. */
-#define MENU_BAR_ITEMS_SPACE 12 /* checked against the bar in the same capture */
-#define MENU_BORDER 1
-#define MENU_PAD 2          /* between the border and the first/last item */
+ * These were taken from a wine capture first, and wine is wrong about menus in
+ * two visible ways: it draws the border as one flat COLOR_3DSHADOW line where
+ * Windows draws a raised edge, and it draws a separator as one line where
+ * Windows draws an etched pair. Everywhere else in ween32 wine is the
+ * reference, because everywhere else it agrees with Windows. Here it does not,
+ * and the screenshot wins.
+ *
+ * A drop-down is: a two-pixel raised edge, one pixel of margin, then items of
+ * seventeen and separators of nine, then margin and edge again. Every one of
+ * those numbers tiles the real menu exactly — 121 x 195 for its nine items and
+ * four separators. */
+#define MENU_BAR_ITEMS_SPACE 12 /* the bar, which wine does get right */
+#define MENU_BORDER 2       /* the raised edge */
+#define MENU_PAD 1          /* between the edge and the first/last item */
 #define MENU_GUTTER 20      /* the popup's left edge to the label */
 #define MENU_LABEL_GAP 11   /* the widest label to the accelerator column */
 #define MENU_ACCEL_GAP 10   /* the widest accelerator to the arrow column */
 #define MENU_ARROW_COL 13   /* the column a submenu arrow is centred in */
 #define MENU_ITEM_PAD 4     /* item height is the font's height plus this */
-#define SEPARATOR_HEIGHT 9  /* the box; the line is drawn down its middle */
-#define SEPARATOR_INSET 3
+#define SEPARATOR_HEIGHT 9  /* the box; the etched pair sits at its middle */
 
 struct ween_menu {
     ween_menuitem *item;
@@ -256,8 +262,8 @@ void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width)
 void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
 {
     int label = 0, accel = 0, arrow = 0;
-    int border = ween_ncm(MENU_BORDER);
-    int y = border + ween_ncm(MENU_PAD);
+    int inset = ween_ncm(MENU_BORDER) + ween_ncm(MENU_PAD);
+    int y = inset;
     /* the font's height, not its cell: an item is as tall as a line of text
      * plus four, which is what the capture shows */
     int th = f ? f->ascent - f->descent : 13;
@@ -281,7 +287,7 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
         }
         if (it->popup)
             arrow = ween_ncm(MENU_ARROW_COL);
-        it->x = border;
+        it->x = inset;
         it->y = y;
         it->h = (it->flags & MF_SEPARATOR) ? ween_ncm(SEPARATOR_HEIGHT)
                                            : item_h;
@@ -293,10 +299,10 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
         *w += ween_ncm(MENU_LABEL_GAP) + accel;
     if (arrow)
         *w += ween_ncm(MENU_ACCEL_GAP) + arrow;
-    *w += border;
-    *h = y + ween_ncm(MENU_PAD) + border;
+    *w += inset;
+    *h = y + inset;
     for (int i = 0; i < menu->count; i++)
-        menu->item[i].w = *w - 2 * border;
+        menu->item[i].w = *w - 2 * inset;
 }
 
 /* The item under a point, in the coordinates the layout used. -1 for none. */
@@ -390,14 +396,17 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
 {
     int border = ween_ncm(MENU_BORDER);
     int gutter = ween_ncm(MENU_GUTTER);
+    int inset = border + ween_ncm(MENU_PAD);
     int arrow_col = ween_ncm(MENU_ARROW_COL);
     int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
     int label = 0, accel = 0, has_arrow = 0, accel_x;
 
     ween_surface_fill(s, 0, 0, w, h, WEEN_FACE); /* COLOR_MENU */
-    /* wine draws a flat one-pixel COLOR_3DSHADOW rectangle here, not a 3D
-     * edge — the capture has no highlight line inside it */
-    ween_surface_rect(s, 0, 0, w, h, WEEN_SHADOW);
+    /* A raised edge, as Windows draws it: the outer line is COLOR_3DLIGHT,
+     * which is the face colour in this scheme and so invisible, with white
+     * inside it at the top and left and shadow over dark shadow at the bottom
+     * and right. Wine draws a flat grey rectangle here instead. */
+    ween_classic_edge(s, 0, 0, w, h, EDGE_RAISED, BF_RECT, NULL);
     if (!menu)
         return;
 
@@ -427,10 +436,12 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
         ween_color fg = WEEN_BLACK;
 
         if (it->flags & MF_SEPARATOR) {
-            /* a single line down the middle of its box, inset from the sides */
-            int inset = ween_ncm(SEPARATOR_INSET);
-            ween_surface_hline(s, it->x + inset, it->y + it->h / 2,
-                               it->w - 2 * inset, WEEN_SHADOW);
+            /* An etched pair across the whole interior — shadow with white
+             * under it — which is what makes a Windows separator look sunk
+             * into the menu rather than drawn on top of it. */
+            int mid = it->y + it->h / 2;
+            ween_surface_hline(s, border, mid - 1, w - 2 * border, WEEN_SHADOW);
+            ween_surface_hline(s, border, mid, w - 2 * border, WEEN_WHITE);
             continue;
         }
         if (i == hot && !(it->flags & MF_GRAYED)) {
@@ -442,12 +453,15 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
 
         int ty = it->y + (it->h - cell) / 2;
         if (it->flags & MF_CHECKED) /* a bare tick in the gutter, not a box */
-            ween_classic_checkmark(s, border + ween_ncm(3), ty, cell, cell, fg);
-        draw_label(s, f, gutter, ty, it->text, len, fg);
+            ween_classic_checkmark(s, inset + ween_ncm(2), ty, cell, cell, fg);
+        /* the default item is drawn bold, which is how a menu says which one
+         * a double click would have picked */
+        draw_label(s, (it->flags & MF_DEFAULT) ? ween_gui_font_bold() : f,
+                   gutter, ty, it->text, len, fg);
         if (acc)
             draw_label(s, f, accel_x, ty, acc, (int)strlen(acc), fg);
         if (it->popup) { /* centred in its column at the right */
-            int col = w - border - arrow_col;
+            int col = w - inset - arrow_col;
             ween_classic_menu_arrow(s, col + ween_ncm(2), ty, cell, fg);
         }
         (void)has_arrow;

@@ -295,6 +295,20 @@ them is in one of four places:
 | the close box | 509 | Wine antialiases the Marlett glyph; classic Windows drew it aliased, and so do we |
 | a disabled label | ~400 | the same measuring difference, on a centred push-button label |
 
+### Where wine is not the reference
+
+Wine's classic rendering matches Windows 2000 everywhere ween32 has checked it
+— except menus. A wine drop-down has a flat one-pixel `COLOR_3DSHADOW` border
+and single-line separators; a real Windows 2000 menu has a two-pixel raised
+edge and etched separators, and the two do not look alike. The drop-down
+metrics here are measured against screenshots of Windows itself instead: a
+shell context menu, whose nine items and four separators tile a 121 x 195
+menu exactly, and an application File menu with a cascade open.
+
+The lesson is narrower than "wine is unreliable". It is that wine is a
+reimplementation too, and where it has guessed, following it means inheriting
+the guess. A photograph of the real thing settles it.
+
 `examples/menu.c` is the second sampler, and its reference is a window with a
 menu bar. 532 of its 39200 pixels differ — 1.4% — and nearly all of that is the
 caption's bold title, which ween32 synthesises by overstriking the regular

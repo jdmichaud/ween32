@@ -47,8 +47,14 @@ PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
   tools/refcapture/pxdiff.py                # expect 532 / 39200 — 1.4%
 ```
 
-There is a third reference, `menu-popup-reference.png`, for a drop-down. It
-has to be captured with the menu open, which needs a click into wine:
+**Wine is not the reference for drop-downs.** It renders a menu's border as a
+flat grey line and a separator as a single line; Windows draws a raised edge
+and an etched pair. Everywhere else in ween32 wine agrees with Windows, and is
+the reference because it can be re-rendered on demand. For menus, measure
+against a screenshot of Windows itself — see [Reference
+captures](../ROADMAP.md#reference-captures).
+
+A wine drop-down can still be captured, if only to see the difference:
 
 ```sh
 CLICK_AT=55,80 tools/refcapture/capture.sh menu.c /dev/null

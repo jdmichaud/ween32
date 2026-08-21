@@ -741,6 +741,7 @@ BOOL KillTimer(HWND wnd, UINT_PTR id);
 #define MF_CHECKED 0x0008
 #define MF_POPUP 0x0010
 #define MF_SEPARATOR 0x0800
+#define MF_DEFAULT 0x1000 /* drawn bold: the one a double click would pick */
 
 #define TPM_LEFTALIGN 0x0000
 #define TPM_RIGHTBUTTON 0x0002
