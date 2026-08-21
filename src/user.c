@@ -383,6 +383,7 @@ BOOL DestroyWindow(HWND wnd)
         g_focus = g_top;
     if (g_capture == wnd)
         g_capture = NULL;
+    ween_controls_free(wnd);
     free(wnd);
     return TRUE;
 }

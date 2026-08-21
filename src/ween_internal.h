@@ -215,6 +215,7 @@ int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
 void ween_register_controls(void);
+void ween_controls_free(HWND w); /* per-class state, on destroy */
 
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);

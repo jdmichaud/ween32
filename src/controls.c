@@ -76,10 +76,12 @@ void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
     if (!enabled || max <= min)
         return;
     if (page > 0) {
-        thumb = track * page / (max - min + 1);
+        thumb = MulDiv(page, track, max - min + 1);
         if (thumb < sz)
             thumb = sz;
     }
+    if (thumb >= track)
+        return; /* no room for a thumb: the track stays bare, as in win32 */
     if (max - min > 0)
         tpos = (track - thumb) * (pos - min) / (max - min);
     if (vert)
@@ -185,6 +187,309 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- item lists (LISTBOX, COMBOBOX) -------------------------------------- */
+
+typedef struct {
+    char **item;
+    int count, cap, cursel, top;
+} ween_items;
+
+static ween_items *items_of(HWND w)
+{
+    if (!w->ctl) {
+        w->ctl = calloc(1, sizeof(ween_items));
+        if (w->ctl)
+            ((ween_items *)w->ctl)->cursel = -1;
+    }
+    return w->ctl;
+}
+
+static int items_add(HWND w, const char *text)
+{
+    ween_items *it = items_of(w);
+    if (!it)
+        return -1;
+    if (it->count == it->cap) {
+        int cap = it->cap ? it->cap * 2 : 8;
+        char **p = realloc(it->item, (size_t)cap * sizeof(*p));
+        if (!p)
+            return -1;
+        it->item = p;
+        it->cap = cap;
+    }
+    {   /* strdup is not C99 */
+        const char *src = text ? text : "";
+        size_t n = strlen(src) + 1;
+        char *copy = malloc(n);
+        if (!copy)
+            return -1;
+        memcpy(copy, src, n);
+        it->item[it->count] = copy;
+    }
+    return it->count++;
+}
+
+void ween_controls_free(HWND w)
+{
+    ween_items *it = w->ctl;
+    if (!it)
+        return;
+    for (int i = 0; i < it->count; i++)
+        free(it->item[i]);
+    free(it->item);
+    free(it);
+    w->ctl = NULL;
+}
+
+static int item_height(HWND w)
+{
+    const ween_strike *f = w->font ? w->font : ween_gui_font();
+    return f ? f->ascent - f->descent : 13;
+}
+
+/* One row of a list: the selection bar, then the text. */
+static void draw_item(HWND w, HDC dc, const char *text, int x, int y, int width,
+                      int h, int selected)
+{
+    RECT r;
+    r.left = x;
+    r.top = y;
+    r.right = x + width;
+    r.bottom = y + h;
+    if (selected)
+        FillRect(dc, &r, GetSysColorBrush(COLOR_HIGHLIGHT));
+    SetTextColor(dc, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+    TextOutA(dc, x + 1, y, text, -1);
+    (void)w;
+}
+
+/* ---- the LISTBOX class ---------------------------------------------------- */
+
+static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_items *it = items_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    RECT r = ps->rcPaint;
+    int ih = item_height(wnd), ox, oy;
+    int sb = (wnd->style & WS_VSCROLL) ? ween_scroll_metric() : 0;
+    int width = r.right - sb;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
+    for (int i = 0; it && i < it->count; i++) {
+        int y = (i - it->top) * ih;
+        if (y + ih <= 0 || y >= r.bottom)
+            continue;
+        draw_item(wnd, dc, it->item[i], 0, y, width, ih, i == it->cursel);
+    }
+    if (sb) {
+        int visible = (r.bottom - r.top) / ih;
+        int maxpos = it && it->count > visible ? it->count - visible : 0;
+        ween_draw_scrollbar(&top->surface, ox + width, oy, sb, r.bottom - r.top, 1,
+                            1, it ? it->top : 0, visible, 0,
+                            maxpos ? maxpos : (it ? it->count - 1 : 0));
+    }
+}
+
+static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_items *it;
+    switch (msg) {
+    case WM_CREATE: {
+        /* A list box shows whole items only: it trims its height by whatever
+         * is left over. Wine settles on this after two passes — the first
+         * before the field border comes off the client area, the second
+         * after — so a 62px box with 13px items ends up 43, showing three of
+         * them and scrolling for the fourth. */
+        int ih = item_height(wnd), edge = 2 * ween_ex_edge(wnd);
+        for (int pass = 0; pass < 2; pass++) {
+            int client = pass ? wnd->h - edge : wnd->h;
+            int rem = ih ? client % ih : 0;
+            if (wnd->h > ih && rem)
+                wnd->h -= rem;
+        }
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        listbox_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case LB_ADDSTRING:
+        return items_add(wnd, (const char *)lp);
+    case LB_SETCURSEL:
+        it = items_of(wnd);
+        if (it)
+            it->cursel = (int)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return (LRESULT)wp;
+    case LB_GETCURSEL:
+        it = items_of(wnd);
+        return it ? it->cursel : -1;
+    case LB_GETCOUNT:
+        it = items_of(wnd);
+        return it ? it->count : 0;
+    case LB_RESETCONTENT:
+        ween_controls_free(wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the COMBOBOX class ---------------------------------------------------
+ *
+ * The closed control only: a field with the current item and a drop-down
+ * button. Opening the list needs a popup window, which the core cannot do
+ * yet — see ROADMAP.md. */
+
+static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_items *it = items_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    RECT r = ps->rcPaint;
+    int btn = ween_scroll_metric(), ox, oy;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
+    /* the drop-down button, and its arrow: the same glyph a scroll bar's
+     * down arrow uses */
+    ween_classic_scroll_arrow(&top->surface, ox + r.right - btn, oy, btn,
+                              r.bottom - r.top, 1, 0, 0);
+    if (it && it->cursel >= 0 && it->cursel < it->count) {
+        SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+        TextOutA(dc, 2, 2, it->item[it->cursel], -1);
+    }
+}
+
+static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_items *it;
+    switch (msg) {
+    case WM_CREATE:
+        /* The combo box wears the field border itself, whatever ex-style it
+         * was created with, and a closed drop-down list is one item tall
+         * however high the app asked for. */
+        wnd->ex_style |= WS_EX_CLIENTEDGE;
+        wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        combo_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case CB_ADDSTRING:
+        return items_add(wnd, (const char *)lp);
+    case CB_SETCURSEL:
+        it = items_of(wnd);
+        if (it)
+            it->cursel = (int)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return (LRESULT)wp;
+    case CB_GETCURSEL:
+        it = items_of(wnd);
+        return it ? it->cursel : -1;
+    case CB_GETCOUNT:
+        it = items_of(wnd);
+        return it ? it->count : 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the progress bar ------------------------------------------------------
+ *
+ * Wine's progress.c: the control swaps WS_EX_CLIENTEDGE for WS_EX_STATICEDGE
+ * when unthemed, insets its client by one more pixel, and fills it either
+ * solid (PBS_SMOOTH) or in chunks two thirds as wide as the bar is tall with a
+ * two-pixel gap. */
+
+#define WEEN_LED_GAP 2
+
+static void progress_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    RECT r = ps->rcPaint, bar;
+    int pos = wnd->scroll_pos, min = wnd->scroll_min, max = wnd->scroll_max;
+    int span, filled;
+
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    bar = r;
+    bar.left++;
+    bar.top++;
+    bar.right--;
+    bar.bottom--;
+    span = bar.right - bar.left;
+    if (span <= 0 || max <= min)
+        return;
+    filled = MulDiv(pos - min, span, max - min);
+
+    if (wnd->style & PBS_SMOOTH) {
+        RECT f = bar;
+        f.right = f.left + filled;
+        FillRect(dc, &f, GetSysColorBrush(COLOR_HIGHLIGHT));
+        return;
+    }
+    /* the filled length is rounded up to whole chunks, as Wine does */
+    int led = MulDiv(bar.bottom - bar.top, 2, 3);
+    int step = led + WEEN_LED_GAP;
+    RECT chunk = bar;
+    filled = (filled + step - 1) / step * step;
+    if (filled > span)
+        filled = span;
+    chunk.left = bar.left;
+    while (chunk.left < bar.left + filled) {
+        chunk.right = chunk.left + led;
+        if (chunk.right > bar.left + filled)
+            chunk.right = bar.left + filled;
+        FillRect(dc, &chunk, GetSysColorBrush(COLOR_HIGHLIGHT));
+        chunk.left = chunk.right + WEEN_LED_GAP;
+    }
+}
+
+static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE:
+        /* the classic control asks for the status-field border, not the
+         * field border it was created with */
+        wnd->ex_style &= ~(DWORD)WS_EX_CLIENTEDGE;
+        wnd->ex_style |= WS_EX_STATICEDGE;
+        wnd->scroll_min = 0;
+        wnd->scroll_max = 100;
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        progress_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case PBM_SETPOS: {
+        int old = wnd->scroll_pos;
+        wnd->scroll_pos = (int)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return old;
+    }
+    case PBM_SETRANGE:
+        wnd->scroll_min = (int)LOWORD(lp);
+        wnd->scroll_max = (int)HIWORD(lp);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    case PBM_SETRANGE32:
+        wnd->scroll_min = (int)wp;
+        wnd->scroll_max = (int)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
 /* ---- registration --------------------------------------------------------- */
 
 void ween_register_controls(void)
@@ -198,4 +503,14 @@ void ween_register_controls(void)
     wc.lpfnWndProc = scrollbar_proc;
     wc.lpszClassName = "SCROLLBAR";
     RegisterClassA(&wc);
+    wc.lpfnWndProc = listbox_proc;
+    wc.lpszClassName = "LISTBOX";
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = combo_proc;
+    wc.lpszClassName = "COMBOBOX";
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = progress_proc;
+    wc.lpszClassName = PROGRESS_CLASSA;
+    RegisterClassA(&wc);
 }
+

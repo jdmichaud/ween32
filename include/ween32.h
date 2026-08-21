@@ -244,6 +244,44 @@ typedef struct tagCREATESTRUCTA {
 #define ES_AUTOHSCROLL 0x0080L
 #define ES_READONLY 0x0800L
 
+/* LISTBOX and COMBOBOX styles, messages and classes */
+#define LBS_NOTIFY 0x0001L
+#define LBS_SORT 0x0002L
+#define LB_ADDSTRING 0x0180
+#define LB_INSERTSTRING 0x0181
+#define LB_DELETESTRING 0x0182
+#define LB_RESETCONTENT 0x0184
+#define LB_SETCURSEL 0x0186
+#define LB_GETCURSEL 0x0188
+#define LB_GETTEXT 0x0189
+#define LB_GETCOUNT 0x018B
+#define LBN_SELCHANGE 1
+#define LBN_DBLCLK 2
+
+#define CBS_SIMPLE 0x0001L
+#define CBS_DROPDOWN 0x0002L
+#define CBS_DROPDOWNLIST 0x0003L
+#define CB_ADDSTRING 0x0143
+#define CB_DELETESTRING 0x0144
+#define CB_GETCOUNT 0x0146
+#define CB_GETCURSEL 0x0147
+#define CB_GETLBTEXT 0x0148
+#define CB_INSERTSTRING 0x014A
+#define CB_RESETCONTENT 0x014B
+#define CB_SETCURSEL 0x014E
+#define CBN_SELCHANGE 1
+
+/* progress bar (comctl32) */
+#define PROGRESS_CLASSA "msctls_progress32"
+#define PBS_SMOOTH 0x01
+#define PBS_VERTICAL 0x04
+#define PBM_SETRANGE (WM_USER + 1)
+#define PBM_SETPOS (WM_USER + 2)
+#define PBM_DELTAPOS (WM_USER + 3)
+#define PBM_SETSTEP (WM_USER + 4)
+#define PBM_STEPIT (WM_USER + 5)
+#define PBM_SETRANGE32 (WM_USER + 6)
+
 /* SCROLLBAR styles */
 #define SBS_HORZ 0x0000L
 #define SBS_VERT 0x0001L
@@ -416,6 +454,9 @@ typedef struct tagCREATESTRUCTA {
 #define WEEN32_HAS_GROUPBOX 1
 #define WEEN32_HAS_EDIT 1
 #define WEEN32_HAS_SCROLLBAR 1
+#define WEEN32_HAS_LISTBOX 1
+#define WEEN32_HAS_COMBOBOX 1
+#define WEEN32_HAS_PROGRESS 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 
