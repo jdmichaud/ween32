@@ -84,11 +84,22 @@ typedef union {
     long pad[24];
 } XEvent;
 
+/* Xlib's XImage, declared as far as the fields we set. Width, height and
+ * bytes_per_line have to be updated together when the window is resized:
+ * XPutImage reads the stride from here, so an image that still describes the
+ * old width shears every row across the next one. */
 typedef struct {
     int width, height;
     int xoffset;
     int format;
     char *data;
+    int byte_order;
+    int bitmap_unit;
+    int bitmap_bit_order;
+    int bitmap_pad;
+    int depth;
+    int bytes_per_line;
+    int bits_per_pixel;
     unsigned char rest[200];
 } XImage;
 
@@ -183,7 +194,6 @@ typedef struct {
     int pos_x, pos_y;
     int w, h;    /* native (renderer) size */
     int zoom;    /* integer HiDPI magnification */
-    int stale;   /* the image needs recreating: the window was resized */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
 } x11_win;
 
@@ -266,25 +276,18 @@ static void x11_present(void *win, const ween_surface *s)
 {
     x11_win *xw = win;
     const ween_surface *out = s;
-    if (xw->stale) { /* the window was resized: the image describes the old one */
-        int scr = XDefaultScreen(xw->dpy);
-        int w = xw->w * xw->zoom, h = xw->h * xw->zoom;
-        XImage *img = XCreateImage(xw->dpy, XDefaultVisual(xw->dpy, scr),
-                                   (unsigned)XDefaultDepth(xw->dpy, scr),
-                                   X_ZPixmap, 0, NULL, (unsigned)w, (unsigned)h,
-                                   32, w * 4);
-        if (img) {
-            xw->img = img;
-            xw->stale = 0;
-            if (xw->zoom > 1) {
-                ween_surface_free(&xw->zbuf);
-                ween_surface_init(&xw->zbuf, w, h);
-            }
-        }
-    }
     if (xw->zoom > 1) { /* crisp HiDPI: pixel-double the finished frame */
+        if (xw->zbuf.w != s->w * xw->zoom || xw->zbuf.h != s->h * xw->zoom)
+            ween_surface_resize(&xw->zbuf, s->w * xw->zoom, s->h * xw->zoom);
         ween_surface_zoom_into(&xw->zbuf, s, xw->zoom);
         out = &xw->zbuf;
+    }
+    /* the image must describe the buffer being handed over, whatever size the
+     * window happens to be at this moment */
+    if (xw->img->width != out->w || xw->img->height != out->h) {
+        xw->img->width = out->w;
+        xw->img->height = out->h;
+        xw->img->bytes_per_line = out->w * 4;
     }
     xw->img->data = (char *)out->px;
     XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, 0, 0, (unsigned)out->w,
@@ -372,13 +375,13 @@ static ween_event x11_next_event(void *win)
             out.kind = WEEN_EV_EXPOSE;
             return out;
         case X_ConfigureNotify: {
+            /* Always report it, even when the size has not changed: a window
+             * manager that refuses a resize answers with the geometry it is
+             * keeping, and that is how the surface learns to go back. */
             int w = ev.xconfigure.width / xw->zoom;
             int h = ev.xconfigure.height / xw->zoom;
-            if (w == xw->w && h == xw->h)
-                continue;
             xw->w = w;
             xw->h = h;
-            xw->stale = 1; /* the XImage is recreated on the next present */
             out.kind = WEEN_EV_RESIZE;
             out.x = w;
             out.y = h;
