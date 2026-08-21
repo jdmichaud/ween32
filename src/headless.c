@@ -117,6 +117,19 @@ static void hl_present(void *win, const ween_surface *s)
     ween_surface_write_bmp(s, g_bmp_path);
 }
 
+static void hl_resize(void *win, int w, int h)
+{
+    (void)win;
+    (void)w;
+    (void)h;
+}
+
+static void hl_set_resizable(void *win, int resizable)
+{
+    (void)win;
+    (void)resizable;
+}
+
 static void hl_move_by(void *win, int dx, int dy)
 {
     (void)win;
@@ -145,7 +158,9 @@ static void hl_close(void *win)
 
 const ween_backend *ween_backend_headless(void)
 {
-    static const ween_backend b = { hl_open, hl_present, hl_move_by,
-                                    hl_next_event, hl_close };
+    static const ween_backend b = { hl_open,        hl_present,
+                                    hl_move_by,     hl_resize,
+                                    hl_set_resizable, hl_next_event,
+                                    hl_close };
     return &b;
 }

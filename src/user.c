@@ -105,6 +105,7 @@ static int g_quit = 0, g_quit_code = 0;
 
 static LRESULT button_proc(HWND, UINT, WPARAM, LPARAM);
 static LRESULT static_proc(HWND, UINT, WPARAM, LPARAM);
+static void resize_top(struct ween_wnd *top, int w, int h);
 
 /* ---- class registry --------------------------------------------------- */
 
@@ -174,12 +175,19 @@ static int has_caption(const struct ween_wnd *w)
     return !w->parent && (w->style & WS_CAPTION) == WS_CAPTION;
 }
 
+/* A window with a sizing border has a wider frame than a fixed one. */
+int ween_frame_width(const struct ween_wnd *w)
+{
+    return ween_ncm((w->style & WS_THICKFRAME) ? WEEN_NC_SIZEFRAME
+                                               : WEEN_NC_FRAME);
+}
+
 /* Client origin within the window's own rectangle. */
 static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
 {
     if (has_caption(w)) {
-        *ox = ween_ncm(WEEN_NC_FRAME);
-        *oy = ween_ncm(WEEN_NC_FRAME) + ween_ncm(WEEN_NC_CAPTION);
+        *ox = ween_frame_width(w);
+        *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION);
     } else {
         *ox = ween_ex_edge(w);
         *oy = ween_ex_edge(w);
@@ -193,7 +201,8 @@ BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style)
     if (!rect)
         return FALSE;
     if ((style & WS_CAPTION) == WS_CAPTION && !(style & WS_CHILD)) {
-        int frame = ween_ncm(WEEN_NC_FRAME);
+        int frame = ween_ncm((style & WS_THICKFRAME) ? WEEN_NC_SIZEFRAME
+                                                     : WEEN_NC_FRAME);
         rect->left -= frame;
         rect->right += frame;
         rect->top -= frame + ween_ncm(WEEN_NC_CAPTION);
@@ -215,7 +224,7 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    int trail = has_caption(wnd) ? ween_ncm(WEEN_NC_FRAME) : ween_ex_edge(wnd);
+    int trail = has_caption(wnd) ? ween_frame_width(wnd) : ween_ex_edge(wnd);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
     return TRUE;
@@ -250,7 +259,7 @@ HWND ween_top_level(HWND wnd)
 static RECT nc_close_rect(const struct ween_wnd *w)
 {
     RECT r;
-    int frame = ween_ncm(WEEN_NC_FRAME);
+    int frame = ween_frame_width(w);
     int cap = ween_ncm(WEEN_NC_CAPTION);
     int bw = ween_ncm(WEEN_NC_BTN_W);
     int bh = ween_ncm(WEEN_NC_BTN_H);
@@ -324,6 +333,9 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
             return NULL;
         }
         wnd->backend_win = ween_active_backend->open(w, h, wnd->text);
+        if (wnd->backend_win && (style & WS_THICKFRAME) &&
+            ween_active_backend->set_resizable)
+            ween_active_backend->set_resizable(wnd->backend_win, 1);
         if (!wnd->backend_win) {
             ween_surface_free(&wnd->surface);
             free(wnd);
@@ -427,8 +439,14 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
         return FALSE;
     wnd->x = x;
     wnd->y = y;
-    wnd->w = w;
-    wnd->h = h; /* v1: resizing the top-level surface is unsupported */
+    if (!wnd->parent && (w != wnd->w || h != wnd->h)) {
+        resize_top(wnd, w, h);
+        if (ween_active_backend && ween_active_backend->resize)
+            ween_active_backend->resize(wnd->backend_win, wnd->w, wnd->h);
+    } else {
+        wnd->w = w;
+        wnd->h = h;
+    }
     if (repaint)
         ween_top_level(wnd)->dirty = 1;
     return TRUE;
@@ -738,30 +756,82 @@ BOOL TranslateMessage(const MSG *msg)
 
 /* Route a mouse event to the child under the point (or the capture), sending
  * `msg` with client-relative coordinates. */
+/* The child under a point, or the window itself. A newly created child sits
+ * at the top of the z-order, so the last one in the list that contains the
+ * point is the one on top — the group box created before its radio buttons
+ * must not swallow their clicks. */
+static struct ween_wnd *child_at(struct ween_wnd *top, int x, int y)
+{
+    int cx0, cy0;
+    struct ween_wnd *hit = top;
+    ween_client_origin(top, &cx0, &cy0);
+    for (struct ween_wnd *c = top->first_child; c; c = c->next_sibling)
+        if (c->visible && x - cx0 >= c->x && x - cx0 < c->x + c->w &&
+            y - cy0 >= c->y && y - cy0 < c->y + c->h)
+            hit = c;
+    return hit;
+}
+
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
     int ox, oy;
     struct ween_wnd *dst = g_capture;
     if (!dst)
         dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
-    if (!dst) {
-        /* find the child containing the point (client coords of top) */
-        int cx0, cy0;
-        ween_client_origin(top, &cx0, &cy0);
-        int cx = x - cx0, cy = y - cy0;
-        dst = top;
-        /* A newly created child sits at the top of the z-order, so the last
-         * one in the list that contains the point is the one on top — the
-         * group box created before its radio buttons must not swallow their
-         * clicks. */
-        for (struct ween_wnd *c = top->first_child; c; c = c->next_sibling)
-            if (c->visible && cx >= c->x && cx < c->x + c->w && cy >= c->y &&
-                cy < c->y + c->h)
-                dst = c;
-    }
+    if (!dst)
+        dst = child_at(top, x, y);
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
     post_msg(dst, msg, 0, MAKELPARAM((WORD)(x - ox), (WORD)(y - oy)));
+}
+
+/* Grow or shrink the top-level window: the surface follows the backend, and
+ * the app hears about it through WM_SIZE. */
+static void resize_top(struct ween_wnd *top, int w, int h)
+{
+    RECT cr;
+    if (w < 120)
+        w = 120;
+    if (h < 60)
+        h = 60;
+    if (w == top->w && h == top->h)
+        return;
+    top->w = w;
+    top->h = h;
+    ween_surface_resize(&top->surface, w, h);
+    GetClientRect(top, &cr);
+    SendMessageA(top, WM_SIZE, SIZE_RESTORED,
+                 MAKELPARAM((WORD)cr.right, (WORD)cr.bottom));
+    top->dirty = 1;
+}
+
+/* Dragging a sizing border: the pointer moves an edge, the window follows. */
+static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
+{
+    int last_x = down->x_root, last_y = down->y_root;
+    for (;;) {
+        ween_event ev = ween_active_backend->next_event(top->backend_win);
+        if (ev.kind == WEEN_EV_MOUSE_MOVE) {
+            int dx = ev.x_root - last_x, dy = ev.y_root - last_y;
+            int w = top->w, h = top->h;
+            last_x = ev.x_root;
+            last_y = ev.y_root;
+            if (edge == HTRIGHT || edge == HTBOTTOMRIGHT || edge == HTTOPRIGHT)
+                w += dx;
+            if (edge == HTBOTTOM || edge == HTBOTTOMRIGHT || edge == HTBOTTOMLEFT)
+                h += dy;
+            if (w != top->w || h != top->h) {
+                resize_top(top, w, h);
+                if (ween_active_backend->resize)
+                    ween_active_backend->resize(top->backend_win, top->w, top->h);
+                ween_flush_paint();
+            }
+        } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
+            return;
+        } else if (ev.kind == WEEN_EV_RESIZE) {
+            resize_top(top, ev.x, ev.y);
+        }
+    }
 }
 
 /* Non-client interactions that USER32 handled internally: dragging the window
@@ -826,8 +896,22 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
             nc_drag_caption(top, ev);
         else if (hit == HTCLOSE)
             nc_track_close(top);
-        else
-            route_mouse(top, WM_LBUTTONDOWN, ev->x, ev->y);
+        else if (hit >= HTLEFT && hit <= HTBOTTOMRIGHT)
+            nc_drag_size(top, ev, (int)hit);
+        else {
+            /* a child can claim a sizing corner too: that is what the status
+             * bar's grip is */
+            struct ween_wnd *child = child_at(top, ev->x, ev->y);
+            LRESULT ch = child != top
+                             ? SendMessageA(child, WM_NCHITTEST, 0,
+                                            MAKELPARAM((WORD)ev->x, (WORD)ev->y))
+                             : HTCLIENT;
+            if (ch >= HTLEFT && ch <= HTBOTTOMRIGHT &&
+                (top->style & WS_THICKFRAME))
+                nc_drag_size(top, ev, (int)ch);
+            else
+                route_mouse(top, WM_LBUTTONDOWN, ev->x, ev->y);
+        }
         break;
     }
     case WEEN_EV_MOUSE_UP:
@@ -837,6 +921,9 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         break;
     case WEEN_EV_MOUSE_MOVE:
         route_mouse(top, WM_MOUSEMOVE, ev->x, ev->y);
+        break;
+    case WEEN_EV_RESIZE: /* the window manager resized us */
+        resize_top(top, ev->x, ev->y);
         break;
     case WEEN_EV_WHEEL:
         /* win32 sends the wheel to the focused window, not the one under the
@@ -908,7 +995,28 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         RECT c = nc_close_rect(wnd);
         if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
             return HTCLOSE;
-        int frame = ween_ncm(WEEN_NC_FRAME);
+        int frame = ween_frame_width(wnd);
+        if (wnd->style & WS_THICKFRAME) {
+            /* the sizing border, corners first */
+            int r = x >= wnd->w - frame, l = x < frame;
+            int b = y >= wnd->h - frame, t = y < frame;
+            if (b && r)
+                return HTBOTTOMRIGHT;
+            if (b && l)
+                return HTBOTTOMLEFT;
+            if (t && r)
+                return HTTOPRIGHT;
+            if (t && l)
+                return HTTOPLEFT;
+            if (l)
+                return HTLEFT;
+            if (r)
+                return HTRIGHT;
+            if (t)
+                return HTTOP;
+            if (b)
+                return HTBOTTOM;
+        }
         if (y < frame + ween_ncm(WEEN_NC_CAPTION) && y >= frame && x >= frame &&
             x < wnd->w - frame)
             return HTCAPTION;
@@ -927,7 +1035,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!has_caption(wnd))
             return 0;
         /* caption gradient + title (bold, as Win2k captions were) + close */
-        int frame = ween_ncm(WEEN_NC_FRAME);
+        int frame = ween_frame_width(wnd);
         int cap = ween_ncm(WEEN_NC_CAPTION);
         /* the gradient holds its end colours behind the icon and the
          * buttons; see ween_classic_caption */

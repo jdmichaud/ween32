@@ -38,7 +38,7 @@ jobs:
           file calc.bmp dialog.bmp controls.bmp
           file calc.bmp | grep -q '261 x 223'
           file dialog.bmp | grep -q '320 x 180'
-          file controls.bmp | grep -q '666 x 445'
+          file controls.bmp | grep -q '668 x 447'
 
       - name: Build without the X11 backend
         run: make clean && make X11=0

@@ -62,10 +62,25 @@ typedef struct {
     long data[5];
 } XClientMessageEvent;
 
+typedef struct {
+    int type;
+    unsigned long serial;
+    int send_event;
+    XDisplay *display;
+    XWindow event;
+    XWindow window;
+    int x, y;
+    int width, height;
+    int border_width;
+    XWindow above;
+    int override_redirect;
+} XConfigureEvent;
+
 typedef union {
     int type;
     XButtonEvent xbutton;
     XClientMessageEvent xclient;
+    XConfigureEvent xconfigure;
     long pad[24];
 } XEvent;
 
@@ -96,6 +111,7 @@ enum {
     X_ButtonRelease = 5,
     X_MotionNotify = 6,
     X_Expose = 12,
+    X_ConfigureNotify = 22,
     X_ClientMessage = 33
 };
 
@@ -136,6 +152,7 @@ extern XAtom XInternAtom(XDisplay *, const char *, int);
 extern int XSetWMProtocols(XDisplay *, XWindow, XAtom *, int);
 extern void XSetWMNormalHints(XDisplay *, XWindow, XSizeHints *);
 extern int XMoveWindow(XDisplay *, XWindow, int, int);
+extern int XResizeWindow(XDisplay *, XWindow, unsigned, unsigned);
 extern int XChangeProperty(XDisplay *, XWindow, XAtom, XAtom, int, int,
                            const void *, int);
 extern unsigned long XLookupKeysym(XButtonEvent *, int);
@@ -166,6 +183,7 @@ typedef struct {
     int pos_x, pos_y;
     int w, h;    /* native (renderer) size */
     int zoom;    /* integer HiDPI magnification */
+    int stale;   /* the image needs recreating: the window was resized */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
 } x11_win;
 
@@ -198,6 +216,8 @@ static void *x11_open(int w, int h, const char *title)
     XStoreName(dpy, win, title);
 
     /* fixed size: no WM resize handles */
+    /* fixed size until the window says otherwise: a window whose style has
+     * no sizing border must not be resizable by the window manager either */
     XSizeHints hints;
     memset(&hints, 0, sizeof(hints));
     hints.flags = X_PPosition | X_PSize | X_PMinSize | X_PMaxSize;
@@ -246,6 +266,22 @@ static void x11_present(void *win, const ween_surface *s)
 {
     x11_win *xw = win;
     const ween_surface *out = s;
+    if (xw->stale) { /* the window was resized: the image describes the old one */
+        int scr = XDefaultScreen(xw->dpy);
+        int w = xw->w * xw->zoom, h = xw->h * xw->zoom;
+        XImage *img = XCreateImage(xw->dpy, XDefaultVisual(xw->dpy, scr),
+                                   (unsigned)XDefaultDepth(xw->dpy, scr),
+                                   X_ZPixmap, 0, NULL, (unsigned)w, (unsigned)h,
+                                   32, w * 4);
+        if (img) {
+            xw->img = img;
+            xw->stale = 0;
+            if (xw->zoom > 1) {
+                ween_surface_free(&xw->zbuf);
+                ween_surface_init(&xw->zbuf, w, h);
+            }
+        }
+    }
     if (xw->zoom > 1) { /* crisp HiDPI: pixel-double the finished frame */
         ween_surface_zoom_into(&xw->zbuf, s, xw->zoom);
         out = &xw->zbuf;
@@ -253,6 +289,28 @@ static void x11_present(void *win, const ween_surface *s)
     xw->img->data = (char *)out->px;
     XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, 0, 0, (unsigned)out->w,
               (unsigned)out->h);
+    XFlush(xw->dpy);
+}
+
+static void x11_set_resizable(void *win, int resizable)
+{
+    x11_win *xw = win;
+    XSizeHints hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.flags = X_PMinSize | (resizable ? 0 : X_PMaxSize);
+    hints.min_width = resizable ? 120 : xw->w * xw->zoom;
+    hints.min_height = resizable ? 60 : xw->h * xw->zoom;
+    hints.max_width = xw->w * xw->zoom;
+    hints.max_height = xw->h * xw->zoom;
+    XSetWMNormalHints(xw->dpy, xw->win, &hints);
+    XFlush(xw->dpy);
+}
+
+static void x11_resize(void *win, int w, int h)
+{
+    x11_win *xw = win;
+    XResizeWindow(xw->dpy, xw->win, (unsigned)(w * xw->zoom),
+                  (unsigned)(h * xw->zoom));
     XFlush(xw->dpy);
 }
 
@@ -313,6 +371,19 @@ static ween_event x11_next_event(void *win)
         case X_Expose:
             out.kind = WEEN_EV_EXPOSE;
             return out;
+        case X_ConfigureNotify: {
+            int w = ev.xconfigure.width / xw->zoom;
+            int h = ev.xconfigure.height / xw->zoom;
+            if (w == xw->w && h == xw->h)
+                continue;
+            xw->w = w;
+            xw->h = h;
+            xw->stale = 1; /* the XImage is recreated on the next present */
+            out.kind = WEEN_EV_RESIZE;
+            out.x = w;
+            out.y = h;
+            return out;
+        }
         case X_ButtonPress:
         case X_ButtonRelease:
             if (b->button == 4 || b->button == 5) { /* the wheel */
@@ -383,8 +454,10 @@ static void x11_close(void *win)
 
 const ween_backend *ween_backend_x11(void)
 {
-    static const ween_backend b = { x11_open, x11_present, x11_move_by,
-                                    x11_next_event, x11_close };
+    static const ween_backend b = { x11_open,       x11_present,
+                                    x11_move_by,    x11_resize,
+                                    x11_set_resizable, x11_next_event,
+                                    x11_close };
     return &b;
 }
 

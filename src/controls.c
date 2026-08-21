@@ -268,12 +268,50 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * scroll bars its styles ask for. Typing needs WM_CHAR and a caret, which the
  * core does not have yet — see ROADMAP.md. */
 
-/* The EDIT's own state: where the caret sits, in characters. */
-static int *edit_caret(HWND w)
+/* The EDIT's own state: the caret, and the anchor a selection runs from.
+ * They are equal when nothing is selected. */
+typedef struct {
+    int caret, anchor;
+} ween_edit;
+
+static ween_edit *edit_state(HWND w)
 {
     if (!w->ctl)
-        w->ctl = calloc(1, sizeof(int));
+        w->ctl = calloc(1, sizeof(ween_edit));
     return w->ctl;
+}
+
+static void edit_range(const ween_edit *e, int *from, int *to)
+{
+    *from = e->caret < e->anchor ? e->caret : e->anchor;
+    *to = e->caret < e->anchor ? e->anchor : e->caret;
+}
+
+/* Remove the selected text, if any. Returns 1 if anything went. */
+static int edit_delete_selection(HWND wnd, ween_edit *e)
+{
+    int from, to, len = (int)strlen(wnd->text);
+    edit_range(e, &from, &to);
+    if (from == to)
+        return 0;
+    memmove(wnd->text + from, wnd->text + to, (size_t)(len - to) + 1);
+    e->caret = e->anchor = from;
+    return 1;
+}
+
+/* The left inset of an edit's text: the border pixel plus half an average
+ * character, as Wine's EDIT_SetRectNP computes it. */
+static int edit_margin(HWND wnd)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    static const char alpha[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    int sum = 0;
+    if (!f)
+        return 4;
+    for (int i = 0; i < 52; i++)
+        sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
+    return (ween_ex_edge(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
 }
 
 /* The character index nearest an x offset within the text. */
@@ -284,7 +322,7 @@ static int edit_index_at(HWND wnd, int x)
     if (!f)
         return 0;
     for (int i = 0; i <= len; i++) {
-        int pen = ween_strike_logical_pen(f, wnd->text, len, i);
+        int pen = ween_strike_pen(f, wnd->text, i);
         int d = pen > x ? pen - x : x - pen;
         if (d < bestd) {
             bestd = d;
@@ -329,33 +367,58 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
     int tx = inset + margin;
     int ty = inset;
-    while (*p) {
-        const char *nl = strchr(p, '\n');
-        int n = nl ? (int)(nl - p) : (int)strlen(p);
-        if (n && p[n - 1] == '\r')
-            n--;
-        if (f)
-            ween_strike_draw_logical(f, &top->surface, ox + tx, oy + ty, p, n, ink);
-        if (!nl || !multi)
-            break;
-        p = nl + 1;
-        ty += line;
+    {
+        ween_edit *e = edit_state(wnd);
+        int from = 0, to = 0, focused = ween_focus_get() == wnd;
+        if (e && focused)
+            edit_range(e, &from, &to);
+        while (*p) {
+            const char *nl = strchr(p, '\n');
+            int n = nl ? (int)(nl - p) : (int)strlen(p);
+            if (n && p[n - 1] == '\r')
+                n--;
+            if (f) {
+                /* the selected run sits on a highlight bar, in its colour */
+                int off = (int)(p - wnd->text);
+                int a = from - off, b = to - off;
+                if (a < 0)
+                    a = 0;
+                if (b > n)
+                    b = n;
+                if (multi || a >= b) {
+                    ween_strike_draw(f, &top->surface, ox + tx, oy + ty, p, n,
+                                     ink);
+                } else {
+                    int xa = ween_strike_pen(f, p, a);
+                    int xb = ween_strike_pen(f, p, b);
+                    ween_strike_draw(f, &top->surface, ox + tx, oy + ty, p, a,
+                                     ink);
+                    ween_surface_fill(&top->surface, ox + tx + xa, oy + ty,
+                                      xb - xa, line, WEEN_CAP_LEFT);
+                    ween_strike_draw(f, &top->surface, ox + tx + xa, oy + ty,
+                                     p + a, b - a, WEEN_WHITE);
+                    ween_strike_draw(f, &top->surface, ox + tx + xb, oy + ty,
+                                     p + b, n - b, ink);
+                }
+            }
+            if (!nl || !multi)
+                break;
+            p = nl + 1;
+            ty += line;
+        }
     }
 
     /* the caret: a one-pixel bar where the next character will go */
     if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && !multi) {
-        int *caret = edit_caret(wnd);
-        int cx = tx + (caret ? ween_strike_logical_pen(f, wnd->text,
-                                                       (int)strlen(wnd->text),
-                                                       *caret)
-                             : 0);
+        ween_edit *e = edit_state(wnd);
+        int cx = tx + (e ? ween_strike_pen(f, wnd->text, e->caret) : 0);
         ween_surface_vline(&top->surface, ox + cx, oy + inset, line, WEEN_BLACK);
     }
 }
 
 static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    int *caret = edit_caret(wnd);
+    ween_edit *e = edit_state(wnd);
     int len = (int)strlen(wnd->text);
 
     switch (msg) {
@@ -368,22 +431,30 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_LBUTTONDOWN: {
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-        int margin = 1;
         if (wnd->style & WS_DISABLED)
             return 0;
         SetFocus(wnd);
-        if (f && caret) {
-            static const char alpha[] =
-                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            int sum = 0;
-            for (int i = 0; i < 52; i++)
-                sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
-            margin = (ween_ex_edge(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
-            *caret = edit_index_at(wnd, GET_X_LPARAM(lp) - margin);
+        if (f && e) {
+            e->caret = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            e->anchor = e->caret; /* a fresh click starts a new selection */
+            SetCapture(wnd);
         }
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
+    case WM_MOUSEMOVE:
+        if (GetCapture() == wnd && e) {
+            int at = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            if (at != e->caret) {
+                e->caret = at; /* drag extends from the anchor */
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        return 0;
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
         InvalidateRect(wnd, NULL, FALSE);
@@ -392,19 +463,25 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         char ch = (char)wp;
         if (wnd->style & (WS_DISABLED | ES_READONLY))
             return 0;
-        if (!caret)
+        if (!e)
             return 0;
-        if (ch == '\b') { /* backspace deletes what is behind the caret */
-            if (*caret > 0) {
-                memmove(wnd->text + *caret - 1, wnd->text + *caret,
-                        (size_t)(len - *caret) + 1);
-                (*caret)--;
+        if (ch == '\b') { /* backspace takes the selection, or one character */
+            if (!edit_delete_selection(wnd, e) && e->caret > 0) {
+                memmove(wnd->text + e->caret - 1, wnd->text + e->caret,
+                        (size_t)(len - e->caret) + 1);
+                e->caret--;
+                e->anchor = e->caret;
             }
-        } else if ((unsigned char)ch >= ' ' && len + 1 < WEEN_MAX_TEXT) {
-            memmove(wnd->text + *caret + 1, wnd->text + *caret,
-                    (size_t)(len - *caret) + 1);
-            wnd->text[*caret] = ch;
-            (*caret)++;
+        } else if ((unsigned char)ch >= ' ') {
+            edit_delete_selection(wnd, e);
+            len = (int)strlen(wnd->text);
+            if (len + 1 >= WEEN_MAX_TEXT)
+                return 0;
+            memmove(wnd->text + e->caret + 1, wnd->text + e->caret,
+                    (size_t)(len - e->caret) + 1);
+            wnd->text[e->caret] = ch;
+            e->caret++;
+            e->anchor = e->caret;
         } else {
             return 0;
         }
@@ -414,37 +491,46 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
-    case WM_KEYDOWN:
-        if (!caret)
+    case WM_KEYDOWN: {
+        int shift = (lp & 1) != 0; /* the backend puts Shift in bit 0 */
+        int moved = 1;
+        if (!e)
             return 0;
         switch (wp) {
         case VK_LEFT:
-            if (*caret > 0)
-                (*caret)--;
+            if (e->caret > 0)
+                e->caret--;
             break;
         case VK_RIGHT:
-            if (*caret < len)
-                (*caret)++;
+            if (e->caret < len)
+                e->caret++;
             break;
         case VK_HOME:
-            *caret = 0;
+            e->caret = 0;
             break;
         case VK_END:
-            *caret = len;
+            e->caret = len;
             break;
         case VK_DELETE:
-            if (*caret < len && !(wnd->style & (WS_DISABLED | ES_READONLY)))
-                memmove(wnd->text + *caret, wnd->text + *caret + 1,
-                        (size_t)(len - *caret));
+            if (wnd->style & (WS_DISABLED | ES_READONLY))
+                return 0;
+            if (!edit_delete_selection(wnd, e) && e->caret < len)
+                memmove(wnd->text + e->caret, wnd->text + e->caret + 1,
+                        (size_t)(len - e->caret));
+            e->anchor = e->caret;
+            moved = 0;
             break;
         default:
             return DefWindowProcA(wnd, msg, wp, lp);
         }
+        if (moved && !shift) /* moving without Shift drops the selection */
+            e->anchor = e->caret;
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
+    }
     case WM_SETTEXT:
-        if (caret)
-            *caret = 0;
+        if (e)
+            e->caret = e->anchor = 0;
         InvalidateRect(wnd, NULL, FALSE);
         return DefWindowProcA(wnd, msg, wp, lp);
     default:
@@ -474,14 +560,18 @@ typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
     int count, cap, cursel, top;
+    int track;  /* combo box: the item the pointer is over, -1 for none */
+    int opened; /* combo box: this press is the one that opened the list */
 } ween_items;
 
 static ween_items *items_of(HWND w)
 {
     if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_items));
-        if (w->ctl)
+        if (w->ctl) {
             ((ween_items *)w->ctl)->cursel = -1;
+            ((ween_items *)w->ctl)->track = -1;
+        }
     }
     return w->ctl;
 }
@@ -787,7 +877,7 @@ void ween_popup_paint(void)
     ween_surface_fill(&top->surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
     for (int i = 0; it && i < it->count; i++) {
         int iy = y + 1 + i * ih;
-        int selected = i == it->cursel;
+        int selected = i == (it->track >= 0 ? it->track : it->cursel);
         if (iy + ih > y + h - 1)
             break;
         if (selected)
@@ -814,34 +904,92 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_items *it;
     switch (msg) {
+    /* The item the pointer is over, or -1. Points arrive relative to our own
+     * client area; the list hangs below it. */
     case WM_LBUTTONDOWN: {
-        int px, py, pw, ph, y = GET_Y_LPARAM(lp);
+        int ox, oy, px, py, pw, ph;
+        int sy, ih = item_height(wnd);
         it = items_of(wnd);
         SetFocus(wnd);
+        ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
-        if (g_dropped == wnd) {
-            /* a click while open: on the list it picks, elsewhere it closes.
-             * The point arrives relative to our client area. */
-            int ox, oy;
-            ween_client_origin(wnd, &ox, &oy);
-            int sy = y + oy - py - 1;
-            int i = sy / (item_height(wnd) ? item_height(wnd) : 1);
-            if (sy >= 0 && it && i >= 0 && i < it->count) {
-                it->cursel = i;
+        sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (g_dropped == wnd && sy >= 0 && sy < ph - 2) {
+            /* pressing in the open list starts tracking it */
+            if (it)
+                it->track = sy / (ih ? ih : 1);
+            SetCapture(wnd);
+        } else if (g_dropped == wnd) {
+            g_dropped = NULL; /* a second click on the control closes it */
+            if (it)
+                it->track = -1;
+        } else {
+            g_dropped = wnd;
+            if (it) {
+                it->track = it->cursel;
+                it->opened = 1;
+            }
+            SetCapture(wnd);
+        }
+        ween_top_level(wnd)->dirty = 1;
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        int ox, oy, px, py, pw, ph, sy, ih = item_height(wnd);
+        if (GetCapture() != wnd || g_dropped != wnd)
+            return 0;
+        it = items_of(wnd);
+        ween_client_origin(wnd, &ox, &oy);
+        combo_list_rect(wnd, &px, &py, &pw, &ph);
+        sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (it) {
+            int at = sy >= 0 && sy < ph - 2 ? sy / (ih ? ih : 1) : -1;
+            if (at >= it->count)
+                at = -1;
+            if (at != it->track) {
+                it->track = at;
+                it->opened = 0; /* a drag into the list commits on release */
+                ween_top_level(wnd)->dirty = 1;
+            }
+        }
+        return 0;
+    }
+    case WM_LBUTTONUP: {
+        int ox, oy, px, py, pw, ph, sy, ih = item_height(wnd);
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        if (g_dropped != wnd)
+            return 0;
+        it = items_of(wnd);
+        ween_client_origin(wnd, &ox, &oy);
+        combo_list_rect(wnd, &px, &py, &pw, &ph);
+        sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (sy >= 0 && sy < ph - 2 && it) {
+            /* releasing over an item picks it and closes the list */
+            int at = sy / (ih ? ih : 1);
+            if (at >= 0 && at < it->count) {
+                it->cursel = at;
                 if (wnd->parent)
                     SendMessageA(wnd->parent, WM_COMMAND,
                                  MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE),
                                  (LPARAM)wnd);
             }
+            it->track = -1;
             g_dropped = NULL;
-        } else {
-            g_dropped = wnd;
+        } else if (it && !it->opened) {
+            g_dropped = NULL; /* released off the list without opening it */
+            it->track = -1;
         }
+        if (it)
+            it->opened = 0;
         ween_top_level(wnd)->dirty = 1;
         return 0;
     }
     case WM_KILLFOCUS:
         if (g_dropped == wnd) {
+            it = wnd->ctl;
+            if (it)
+                it->track = -1;
             g_dropped = NULL;
             ween_top_level(wnd)->dirty = 1;
         }
@@ -1888,8 +2036,11 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_items *it;
     switch (msg) {
-    case WM_CREATE: {
-        /* the strip sizes itself to the bottom of the parent's client area */
+    case WM_CREATE:
+    case WM_SIZE: {
+        /* the strip sits along the bottom of the parent's client area, and
+         * follows it when the window is resized — the app forwards WM_SIZE,
+         * as a win32 app does */
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
         RECT pc;
         wnd->h = (f ? f->ascent - f->descent : 13) + 5;
@@ -1898,6 +2049,7 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             wnd->x = 0;
             wnd->y = pc.bottom - wnd->h;
         }
+        InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
     case WM_PAINT: {
@@ -1906,6 +2058,18 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         status_paint(wnd, dc, &ps);
         EndPaint(wnd, &ps);
         return 0;
+    }
+    case WM_NCHITTEST: {
+        /* the grip in the corner resizes the window, as it does in win32 */
+        RECT cr;
+        int ox, oy, x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+        if (!(wnd->style & SBARS_SIZEGRIP))
+            return HTCLIENT;
+        GetClientRect(wnd, &cr);
+        ween_client_origin(wnd, &ox, &oy);
+        if (x - ox >= cr.right - 15 && y - oy >= cr.bottom - 15)
+            return HTBOTTOMRIGHT;
+        return HTCLIENT;
     }
     case SB_SETPARTS: {
         const int *edges = (const int *)lp;

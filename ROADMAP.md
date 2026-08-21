@@ -79,17 +79,19 @@ implement the class, then add `#define WEEN32_HAS_<NAME> 1` to
 Every control responds to the mouse and keyboard, and reports through the
 message its win32 counterpart uses:
 
-- **EDIT** — click to place the caret, type, backspace, delete, arrows and
-  Home/End; `EN_CHANGE` to the parent. It draws a caret when focused.
+- **EDIT** — click to place the caret, drag or Shift+arrows to select, type
+  over a selection, backspace, delete, arrows and Home/End; `EN_CHANGE` to the
+  parent, a caret when focused, and the selection on a highlight bar.
 - **BUTTON** — press and release tracking, auto check boxes and radio groups,
   `BN_CLICKED`.
 - **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`; its scroll bar
   scrolls, by arrow, page, thumb or wheel, and the arrows keep the selection in
   view.
-- **COMBOBOX** — click to drop the list, click an item to pick it,
-  `CBN_SELCHANGE`. The list is painted over everything else and gets first
-  refusal on the mouse, which is how it escapes its own client area without a
-  second top-level window.
+- **COMBOBOX** — press to drop the list; while the button is held the item
+  under the pointer highlights and only the release picks it, which is how the
+  control has always behaved. `CBN_SELCHANGE`. The list is painted over
+  everything else and gets first refusal on the mouse, which is how it escapes
+  its own client area without a second top-level window.
 - **SCROLLBAR** — arrows scroll a line, the track a page, and the thumb drags;
   `WM_HSCROLL`/`WM_VSCROLL` with `SB_LINEUP`, `SB_PAGEUP`, `SB_THUMBTRACK`,
   `SB_THUMBPOSITION` and `SB_ENDSCROLL`.
@@ -110,9 +112,9 @@ asserts where each control ends up, so CI covers it.
 
 ### What they still do not do
 
-- [ ] **Selection and the clipboard in EDIT** — no shift-select, no cut, copy
-      or paste, and no horizontal scroll when the text outruns the field: it
-      is clipped instead.
+- [ ] **The clipboard, and double-click to select a word** — the edit selects
+      by dragging and by Shift+arrows, but there is no cut, copy or paste, and
+      no horizontal scroll when the text outruns the field: it is clipped.
 - [ ] **A blinking caret** — the caret is drawn solid, because there are no
       timers (`SetTimer`/`WM_TIMER`).
 - [ ] **Scrolling the list view** — its rows do not scroll yet; the list box
@@ -150,9 +152,14 @@ asserts where each control ends up, so CI covers it.
 ## Beyond the 98.css list
 
 Not on that page, but a real application needs them: menus (`HMENU`,
-`WM_INITMENU`, popup tracking), accelerator tables, toolbars, tooltips, modal
-`DialogBox`/`MessageBoxA`, and resizable windows (`WM_SIZE`; `MoveWindow`
-currently cannot resize the top-level surface, `src/user.c:427`).
+`WM_INITMENU`, popup tracking), accelerator tables, toolbars, tooltips, and
+modal `DialogBox`/`MessageBoxA`.
+
+Resizing is done: `WS_THICKFRAME` gives a window a sizing border, its corners
+and edges drag, the status bar's grip claims `HTBOTTOMRIGHT` as it does in
+win32, `MoveWindow` really resizes, the surface follows and the app hears
+`WM_SIZE`. A window without that style stays fixed — and tells the window
+manager so, which is why one could not be resized before.
 
 ## Known limits
 
@@ -213,7 +220,7 @@ them is in one of four places:
 
 | Where | Pixels | Why |
 | --- | --- | --- |
-| `EDIT` text | 660 | glyph spacing: Wine steps its edit text by advances we reproduce to within a pixel per character |
+| `EDIT` text | ~900 | deliberate: Wine spaces an edit's characters out to the width GDI *reports*, which is wider and reads as uneven, and shifts the text as you type. We lay it out on the strike's advances, like every other control, which is what Windows looked like |
 | one tab | 651 | Wine measures one of the four tab strings three pixels narrower than we do, and the tabs after it shift |
 | the close box | 509 | Wine antialiases the Marlett glyph; classic Windows drew it aliased, and so do we |
 | a disabled label | ~400 | the same measuring difference, on a centred push-button label |

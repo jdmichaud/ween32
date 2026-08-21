@@ -33,6 +33,9 @@
 #endif
 
 static HFONT g_font;
+#if HAVE(STATUSBAR)
+static HWND g_status; /* kept so WM_SIZE can be forwarded to it */
+#endif
 
 static HWND mk(const char *cls, const char *text, DWORD style, DWORD ex, int x,
                int y, int w, int h, HWND parent, int id)
@@ -261,6 +264,7 @@ static void statusbar(HWND w)
     HWND sb = CreateWindowExA(0, STATUSCLASSNAMEA, "",
                               WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
                               w, NULL, NULL, NULL);
+    g_status = sb;
     if (g_font)
         SendMessageA(sb, WM_SETFONT, (WPARAM)g_font, TRUE);
     int parts[] = { 200, 380, -1 };
@@ -320,6 +324,13 @@ static LRESULT CALLBACK WndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CREATE:
         build(w);
         return 0;
+    case WM_SIZE:
+#if HAVE(STATUSBAR)
+        /* the status bar resizes with its parent, as every win32 app does */
+        if (g_status)
+            SendMessageA(g_status, WM_SIZE, wp, lp);
+#endif
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -353,7 +364,10 @@ int main(void)
     RegisterClassA(&wc);
 
     RECT r = { 0, 0, 660, 420 };
-    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
+    /* WS_THICKFRAME: a sizing border, so the window can be resized by its
+     * edges and by the status bar's grip */
+    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                  WS_VISIBLE;
     AdjustWindowRect(&r, style, FALSE);
     /* WS_EX_DLGMODALFRAME: no system-menu icon in the caption. The icon
      * win32 would otherwise draw is its own bitmap, which ween32 has no way

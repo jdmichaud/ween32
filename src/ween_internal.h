@@ -42,6 +42,7 @@ typedef struct {
 #define WEEN_CAP_TEXT WEEN_RGBX(255, 255, 255)
 
 int ween_surface_init(ween_surface *s, int w, int h);
+int ween_surface_resize(ween_surface *s, int w, int h);
 void ween_surface_free(ween_surface *s);
 void ween_surface_clear(ween_surface *s, ween_color c);
 /* Restrict drawing to a rectangle; window painting sets this per window. */
@@ -112,11 +113,8 @@ int ween_strike_text_extent(const ween_strike *f, const char *s, int len);
 /* y is the top of the text cell (TA_TOP); baseline = y + ascent. */
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
                       const char *text, int len, ween_color color);
-/* As above, but stepping by the reported advances — how EDIT spaces text. */
-void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
-                              int y, const char *text, int len, ween_color color);
-int ween_strike_logical_pen(const ween_strike *f, const char *text, int len,
-                            int index);
+/* The pen offset of a character, for placing a caret or hit-testing a click. */
+int ween_strike_pen(const ween_strike *f, const char *text, int index);
 
 /* Marlett caption glyphs from glyf outlines, even-odd scanline fill (from
  * marlett.zig). code: 0x72 close, 0x30 min, 0x31 max, 0x32 restore. */
@@ -201,7 +199,8 @@ struct ween_wnd {
  * chrome, matching the validated win2k_popup_wine reference: 16x14 caption
  * buttons at y=6, 2px in from the frame). Scale through ween_ncm() for the
  * system dpi, like the classic SM_* system metrics did. */
-#define WEEN_NC_FRAME 3
+#define WEEN_NC_FRAME 3       /* a fixed window's frame */
+#define WEEN_NC_SIZEFRAME 4   /* WS_THICKFRAME: the sizing border */
 /* Caption strip: 19px at 96 dpi, of which the gradient paints the top 18 and
  * the last row stays face-coloured — what win32 does for CaptionHeight=18. */
 #define WEEN_NC_CAPTION 19
@@ -239,6 +238,7 @@ void ween_controls_free(HWND w); /* per-class state, on destroy */
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);
 HWND ween_top_level(HWND wnd);
+int ween_frame_width(const struct ween_wnd *w); /* scaled, per style */
 HWND ween_focus_get(void);
 /* The next/previous focusable (WS_TABSTOP) child of `dlg`, wrapping. */
 HWND ween_tab_next(HWND dlg, HWND cur, int forward);
@@ -256,7 +256,8 @@ typedef enum {
     WEEN_EV_MOUSE_UP,
     WEEN_EV_MOUSE_MOVE,
     WEEN_EV_KEY,   /* vk: translated virtual-key code */
-    WEEN_EV_WHEEL, /* button: +1 away from the user, -1 toward */
+    WEEN_EV_WHEEL,  /* button: +1 away from the user, -1 toward */
+    WEEN_EV_RESIZE, /* x, y: the window's new size */
     WEEN_EV_CLOSE,
     WEEN_EV_END /* event source exhausted (headless) / connection lost */
 } ween_ev_kind;
@@ -275,6 +276,10 @@ typedef struct {
     void *(*open)(int w, int h, const char *title);
     void (*present)(void *win, const ween_surface *s);
     void (*move_by)(void *win, int dx, int dy);
+    /* Ask the window system for a new size, and say whether the user may
+     * resize the window themselves. */
+    void (*resize)(void *win, int w, int h);
+    void (*set_resizable)(void *win, int resizable);
     /* Blocks until the next event. */
     ween_event (*next_event)(void *win);
     void (*close)(void *win);

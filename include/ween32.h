@@ -194,6 +194,8 @@ typedef struct tagCREATESTRUCTA {
 #define WM_CREATE 0x0001
 #define WM_DESTROY 0x0002
 #define WM_MOVE 0x0003
+#define WM_SIZE 0x0005
+#define SIZE_RESTORED 0
 #define WM_SETFOCUS 0x0007
 #define WM_KILLFOCUS 0x0008
 #define WM_SETTEXT 0x000C
@@ -239,6 +241,10 @@ typedef struct tagCREATESTRUCTA {
 #define WS_DLGFRAME 0x00400000L
 #define WS_SYSMENU 0x00080000L
 #define WS_DISABLED 0x08000000L
+#define WS_THICKFRAME 0x00040000L
+#define WS_SIZEBOX WS_THICKFRAME
+#define WS_MINIMIZEBOX 0x00020000L
+#define WS_MAXIMIZEBOX 0x00010000L
 #define WS_VSCROLL 0x00200000L
 #define WS_HSCROLL 0x00100000L
 #define WS_GROUP 0x00020000L
@@ -486,6 +492,14 @@ typedef struct tagTCITEMA {
 #define HTNOWHERE 0
 #define HTCLIENT 1
 #define HTCAPTION 2
+#define HTLEFT 10
+#define HTRIGHT 11
+#define HTTOP 12
+#define HTTOPLEFT 13
+#define HTTOPRIGHT 14
+#define HTBOTTOM 15
+#define HTBOTTOMLEFT 16
+#define HTBOTTOMRIGHT 17
 #define HTCLOSE 20
 
 /* ---- ShowWindow --------------------------------------------------------- */

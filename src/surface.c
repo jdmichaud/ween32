@@ -21,6 +21,25 @@ int ween_surface_init(ween_surface *s, int w, int h)
     return 1;
 }
 
+/* Grow or shrink the buffer, keeping nothing: the window repaints anyway. */
+int ween_surface_resize(ween_surface *s, int w, int h)
+{
+    ween_color *px;
+    if (w <= 0 || h <= 0)
+        return 0;
+    if (w == s->w && h == s->h)
+        return 1;
+    px = calloc((size_t)w * (size_t)h, sizeof(ween_color));
+    if (!px)
+        return 0;
+    free(s->px);
+    s->px = px;
+    s->w = w;
+    s->h = h;
+    ween_surface_clip(s, 0, 0, w, h);
+    return 1;
+}
+
 void ween_surface_free(ween_surface *s)
 {
     free(s->px);

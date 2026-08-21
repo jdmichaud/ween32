@@ -257,42 +257,17 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
         pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
 }
 
-/* Text laid out to its *reported* width rather than the strike's.
+/* Where the caret sits before character `index`.
  *
- * GDI reports a string wider than the strike draws it (see the character
- * extents above), and the classic EDIT lays its text out to the reported
- * width — its characters sit a little further apart than a label's, and a
- * caret has to land between them. The difference is spread evenly along the
- * run, as justification does: stepping each glyph by its own rounded-up
- * advance instead would bunch whole pixels onto a few pairs and read as
- * uneven, which is not what the control looks like. */
-/* Where the caret sits before character `index`, under the same layout. */
-int ween_strike_logical_pen(const ween_strike *f, const char *text, int len,
-                            int index)
+ * Text in an edit is laid out on the strike's own advances, the same as a
+ * label or a list item. Wine spreads an edit's characters out to the width
+ * GDI *reports* instead, which is wider — the letters come out unevenly
+ * spaced, and inserting one character shifts the ones after it by a pixel or
+ * two. Windows did not look like that, and neither do we. */
+int ween_strike_pen(const ween_strike *f, const char *text, int index)
 {
-    int extra = ween_strike_text_extent(f, text, len) -
-                ween_strike_text_width(f, text, len);
     int pen = 0;
-    if (len <= 0)
-        return 0;
-    for (int i = 0; i < index && i < len; i++)
+    for (int i = 0; i < index; i++)
         pen += ween_strike_char_advance(f, (unsigned char)text[i]);
-    return pen + (2 * extra * index + len) / (2 * len);
-}
-
-void ween_strike_draw_logical(const ween_strike *f, ween_surface *s, int x,
-                              int y, const char *text, int len, ween_color color)
-{
-    int baseline = y + f->ascent;
-    int extra = ween_strike_text_extent(f, text, len) -
-                ween_strike_text_width(f, text, len);
-    int pen = 0;
-    if (len <= 0)
-        return;
-    for (int i = 0; i < len; i++) {
-        int spread = (2 * extra * i + len) / (2 * len); /* rounded share */
-        draw_char(f, s, x + pen + spread, baseline, (unsigned char)text[i],
-                  color);
-        pen += ween_strike_char_advance(f, (unsigned char)text[i]);
-    }
+    return pen;
 }
