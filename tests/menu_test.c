@@ -124,8 +124,12 @@ int main(void)
         ween_menu_popup_size(g_file, ween_gui_font(), &pw, &ph);
         ween_menuitem *open = ween_menu_item(g_file, 1);
         CHECK(pw > 0 && ph > 0, "the drop-down has a size");
-        CHECK(ween_menu_item(g_file, 2)->h == 5,
-              "a separator is five pixels tall");
+        CHECK(ween_menu_item(g_file, 2)->h == 9,
+              "a separator's box is nine pixels tall, as the capture has it");
+        CHECK(ween_menu_item(g_file, 0)->h == 17,
+              "and an item seventeen — the font's height plus four");
+        CHECK(ween_menu_item(g_file, 0)->y == 3,
+              "the first item starts below the border and its padding");
 
         mouse(WEEN_EV_MOUSE_DOWN, frame + 4, bar_y + 5); /* on "File" */
         mouse(WEEN_EV_MOUSE_MOVE, 10, open->y + open->h / 2);

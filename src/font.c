@@ -198,16 +198,26 @@ int ween_strike_char_advance(const ween_strike *f, unsigned char c)
 
 /* The advance GDI would report for a character: the outline's, scaled to the
  * strike's ppem and rounded up. */
-int ween_strike_char_extent(const ween_strike *f, unsigned char c)
+/* A character's advance in the font's own design units, before any rounding
+ * to pixels. Measuring a whole string means summing these and rounding once;
+ * rounding each one first is what made long strings drift wide. */
+uint32_t ween_strike_char_units(const ween_strike *f, unsigned char c)
 {
     uint16_t g;
-    uint32_t units;
     if (!f->hmtx || !f->upem || !f->nhmtx)
-        return ween_strike_char_advance(f, c);
+        return 0;
     g = glyph_index(f, c);
     if (g >= f->nhmtx)
         g = (uint16_t)(f->nhmtx - 1);
-    units = rd16(f->ttf, f->hmtx + 4u * g);
+    return rd16(f->ttf, f->hmtx + 4u * g);
+}
+
+int ween_strike_char_extent(const ween_strike *f, unsigned char c)
+{
+    uint32_t units;
+    if (!f->hmtx || !f->upem || !f->nhmtx)
+        return ween_strike_char_advance(f, c);
+    units = ween_strike_char_units(f, c);
     return (int)((units * (uint32_t)f->ppem + f->upem - 1) / f->upem);
 }
 

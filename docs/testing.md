@@ -47,6 +47,18 @@ PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
   tools/refcapture/pxdiff.py                # expect 532 / 39200 — 1.4%
 ```
 
+There is a third reference, `menu-popup-reference.png`, for a drop-down. It
+has to be captured with the menu open, which needs a click into wine:
+
+```sh
+CLICK_AT=55,80 tools/refcapture/capture.sh menu.c /dev/null
+# then crop the drop-down out of tools/refcapture/desktop.png
+```
+
+`CLICK_AT` is in the coordinates of wine's desktop window, so it depends on
+where the window manager put things — find the window's corner in the shot
+first rather than trusting a remembered number.
+
 Those two numbers are the ones to watch. **Going up is a regression** even if
 every test still passes — the suite asserts behaviour, the diff asserts
 appearance. When it moves, find out where before doing anything else:

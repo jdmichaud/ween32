@@ -286,6 +286,36 @@ static void fill_ellipse(ween_surface *s, int x, int y, int w, int h, int half,
 }
 
 /* DFCS_BUTTONCHECK / DFCS_BUTTON3STATE: a sunken field box with a tick. */
+/* The bare tick a menu puts beside a checked item — Wine's six-point mark,
+ * with no box around it. A menu is not a check box; drawing the frame too was
+ * the difference between "checked" and a control sitting in the gutter. */
+void ween_classic_checkmark(ween_surface *s, int x, int y, int w, int h,
+                            ween_color c)
+{
+    RECT in;
+    int d = make_square(&x, &y, w, h);
+    int t3;
+    POINT pt[6];
+    in.left = x + 1;
+    in.top = y + 1;
+    in.right = x + d - 1;
+    in.bottom = y + d - 1;
+    t3 = (in.bottom - in.top) / 3;
+    pt[0].x = in.right - 1;
+    pt[0].y = in.top;
+    pt[1].x = pt[0].x;
+    pt[1].y = pt[0].y + t3;
+    pt[2].x = in.left + (in.right - in.left) / 3;
+    pt[2].y = in.bottom - 1;
+    pt[3].x = in.left + 1;
+    pt[3].y = pt[2].y - (pt[2].x - pt[3].x);
+    pt[4].x = pt[3].x;
+    pt[4].y = pt[3].y - t3;
+    pt[5].x = pt[2].x;
+    pt[5].y = pt[2].y - t3;
+    fill_polygon(s, pt, 6, c);
+}
+
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags)
 {
     RECT in;
@@ -389,18 +419,16 @@ static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h,
                              ween_color c)
 {
-    int half = h / 4;          /* half its height: 3 for a 12px cell */
+    /* Five wide and nine tall for a 12px cell, which is what the reference
+     * capture has beside "Recent files". Drawn as its own columns rather than
+     * through fill_polygon, which stops one short of the far edge and left the
+     * point blunt. */
+    int half = h / 3;
     int cy = y + h / 2;
-    POINT tri[3];
     if (half < 2)
         half = 2;
-    tri[0].x = x;
-    tri[0].y = cy - half;
-    tri[1].x = x;
-    tri[1].y = cy + half;
-    tri[2].x = x + half;
-    tri[2].y = cy;
-    fill_polygon(s, tri, 3, c);
+    for (int i = 0; i <= half; i++)
+        ween_surface_vline(s, x + i, cy - (half - i), 2 * (half - i) + 1, c);
 }
 
 void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,

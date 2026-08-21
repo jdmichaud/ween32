@@ -17,11 +17,23 @@
 
 #include "ween_internal.h"
 
-/* Wine's menu.c constants. */
-#define MENU_BAR_ITEMS_SPACE 12
-#define SEPARATOR_HEIGHT 5
-#define MENU_TAB_SPACE 8  /* between an item's text and its accelerator */
-#define MENU_ITEM_LEFT 2  /* the popup's border to the check column */
+/* Measured off a wine capture of examples/menu.c with the File menu open —
+ * tools/refcapture/menu-popup-reference.png. Every number here was taken from
+ * those pixels rather than guessed, and the guesses they replaced were all
+ * wrong: the drop-down came out fourteen pixels short and two narrow.
+ *
+ * A drop-down is: a one-pixel COLOR_3DSHADOW rectangle (not a 3D edge — wine
+ * draws a flat line), two pixels of padding inside it, then the items. */
+#define MENU_BAR_ITEMS_SPACE 12 /* checked against the bar in the same capture */
+#define MENU_BORDER 1
+#define MENU_PAD 2          /* between the border and the first/last item */
+#define MENU_GUTTER 20      /* the popup's left edge to the label */
+#define MENU_LABEL_GAP 11   /* the widest label to the accelerator column */
+#define MENU_ACCEL_GAP 10   /* the widest accelerator to the arrow column */
+#define MENU_ARROW_COL 13   /* the column a submenu arrow is centred in */
+#define MENU_ITEM_PAD 4     /* item height is the font's height plus this */
+#define SEPARATOR_HEIGHT 9  /* the box; the line is drawn down its middle */
+#define SEPARATOR_INSET 3
 
 struct ween_menu {
     ween_menuitem *item;
@@ -167,17 +179,33 @@ static const char *accel_of(const char *text, int *label_len)
     return tab ? tab + 1 : NULL;
 }
 
-static int text_width(const ween_strike *f, const char *s, int len)
+/* Two ways to measure a string, and the menu needs both.
+ *
+ * `drawn` is the width the glyphs actually occupy, laid out on the strike's
+ * own advances. `reported` is what GDI would say, which rounds each
+ * character's outline advance up and so runs a little wide — by half a pixel
+ * a character, which on a twelve-character label is six.
+ *
+ * The bar is laid out on the reported width, because that is what matches the
+ * reference. A drop-down's columns are laid out on the drawn width, because
+ * that is what matches *there* — 142 against wine's 142, where the reported
+ * width gives 151. Neither is principled; both were measured. Rounding them
+ * the same way was tried and is worse on both counts. */
+static int text_reported(const ween_strike *f, const char *s, int len)
 {
     return (!f || !s || len <= 0) ? 0 : ween_strike_text_extent(f, s, len);
 }
 
-/* Mnemonic markers are not drawn, so they are not measured either. */
-static int label_width(const ween_strike *f, const char *text, int len)
+static int text_drawn(const ween_strike *f, const char *s, int len)
 {
-    char buf[256];
+    return (!f || !s || len <= 0) ? 0 : ween_strike_text_width(f, s, len);
+}
+
+/* Mnemonic markers are not drawn, so they are not measured either. */
+static int strip_mnemonic(const char *text, int len, char *buf, int cap)
+{
     int n = 0;
-    for (int i = 0; i < len && n < (int)sizeof(buf) - 1; i++) {
+    for (int i = 0; i < len && n < cap - 1; i++) {
         if (text[i] == '&' && i + 1 < len) {
             if (text[i + 1] != '&')
                 continue;
@@ -185,7 +213,21 @@ static int label_width(const ween_strike *f, const char *text, int len)
         }
         buf[n++] = text[i];
     }
-    return text_width(f, buf, n);
+    return n;
+}
+
+static int label_reported(const ween_strike *f, const char *text, int len)
+{
+    char buf[256];
+    int n = strip_mnemonic(text, len, buf, (int)sizeof(buf));
+    return text_reported(f, buf, n);
+}
+
+static int label_drawn(const ween_strike *f, const char *text, int len)
+{
+    char buf[256];
+    int n = strip_mnemonic(text, len, buf, (int)sizeof(buf));
+    return text_drawn(f, buf, n);
 }
 
 /* Lay the bar out across the window's width; each item keeps its own rect. */
@@ -198,7 +240,8 @@ void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width)
         ween_menuitem *it = &menu->item[i];
         int len;
         accel_of(it->text, &len);
-        it->w = label_width(f, it->text, len) + ween_ncm(MENU_BAR_ITEMS_SPACE);
+        it->w = label_reported(f, it->text, len) +
+                ween_ncm(MENU_BAR_ITEMS_SPACE);
         it->x = x;
         it->y = 0;
         it->h = ween_ncm(WEEN_NC_MENU);
@@ -207,15 +250,18 @@ void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width)
     (void)width;
 }
 
-/* A popup's size: the widest label, plus a check column and an accelerator
- * column, and every item as tall as the font's cell. */
+/* A popup's size and the rectangle of every item in it. Items run the full
+ * width inside the border; the label, the accelerator and the submenu arrow
+ * each have a column, and the columns are what the width is made of. */
 void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
 {
-    int label = 0, accel = 0, y = ween_ncm(MENU_ITEM_LEFT);
-    int check = ween_ncm(WEEN_NC_MENUCHECK);
-    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
-    int item_h = cell + ween_ncm(4);
-    int arrow = 0;
+    int label = 0, accel = 0, arrow = 0;
+    int border = ween_ncm(MENU_BORDER);
+    int y = border + ween_ncm(MENU_PAD);
+    /* the font's height, not its cell: an item is as tall as a line of text
+     * plus four, which is what the capture shows */
+    int th = f ? f->ascent - f->descent : 13;
+    int item_h = th + ween_ncm(MENU_ITEM_PAD);
 
     if (!menu) {
         *w = *h = 0;
@@ -225,27 +271,32 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
         ween_menuitem *it = &menu->item[i];
         int len;
         const char *acc = accel_of(it->text, &len);
-        int lw = label_width(f, it->text, len);
+        int lw = label_drawn(f, it->text, len);
         if (lw > label)
             label = lw;
         if (acc) {
-            int aw = text_width(f, acc, (int)strlen(acc));
+            int aw = text_drawn(f, acc, (int)strlen(acc));
             if (aw > accel)
                 accel = aw;
         }
         if (it->popup)
-            arrow = check; /* room for the submenu arrow on the right */
-        it->x = ween_ncm(MENU_ITEM_LEFT);
+            arrow = ween_ncm(MENU_ARROW_COL);
+        it->x = border;
         it->y = y;
         it->h = (it->flags & MF_SEPARATOR) ? ween_ncm(SEPARATOR_HEIGHT)
                                            : item_h;
         y += it->h;
     }
-    *w = check + label + (accel ? ween_ncm(MENU_TAB_SPACE) + accel : 0) +
-         arrow + ween_ncm(MENU_ITEM_LEFT) * 2 + ween_ncm(6);
-    *h = y + ween_ncm(MENU_ITEM_LEFT);
+
+    *w = ween_ncm(MENU_GUTTER) + label;
+    if (accel)
+        *w += ween_ncm(MENU_LABEL_GAP) + accel;
+    if (arrow)
+        *w += ween_ncm(MENU_ACCEL_GAP) + arrow;
+    *w += border;
+    *h = y + ween_ncm(MENU_PAD) + border;
     for (int i = 0; i < menu->count; i++)
-        menu->item[i].w = *w - ween_ncm(MENU_ITEM_LEFT) * 2;
+        menu->item[i].w = *w - 2 * border;
 }
 
 /* The item under a point, in the coordinates the layout used. -1 for none. */
@@ -337,14 +388,37 @@ void ween_menu_draw_bar(HMENU menu, ween_surface *s, int ox, int oy, int width,
 void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
                           int w, int h, int hot)
 {
-    int check = ween_ncm(WEEN_NC_MENUCHECK);
+    int border = ween_ncm(MENU_BORDER);
+    int gutter = ween_ncm(MENU_GUTTER);
+    int arrow_col = ween_ncm(MENU_ARROW_COL);
     int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    int label = 0, accel = 0, has_arrow = 0, accel_x;
 
     ween_surface_fill(s, 0, 0, w, h, WEEN_FACE); /* COLOR_MENU */
-    ween_classic_edge(s, 0, 0, w, h, BDR_RAISEDOUTER | BDR_RAISEDINNER,
-                      BF_RECT, NULL);
+    /* wine draws a flat one-pixel COLOR_3DSHADOW rectangle here, not a 3D
+     * edge — the capture has no highlight line inside it */
+    ween_surface_rect(s, 0, 0, w, h, WEEN_SHADOW);
     if (!menu)
         return;
+
+    /* the accelerator column is the same for every item, left-aligned, so it
+     * has to be found before any of them are drawn */
+    for (int i = 0; i < menu->count; i++) {
+        ween_menuitem *it = &menu->item[i];
+        int len;
+        const char *acc = accel_of(it->text, &len);
+        int lw = label_drawn(f, it->text, len);
+        if (lw > label)
+            label = lw;
+        if (acc) {
+            int aw = text_drawn(f, acc, (int)strlen(acc));
+            if (aw > accel)
+                accel = aw;
+        }
+        if (it->popup)
+            has_arrow = 1;
+    }
+    accel_x = gutter + label + ween_ncm(MENU_LABEL_GAP);
 
     for (int i = 0; i < menu->count; i++) {
         ween_menuitem *it = &menu->item[i];
@@ -353,10 +427,10 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
         ween_color fg = WEEN_BLACK;
 
         if (it->flags & MF_SEPARATOR) {
-            /* an etched line across, inset from both borders */
-            int y = it->y + it->h / 2;
-            ween_surface_hline(s, it->x, y, it->w, WEEN_SHADOW);
-            ween_surface_hline(s, it->x, y + 1, it->w, WEEN_WHITE);
+            /* a single line down the middle of its box, inset from the sides */
+            int inset = ween_ncm(SEPARATOR_INSET);
+            ween_surface_hline(s, it->x + inset, it->y + it->h / 2,
+                               it->w - 2 * inset, WEEN_SHADOW);
             continue;
         }
         if (i == hot && !(it->flags & MF_GRAYED)) {
@@ -367,17 +441,16 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
             fg = WEEN_SHADOW;
 
         int ty = it->y + (it->h - cell) / 2;
-        if (it->flags & MF_CHECKED) /* the tick sits in the left column */
-            ween_classic_check(s, it->x + ween_ncm(2), ty, check - ween_ncm(4),
-                               cell, DFCS_CHECKED | DFCS_FLAT);
-        draw_label(s, f, it->x + check, ty, it->text, len, fg);
+        if (it->flags & MF_CHECKED) /* a bare tick in the gutter, not a box */
+            ween_classic_checkmark(s, border + ween_ncm(3), ty, cell, cell, fg);
+        draw_label(s, f, gutter, ty, it->text, len, fg);
         if (acc)
-            draw_label(s, f, it->x + it->w - ween_ncm(MENU_ITEM_LEFT) -
-                                text_width(f, acc, (int)strlen(acc)) -
-                                ween_ncm(6),
-                       ty, acc, (int)strlen(acc), fg);
-        if (it->popup) /* the mark that says a cascade opens from here */
-            ween_classic_menu_arrow(s, it->x + it->w - check, ty, cell, fg);
+            draw_label(s, f, accel_x, ty, acc, (int)strlen(acc), fg);
+        if (it->popup) { /* centred in its column at the right */
+            int col = w - border - arrow_col;
+            ween_classic_menu_arrow(s, col + ween_ncm(2), ty, cell, fg);
+        }
+        (void)has_arrow;
     }
 }
 

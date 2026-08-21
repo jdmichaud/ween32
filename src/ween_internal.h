@@ -78,6 +78,8 @@ void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned fl
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_sizegrip(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
+void ween_classic_checkmark(ween_surface *s, int x, int y, int w, int h,
+                            ween_color c);
 void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
                                int dir, int inactive, int pushed);
 void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags);
@@ -110,6 +112,7 @@ int ween_strike_char_advance(const ween_strike *f, unsigned char c);
 /* What GDI would *report* for a character or string — outline advances,
  * rounded up; wider than the strike actually draws. */
 int ween_strike_char_extent(const ween_strike *f, unsigned char c);
+uint32_t ween_strike_char_units(const ween_strike *f, unsigned char c);
 int ween_strike_text_extent(const ween_strike *f, const char *s, int len);
 /* y is the top of the text cell (TA_TOP); baseline = y + ascent. */
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
