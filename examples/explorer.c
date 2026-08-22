@@ -468,6 +468,14 @@ static int g_crossing;      /* one pane clearing the other's selection */
 static int g_dragging;
 static char g_path[1024] = "/";
 
+/* Where this window has been and where it is in that, which is what the two
+ * arrows walk. A folder opened from anywhere else is pushed on the end; going
+ * back and then somewhere new drops what was in front. */
+#define HIST_MAX 32
+static char g_hist[HIST_MAX][sizeof(g_path)];
+static int g_hist_n, g_hist_at = -1;
+static int g_navigating; /* set while Back or Forward is doing the walking */
+
 /* The directory the list is showing, kept rather than re-read: sorting it is
  * a matter of ordering what is already here, and opening a row means knowing
  * which entry that row was. */
@@ -881,6 +889,46 @@ static void fill_fixture_list(void)
 }
 
 /* Fill the list from a directory, and say in the status bar what is in it. */
+/* The arrows are lit by where in the walk we are, which is the only thing
+ * that says whether there is anywhere to go. */
+static void history_buttons(void)
+{
+    if (!g_toolbar)
+        return;
+    SendMessageA(g_toolbar, TB_ENABLEBUTTON, IDM_BACK,
+                 MAKELPARAM(g_hist_at > 0, 0));
+    SendMessageA(g_toolbar, TB_ENABLEBUTTON, IDM_FORWARD,
+                 MAKELPARAM(g_hist_at >= 0 && g_hist_at < g_hist_n - 1, 0));
+}
+
+static void history_push(const char *path)
+{
+    if (g_hist_at >= 0 && !strcmp(g_hist[g_hist_at], path))
+        return; /* already there: opening it again is not a step */
+    if (g_hist_at + 1 >= HIST_MAX) { /* the oldest falls off the front */
+        memmove(g_hist[0], g_hist[1], sizeof(g_hist) - sizeof(g_hist[0]));
+        g_hist_at--;
+    }
+    g_hist_at++;
+    snprintf(g_hist[g_hist_at], sizeof(g_hist[0]), "%s", path);
+    g_hist_n = g_hist_at + 1;
+    history_buttons();
+}
+
+static void show_directory(const char *path);
+
+static void history_go(int step)
+{
+    int to = g_hist_at + step;
+    if (to < 0 || to >= g_hist_n)
+        return;
+    g_hist_at = to;
+    g_navigating = 1;
+    show_directory(g_hist[to]);
+    g_navigating = 0;
+    history_buttons();
+}
+
 static void show_directory(const char *path)
 {
     if (g_fixture) {
@@ -929,6 +977,8 @@ static void show_directory(const char *path)
 
     strncpy(g_path, path, sizeof(g_path) - 1);
     g_path[sizeof(g_path) - 1] = 0;
+    if (!g_navigating)
+        history_push(g_path);
 
     /* The address bar shows the way down to where you are, a step in for
      * each level — which is what the shell's does, only walking its own
@@ -2487,6 +2537,12 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_COMMAND:
         switch (LOWORD(wp)) {
+        case IDM_BACK:
+            history_go(-1);
+            return 0;
+        case IDM_FORWARD:
+            history_go(1);
+            return 0;
         case IDM_CLOSE:
             DestroyWindow(w);
             return 0;
