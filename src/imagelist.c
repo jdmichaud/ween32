@@ -437,6 +437,24 @@ void ween_imagelist_draw(HIMAGELIST il, int index, ween_surface *s, int x,
     }
 }
 
+/* The same shape in one colour, which is what greying one takes: win32 draws
+ * a dead image as its silhouette in white a pixel down and to the right, then
+ * again in shadow on the spot. */
+void ween_imagelist_draw_mono(HIMAGELIST il, int index, ween_surface *s, int x,
+                              int y, ween_color c)
+{
+    if (!il || index < 0 || index >= il->count || !s)
+        return;
+    size_t base = (size_t)index * il->cx * il->cy;
+    for (int iy = 0; iy < il->cy; iy++) {
+        for (int ix = 0; ix < il->cx; ix++) {
+            size_t at = base + (size_t)iy * il->cx + ix;
+            if (il->mask[at])
+                ween_surface_pixel(s, x + ix, y + iy, c);
+        }
+    }
+}
+
 BOOL ImageList_Draw(HIMAGELIST il, int index, HDC dc, int x, int y, UINT style)
 {
     (void)style; /* ILD_NORMAL and ILD_TRANSPARENT are the same here: the mask

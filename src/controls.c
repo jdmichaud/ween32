@@ -3285,7 +3285,7 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * share the boundary rather than doubling it. */
             if (checked && !held)
                 ween_classic_check_dither(&top->surface, bx + 3, by + 2,
-                                          b->w - 5, h - 3);
+                                          b->w - 4, h - 4);
             /* A pixel wider than the hot edge: this one closes on the far
              * side of the boundary it shares with the next button, where the
              * hot edge stops short of it. Both are measured. */
@@ -3330,11 +3330,13 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* A button with no label carries its image a pixel further
              * left than one with, though both reserve the same inset when
              * their width is worked out. Measured, like the rest of this. */
+            int ix = bx + ween_ncm(WEEN_TB_ICON_X) + (b->text ? 0 : -1) +
+                     shift;
+            int iy = by + (h - 16) / 2 + shift;
+            /* Not greyed here: a toolbar's strip carries its own dead
+             * images, which is what the app hands over. */
             if (from && b->image >= 0)
-                ween_imagelist_draw(from, b->image, &top->surface,
-                                    bx + ween_ncm(WEEN_TB_ICON_X) +
-                                        (b->text ? 0 : -1) + shift,
-                                    by + (h - 16) / 2 + shift);
+                ween_imagelist_draw(from, b->image, &top->surface, ix, iy);
         }
         if (f && b->text)
             ween_strike_draw(f, &top->surface,
@@ -3346,7 +3348,14 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* the arrow half, with a line marking it off from the body */
             int ax = bx + b->w - ween_ncm(b->text ? WEEN_TB_DROP_W
                                                   : WEEN_TB_DROP_W_ICON);
-            ween_classic_arrow_down(&top->surface, ax + 4, by + h / 2 - 1,
+            int gx = ax + 4, gy = by + h / 2 - 1;
+            /* A dead one is embossed rather than merely greyed: the shape in
+             * shadow with a white copy of it a pixel down and to the right,
+             * which is how win32 greys any glyph. */
+            if (!enabled)
+                ween_classic_arrow_down(&top->surface, gx + 1, gy + 1,
+                                        WEEN_TB_DROP_ARROW_W, WEEN_WHITE);
+            ween_classic_arrow_down(&top->surface, gx, gy,
                                     WEEN_TB_DROP_ARROW_W,
                                     enabled ? WEEN_BLACK : WEEN_SHADOW);
         }
