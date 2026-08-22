@@ -115,6 +115,77 @@ int main(void)
               "a file that is not there loads as nothing");
     }
 
+    /* A .ico. The file is built here rather than shipped, so the decoder is
+     * tested against bytes this test controls: one 4x4 image, four bits a
+     * pixel, with a mask that makes a single corner transparent. */
+    {
+        /* a 4x4 icon, four bits a pixel: red where the mask says draw */
+        unsigned char ico[] = {
+            0, 0, 1, 0, 1, 0,             /* ICONDIR: one image */
+            4, 4, 16, 0, 1, 0, 4, 0,      /* 4x4, 16 colours, 4bpp */
+            0, 0, 0, 0, 22, 0, 0, 0,      /* size filled in below, offset 22 */
+            40, 0, 0, 0,                  /* BITMAPINFOHEADER */
+            4, 0, 0, 0, 8, 0, 0, 0,       /* width 4, height 8 (doubled) */
+            1, 0, 4, 0, 0, 0, 0, 0,       /* 1 plane, 4bpp, BI_RGB */
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,               /* ...to a full 40-byte header */
+        };
+        unsigned char pal[16 * 4];
+        unsigned char xor_bits[4 * 4]; /* 4 rows, 4 bytes each (padded) */
+        unsigned char and_bits[4 * 4];
+        memset(pal, 0, sizeof(pal));
+        pal[4] = 0;    /* colour 1: blue=0 */
+        pal[5] = 0;    /* green=0 */
+        pal[6] = 0xff; /* red=255 */
+        memset(xor_bits, 0x11, sizeof(xor_bits)); /* every pixel colour 1 */
+        memset(and_bits, 0, sizeof(and_bits)); /* 0 = opaque */
+        /* Rows are stored bottom-up, so the last one in the file is the top
+         * row of the image: this makes the top-left pixel transparent. */
+        and_bits[3 * 4] = 0x80;
+
+        FILE *f = fopen("/tmp/ween_icon_test.ico", "wb");
+        CHECK(f != NULL, "somewhere to write a test icon");
+        if (f) {
+            unsigned long isize = 40 + sizeof(pal) + sizeof(xor_bits) +
+                                  sizeof(and_bits);
+            ico[14] = (unsigned char)(isize & 0xff);
+            ico[15] = (unsigned char)((isize >> 8) & 0xff);
+            fwrite(ico, 1, sizeof(ico), f);
+            fwrite(pal, 1, sizeof(pal), f);
+            fwrite(xor_bits, 1, sizeof(xor_bits), f);
+            fwrite(and_bits, 1, sizeof(and_bits), f);
+            fclose(f);
+        }
+
+        HICON icon = (HICON)LoadImageA(NULL, "/tmp/ween_icon_test.ico",
+                                       IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+        CHECK(icon != NULL, "and LoadImageA reads an icon out of it");
+        if (icon) {
+            HIMAGELIST ic = ImageList_Create(4, 4, ILC_MASK, 1, 1);
+            CHECK(ImageList_AddIcon(ic, icon) == 0,
+                  "an icon goes into an image list with its own mask");
+            ween_surface s;
+            ween_surface_init(&s, 4, 4);
+            ween_surface_clear(&s, WEEN_WHITE);
+            ween_imagelist_draw(ic, 0, &s, 0, 0);
+            int red = 0, white = 0;
+            for (int i = 0; i < 16; i++) {
+                if ((s.px[i] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
+                    red++;
+                else if ((s.px[i] & 0xffffff) == WEEN_WHITE)
+                    white++;
+            }
+            CHECK(red == 15 && white == 1,
+                  "and the pixel its mask calls transparent is not drawn");
+            CHECK((s.px[0] & 0xffffff) == WEEN_WHITE,
+                  "which is the one the mask named, in the right corner");
+            ween_surface_free(&s);
+            ImageList_Destroy(ic);
+            DestroyIcon(icon);
+        }
+    }
+
     /* A tree view draws the image an item names, and moves its label over. */
     {
         WNDCLASSA wc;

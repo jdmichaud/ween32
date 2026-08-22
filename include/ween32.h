@@ -870,6 +870,7 @@ BOOL IsClipboardFormatAvailable(UINT format);
  * LoadImageA reads a .bmp from disk (LR_LOADFROMFILE): there are no resources
  * to load from, ween32 having no .exe to hold them. */
 #define IMAGE_BITMAP 0
+#define IMAGE_ICON 1
 #define LR_LOADFROMFILE 0x0010
 #define CLR_NONE 0xFFFFFFFF
 #define ILC_COLOR 0x0000
@@ -887,6 +888,13 @@ int ImageList_AddMasked(HIMAGELIST il, HBITMAP image, COLORREF transparent);
 int ImageList_GetImageCount(HIMAGELIST il);
 BOOL ImageList_GetIconSize(HIMAGELIST il, int *cx, int *cy);
 BOOL ImageList_Draw(HIMAGELIST il, int index, HDC dc, int x, int y, UINT style);
+/* An icon carries its own transparency mask, which is what makes it an icon
+ * and not a bitmap. LoadImageA reads one from a .ico file with IMAGE_ICON. */
+int ImageList_AddIcon(HIMAGELIST il, HICON icon);
+void DestroyIcon(HICON icon);
+BOOL DrawIconEx(HDC dc, int x, int y, HICON icon, int cx, int cy, UINT frame,
+                HBRUSH flicker, UINT flags);
+#define DI_NORMAL 0x0003
 
 /* ---- accelerators ---------------------------------------------------------
  *

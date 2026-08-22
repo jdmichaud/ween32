@@ -139,10 +139,11 @@ const ween_marlett *ween_caption_font(void);
 /* ---- GDI objects and device contexts ------------------------------------ */
 
 typedef struct ween_gdiobj {
-    enum { WEEN_OBJ_BRUSH, WEEN_OBJ_FONT, WEEN_OBJ_BITMAP } kind;
+    enum { WEEN_OBJ_BRUSH, WEEN_OBJ_FONT, WEEN_OBJ_BITMAP, WEEN_OBJ_ICON } kind;
     ween_color color;         /* brush fill (surface format) */
     const ween_strike *font;  /* font strike */
-    ween_surface bitmap;      /* WEEN_OBJ_BITMAP: the pixels */
+    ween_surface bitmap;      /* WEEN_OBJ_BITMAP/ICON: the pixels */
+    unsigned char *mask;      /* WEEN_OBJ_ICON: 1 where a pixel is drawn */
     int is_static;            /* stock/system object: DeleteObject is a no-op */
 } ween_gdiobj;
 

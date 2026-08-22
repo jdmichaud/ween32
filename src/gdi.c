@@ -134,12 +134,12 @@ BOOL DeleteObject(HGDIOBJ obj)
 HGDIOBJ GetStockObject(int what)
 {
     /* is_static is what keeps DeleteObject from freeing these. */
-    static ween_gdiobj gui_font = { WEEN_OBJ_FONT, 0, NULL, { 0 }, 1 };
-    static ween_gdiobj white = { WEEN_OBJ_BRUSH, 0x00ffffff, NULL, { 0 }, 1 };
-    static ween_gdiobj black = { WEEN_OBJ_BRUSH, 0x00000000, NULL, { 0 }, 1 };
-    static ween_gdiobj gray = { WEEN_OBJ_BRUSH, 0x00808080, NULL, { 0 }, 1 };
-    static ween_gdiobj ltgray = { WEEN_OBJ_BRUSH, 0x00c0c0c0, NULL, { 0 }, 1 };
-    static ween_gdiobj dkgray = { WEEN_OBJ_BRUSH, 0x00404040, NULL, { 0 }, 1 };
+    static ween_gdiobj gui_font = { .kind = WEEN_OBJ_FONT, .color = 0, .is_static = 1 };
+    static ween_gdiobj white = { .kind = WEEN_OBJ_BRUSH, .color = 0x00ffffff, .is_static = 1 };
+    static ween_gdiobj black = { .kind = WEEN_OBJ_BRUSH, .color = 0x00000000, .is_static = 1 };
+    static ween_gdiobj gray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00808080, .is_static = 1 };
+    static ween_gdiobj ltgray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00c0c0c0, .is_static = 1 };
+    static ween_gdiobj dkgray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00404040, .is_static = 1 };
     switch (what) {
     case DEFAULT_GUI_FONT:
     case SYSTEM_FONT:
