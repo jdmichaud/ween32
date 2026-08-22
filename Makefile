@@ -18,7 +18,8 @@ src/x11.o: CFLAGS += -DWEEN_BACKEND_X11
 LIBS += -lX11
 endif
 
-all: libween32.a examples/dialog examples/calc examples/controls examples/menu
+all: libween32.a examples/dialog examples/calc examples/controls examples/menu \
+      examples/explorer/explorer
 
 libween32.a: $(OBJS)
 	ar rcs $@ $(OBJS)
@@ -39,6 +40,9 @@ examples/controls: examples/controls.c libween32.a
 
 examples/menu: examples/menu.c libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/menu.c libween32.a $(LIBS)
+
+examples/explorer/explorer: examples/explorer/explorer.c examples/fs.h libween32.a
+	$(CC) $(CFLAGS) -o $@ examples/explorer/explorer.c libween32.a $(LIBS)
 
 tests/render_test: tests/render_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
@@ -107,6 +111,7 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \
+	      examples/explorer/explorer \
 	      tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	      tests/resize_test tests/multiwin_test tests/timer_test tests/keys_test tests/menu_test tests/timer_test
 

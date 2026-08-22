@@ -23,6 +23,10 @@ typedef struct {
     char name[260];
     int is_dir;
     unsigned long size;
+    /* when it was last written, as "M/D/YYYY h:mm AM" — a string rather than
+     * a time_t or a FILETIME, because those are the two sides' own shapes and
+     * this is the one place that has to agree */
+    char modified[40]; /* "12/31/2038 12:59 PM" and room to spare */
 } fs_entry;
 
 #ifdef _WIN32
@@ -53,6 +57,16 @@ static int fs_next(fs_dir *d, fs_entry *e)
     e->name[sizeof(e->name) - 1] = 0;
     e->is_dir = (d->fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     e->size = d->fd.nFileSizeLow;
+    {
+        SYSTEMTIME st;
+        FILETIME local;
+        FileTimeToLocalFileTime(&d->fd.ftLastWriteTime, &local);
+        FileTimeToSystemTime(&local, &st);
+        snprintf(e->modified, sizeof(e->modified), "%d/%d/%d %d:%02d %s",
+                 st.wMonth, st.wDay, st.wYear,
+                 st.wHour % 12 ? st.wHour % 12 : 12, st.wMinute,
+                 st.wHour < 12 ? "AM" : "PM");
+    }
     return 1;
 }
 
@@ -66,6 +80,7 @@ static void fs_close(fs_dir *d)
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include <time.h>
 
 typedef struct {
     DIR *dir;
@@ -97,6 +112,17 @@ static int fs_next(fs_dir *d, fs_entry *e)
         e->name[sizeof(e->name) - 1] = 0;
         e->is_dir = S_ISDIR(st.st_mode) != 0;
         e->size = (unsigned long)st.st_size;
+        {
+            struct tm *tm = localtime(&st.st_mtime);
+            if (tm)
+                snprintf(e->modified, sizeof(e->modified),
+                         "%d/%d/%d %d:%02d %s", tm->tm_mon + 1, tm->tm_mday,
+                         tm->tm_year + 1900,
+                         tm->tm_hour % 12 ? tm->tm_hour % 12 : 12, tm->tm_min,
+                         tm->tm_hour < 12 ? "AM" : "PM");
+            else
+                e->modified[0] = 0;
+        }
         return 1;
     }
     return 0;

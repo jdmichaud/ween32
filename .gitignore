@@ -5,6 +5,7 @@ examples/calc
 examples/controls
 examples/dialog
 examples/menu
+examples/explorer/explorer
 tests/*_test
 
 # build outputs (zig)

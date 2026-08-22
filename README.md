@@ -10,6 +10,11 @@ reproduced pixel for pixel. The same program compiles unchanged against real
 
 ![the classic calculator, recreated as plain win32 code](docs/calc.png)
 
+A file browser, laid out from a screenshot of the real one — a rebar, a tree
+and a list either side of a splitter, and a status bar in three parts:
+
+![a Windows 2000 file browser](docs/explorer.png)
+
 **This is a work in progress.** See [ROADMAP.md](ROADMAP.md) for what works
 today and what does not, [docs/design.md](docs/design.md) for how it is
 built, and [docs/testing.md](docs/testing.md) for how to check it.
