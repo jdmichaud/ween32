@@ -397,6 +397,63 @@ int main(void)
         DestroyWindow(lw);
     }
 
+    /* A combo box's drop-down. It can be emptied — an address bar refills
+     * itself on every folder, and without CB_RESETCONTENT it only ever grew,
+     * going on showing the first path it was ever given. And once open it
+     * follows the pointer: click, let go, move over the list, and the item
+     * under the pointer is the one lit up. */
+    {
+        HWND cw = CreateWindowExA(0, "weenviews", "combo",
+                                  WS_POPUP | WS_VISIBLE, 0, 0, 220, 160, NULL,
+                                  NULL, NULL, NULL);
+        HWND cb = CreateWindowExA(0, "COMBOBOX", "",
+                                  WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 10,
+                                  10, 150, 100, cw, (HMENU)(UINT_PTR)8, NULL,
+                                  NULL);
+        const ween_surface *s;
+        int ox, oy, first_top = -1, first_bottom = -1, then_top = -1;
+
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"one");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"two");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"three");
+        CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 3, "a combo with three");
+        SendMessageA(cb, CB_RESETCONTENT, 0, 0);
+        CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 0,
+              "CB_RESETCONTENT empties it, so it can be refilled");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"one");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"two");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"three");
+        SendMessageA(cb, CB_SETCURSEL, 0, 0);
+
+        /* open it, and let go — which is where the tracking used to stop */
+        SendMessageA(cb, WM_LBUTTONDOWN, 0, MAKELPARAM(140, 8));
+        SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(140, 8));
+        InvalidateRect(cw, NULL, TRUE);
+        ween_flush_paint();
+        s = &cw->surface;
+        for (int y = 0; y < s->h; y++)
+            if ((s->px[(size_t)y * s->w + 20] & 0xffffff) == WEEN_CAP_LEFT) {
+                if (first_top < 0)
+                    first_top = y;
+                first_bottom = y;
+            }
+        CHECK(first_top > 0, "opening it highlights the item it is showing");
+
+        /* one item further down, in the coordinates a routed move arrives in */
+        ween_client_origin(cb, &ox, &oy);
+        SendMessageA(cb, WM_MOUSEMOVE, 0,
+                     MAKELPARAM(20, first_bottom + 2 - oy));
+        InvalidateRect(cw, NULL, TRUE);
+        ween_flush_paint();
+        s = &cw->surface;
+        for (int y = 0; y < s->h && then_top < 0; y++)
+            if ((s->px[(size_t)y * s->w + 20] & 0xffffff) == WEEN_CAP_LEFT)
+                then_top = y;
+        CHECK(then_top > first_top,
+              "and moving over the next one moves the highlight to it");
+        DestroyWindow(cw);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

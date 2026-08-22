@@ -1177,7 +1177,13 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_MOUSEMOVE: {
         int ox, oy, px, py, pw, ph, sy, ih = item_height(wnd);
-        if (GetCapture() != wnd || g_dropped != wnd)
+        /* An open list follows the pointer whether or not the button is still
+         * down: click to open, let go, and moving over the list still lights
+         * up the item under it. Requiring capture meant it only tracked while
+         * you dragged, and a plain click-then-move left the highlight stuck
+         * on whatever was selected. Moves reach here past everything else
+         * because the list is what ween_popup_hit answers with. */
+        if (g_dropped != wnd)
             return 0;
         it = items_of(wnd);
         ween_client_origin(wnd, &ox, &oy);
