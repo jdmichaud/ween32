@@ -12,12 +12,6 @@
 
 #include <ween32.h>
 
-#ifdef _WIN32 /* ween32.h reaches the rest of win32 for us */
-#define HAVE(feature) 1
-#else
-#define HAVE(feature) WEEN32_HAS_##feature
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1807,7 +1801,6 @@ static LRESULT CALLBACK splitter_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 
 /* ---- building the window -------------------------------------------------- */
 
-#if HAVE(MENU)
 static void build_menu(HWND w)
 {
     HMENU bar = CreateMenu();
@@ -1925,7 +1918,6 @@ static void build_menu(HWND w)
     (void)w;
 #endif
 }
-#endif
 
 /* Where the icons are.
  *
@@ -1993,7 +1985,6 @@ static const char *asset_dir(void)
     return base;
 }
 
-#if HAVE(IMAGELIST)
 /* The art, centred in a 16x16 bitmap and handed over with its background
  * named as the transparent colour — which is all ImageList_AddMasked wants. */
 static void add_glyph(HIMAGELIST il, const glyph *g)
@@ -2109,9 +2100,7 @@ static void load_icons(void)
                 "Set WEEN32_ASSETS to the assets/icons directory.\n",
                 missing / 2, asset_dir()[0] ? asset_dir() : "assets/icons");
 }
-#endif
 
-#if HAVE(TOOLBAR)
 static void build_bands(HWND w)
 {
     TBBUTTON b[14];
@@ -2239,9 +2228,7 @@ static void build_bands(HWND w)
         g.iString = (INT_PTR) "Go";
         SendMessageA(g_go, TB_ADDBUTTONSA, 1, (LPARAM)&g);
     }
-#if HAVE(IMAGELIST)
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
-#endif
 
     /* registered before anything is laid out, so the frame never keeps a
      * strip for a bar it is not going to draw */
@@ -2276,7 +2263,6 @@ static void build_bands(HWND w)
     bi.lpText = (char *)"Address";
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
 }
-#endif
 
 static void build_views(HWND w)
 {
@@ -2321,10 +2307,8 @@ static void build_views(HWND w)
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 
-#if HAVE(IMAGELIST)
     SendMessageA(g_tree, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)g_images);
     SendMessageA(g_list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
-#endif
 
     for (int i = 0; i < 4; i++) {
         LVCOLUMNA col;
@@ -2346,16 +2330,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_CREATE:
         g_main = w;
-#if HAVE(MENU)
         build_menu(w);
         build_context_menus();
-#endif
-#if HAVE(IMAGELIST)
         load_icons();
-#endif
-#if HAVE(TOOLBAR)
         build_bands(w);
-#endif
         build_views(w);
         /* the status bar's last part wears My Computer, as the machine's
          * does; it is set once, the parts themselves move with the window */
@@ -2595,7 +2573,6 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
-#if HAVE(MESSAGEBOX)
         case IDM_CTX_PROPERTIES: {
             char msg[600];
             const char *name = g_ctx_row >= 0 && g_ctx_row < g_entries
@@ -2611,7 +2588,6 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             MessageBoxA(w, "ween32 — a win32 for the rest of us.",
                         "About Windows", MB_OK);
             return 0;
-#endif
         }
         return 0;
 
@@ -2659,9 +2635,7 @@ int main(int argc, char **argv)
         wc.hIcon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
                                      LR_LOADFROMFILE);
     }
-#if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
-#endif
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));
@@ -2692,9 +2666,7 @@ int main(int argc, char **argv)
     wc.lpfnWndProc = splitter_proc;
     wc.lpszClassName = "explorersplit";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-#if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_SIZEWE);
-#endif
     RegisterClassA(&wc);
 
     g_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
