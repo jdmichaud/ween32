@@ -3535,9 +3535,10 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  */
 
 #define WEEN_RB_GRIPPER_W 3
-#define WEEN_RB_GRIPPER_INSET 2
+#define WEEN_RB_GRIPPER_X 4     /* from the rebar's left, past its own edge */
+#define WEEN_RB_GRIPPER_INSET 2 /* and from the top and bottom of its band */
 #define WEEN_RB_CONTENT_X 10
-#define WEEN_RB_EDGE_H 2 /* the etched line above each band */
+#define WEEN_RB_EDGE_H 2 /* the etched line above each band, and around all */
 #define WEEN_RB_LABEL_GAP 6
 
 typedef struct {
@@ -3593,15 +3594,17 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
                        ween_ncm(WEEN_RB_LABEL_GAP);
         if (b->child)
             MoveWindow(b->child, content, y + ween_ncm(WEEN_RB_EDGE_H),
-                       cr.right - content, b->h - ween_ncm(WEEN_RB_EDGE_H),
-                       TRUE);
+                       cr.right - content - ween_ncm(WEEN_RB_EDGE_H),
+                       b->h - ween_ncm(WEEN_RB_EDGE_H), TRUE);
         y += b->h;
     }
 }
 
 static int rebar_height(HWND wnd, ween_rebar *rb)
 {
-    int h = 0;
+    /* Each band carries the edge above it; the one under the last is the
+     * bottom of the control, so it is counted here rather than by a band. */
+    int h = ween_ncm(WEEN_RB_EDGE_H);
     rebar_layout(wnd, rb);
     for (int i = 0; i < rb->count; i++)
         h += rb->band[i].h;
@@ -3623,20 +3626,30 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         return;
     rebar_layout(wnd, rb);
 
+    /* The whole control is etched round: shadow then white on the top and
+     * left, the other way about on the bottom and right. The bands are then
+     * ruled off from each other with the same two lines, so the last one has
+     * an edge under it as well as over it. */
+    ween_classic_edge(&top->surface, ox, oy, r.right, r.bottom, EDGE_ETCHED,
+                      BF_RECT, NULL);
+
     for (int i = 0; i < rb->count; i++) {
         ween_rbband *b = &rb->band[i];
         int by = oy + b->y;
         int inner = b->h - ween_ncm(WEEN_RB_EDGE_H);
-        /* the etched line across the top of the band */
-        ween_surface_hline(&top->surface, ox, by, r.right, WEEN_SHADOW);
-        ween_surface_hline(&top->surface, ox, by + 1, r.right, WEEN_WHITE);
+        if (i) { /* the rebar's own top edge is the first band's */
+            ween_surface_hline(&top->surface, ox, by, r.right, WEEN_SHADOW);
+            ween_surface_hline(&top->surface, ox, by + 1, r.right, WEEN_WHITE);
+        }
         by += ween_ncm(WEEN_RB_EDGE_H);
 
         if (!(b->style & RBBS_NOGRIPPER)) {
+            /* one pixel of raised edge, not two: white down the left and
+             * along the top, shadow down the right and along the bottom */
             int gi = ween_ncm(WEEN_RB_GRIPPER_INSET);
-            ween_classic_edge(&top->surface, ox + gi, by + gi,
-                              ween_ncm(WEEN_RB_GRIPPER_W), inner - 2 * gi,
-                              EDGE_RAISED, BF_RECT, NULL);
+            ween_classic_edge(&top->surface, ox + ween_ncm(WEEN_RB_GRIPPER_X),
+                              by + gi, ween_ncm(WEEN_RB_GRIPPER_W),
+                              inner - 2 * gi, BDR_RAISEDINNER, BF_RECT, NULL);
         }
         if (b->text && f)
             ween_strike_draw(f, &top->surface, ox + ween_ncm(WEEN_RB_CONTENT_X),

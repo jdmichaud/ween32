@@ -214,8 +214,11 @@ int main(void)
         CHECK(SendMessageA(rebar, RB_GETBANDCOUNT, 0, 0) == 2,
               "the rebar counts two bands");
 
+        /* Two bands of 22 with an edge over each and one under the last:
+         * the rebar is ruled off top and bottom, not only between. */
         int height = (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0);
-        CHECK(height > 40, "and is as tall as both of them together");
+        CHECK(height == 2 + 22 + 2 + 22 + 2,
+              "and is both of them, each ruled off, and ruled off underneath");
 
         /* the bands moved their children into place, stacked */
         RECT tbr, ar;
