@@ -212,6 +212,7 @@ typedef struct ween_menuitem {
     UINT id;
     UINT flags;   /* MF_* */
     HMENU popup;  /* the submenu, for MF_POPUP */
+    HBITMAP bmp;  /* drawn in the gutter, from SetMenuItemBitmaps */
     int x, y, w, h;
 } ween_menuitem;
 

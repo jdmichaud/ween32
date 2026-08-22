@@ -839,6 +839,151 @@ static void fill_children(HTREEITEM parent, const char *path)
  */
 static HMENU g_folder_menu, g_file_menu;
 
+/* Send To is a menu with pictures in it, so here are its four, taken the same
+ * way as the toolbar's and in the same form. Nothing is masked out: a menu
+ * bitmap is blitted whole, and '.' is the menu's own colour. */
+static const char *const send_floppy_rows[] = {
+    ".........000000.",
+    "........12222223",
+    "........14444433",
+    "........14445553",
+    "........15555553",
+    "........16768783",
+    "..00000017000073",
+    ".077777716131483",
+    "044444444333333.",
+    "077777777797013.",
+    "077700007777013.",
+    "070033330007013.",
+    "077744447777013.",
+    "00000000000003..",
+    ".333333333333...",
+    "................",
+};
+static const COLORREF send_floppy_palette[] = {
+    RGB(132, 132, 132), RGB(115, 115, 115), RGB(156, 255, 255),
+    RGB(  0,   0,   0), RGB(255, 255, 255), RGB(206, 255, 255),
+    RGB(206, 206, 206), RGB(198, 198, 198), RGB(181, 181, 181),
+    RGB(255,   0,   0),
+};
+
+static const char *const send_desktop_rows[] = {
+    "............01..",
+    "...........234..",
+    "5555677777289a7a",
+    "5b56cdded2f9a56a",
+    "556cddee289agb6a",
+    "56cdhhh2f9a7eg6a",
+    "6cddhd289a7eccga",
+    "7ddehdi9aaece7ha",
+    "7deehdadeace7cha",
+    "7eeehdddeaecc7ha",
+    "7eeehdddeacc7cha",
+    "5eeeheeeeac7c7ga",
+    "55eeaaaaaa7c7gga",
+    "5b5eececc7c7gbga",
+    "6665hhhhhhhgggga",
+    "aaaaaaaaaaaaaaaa",
+};
+static const COLORREF send_desktop_palette[] = {
+    RGB(255,  82,  82), RGB(206,  49,   0), RGB(206, 156,   0),
+    RGB(255, 156, 206), RGB(156,   0,   0), RGB(  0, 156, 206),
+    RGB(  0,  99, 156), RGB(173, 173, 148), RGB(255, 206,   0),
+    RGB(156,  99,   0), RGB(  0,   0,   0), RGB( 99, 206, 255),
+    RGB(206, 206, 156), RGB(255, 255, 255), RGB(255, 255, 206),
+    RGB(255, 255, 156), RGB( 49,  99, 156), RGB(148, 148, 148),
+    RGB(156, 156,  99),
+};
+
+static const char *const send_mail_rows[] = {
+    "................",
+    "................",
+    ".0000000000000..",
+    ".01232323232101.",
+    ".02124242421201.",
+    ".03212424212401.",
+    ".02421242124201.",
+    ".03212121212401.",
+    ".02124212421201.",
+    ".01242424242101.",
+    ".02424242424201.",
+    ".00000000000001.",
+    "..1111111111111.",
+    "................",
+    "................",
+    "................",
+};
+static const COLORREF send_mail_palette[] = {
+    RGB(132, 132, 132), RGB(  0,   0,   0), RGB(255, 255,   0),
+    RGB(255, 255, 255), RGB(198, 198, 198),
+};
+
+static const char *const send_docs_rows[] = {
+    "........0.......",
+    ".......012......",
+    "...33301452.....",
+    "..3660147152....",
+    ".366014894152aa.",
+    ".36014b94b41526c",
+    ".3015de5de55552c",
+    "aaaaaaaaaaaae152",
+    "a4ffffffgfg6c552",
+    "a4ffffgffgf6ce2c",
+    ".a4fffffgfggacac",
+    ".a4ffgfgfggg6cac",
+    "..a4gfgfgggg6acc",
+    "..aaaaaaaaaaaacc",
+    "...ccccccccccccc",
+    "................",
+};
+static const COLORREF send_docs_palette[] = {
+    RGB( 99,  99, 156), RGB(206, 255, 255), RGB(  0,   0,   0),
+    RGB(132, 132,   0), RGB(255, 255, 255), RGB(206, 206, 255),
+    RGB(206, 206,  99), RGB( 49, 156, 255), RGB(  0,  99, 255),
+    RGB(156, 255, 255), RGB(156, 156,   0), RGB( 49,  49, 206),
+    RGB( 49,  49,   0), RGB( 49,   0, 156), RGB(156, 156, 255),
+    RGB(255, 255, 156), RGB(255, 206, 156),
+};
+
+/* the four, in the order the shell lists them */
+static const glyph g_send_icons[] = {
+    { 16, 16, 0, 0, send_floppy_rows, send_floppy_palette,
+      (int)(sizeof(send_floppy_palette) / sizeof(*send_floppy_palette)) },
+    { 16, 16, 0, 0, send_desktop_rows, send_desktop_palette,
+      (int)(sizeof(send_desktop_palette) / sizeof(*send_desktop_palette)) },
+    { 16, 16, 0, 0, send_mail_rows, send_mail_palette,
+      (int)(sizeof(send_mail_palette) / sizeof(*send_mail_palette)) },
+    { 16, 16, 0, 0, send_docs_rows, send_docs_palette,
+      (int)(sizeof(send_docs_palette) / sizeof(*send_docs_palette)) },
+};
+
+/* One of them as a bitmap the size Windows expects, background and all. */
+static HBITMAP menu_bitmap(const glyph *g)
+{
+    unsigned char bits[16 * 16 * 4];
+    COLORREF back = GetSysColor(COLOR_MENU);
+
+    for (int i = 0; i < 16 * 16; i++) {
+        bits[i * 4 + 0] = (unsigned char)(back >> 16); /* B,G,R, as a DIB is */
+        bits[i * 4 + 1] = (unsigned char)(back >> 8);
+        bits[i * 4 + 2] = (unsigned char)back;
+        bits[i * 4 + 3] = 0;
+    }
+    for (int y = 0; y < g->h; y++) {
+        for (int x = 0; x < g->w; x++) {
+            unsigned char *p = bits + (((size_t)(y + g->oy) * 16) + x + g->ox) * 4;
+            COLORREF c;
+            if (g->rows[y][x] == '.')
+                continue;
+            c = glyph_colour(g, g->rows[y][x]);
+            p[0] = (unsigned char)(c >> 16);
+            p[1] = (unsigned char)(c >> 8);
+            p[2] = (unsigned char)c;
+        }
+    }
+    return CreateBitmap(16, 16, 1, 32, bits);
+}
+
 static HMENU build_send_to(void)
 {
     HMENU m = CreatePopupMenu();
@@ -846,6 +991,10 @@ static HMENU build_send_to(void)
     AppendMenuA(m, MF_STRING, 0, "Desktop (create shortcut)");
     AppendMenuA(m, MF_STRING, 0, "Mail Recipient");
     AppendMenuA(m, MF_STRING, 0, "My Documents");
+    for (int i = 0; i < 4; i++) {
+        HBITMAP b = menu_bitmap(&g_send_icons[i]);
+        SetMenuItemBitmaps(m, (UINT)i, MF_BYPOSITION, b, b);
+    }
     return m;
 }
 

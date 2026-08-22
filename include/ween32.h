@@ -1026,6 +1026,11 @@ int GetMenuItemCount(HMENU menu);
 /* MF_BYPOSITION only: an application walking a menu bar to draw it itself —
  * which is what hosting one in a rebar band comes to — asks by position. */
 int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags);
+/* A picture in an item's gutter. Windows takes two — the one for the item
+ * unchecked and the one for it checked — and draws them where the check mark
+ * would go; the shell's "Send To" is a menu built this way. */
+BOOL SetMenuItemBitmaps(HMENU menu, UINT item, UINT flags, HBITMAP unchecked,
+                        HBITMAP checked);
 DWORD CheckMenuItem(HMENU menu, UINT id, UINT check);
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,

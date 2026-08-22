@@ -47,6 +47,14 @@
 #define MENU_ITEM_PAD 4     /* item height is the font's height plus this */
 #define SEPARATOR_HEIGHT 9  /* the box; the etched pair sits at its middle */
 #define MENU_SEP_INSET 4    /* the popup's edge to the end of the etched pair */
+/* A menu with pictures in it is laid out wider all round: measured off the
+ * shell's "Send To", whose four 16x16 icons make a 183 x 94 popup where the
+ * same four labels alone would make 168 x 74. */
+#define MENU_BMP_GUTTER 31  /* the popup's left edge to the label */
+#define MENU_BMP_X 9        /* where the picture sits in that gutter */
+#define MENU_BMP_PAD 3      /* over and under it, which is what heightens the
+                             * item: sixteen and three each way is twenty-two */
+#define MENU_BMP_MARGIN 4   /* and the extra such a menu keeps on the right */
 
 struct ween_menu {
     ween_menuitem *item;
@@ -193,6 +201,23 @@ DWORD CheckMenuItem(HMENU menu, UINT id, UINT check)
     return was;
 }
 
+/* Windows keeps two bitmaps per item and picks between them by the check
+ * state. Nothing here checks an item that has one, so the unchecked bitmap is
+ * the one that gets drawn; the other is kept so the call is not a lie. */
+BOOL SetMenuItemBitmaps(HMENU menu, UINT item, UINT flags, HBITMAP unchecked,
+                        HBITMAP checked)
+{
+    ween_menuitem *it;
+    if (flags & MF_BYPOSITION)
+        it = (menu && (int)item < menu->count) ? &menu->item[item] : NULL;
+    else
+        it = find_id(menu, item);
+    if (!it)
+        return FALSE;
+    it->bmp = unchecked ? unchecked : checked;
+    return TRUE;
+}
+
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable)
 {
     ween_menuitem *it = find_id(menu, id);
@@ -274,12 +299,29 @@ void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width)
     (void)width;
 }
 
+/* The widest and tallest picture in a menu. One item with a bitmap widens the
+ * gutter for all of them, the way one long accelerator sets the accelerator
+ * column, so this has to be known before any item is measured or drawn. */
+static void menu_bitmap_size(HMENU menu, int *w, int *h)
+{
+    *w = *h = 0;
+    for (int i = 0; menu && i < menu->count; i++) {
+        const ween_gdiobj *o = menu->item[i].bmp;
+        if (!o)
+            continue;
+        if (o->bitmap.w > *w)
+            *w = o->bitmap.w;
+        if (o->bitmap.h > *h)
+            *h = o->bitmap.h;
+    }
+}
+
 /* A popup's size and the rectangle of every item in it. Items run the full
  * width inside the border; the label, the accelerator and the submenu arrow
  * each have a column, and the columns are what the width is made of. */
 void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
 {
-    int label = 0, accel = 0, arrow = 0;
+    int label = 0, accel = 0, arrow = 0, bw = 0, bh = 0;
     int inset = ween_ncm(MENU_BORDER) + ween_ncm(MENU_PAD);
     int y = inset;
     /* the font's height, not its cell: an item is as tall as a line of text
@@ -291,6 +333,9 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
         *w = *h = 0;
         return;
     }
+    menu_bitmap_size(menu, &bw, &bh);
+    if (bh + 2 * ween_ncm(MENU_BMP_PAD) > item_h)
+        item_h = bh + 2 * ween_ncm(MENU_BMP_PAD);
     for (int i = 0; i < menu->count; i++) {
         ween_menuitem *it = &menu->item[i];
         int len;
@@ -318,10 +363,12 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
      * every menu but the one with a cascade in it text hard against the edge.
      * The accelerator column, by contrast, is only there when something needs
      * it — a menu with no accelerators does not leave a gap for them. */
-    *w = ween_ncm(MENU_GUTTER) + label;
+    *w = ween_ncm(bw ? MENU_BMP_GUTTER : MENU_GUTTER) + label;
     if (accel)
         *w += ween_ncm(MENU_LABEL_GAP) + accel;
     *w += ween_ncm(MENU_ACCEL_GAP) + ween_ncm(MENU_ARROW_COL);
+    if (bw)
+        *w += ween_ncm(MENU_BMP_MARGIN);
     *w += inset;
     (void)arrow;
     *h = y + inset;
@@ -422,8 +469,11 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
                           int w, int h, int hot)
 {
     int border = ween_ncm(MENU_BORDER);
-    int gutter = ween_ncm(MENU_GUTTER);
+    int bw = 0, bh = 0;
+    int gutter;
     int inset = border + ween_ncm(MENU_PAD);
+    menu_bitmap_size(menu, &bw, &bh);
+    gutter = ween_ncm(bw ? MENU_BMP_GUTTER : MENU_GUTTER);
     int arrow_col = ween_ncm(MENU_ARROW_COL);
     int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
     int label = 0, accel = 0, has_arrow = 0, accel_x;
@@ -479,11 +529,21 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
         if (it->flags & MF_GRAYED)
             fg = WEEN_SHADOW;
 
-        /* The four pixels an item has over the font's cell are not split
-         * evenly: the machine leaves one above the text and three below. */
+        /* The pixels an item has over the font's cell are not split evenly:
+         * the machine leaves one fewer above the text than below, in an item
+         * of seventeen and in the taller one a picture makes. */
         int ty = it->y + (it->h - cell) / 2 - 1;
         if (it->flags & MF_CHECKED) /* a bare tick in the gutter, not a box */
             ween_classic_checkmark(s, inset + ween_ncm(2), ty, cell, cell, fg);
+        if (it->bmp) { /* opaque, as Windows blits a menu bitmap */
+            const ween_surface *b = &it->bmp->bitmap;
+            int bx = ween_ncm(MENU_BMP_X);
+            int by = it->y + (it->h - b->h) / 2;
+            for (int py = 0; py < b->h; py++)
+                for (int px = 0; px < b->w; px++)
+                    ween_surface_pixel(s, bx + px, by + py,
+                                       b->px[(size_t)py * b->w + px]);
+        }
         /* the default item is drawn bold, which is how a menu says which one
          * a double click would have picked */
         draw_label(s, (it->flags & MF_DEFAULT) ? ween_gui_font_bold() : f,
