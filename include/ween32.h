@@ -979,6 +979,25 @@ typedef struct tagTBBUTTONINFOA {
     int cchText;
 } TBBUTTONINFOA;
 
+/* How big a button is and what surrounds its content. A toolbar works both
+ * out from the label and the image it is given; an application that wants
+ * them otherwise — a menu in a rebar band spaces its titles by sixteen —
+ * says so. */
+#define TB_SETBUTTONSIZE (WM_USER + 31)
+#define TB_SETPADDING (WM_USER + 87)
+#define TB_GETPADDING (WM_USER + 86)
+/* Which button the keyboard is on, and the letters that reach one: a menu in
+ * a band is walked with these. */
+#define TB_SETHOTITEM (WM_USER + 72)
+#define TB_GETHOTITEM (WM_USER + 71)
+#define TB_MAPACCELERATORA (WM_USER + 78)
+/* Extended styles. A drop-down button shows the arrow half only when the
+ * toolbar has been told to draw them; without it the whole button is the
+ * drop-down, which is what a menu title is. */
+#define TB_SETEXTENDEDSTYLE (WM_USER + 84)
+#define TB_GETEXTENDEDSTYLE (WM_USER + 85)
+#define TBSTYLE_EX_DRAWDDARROWS 0x00000001
+#define I_IMAGENONE (-2)
 #define TB_SETIMAGELIST (WM_USER + 48)
 /* The second set of images, used for whichever button the pointer is on.
  * Windows 2000 drew a toolbar's arrows grey and swapped to coloured ones

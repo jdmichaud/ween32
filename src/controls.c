@@ -3845,6 +3845,11 @@ typedef struct {
     int hot;     /* the button under the pointer, -1 for none */
     int pressed; /* the button being held, -1 for none */
     int drop;    /* the held button's arrow half, not its body */
+    DWORD ex;    /* TBSTYLE_EX_*: whether a drop-down shows its arrow half */
+    int pad_x;   /* what surrounds a label, when the app has said, else 0 */
+    int btn_h;   /* how tall a button is, when the app has said, else 0 */
+    int keyed;   /* the hot item was put there by the keyboard, not the mouse */
+    HWND unfocus; /* what had the focus when the keyboard reached this bar */
 } ween_toolbar;
 
 static void toolbar_free(void *p)
@@ -3869,6 +3874,50 @@ static ween_toolbar *toolbar_of(HWND w)
     return w->ctl;
 }
 
+/* A label's width without the marker that says which letter is its mnemonic:
+ * the '&' is not drawn, so it is not measured either. */
+static int tb_text_width(const ween_strike *f, const char *text)
+{
+    int w = 0;
+    for (const char *p = text; *p; p++) {
+        if (*p == '&' && p[1]) {
+            if (p[1] != '&')
+                continue;
+            p++;
+        }
+        w += ween_strike_char_advance(f, (unsigned char)*p);
+    }
+    return w;
+}
+
+/* How tall a button is drawn, and where in the control it sits: a bar told a
+ * size uses it and centres it, which is how a menu band's titles come to be
+ * a row shorter than the band they are in. */
+static int tb_button_h(HWND wnd, const ween_toolbar *tb)
+{
+    (void)wnd;
+    return tb->btn_h ? tb->btn_h : ween_ncm(WEEN_TB_HEIGHT);
+}
+
+static int tb_button_y(HWND wnd, const ween_toolbar *tb)
+{
+    RECT cr;
+    if (!tb->btn_h)
+        return 0;
+    GetClientRect(wnd, &cr);
+    return cr.bottom > tb->btn_h ? (cr.bottom - tb->btn_h) / 2 : 0;
+}
+
+/* The arrow half a drop-down button reserves — none at all unless the bar
+ * has been told to draw the arrows, which is what makes a menu title's whole
+ * button the drop-down. */
+static int tb_drop_w(const ween_toolbar *tb, const ween_tbbutton *b)
+{
+    if (!(b->style & TBSTYLE_DROPDOWN) || !(tb->ex & TBSTYLE_EX_DRAWDDARROWS))
+        return 0;
+    return ween_ncm(b->text ? WEEN_TB_DROP_W : WEEN_TB_DROP_W_ICON);
+}
+
 /* Lay the row out left to right; each button keeps its own rectangle so the
  * drawing and the hit-testing cannot disagree. */
 static void toolbar_layout(HWND wnd, ween_toolbar *tb)
@@ -3881,45 +3930,48 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
         if (b->style & TBSTYLE_SEP) {
             b->w = ween_ncm(WEEN_TB_SEP_W);
         } else {
-            int text = b->text ? ween_strike_text_width(f, b->text,
-                                                        (int)strlen(b->text))
-                               : 0;
-            /* A button with nothing but an image is not symmetric: the
-             * image keeps its left inset and only two pixels follow it. */
-            int drop = (b->style & TBSTYLE_DROPDOWN) != 0;
+            int text = b->text ? tb_text_width(f, b->text) : 0;
+            int drop = tb_drop_w(tb, b);
             if (b->fixed) { /* the app said how wide, so that is how wide */
                 b->w = b->fixed;
                 x += b->w;
                 continue;
             }
-            /* A label is followed by seven pixels, or by four when an arrow
-             * half comes after it and takes the rest. */
-            b->w = text ? ween_ncm(WEEN_TB_TEXT_X) + text +
-                              ween_ncm(drop ? WEEN_TB_PAD_DROP
-                                            : WEEN_TB_PAD_RIGHT)
-                        : ween_ncm(WEEN_TB_ICON_X) + 16 + ween_ncm(2);
-            if (drop)
-                b->w += ween_ncm(text ? WEEN_TB_DROP_W
-                                      : WEEN_TB_DROP_W_ICON);
+            if (tb->pad_x && text && b->image < 0) {
+                /* Told what surrounds a label, a button is that and no more:
+                 * a menu band's titles are their text and sixteen. */
+                b->w = text + ween_ncm(tb->pad_x);
+            } else if (text) {
+                /* A label is followed by seven pixels, or by four when an
+                 * arrow half comes after it and takes the rest. */
+                b->w = ween_ncm(WEEN_TB_TEXT_X) + text +
+                       ween_ncm(drop ? WEEN_TB_PAD_DROP : WEEN_TB_PAD_RIGHT);
+            } else {
+                /* A button with nothing but an image is not symmetric: the
+                 * image keeps its left inset and only two pixels follow it. */
+                b->w = ween_ncm(WEEN_TB_ICON_X) + 16 + ween_ncm(2);
+            }
+            b->w += drop;
         }
         x += b->w;
     }
 }
 
-static int toolbar_hit(ween_toolbar *tb, int x, int y, int *on_arrow)
+static int toolbar_hit(HWND wnd, ween_toolbar *tb, int x, int y, int *on_arrow)
 {
+    int top = tb_button_y(wnd, tb), h = tb_button_h(wnd, tb);
     if (on_arrow)
         *on_arrow = 0;
-    if (y < 0 || y >= ween_ncm(WEEN_TB_HEIGHT))
+    if (y < top || y >= top + h)
         return -1;
     for (int i = 0; i < tb->count; i++) {
         ween_tbbutton *b = &tb->btn[i];
+        int aw = tb_drop_w(tb, b);
         if (b->style & TBSTYLE_SEP)
             continue;
         if (x < b->x || x >= b->x + b->w)
             continue;
-        if ((b->style & TBSTYLE_DROPDOWN) && on_arrow &&
-            x >= b->x + b->w - ween_ncm(WEEN_TB_DROP_W))
+        if (aw && on_arrow && x >= b->x + b->w - aw)
             *on_arrow = 1;
         return i;
     }
@@ -3932,7 +3984,9 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     int th = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
-    int h = ween_ncm(WEEN_TB_HEIGHT);
+    int h = tb_button_h(wnd, toolbar_of(wnd));
+    int row = tb_button_y(wnd, toolbar_of(wnd));
+    UINT ui = (UINT)SendMessageA(wnd, WM_QUERYUISTATE, 0, 0);
     RECT r = ps->rcPaint;
     int ox, oy;
 
@@ -3944,7 +3998,8 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     for (int i = 0; i < tb->count; i++) {
         ween_tbbutton *b = &tb->btn[i];
-        int bx = ox + b->x, by = oy;
+        int bx = ox + b->x, by = oy + row;
+        int aw = tb_drop_w(tb, b);
         int enabled = (b->state & TBSTATE_ENABLED) != 0;
         int checked = (b->state & TBSTATE_CHECKED) != 0;
         int held = tb->pressed == i && tb->hot == i;
@@ -3981,10 +4036,6 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * arrow half, meeting in the middle. Drawn as one rect instead,
              * the border runs down through the arrow itself. */
             int hx = bx + 1, hw = b->w - 1;
-            int aw = (b->style & TBSTYLE_DROPDOWN)
-                         ? ween_ncm(b->text ? WEEN_TB_DROP_W
-                                            : WEEN_TB_DROP_W_ICON)
-                         : 0;
             ween_classic_edge(&top->surface, hx, by, hw - aw, h,
                               BDR_RAISEDINNER, BF_RECT, NULL);
             if (aw)
@@ -4027,16 +4078,30 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 }
             }
         }
-        if (f && b->text)
+        if (f && b->text && tb->pad_x && b->image < 0) {
+            /* A menu band's title: centred in what surrounds it, and drawn
+             * through DrawText so the letter its '&' marks is underlined —
+             * or not, which is the window's to say and not the bar's. */
+            RECT lr;
+            lr.left = b->x + ween_ncm(tb->pad_x) / 2 + shift;
+            lr.top = row + shift;
+            lr.right = b->x + b->w;
+            lr.bottom = row + h;
+            SetTextColor(dc, enabled ? GetSysColor(COLOR_BTNTEXT)
+                                     : GetSysColor(COLOR_GRAYTEXT));
+            DrawTextA(dc, b->text, -1, &lr,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE |
+                          ((ui & UISF_HIDEACCEL) ? DT_HIDEPREFIX : 0));
+        } else if (f && b->text) {
             ween_strike_draw(f, &top->surface,
                              bx + ween_ncm(WEEN_TB_TEXT_X) + shift,
                              by + (h - th) / 2 - 1 + shift, b->text,
                              (int)strlen(b->text),
                              enabled ? WEEN_BLACK : WEEN_SHADOW);
-        if (b->style & TBSTYLE_DROPDOWN) {
+        }
+        if (aw) {
             /* the arrow half, with a line marking it off from the body */
-            int ax = bx + b->w - ween_ncm(b->text ? WEEN_TB_DROP_W
-                                                  : WEEN_TB_DROP_W_ICON);
+            int ax = bx + b->w - aw;
             int gx = ax + 4, gy = by + h / 2 - 1;
             /* A dead one is embossed rather than merely greyed: the shape in
              * shadow with a white copy of it a pixel down and to the right,
@@ -4095,6 +4160,81 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             tb->hot_images = (HIMAGELIST)lp;
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
+    case TB_SETEXTENDEDSTYLE: {
+        DWORD was;
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return 0;
+        was = tb->ex;
+        tb->ex = (DWORD)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return (LRESULT)was;
+    }
+    case TB_GETEXTENDEDSTYLE:
+        tb = toolbar_of(wnd);
+        return tb ? (LRESULT)tb->ex : 0;
+    case TB_SETPADDING: {
+        LRESULT was;
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return 0;
+        was = MAKELPARAM(tb->pad_x, 0);
+        tb->pad_x = (int)(short)LOWORD(lp);
+        InvalidateRect(wnd, NULL, FALSE);
+        return was;
+    }
+    case TB_GETPADDING:
+        tb = toolbar_of(wnd);
+        return tb ? MAKELPARAM(tb->pad_x, 0) : 0;
+    case TB_SETBUTTONSIZE:
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return FALSE;
+        tb->btn_h = (int)(short)HIWORD(lp);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    case TB_GETHOTITEM:
+        tb = toolbar_of(wnd);
+        return tb ? tb->hot : -1;
+    case TB_SETHOTITEM: {
+        int was;
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return -1;
+        was = tb->hot;
+        tb->keyed = 1; /* asked for, so it is the keyboard's, not the mouse's */
+        toolbar_set_hot(wnd, tb, (int)wp);
+        return was;
+    }
+    case TB_MAPACCELERATORA: {
+        /* Which button's label marks that letter, if any: what Alt+F has to
+         * ask before it can open a menu band's File. */
+        int *out = (int *)lp;
+        int ch = (int)wp;
+        if (ch >= 'A' && ch <= 'Z')
+            ch += 32;
+        tb = toolbar_of(wnd);
+        for (int i = 0; tb && i < tb->count; i++) {
+            const char *t = tb->btn[i].text;
+            for (const char *p = t; p && *p; p++) {
+                int c;
+                if (*p != '&' || !p[1])
+                    continue;
+                if (p[1] == '&') {
+                    p++;
+                    continue;
+                }
+                c = p[1] >= 'A' && p[1] <= 'Z' ? p[1] + 32 : p[1];
+                if (c == ch) {
+                    if (out)
+                        *out = i;
+                    return TRUE;
+                }
+                break;
+            }
+        }
+        return FALSE;
+    }
     case TB_SETIMAGELIST:
         tb = toolbar_of(wnd);
         if (tb) {
@@ -4169,9 +4309,9 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return FALSE;
         toolbar_layout(wnd, tb);
         out->left = tb->btn[(int)wp].x;
-        out->top = 0;
+        out->top = tb_button_y(wnd, tb);
         out->right = out->left + tb->btn[(int)wp].w;
-        out->bottom = ween_ncm(WEEN_TB_HEIGHT);
+        out->bottom = out->top + tb_button_h(wnd, tb);
         return TRUE;
     }
     case TB_AUTOSIZE:
@@ -4189,7 +4329,7 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         toolbar_layout(wnd, tb);
         toolbar_set_hot(wnd, tb,
-                        toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp),
+                        toolbar_hit(wnd, tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp),
                                     NULL));
         /* ask to hear when the pointer goes, so the hot button can let go */
         memset(&tme, 0, sizeof(tme));
@@ -4211,7 +4351,7 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!tb)
             return 0;
         toolbar_layout(wnd, tb);
-        i = toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &arrow);
+        i = toolbar_hit(wnd, tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &arrow);
         if (i < 0 || !(tb->btn[i].state & TBSTATE_ENABLED))
             return 0;
         tb->pressed = i;
@@ -4227,7 +4367,7 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         ReleaseCapture();
         int i = tb->pressed, arrow = tb->drop;
-        int still = toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), NULL);
+        int still = toolbar_hit(wnd, tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), NULL);
         tb->pressed = -1;
         InvalidateRect(wnd, NULL, FALSE);
         if (still != i)

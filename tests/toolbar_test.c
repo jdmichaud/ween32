@@ -158,10 +158,20 @@ int main(void)
     click_at(button_middle(4));
     CHECK(g_command == ID_DEAD, "and works once it is enabled");
 
-    /* The arrow half of a drop-down button asks for a menu instead. */
+    /* The arrow half of a drop-down button asks for a menu instead — once
+     * the bar has been told to draw the arrows at all. Without that the
+     * whole button is the drop-down, which is what a menu title is. */
     {
-        RECT r;
+        RECT r, before;
+        SendMessageA(g_tb, TB_GETITEMRECT, 0, (LPARAM)&before);
+        SendMessageA(g_tb, TB_SETEXTENDEDSTYLE, 0,
+                     (LPARAM)TBSTYLE_EX_DRAWDDARROWS);
+        CHECK(SendMessageA(g_tb, TB_GETEXTENDEDSTYLE, 0, 0) ==
+                  TBSTYLE_EX_DRAWDDARROWS,
+              "a toolbar remembers being told to draw drop-down arrows");
         SendMessageA(g_tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+        CHECK(r.right - r.left > before.right - before.left,
+              "and a drop-down button grows by the arrow half it now has");
         g_command = 0;
         g_dropdown = -1;
         click_at(r.right - 4); /* inside the arrow */
@@ -172,6 +182,48 @@ int main(void)
         click_at(r.left + 20); /* the body */
         CHECK(g_command == ID_BACK, "while the body still sends it");
         CHECK(g_dropdown == -1, "and asks for no menu");
+    }
+
+    /* What a menu band asks of a toolbar: titles that are their text and a
+     * padding, a button height of its own, and a letter that finds one. */
+    {
+        HWND bar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                   WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
+                                       TBSTYLE_LIST,
+                                   0, 0, 300, 22, w, NULL, NULL, NULL);
+        TBBUTTON t[2];
+        RECT r;
+        const ween_strike *f = ween_gui_font();
+        int hit = -1;
+        SendMessageA(bar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        SendMessageA(bar, TB_SETPADDING, 0, MAKELPARAM(16, 0));
+        SendMessageA(bar, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, 19));
+        memset(t, 0, sizeof(t));
+        t[0].iBitmap = -1;
+        t[0].idCommand = ID_BACK;
+        t[0].fsState = TBSTATE_ENABLED;
+        t[0].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+        t[0].iString = (INT_PTR) "&File";
+        t[1].iBitmap = -1;
+        t[1].idCommand = ID_UP;
+        t[1].fsState = TBSTATE_ENABLED;
+        t[1].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+        t[1].iString = (INT_PTR) "&Edit";
+        SendMessageA(bar, TB_ADDBUTTONSA, 2, (LPARAM)t);
+        SendMessageA(bar, TB_GETITEMRECT, 0, (LPARAM)&r);
+        CHECK(r.right - r.left == ween_strike_text_width(f, "File", 4) + 16,
+              "a title is its text and the padding, with the marker out of it");
+        CHECK(r.bottom - r.top == 19 && r.top == (22 - 19) / 2,
+              "and the height it was given, centred in the bar");
+        CHECK(SendMessageA(bar, TB_MAPACCELERATORA, 'e', (LPARAM)&hit) &&
+                  hit == 1,
+              "a letter finds the title whose label marks it");
+        CHECK(!SendMessageA(bar, TB_MAPACCELERATORA, 'z', (LPARAM)&hit),
+              "and finds nothing when no label marks it");
+        SendMessageA(bar, TB_SETHOTITEM, 1, 0);
+        CHECK(SendMessageA(bar, TB_GETHOTITEM, 0, 0) == 1,
+              "the keyboard can put a title under itself");
+        DestroyWindow(bar);
     }
 
     /* A separator is not a button: it cannot be pressed. */

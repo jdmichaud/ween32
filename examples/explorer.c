@@ -2119,6 +2119,11 @@ static void build_bands(HWND w)
                                 0, 0, 100, 22, g_rebar,
                                 (HMENU)(UINT_PTR)ID_TOOLBAR, NULL, NULL);
     SendMessageA(g_toolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    /* Back, Forward and Views wear the arrow that says they drop down, which
+     * a toolbar draws only when asked: without this the whole button is the
+     * drop-down, which is what a menu title is and these are not. */
+    SendMessageA(g_toolbar, TB_SETEXTENDEDSTYLE, 0,
+                 (LPARAM)TBSTYLE_EX_DRAWDDARROWS);
     SendMessageA(g_toolbar, TB_SETIMAGELIST, 0, (LPARAM)g_images);
     SendMessageA(g_toolbar, TB_SETHOTIMAGELIST, 0, (LPARAM)g_hot_images);
 
