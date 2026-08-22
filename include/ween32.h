@@ -379,6 +379,12 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define TVS_SHOWSELALWAYS 0x0020L
 #define TVIF_TEXT 0x0001
 #define TVIF_IMAGE 0x0002
+#define TVIF_HANDLE 0x0010
+#define TVIF_SELECTEDIMAGE 0x0020
+/* cChildren says an item can be opened before anything is under it, so a
+ * tree that fills a level only when it is opened still shows the box to open
+ * it with. */
+#define TVIF_CHILDREN 0x0040
 #define TVSIL_NORMAL 0
 #define TVI_ROOT ((HTREEITEM)(UINT_PTR)-0x10000)
 #define TVI_FIRST ((HTREEITEM)(UINT_PTR)-0x0FFFF)
@@ -473,7 +479,17 @@ typedef struct tagLVITEMA {
 #define TCIF_IMAGE 0x0002
 #define TCN_SELCHANGE (0U - 551U)
 #define TVN_SELCHANGEDA (0U - 401U)
+/* ITEMEXPANDING comes before the item opens, which is where a tree that
+ * fills lazily puts the children; ITEMEXPANDED comes after. */
+#define TVN_ITEMEXPANDINGA (0U - 405U)
 #define TVN_ITEMEXPANDEDA (0U - 406U)
+
+typedef struct tagNMTREEVIEWA {
+    NMHDR hdr;
+    UINT action; /* TVE_EXPAND or TVE_COLLAPSE */
+    TVITEMA itemOld, itemNew;
+    POINT ptDrag;
+} NMTREEVIEWA;
 #define LVN_ITEMCHANGED (0U - 101U)
 #define LVN_COLUMNCLICK (0U - 108U)
 

@@ -37,6 +37,23 @@ static unsigned char *make_bits(void)
     return bits;
 }
 
+/* The same square in green, so a test can tell which of two images was the
+ * one drawn. */
+static unsigned char *make_green_bits(void)
+{
+    static unsigned char bits[8 * 8 * 3];
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            unsigned char *p = bits + ((size_t)y * 8 + x) * 3;
+            int inside = x >= 2 && x < 6 && y >= 2 && y < 6;
+            p[0] = inside ? 0 : 0xff;      /* B */
+            p[1] = inside ? 0xff : 0;      /* G */
+            p[2] = inside ? 0 : 0xff;      /* R */
+        }
+    }
+    return bits;
+}
+
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_DESTROY) {
@@ -203,12 +220,18 @@ int main(void)
         CHECK(tv != NULL, "a tree view to hang it on");
         SendMessageA(tv, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)il);
 
+        /* a second image, so the selected one can be told from the other */
+        HBITMAP green = CreateBitmap(8, 8, 1, 24, make_green_bits());
+        int green_index = ImageList_AddMasked(il, green, RGB(0xff, 0, 0xff));
+        DeleteObject(green);
+
         TVINSERTSTRUCTA is;
         memset(&is, 0, sizeof(is));
         is.hParent = TVI_ROOT;
-        is.item.mask = TVIF_TEXT | TVIF_IMAGE;
+        is.item.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
         is.item.pszText = (char *)"With an icon";
         is.item.iImage = 0;
+        is.item.iSelectedImage = green_index;
         HTREEITEM item = (HTREEITEM)SendMessageA(tv, TVM_INSERTITEMA, 0,
                                                  (LPARAM)&is);
         CHECK(item != NULL, "and an item that names the image");
@@ -221,6 +244,23 @@ int main(void)
             if ((s->px[i] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
                 red++;
         CHECK(red == 16, "the icon was painted into the tree view");
+
+        /* Selecting it swaps in the other image, which is how a shell shows
+         * an open folder for the one you are looking at. */
+        SendMessageA(tv, TVM_SELECTITEM, TVGN_CARET, (LPARAM)item);
+        InvalidateRect(w, NULL, TRUE);
+        ween_flush_paint();
+        s = ween_headless_surface();
+        int green_px = 0;
+        red = 0;
+        for (int i = 0; s && i < s->w * s->h; i++) {
+            if ((s->px[i] & 0xffffff) == WEEN_RGBX(0, 0xff, 0))
+                green_px++;
+            else if ((s->px[i] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
+                red++;
+        }
+        CHECK(green_px == 16 && red == 0,
+              "and a selected item wears the image it named for that");
         DestroyWindow(w);
     }
 

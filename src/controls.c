@@ -1370,7 +1370,10 @@ typedef struct ween_tvitem {
     char *text;
     struct ween_tvitem *parent, *child, *next;
     int expanded;
-    int image; /* index into the view's image list, -1 for none */
+    int image;     /* index into the view's image list, -1 for none */
+    int sel_image; /* the one it wears while selected, -1 to keep `image` */
+    int cchildren; /* said to have children before it has any: an item that
+                    * fills itself when opened still needs the box to open */
 } ween_tvitem;
 
 typedef struct {
@@ -1453,7 +1456,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             if (it->next)
                 dotted_v(s, cx, cy, y + WEEN_TV_ITEM_H, WEEN_SHADOW);
         }
-        if (it->child) {
+        if (it->child || it->cchildren) {
             /* the button: a grey box with a plus or minus in it */
             ween_surface_rect(s, bx, cy - 4, WEEN_TV_BUTTON, WEEN_TV_BUTTON,
                               WEEN_SHADOW);
@@ -1465,8 +1468,11 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         }
         if (images && it->image >= 0) {
             /* the icon goes between the button and the label, and the label
-             * moves over to make room for it */
-            ween_imagelist_draw(images, it->image, s, tx,
+             * moves over to make room for it. A selected item may wear a
+             * different one — an open folder, which is what a shell does. */
+            int img = (it == sel && it->sel_image >= 0) ? it->sel_image
+                                                        : it->image;
+            ween_imagelist_draw(images, img, s, tx,
                                 y + (WEEN_TV_ITEM_H - icon_h) / 2);
             tx += icon_w + 2;
         }
@@ -1492,6 +1498,38 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         }
     }
     return row;
+}
+
+/* A tree's notifications name the item they are about, which is what an app
+ * filling a level lazily needs to know. */
+static void notify_tree(HWND wnd, UINT code, UINT action, ween_tvitem *item)
+{
+    NMTREEVIEWA nm;
+    if (!wnd->parent)
+        return;
+    memset(&nm, 0, sizeof(nm));
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = wnd->id;
+    nm.hdr.code = code;
+    nm.action = action;
+    nm.itemNew.mask = TVIF_HANDLE;
+    nm.itemNew.hItem = item;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
+/* Open or close an item, telling the app before and after. Before is where a
+ * tree that fills a level only when it is opened puts the children, so that
+ * what is drawn straight after already has them. */
+static void tree_expand(HWND wnd, ween_tvitem *item, int expand)
+{
+    if (!item || item->expanded == expand)
+        return;
+    notify_tree(wnd, TVN_ITEMEXPANDINGA, expand ? TVE_EXPAND : TVE_COLLAPSE,
+                item);
+    item->expanded = expand;
+    notify_tree(wnd, TVN_ITEMEXPANDEDA, expand ? TVE_EXPAND : TVE_COLLAPSE,
+                item);
+    InvalidateRect(wnd, NULL, FALSE);
 }
 
 /* How many rows the tree shows when fully walked. */
@@ -1661,9 +1699,9 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         {   /* the button toggles, anywhere else selects */
             int bx = 5 + depth * WEEN_TV_INDENT, x = GET_X_LPARAM(lp);
-            if (hit->child && x >= bx && x < bx + WEEN_TV_BUTTON) {
-                hit->expanded = !hit->expanded;
-                notify_parent(wnd, TVN_ITEMEXPANDEDA);
+            if ((hit->child || hit->cchildren) && x >= bx &&
+                x < bx + WEEN_TV_BUTTON) {
+                tree_expand(wnd, hit, !hit->expanded);
             } else {
                 t->sel = hit;
                 notify_parent(wnd, TVN_SELCHANGEDA);
@@ -1730,6 +1768,11 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!item)
             return 0;
         item->image = (is->item.mask & TVIF_IMAGE) ? is->item.iImage : -1;
+        item->sel_image = (is->item.mask & TVIF_SELECTEDIMAGE)
+                              ? is->item.iSelectedImage
+                              : -1;
+        item->cchildren = (is->item.mask & TVIF_CHILDREN) ? is->item.cChildren
+                                                          : 0;
         n = strlen(is->item.pszText ? is->item.pszText : "") + 1;
         item->text = malloc(n);
         if (item->text)
@@ -1820,13 +1863,9 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return (LRESULT)(UINT_PTR)was;
         }
         return 0;
-    case TVM_EXPAND: {
-        ween_tvitem *item = (ween_tvitem *)lp;
-        if (item)
-            item->expanded = (wp & TVE_EXPAND) != 0;
-        InvalidateRect(wnd, NULL, FALSE);
+    case TVM_EXPAND:
+        tree_expand(wnd, (ween_tvitem *)lp, (wp & TVE_EXPAND) != 0);
         return TRUE;
-    }
     case WM_DESTROY:
         if (wnd->ctl) {
             tree_ctl_free(wnd->ctl);

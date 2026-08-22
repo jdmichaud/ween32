@@ -24,11 +24,16 @@ static int g_failures = 0;
 
 static HWND g_list, g_tree;
 static int g_column_clicked = -1;
+/* what the tree said it was about to open, and how many times it said so */
+static HTREEITEM g_expanding;
+static int g_expandings;
 
 static LRESULT CALLBACK splitter_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     return DefWindowProcA(w, msg, wp, lp);
 }
+
+static HTREEITEM add_node(HTREEITEM parent, const char *text);
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -36,6 +41,14 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (nm->code == LVN_COLUMNCLICK)
             g_column_clicked = ((const NMLISTVIEW *)lp)->iSubItem;
+        if (nm->code == TVN_ITEMEXPANDINGA) {
+            const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
+            g_expandings++;
+            g_expanding = tv->itemNew.hItem;
+            /* fill it here, as an app reading a directory would */
+            if (tv->action == TVE_EXPAND && g_expanding)
+                add_node(g_expanding, "read when opened");
+        }
         return 0;
     }
     if (msg == WM_DESTROY) {
@@ -212,6 +225,47 @@ int main(void)
         SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
         CHECK(SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_ROOT, 0) == 0,
               "and the whole tree emptied for the next folder");
+    }
+
+    /* A tree filled a level at a time. An item says through cChildren that it
+     * can be opened before anything is under it — otherwise a shell would
+     * have to walk every directory on the machine to draw one tree, and no
+     * folder would have a box to open it with. Clicking that box asks the app
+     * to read the level, before the item opens, so what is drawn straight
+     * after already has it. */
+    {
+        TVINSERTSTRUCTA is;
+        HTREEITEM lazy;
+        memset(&is, 0, sizeof(is));
+        is.hParent = TVI_ROOT;
+        is.item.mask = TVIF_TEXT | TVIF_CHILDREN;
+        is.item.pszText = (char *)"unread";
+        is.item.cChildren = 1;
+        lazy = (HTREEITEM)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&is);
+        CHECK(lazy && !SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_CHILD,
+                                    (LPARAM)lazy),
+              "an item can claim children it does not have");
+
+        g_expandings = 0;
+        g_expanding = NULL;
+        /* the box is WEEN_TV_BUTTON wide, five pixels in, on the first row */
+        SendMessageA(g_tree, WM_LBUTTONDOWN, 0, MAKELPARAM(7, 8));
+        SendMessageA(g_tree, WM_LBUTTONUP, 0, MAKELPARAM(7, 8));
+        CHECK(g_expandings == 1 && g_expanding == lazy,
+              "clicking its box asks the app to read that item's level");
+        CHECK(SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_CHILD,
+                           (LPARAM)lazy) != 0,
+              "and what the app inserted while it asked is there");
+
+        /* And it is only asked while something changes: closing and opening
+         * again asks twice more, but asking to open what is open asks
+         * nothing. */
+        SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)lazy);
+        CHECK(g_expandings == 1, "opening what is already open asks nothing");
+        SendMessageA(g_tree, TVM_EXPAND, TVE_COLLAPSE, (LPARAM)lazy);
+        CHECK(g_expandings == 2, "and closing it is a change worth telling");
+
+        SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
     }
 
     /* Dragging a header divider resizes the column, and does not sort it. */

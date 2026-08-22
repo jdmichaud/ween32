@@ -328,15 +328,20 @@ static void show_directory(const char *path)
 /* ---- the folder tree ------------------------------------------------------ */
 
 static HTREEITEM add_node(HTREEITEM parent, const char *text, int image,
-                          int has_children)
+                          int sel_image, int has_children)
 {
     TVINSERTSTRUCTA is;
     memset(&is, 0, sizeof(is));
     is.hParent = parent ? parent : TVI_ROOT;
-    is.item.mask = TVIF_TEXT | TVIF_IMAGE;
+    /* cChildren claims children the item does not have yet, so the box to
+     * open it with is there before anything has been read off the disk. What
+     * is behind it is read when it is opened, and not before: walking every
+     * directory on the machine to draw one tree would not do. */
+    is.item.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_CHILDREN;
     is.item.pszText = (char *)text;
     is.item.iImage = image;
-    (void)has_children;
+    is.item.iSelectedImage = sel_image;
+    is.item.cChildren = has_children;
     return (HTREEITEM)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&is);
 }
 
@@ -370,17 +375,19 @@ static void path_of_item(HTREEITEM item, char *out, size_t len)
         strncpy(out, "/", len - 1);
 }
 
-/* One level of the tree, filled when its parent is opened. */
+/* One level of the tree, filled when its parent is opened — once. */
 static void fill_children(HTREEITEM parent, const char *path)
 {
     fs_dir d;
     fs_entry e;
+    if (SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)parent))
+        return; /* already read */
     if (!fs_open(&d, path))
         return;
     while (fs_next(&d, &e)) {
         if (!e.is_dir || e.name[0] == '.')
             continue;
-        add_node(parent, e.name, IMG_FOLDER, 1);
+        add_node(parent, e.name, IMG_FOLDER, IMG_FOLDER_OPEN, 1);
     }
     fs_close(&d);
 }
@@ -785,8 +792,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 #endif
         build_views(w);
         {
-            HTREEITEM root = add_node(NULL, "/", IMG_COMPUTER, 1);
-            fill_children(root, "/");
+            HTREEITEM root = add_node(NULL, "/", IMG_COMPUTER, IMG_COMPUTER, 1);
             SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)root);
         }
         show_directory("/");
@@ -806,11 +812,14 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 path_of_item(sel, path, sizeof(path));
                 show_directory(path);
             }
-        } else if (nm->code == TVN_ITEMEXPANDEDA) {
-            /* fill the level that was just opened, once */
-            HTREEITEM sel = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM,
-                                                    TVGN_CARET, 0);
-            (void)sel;
+        } else if (nm->code == TVN_ITEMEXPANDINGA) {
+            /* read the level being opened, so it is there to be drawn */
+            const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
+            if (tv->action == TVE_EXPAND && tv->itemNew.hItem) {
+                char path[1024];
+                path_of_item(tv->itemNew.hItem, path, sizeof(path));
+                fill_children(tv->itemNew.hItem, path);
+            }
         }
         return 0;
     }
