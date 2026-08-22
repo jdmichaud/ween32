@@ -29,6 +29,13 @@ that no application has asked for:
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
   the list view.
 
+- [ ] **A sort arrow in a list view's header.** `LVN_COLUMNCLICK` tells an app
+  which column was clicked; nothing draws the mark showing which one is
+  sorted, or which way.
+- [ ] **An icon in a status bar part**, and in the address bar's combo box.
+- [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
+  is the arrangement a shell uses, but it is not the whole control.
+
 Two things are deliberately *not* on this list.
 
 Arbitrary font sizes and faces: `CreateFontA` honours `weight` and picks
@@ -80,6 +87,13 @@ needs selection ownership.
 a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
 `AddMasked`/`AddIcon`/`Draw`/`Destroy`) with one-bit transparency, and
 `DrawIconEx`. The tree and list views draw the image an item names.
+
+**Finding files** — `FindFirstFileA`/`FindNextFileA`/`FindClose`,
+`GetFileAttributesA`, `GetLogicalDriveStringsA`. Not GUI, and deliberately the
+smallest set that lets a filesystem be walked: an example that browses files
+has to compile unchanged against real `<windows.h>` like every other example,
+and it cannot do that reaching for `readdir` behind an `#ifdef`. Anything else
+an app wants from kernel32 it takes from the C library.
 
 **A shell's controls** — a `ToolbarWindow32` with flat, hot-tracked, checkable
 and drop-down buttons, in a `ReBarWindow32` of stacked bands with grippers and
