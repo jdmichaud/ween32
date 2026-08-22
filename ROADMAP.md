@@ -366,36 +366,43 @@ images just as a hot one does; `GetTextExtentPoint32A` must report what the
 glyphs will take rather than a per-character ceiling; and a rebar is ruled
 off all the way round rather than only above each band.
 
-Since then the menu band, the address band and the brand box have all come
-in. What the last of that turned up: `MoveWindow` on a child never sent
-`WM_SIZE`, so a control that lays its own contents out never heard that it
-grew; a rebar band's label sits eleven pixels in and a row above centre,
-with four after it; a button that is on closes its edge a pixel further out
-than a hot one does; and the shipped Tahoma steps one pixel wide on 'y',
-which had every button after "History" out by one.
+Since then every band has come in. What that took, all of it measured by
+hovering buttons on the machine and reading their edges off: a separator is
+six wide with its line three in; a drop-down button's arrow half is thirteen
+after a label and twelve after an image on its own, with five after the
+label rather than seven; a button's image sits three down and, on one with
+no label, a pixel further left; a button that is on is dithered from three
+in and two down to four short of its right and bottom, wears one pixel of
+sunken edge a pixel in, closes that edge a pixel wider than a hot one does,
+moves its content in by one, and draws from the toolbar's second set of
+images; a dead drop-down arrow is embossed rather than greyed, though its
+image is not; a rebar is ruled off all the way round, its bands separated by
+the same two lines, its grippers one pixel of raised edge four in; a band's
+label sits eleven in and a row above centre with four after it; and
+`MoveWindow` on a child has to send `WM_SIZE`.
 
 Measured against the machine, band by band:
 
 | band | differing |
 | --- | --- |
-| the rebar's own edge | 0 |
-| menu band | 0, outside the animation the shell plays at its right |
-| address band | 0, outside what is written in the combo box |
-| toolbar band | 229 — the third separator and Views (172 of it), the
-Forward drop-down arrow (15), the checked button's interior (39) |
+| the rebar's own edge | **0** |
+| menu band | **0**, outside the animation the shell plays at its right |
+| address band | **0**, outside what is written in the combo box |
+| toolbar band | **21** |
 
-Still out, all of it in the toolbar:
+The twenty-one are three things:
 
-- the **Forward button's drop-down arrow**, two pixels
-- the **third separator**, one pixel, and with it the Views button beside
-  it. This was measured properly in the end — a selection made on the
-  machine to enable the four buttons after History, then each of them
-  hovered — and they all start exactly where this puts them, Undo included
-  at twenty-four wide. What does not fit is the separator after them: the
-  first two are seven wide with their line four in, and this one has to be
-  six with its line three in for the Views button to land where the machine
-  has it. Nothing distinguishes it but the button that follows it being a
-  drop-down. Left as it is rather than special-cased on that.
+- **eighteen** on the Views button's arrow. Every other button's width falls
+  out of the rules above; this one comes to thirty-one where they give
+  thirty-six, and the only reading that fits is that its image is
+  twenty-three wide — the grid and the arrow in one — rather than sixteen
+  with an arrow half beside it. An image list has one cell size for all its
+  images, so the example cannot hold a twenty-three wide one among sixteens.
+- **two** on Move To and Copy To, the seventeenth column of each. Their
+  images are the dead ones out of the shell's strip, which are the live ones
+  embossed and so a pixel wider than the cell they are taken from.
+- **one** where the brand box's edge reaches a pixel into the rule beneath
+  the menu band.
 
 ### The explorer, against its screenshot
 
