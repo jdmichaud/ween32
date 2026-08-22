@@ -534,6 +534,16 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     cs.lpszClass = class_name;
     SendMessageA(wnd, WM_CREATE, 0, (LPARAM)&cs);
 
+    /* win32 sends WM_SIZE as part of creating a window, and an app that lays
+     * its children out there — which is the usual way — sees nothing at all
+     * without it. */
+    {
+        RECT cr;
+        GetClientRect(wnd, &cr);
+        SendMessageA(wnd, WM_SIZE, SIZE_RESTORED,
+                     MAKELPARAM((WORD)cr.right, (WORD)cr.bottom));
+    }
+
     wnd->dirty = 1;
     if (wnd->parent)
         ween_top_level(wnd)->dirty = 1;

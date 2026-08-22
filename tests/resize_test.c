@@ -24,6 +24,7 @@ static int g_failures = 0;
 
 static HWND g_status;
 static int g_sized;
+static int g_first_w, g_first_h;
 
 static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -34,7 +35,10 @@ static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                                  0, hwnd, NULL, NULL, NULL);
         return 0;
     case WM_SIZE:
-        g_sized++;
+        if (!g_sized++) { /* the size the app was handed to lay out at */
+            g_first_w = LOWORD(lp);
+            g_first_h = HIWORD(lp);
+        }
         if (g_status) /* as a win32 app forwards it */
             SendMessageA(g_status, WM_SIZE, wp, lp);
         return 0;
@@ -85,13 +89,22 @@ int main(void)
     CHECK(cr.right == 300 - 2 * WEEN_NC_SIZEFRAME,
           "the sizing border is wider than a fixed frame");
 
+    /* Creating a window is itself a size change, and win32 says so before
+     * CreateWindow returns. An app that lays its children out in WM_SIZE —
+     * which is the usual way to write one — is otherwise left with all of
+     * them at whatever size they were created with, here a status bar of
+     * zero width, and draws nothing until something resizes the window. */
+    CHECK(g_sized == 1, "creating the window was itself a WM_SIZE");
+    CHECK(g_first_w == cr.right && g_first_h == cr.bottom,
+          "reporting the client area, so children can be laid out in it");
+
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0))
         DispatchMessageA(&msg);
 
     CHECK(wnd->w == 340 && wnd->h == 230,
           "dragging the status bar's grip resized the window");
-    CHECK(g_sized > 0, "the app was told through WM_SIZE");
+    CHECK(g_sized > 1, "the app was told through WM_SIZE");
 
     GetClientRect(wnd, &cr);
     CHECK(cr.right == 340 - 2 * WEEN_NC_SIZEFRAME,
