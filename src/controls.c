@@ -783,6 +783,7 @@ static void items_free(void *p); /* defined with ween_controls_free */
 typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
+    HICON icon[8]; /* status bar: an icon before a part's text, or NULL */
     int *image;  /* ComboBoxEx: the image each item names, -1 for none */
     int *indent; /* ComboBoxEx: how many steps in it is drawn */
     HIMAGELIST images; /* ComboBoxEx: where those images come from */
@@ -3242,22 +3243,31 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
                           part.right - part.left, part.bottom - part.top,
                           BDR_SUNKENOUTER, BF_RECT, NULL);
+        if (it->icon[i]) { /* before the text, two in and one down */
+            struct ween_dc idc;
+            memset(&idc, 0, sizeof(idc));
+            idc.s = &top->surface;
+            idc.clip_w = top->surface.w;
+            idc.clip_h = top->surface.h;
+            DrawIconEx(&idc, ox + part.left + 2, oy + part.top + 1, it->icon[i],
+                       16, 16, 0, NULL, DI_NORMAL);
+        }
         /* Two in and one above the middle, which is where the machine puts
          * it — the same lopsided centring a menu item and a pane's bar have.
          */
         {
             const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
             int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
-            part.left += 2;
+            part.left += it->icon[i] ? 22 : 2;
             part.top += (part.bottom - part.top - cell) / 2 - 1;
         }
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         DrawTextA(dc, it->item[i], -1, &part, DT_LEFT | DT_SINGLELINE);
         left = right + 2; /* the gap between parts */
     }
-    if (grip) /* drawn over the last part, in the corner */
-        ween_classic_sizegrip(&top->surface, ox + r.right - grip, oy + r.top,
-                              grip, r.bottom - r.top);
+    if (grip) /* over the last part, which runs on under it */
+        ween_classic_sizegrip(&top->surface, ox + r.right - 2,
+                              oy + r.bottom - 2);
 }
 
 static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -3298,6 +3308,15 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (x - ox >= cr.right - 15 && y - oy >= cr.bottom - 15)
             return HTBOTTOMRIGHT;
         return HTCLIENT;
+    }
+    case SB_SETICON: {
+        int i = (int)wp;
+        it = items_of(wnd);
+        if (!it || i < 0 || i >= 8)
+            return FALSE;
+        it->icon[i] = (HICON)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
     }
     case SB_SETPARTS: {
         const int *edges = (const int *)lp;

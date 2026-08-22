@@ -255,6 +255,47 @@ static HICON load_ico(const char *path, int cx, int cy)
     return (HICON)icon;
 }
 
+/* win32's oldest way of making an icon: an AND mask, a row per scanline
+ * padded to a word, and the colours under it. Only the 32-bit colour form is
+ * taken, which is what a program building an icon in memory hands over. */
+HICON CreateIcon(HINSTANCE inst, int w, int h, BYTE planes, BYTE bpp,
+                 const BYTE *and_bits, const BYTE *xor_bits)
+{
+    ween_gdiobj *icon;
+    int and_stride = ((w + 15) / 16) * 2;
+    (void)inst;
+    (void)planes;
+    if (w <= 0 || h <= 0 || bpp != 32 || !xor_bits)
+        return NULL;
+    icon = calloc(1, sizeof(*icon));
+    if (!icon)
+        return NULL;
+    icon->kind = WEEN_OBJ_ICON;
+    if (!ween_surface_init(&icon->bitmap, w, h)) {
+        free(icon);
+        return NULL;
+    }
+    icon->mask = calloc((size_t)w * h, 1);
+    if (!icon->mask) {
+        ween_surface_free(&icon->bitmap);
+        free(icon);
+        return NULL;
+    }
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            const BYTE *p = xor_bits + ((size_t)y * w + x) * 4;
+            int off = and_bits ? (and_bits[y * and_stride + x / 8] >>
+                                  (7 - x % 8)) & 1
+                               : 0;
+            icon->bitmap.px[(size_t)y * w + x] =
+                0xff000000u | ((unsigned)p[2] << 16) | ((unsigned)p[1] << 8) |
+                p[0];
+            icon->mask[(size_t)y * w + x] = (unsigned char)!off;
+        }
+    }
+    return (HICON)icon;
+}
+
 HANDLE LoadImageA(HINSTANCE inst, LPCSTR name, UINT type, int cx, int cy,
                   UINT flags)
 {

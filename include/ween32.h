@@ -606,6 +606,8 @@ typedef struct tagTCITEMA {
 #define SBARS_SIZEGRIP 0x0100L
 #define SB_SETTEXTA (WM_USER + 1)
 #define SB_GETTEXTA (WM_USER + 2)
+/* An icon in a part, drawn before its text. */
+#define SB_SETICON (WM_USER + 27)
 #define SB_SETPARTS (WM_USER + 4)
 #define SB_GETPARTS (WM_USER + 6)
 #define SB_SIMPLE (WM_USER + 9)
@@ -1124,6 +1126,10 @@ BOOL ImageList_GetIconSize(HIMAGELIST il, int *cx, int *cy);
 BOOL ImageList_Draw(HIMAGELIST il, int index, HDC dc, int x, int y, UINT style);
 /* An icon carries its own transparency mask, which is what makes it an icon
  * and not a bitmap. LoadImageA reads one from a .ico file with IMAGE_ICON. */
+/* An icon from two bitmaps, win32's oldest way of making one: the AND mask
+ * says what shows through and the XOR bits are the colours. */
+HICON CreateIcon(HINSTANCE inst, int w, int h, BYTE planes, BYTE bpp,
+                 const BYTE *and_bits, const BYTE *xor_bits);
 int ImageList_AddIcon(HIMAGELIST il, HICON icon);
 void DestroyIcon(HICON icon);
 BOOL DrawIconEx(HDC dc, int x, int y, HICON icon, int cx, int cy, UINT frame,

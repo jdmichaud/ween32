@@ -444,7 +444,8 @@ static const glyph GLYPHS_HOT[] = {
 
 static COLORREF glyph_colour(const glyph *g, char c)
 {
-    static const char set[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    static const char set[] =
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const char *at = strchr(set, c);
     int i = at && c ? (int)(at - set) : -1;
     if (i < 0 || i >= g->ncolours)
@@ -562,7 +563,7 @@ static void layout(HWND w)
         int parts[3];
         MoveWindow(g_status, 0, bottom, cr.right, STATUS_H, TRUE);
         parts[0] = cr.right - 233;
-        parts[1] = cr.right - 152;
+        parts[1] = cr.right - 155;
         parts[2] = -1;
         SendMessageA(g_status, SB_SETPARTS, 3, (LPARAM)parts);
     }
@@ -1137,6 +1138,79 @@ static const glyph g_send_icons[] = {
     { 16, 16, 0, 0, send_docs_rows, send_docs_palette,
       (int)(sizeof(send_docs_palette) / sizeof(*send_docs_palette)) },
 };
+
+/* My Computer as the shell draws it: not one of the icons in
+ * assets/icons, so taken a pixel at a time the way the toolbar's were.
+ * From the status bar's copy, which the machine draws straight; the
+ * tree's goes through a sixteen bit image list and comes out coarser.
+ * What is transparent is what did not change between the two. */
+static const char *const shell_computer_rows[] = {
+    ".0111111111123..",
+    "456665555577689.",
+    "48a51bccccccdef.",
+    "4g8abhiiijjklh9.",
+    "4m87biiihinnoi9.",
+    "48m7phiihhnnoq9.",
+    "4mm6pjihhjjros9.",
+    "4m86knnnnnkrls9.",
+    "ttm5joooooooo6u.",
+    ".ttv8w555555w1x.",
+    "tyzAAAAAAAAABCu.",
+    "t4DEFG4HvvGx4F..",
+    "t3IJD8DK85vLv8vF",
+    "t3348D8LLL81II8M",
+    ".t3MD8D85858D8DM",
+    "..HMMMMMMMMMMMMM",
+};
+static const COLORREF shell_computer_palette[] = {
+    RGB(134, 134, 134), RGB(153, 153, 204), RGB(153, 153, 102),
+    RGB(102, 102, 153), RGB( 57,  57,  57), RGB(255, 255, 204),
+    RGB(255, 255, 255), RGB(255, 251, 240), RGB(204, 204, 255),
+    RGB( 66,  66,  66), RGB(241, 241, 241), RGB(102, 102, 204),
+    RGB(  0,   0,  51), RGB(  0,  51, 102), RGB(204, 236, 255),
+    RGB( 77,  77,  77), RGB(153, 204, 255), RGB(102, 255, 255),
+    RGB(153, 255, 255), RGB(102, 204, 255), RGB( 51, 153, 255),
+    RGB(  0, 102, 255), RGB(178, 178, 178), RGB( 51, 204, 255),
+    RGB( 51, 102, 204), RGB(102, 153, 204), RGB(204, 255, 255),
+    RGB(  0, 153, 255), RGB(248, 248, 248), RGB( 51,  51,   0),
+    RGB( 41,  41,  41), RGB(173, 169, 144), RGB(221, 221, 221),
+    RGB( 22,  22,  22), RGB(204, 153, 153), RGB( 12,  12,  12),
+    RGB(  0,   0,   0), RGB(  8,   8,   8), RGB( 17,  17,  17),
+    RGB(239, 214, 198), RGB(204, 153, 204), RGB(102, 102, 102),
+    RGB(102,  51,  51), RGB(102, 102,  51), RGB(128, 128,   0),
+    RGB(192, 192, 192), RGB(234, 234, 234), RGB(231, 231, 214),
+    RGB( 34,  34,  34),
+};
+
+static const glyph g_shell_computer = {
+    16, 16, 0, 0, shell_computer_rows, shell_computer_palette,
+    (int)(sizeof(shell_computer_palette) / sizeof(*shell_computer_palette))
+};
+
+/* The same art as an icon, for the status bar: the AND mask says what shows
+ * through, the colours go under it. */
+static HICON glyph_icon(const glyph *g)
+{
+    unsigned char bits[16 * 16 * 4];
+    unsigned char mask[16 * 2];
+    memset(bits, 0, sizeof(bits));
+    memset(mask, 0xff, sizeof(mask)); /* everything through until it is drawn */
+    for (int y = 0; y < g->h; y++) {
+        for (int x = 0; x < g->w; x++) {
+            unsigned char *p = bits + (((size_t)(y + g->oy) * 16) + x + g->ox) * 4;
+            COLORREF c;
+            if (g->rows[y][x] == '.')
+                continue;
+            c = glyph_colour(g, g->rows[y][x]);
+            p[0] = (unsigned char)(c >> 16);
+            p[1] = (unsigned char)(c >> 8);
+            p[2] = (unsigned char)c;
+            mask[(y + g->oy) * 2 + (x + g->ox) / 8] &=
+                (unsigned char)~(0x80 >> ((x + g->ox) % 8));
+        }
+    }
+    return CreateIcon(NULL, 16, 16, 1, 32, mask, bits);
+}
 
 /* One of them as a bitmap the size Windows expects, background and all. */
 static HBITMAP menu_bitmap(const glyph *g)
@@ -1733,11 +1807,15 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
      * the indices the same when it is off, since a button names its image by
      * number and everything after a hole would answer to the wrong one. */
     {
-        static const char *shell[] = { "35", "21",  "16", "9",
+        static const char *shell[] = { "35", "21",  NULL, "9",
                                        "137", "18", "32", "512", "151" };
         for (int i = 0; i < (int)(sizeof(shell) / sizeof(*shell)); i++) {
             char path[600];
             HICON icon = NULL;
+            if (g_fixture && !shell[i]) { /* My Computer, drawn from the art */
+                add_glyph(il, &g_shell_computer);
+                continue;
+            }
             if (g_fixture) {
                 snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), shell[i]);
                 icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
@@ -1996,6 +2074,11 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         build_bands(w);
 #endif
         build_views(w);
+        /* the status bar's last part wears My Computer, as the machine's
+         * does; it is set once, the parts themselves move with the window */
+        if (g_status)
+            SendMessageA(g_status, SB_SETICON, 2,
+                         (LPARAM)glyph_icon(&g_shell_computer));
         if (g_fixture) {
             fill_fixture_tree();
         } else {
