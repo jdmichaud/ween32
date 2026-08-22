@@ -471,7 +471,12 @@ typedef struct tagTVHITTESTINFO {
 #define LVSIL_SMALL 1
 #define LVIS_FOCUSED 0x0001
 #define LVIS_SELECTED 0x0002
+#define LVCF_FMT 0x0001
 #define LVCF_WIDTH 0x0002
+/* A column's cells and its own heading are laid out to this. The shell puts
+ * a file's size on the right of its column and everything else on the left. */
+#define LVCFMT_LEFT 0x0000
+#define LVCFMT_RIGHT 0x0001
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)

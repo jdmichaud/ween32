@@ -358,9 +358,11 @@ followed.
 
 And the caption gradient is the fourth: it holds its start colour behind the
 icon, runs from there to three pixels before the leftmost caption button, and
-holds its end colour behind the buttons. Wine reserves one button's width
-whatever the window has. Measured on a window with three buttons, whose
-gradient reaches its end at x=596 of 654.
+holds its end colour behind the buttons — measured on a window with three
+buttons, whose gradient reaches its end at x=596 of 654. Wine reserves one
+button's width whatever the window has, and both sampler windows have one
+button, so that case keeps wine's number: the machine has never been measured
+with a caption that has only a close box.
 
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting

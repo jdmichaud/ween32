@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 13318 / 298596 — 4.5%
+tools/refcapture/pxdiff.py                  # expect 5818 / 298596 — 1.9%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -78,13 +78,7 @@ items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
 
-About 8000 of the controls sampler's 4.5% is its caption: the gradient now
-stops three pixels before the leftmost caption button rather than one button's
-width from the right edge, which is where the machine's stops. The sampler's
-window has one button and the machine's three, so the two cannot be checked
-against each other; the machine is followed and every column of the sampler's
-gradient lands a shade off wine's. About 3100 more is the tree and the list
-view, and
+About 3100 of the controls sampler's 1.9% is the tree and the list view, and
 is deliberate in the same way. The tree's indent, the column its buttons sit
 in and the pixel of white above its first row are measured against a Windows
 2000 shell tree; the list's two rows of white between its header and its first
@@ -105,6 +99,22 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
 
 The window is at (132,132) on the machine's 1024x768 screen and 654x544, so
 a pixel at window-relative (x,y) is at (x+132,y+132) in a screenshot of it.
+Set the machine to Tools > Folder Options > Web View > "Use Windows classic
+folders" first: with the web view on, the shell puts a third panel between
+the tree and the list and nothing lines up.
+
+As of the last pass the whole window differs by 13050 of 355776 pixels —
+3.7% — and it breaks down like this:
+
+| band | differing | what it is |
+| --- | --- | --- |
+| caption | 8301 | the gradient, a shade out per column, and the bold title |
+| left pane | 2058 | icon art; 1460 of it ours quantised to 5-5-5 |
+| list pane | 1397 | the caret, the sort arrow, two icons, quantisation |
+| status bar | 602 | the second and third parts' text |
+| address band | 371 | the drive icon in the combo |
+| menu band | 233 | the animation the shell plays at its right |
+| toolbar band | 88 | Back is live on the machine and dead here |
 The tree pane is window-relative x 4..203, y 100..519. As of the last pass
 everything in it matches but the icons: every differing pixel is inside a
 16-pixel icon column, and all but two of those icons are ours quantised to

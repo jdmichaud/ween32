@@ -1927,9 +1927,14 @@ static void build_views(HWND w)
     static const struct {
         const char *title;
         int width;
+        int fmt;
     } columns[] = {
-        /* the machine's, off its header's dividers */
-        { "Name", 120 }, { "Size", 96 }, { "Type", 120 }, { "Modified", 108 }
+        /* the machine's, off its header's dividers; a size goes on the right
+         * of its column, as the shell puts it */
+        { "Name", 120, LVCFMT_LEFT },
+        { "Size", 96, LVCFMT_RIGHT },
+        { "Type", 120, LVCFMT_LEFT },
+        { "Modified", 108, LVCFMT_LEFT }
     };
 
     g_panehead = CreateWindowA("explorerpane", "", WS_CHILD | WS_VISIBLE, 0, 0,
@@ -1963,9 +1968,10 @@ static void build_views(HWND w)
     for (int i = 0; i < 4; i++) {
         LVCOLUMNA col;
         memset(&col, 0, sizeof(col));
-        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
         col.pszText = (char *)columns[i].title;
         col.cx = columns[i].width;
+        col.fmt = columns[i].fmt;
         SendMessageA(g_list, LVM_INSERTCOLUMNA, (WPARAM)i, (LPARAM)&col);
     }
 

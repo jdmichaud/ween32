@@ -2070,7 +2070,7 @@ typedef struct {
 typedef struct {
     HIMAGELIST images;
     char *col[4];
-    int width[4], ncol;
+    int width[4], fmt[4], ncol;
     ween_lvrow *row;
     int nrow, caprow, sel;
     int focus;    /* 1-based: the row an arrow key moves from, which outlives
@@ -2365,9 +2365,13 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int len;
             const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
                                      sizeof(buf), &len);
-            ween_strike_draw(f, &top->surface, cx + 6 + (down ? 1 : 0),
+            int tx = cx + 6;
+            if (l->fmt[c] == LVCFMT_RIGHT) /* the heading follows its cells */
+                tx = cx + l->width[c] - 6 - ween_strike_text_width(f, t, len);
+            ween_strike_draw(f, &top->surface, tx + (down ? 1 : 0),
                              oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
                              t, len, WEEN_BLACK);
+            (void)0;
         }
         x += l->width[c];
     }
@@ -2411,6 +2415,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 const char *t = fit_text(f, l->row[i].text[c],
                                          l->width[c] - lead - 3, buf,
                                          sizeof(buf), &len);
+                if (l->fmt[c] == LVCFMT_RIGHT) /* six short of its own edge */
+                    lead = l->width[c] - 6 - ween_strike_text_width(f, t, len);
                 /* two below the row's top, not one: the same lopsided
                  * centring the rest of the shell's text has */
                 ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 2, t,
@@ -2777,6 +2783,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return -1;
         l->col[i] = dup_str(col->pszText);
         l->width[i] = (col->mask & LVCF_WIDTH) ? col->cx : 50;
+        l->fmt[i] = (col->mask & LVCF_FMT) ? (col->fmt & LVCFMT_RIGHT) : 0;
         if (i >= l->ncol)
             l->ncol = i + 1;
         InvalidateRect(wnd, NULL, FALSE);
