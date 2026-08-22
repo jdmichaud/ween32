@@ -124,6 +124,18 @@ int main(void)
         ween_menu_popup_size(g_file, ween_gui_font(), &pw, &ph);
         ween_menuitem *open = ween_menu_item(g_file, 1);
         CHECK(pw > 0 && ph > 0, "the drop-down has a size");
+        /* Every drop-down reserves the submenu-arrow column, so the one that
+         * has a cascade in it is not the only one with a right margin. */
+        {
+            HMENU plain = CreatePopupMenu();
+            int aw, ah;
+            AppendMenuA(plain, MF_STRING, 900, "&Open...");
+            ween_menu_popup_size(plain, ween_gui_font(), &aw, &ah);
+            int label = ween_strike_text_width(ween_gui_font(), "Open...", 7);
+            CHECK(aw == 20 + label + 10 + 13 + 3,
+                  "a menu with no cascade still leaves room for the column");
+            DestroyMenu(plain);
+        }
         CHECK(ween_menu_item(g_file, 2)->h == 9,
               "a separator's box is nine pixels tall, as the capture has it");
         CHECK(ween_menu_item(g_file, 0)->h == 17,

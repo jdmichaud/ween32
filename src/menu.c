@@ -294,12 +294,18 @@ void ween_menu_popup_size(HMENU menu, const ween_strike *f, int *w, int *h)
         y += it->h;
     }
 
+    /* The column a submenu arrow goes in is reserved whether or not anything
+     * in this menu has one. It is what puts a margin between the longest item
+     * and the right border, and reserving it only when an arrow turns up gave
+     * every menu but the one with a cascade in it text hard against the edge.
+     * The accelerator column, by contrast, is only there when something needs
+     * it — a menu with no accelerators does not leave a gap for them. */
     *w = ween_ncm(MENU_GUTTER) + label;
     if (accel)
         *w += ween_ncm(MENU_LABEL_GAP) + accel;
-    if (arrow)
-        *w += ween_ncm(MENU_ACCEL_GAP) + arrow;
+    *w += ween_ncm(MENU_ACCEL_GAP) + ween_ncm(MENU_ARROW_COL);
     *w += inset;
+    (void)arrow;
     *h = y + inset;
     for (int i = 0; i < menu->count; i++)
         menu->item[i].w = *w - 2 * inset;
