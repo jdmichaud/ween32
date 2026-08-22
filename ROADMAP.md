@@ -366,14 +366,34 @@ images just as a hot one does; `GetTextExtentPoint32A` must report what the
 glyphs will take rather than a per-character ceiling; and a rebar is ruled
 off all the way round rather than only above each band.
 
-Still out, in the chrome:
+Since then the menu band, the address band and the brand box have all come
+in. What the last of that turned up: `MoveWindow` on a child never sent
+`WM_SIZE`, so a control that lays its own contents out never heard that it
+grew; a rebar band's label sits eleven pixels in and a row above centre,
+with four after it; a button that is on closes its edge a pixel further out
+than a hot one does; and the shipped Tahoma steps one pixel wide on 'y',
+which had every button after "History" out by one.
+
+Measured against the machine, band by band:
+
+| band | differing |
+| --- | --- |
+| the rebar's own edge | 0 |
+| menu band | 0, outside the animation the shell plays at its right |
+| address band | 0, outside what is written in the combo box |
+| toolbar band | 523 |
+
+Still out, all of it in the toolbar:
 
 - the **Forward button's drop-down arrow**, two pixels
-- the **five buttons after History**, one to three pixels — their widths do
-  not resolve against the separator positions and want another measurement
-- the **animated flag** at the right of the menu band, which is not drawn
-- the **Go button** beside the address bar, which wants two children in one
-  rebar band
+- the **four buttons between the second and third separators**, one pixel,
+  and with them the third separator and the Views button. Every rule that
+  fits the first separator, the hot Search button and the hot Views button
+  puts these one pixel right; the only arithmetic that fits them as well
+  needs the second separator to be six wide where the other two are seven,
+  which is not a rule so much as a coincidence. It wants a measurement of a
+  button in that group, and all four are disabled unless something is
+  selected — so it wants a selection made on the machine first.
 
 ### The explorer, against its screenshot
 
