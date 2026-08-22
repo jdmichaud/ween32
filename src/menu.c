@@ -616,6 +616,8 @@ typedef struct {
 #define WEEN_MENU_CASCADE_OVERLAP 6
 
 typedef struct {
+    ween_event replay; /* a press this loop is giving back, see below */
+    int has_replay;
     HWND owner;    /* who hears WM_COMMAND */
     HWND bar_wnd;  /* the window whose bar is open, NULL for TrackPopupMenu */
     HMENU bar;
@@ -842,8 +844,16 @@ static void session_run(menu_session *s)
                 s->done = 1; /* pressing the open one closes it, as win32 does */
             else if (on_bar && bar_index >= 0)
                 bar_open(s, bar_index);
-            else
+            else {
                 s->done = 1; /* anywhere else puts the whole menu away */
+                /* and the right button is handed back rather than swallowed:
+                 * on a file it picks that file and opens its menu, which is
+                 * what a right click on a second file does on the machine */
+                if (ev.button == 3) {
+                    s->replay = ev;
+                    s->has_replay = 1;
+                }
+            }
             break;
 
         case WEEN_EV_MOUSE_UP:
@@ -931,6 +941,9 @@ static void session_run(menu_session *s)
         s->bar_wnd->dirty = 1;
     }
     ween_flush_paint();
+    /* the press that closed it, once the menu is really gone */
+    if (s->has_replay)
+        ween_replay_event(&s->replay);
 }
 
 UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y)

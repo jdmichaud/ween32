@@ -1803,6 +1803,20 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
     }
 }
 
+/* An event a nested loop decided was not its own. A menu that dismisses on a
+ * press of the right button has to hand that press back: Windows delivers it,
+ * which is how a right click on another file closes one menu, picks the file
+ * and opens the next. It is put here rather than dispatched on the spot so
+ * that the menu's loop has really finished before the window below hears it. */
+static ween_event g_replay;
+static int g_has_replay;
+
+void ween_replay_event(const ween_event *ev)
+{
+    g_replay = *ev;
+    g_has_replay = 1;
+}
+
 BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 {
     (void)wnd;
@@ -1823,6 +1837,20 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
             msg->message = WM_QUIT;
             msg->wParam = (WPARAM)g_quit_code;
             return FALSE;
+        }
+        if (g_has_replay) { /* something a nested loop handed back */
+            ween_event ev = g_replay;
+            struct ween_wnd *target = g_active;
+            g_has_replay = 0;
+            if (ev.win)
+                for (struct ween_wnd *t = g_tops; t; t = t->next_top)
+                    if (t->backend_win == ev.win)
+                        target = t;
+            if (target) {
+                g_active = target;
+                pump_event(target, &ev);
+            }
+            continue;
         }
         /* Idle: paint (WM_PAINT is lowest priority, as in USER32), then block
          * for input. */

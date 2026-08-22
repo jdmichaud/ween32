@@ -25,12 +25,16 @@ static int g_failures = 0;
 enum { ID_NEW = 300, ID_OPEN, ID_EXIT, ID_SUB_A, ID_EDIT_A };
 
 static HMENU g_bar, g_file, g_sub;
-static int g_command;
+static int g_command, g_rbuttons;
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_COMMAND) {
         g_command = LOWORD(wp);
+        return 0;
+    }
+    if (msg == WM_RBUTTONDOWN) {
+        g_rbuttons++;
         return 0;
     }
     if (msg == WM_DESTROY) {
@@ -145,6 +149,30 @@ int main(void)
               "and an item seventeen — the font's height plus four");
         CHECK(ween_menu_item(g_file, 0)->y == 3,
               "the first item starts below the border and its padding");
+
+    /* A press of the right button away from the menu is not swallowed. The
+     * menu goes away and the press is handed back to the window under it,
+     * which is how a right click on a second file closes the first file's
+     * menu, picks the second and opens its own. */
+    {
+        ween_event ev;
+        MSG msg;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = WEEN_EV_MOUSE_DOWN;
+        ev.button = 3;
+        ev.win = w->backend_win;
+        ev.x = 300; /* well outside the drop-down, which is at the corner */
+        ev.y = 200;
+        ween_headless_inject(ev);
+        TrackPopupMenu(g_file, TPM_LEFTALIGN | TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                       0, 0, 0, w, NULL);
+        CHECK(g_rbuttons == 0, "the press that closed the menu waits its turn");
+        /* one turn of the loop is enough: the replay is handed over before it
+         * goes anywhere near the backend for more */
+        if (GetMessageA(&msg, NULL, 0, 0))
+            DispatchMessageA(&msg);
+        CHECK(g_rbuttons == 1, "and then reaches the window it was over");
+    }
 
         /* The window manager has put the window somewhere other than it
          * asked to be, which is what a tiling one always does. The drop-down

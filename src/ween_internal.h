@@ -462,6 +462,10 @@ void ween_window_origin(struct ween_wnd *top, int *x, int *y);
 /* An expose arriving inside a nested loop belongs to the window it names. */
 void ween_mark_exposed(const ween_event *ev);
 
+/* Give an event back to the window under it, from a loop that has decided it
+ * was not its own. It is dispatched by the message loop, not on the spot. */
+void ween_replay_event(const ween_event *ev);
+
 extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
 const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */
 const ween_backend *ween_backend_headless(void);
