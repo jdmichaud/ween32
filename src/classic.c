@@ -444,11 +444,11 @@ void ween_classic_arrow_down(ween_surface *s, int x, int y, int w, ween_color c)
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h,
                              ween_color c)
 {
-    /* Five wide and nine tall for a 12px cell, which is what the reference
-     * capture has beside "Recent files". Drawn as its own columns rather than
-     * through fill_polygon, which stops one short of the far edge and left the
-     * point blunt. */
-    int half = h / 3;
+    /* Four wide and seven tall, which is what a Windows 2000 shell menu
+     * draws beside "Send To": the rows are 1,2,3,4,3,2,1 pixels. Drawn as its
+     * own columns rather than through fill_polygon, which stops one short of
+     * the far edge and left the point blunt. */
+    int half = h / 4;
     int cy = y + h / 2;
     if (half < 2)
         half = 2;

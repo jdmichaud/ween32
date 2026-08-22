@@ -135,7 +135,7 @@ int main(void)
             AppendMenuA(plain, MF_STRING, 900, "&Open...");
             ween_menu_popup_size(plain, ween_gui_font(), &aw, &ah);
             int label = ween_strike_text_width(ween_gui_font(), "Open...", 7);
-            CHECK(aw == 20 + label + 10 + 13 + 3,
+            CHECK(aw == 20 + label + 9 + 12 + 3,
                   "a menu with no cascade still leaves room for the column");
             DestroyMenu(plain);
         }

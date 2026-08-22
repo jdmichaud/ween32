@@ -42,10 +42,11 @@
 #define MENU_PAD 1          /* between the edge and the first/last item */
 #define MENU_GUTTER 20      /* the popup's left edge to the label */
 #define MENU_LABEL_GAP 11   /* the widest label to the accelerator column */
-#define MENU_ACCEL_GAP 10   /* the widest accelerator to the arrow column */
-#define MENU_ARROW_COL 13   /* the column a submenu arrow is centred in */
+#define MENU_ACCEL_GAP 9    /* the widest accelerator to the arrow column */
+#define MENU_ARROW_COL 12   /* the column a submenu arrow is centred in */
 #define MENU_ITEM_PAD 4     /* item height is the font's height plus this */
 #define SEPARATOR_HEIGHT 9  /* the box; the etched pair sits at its middle */
+#define MENU_SEP_INSET 4    /* the popup's edge to the end of the etched pair */
 
 struct ween_menu {
     ween_menuitem *item;
@@ -463,8 +464,9 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
              * under it — which is what makes a Windows separator look sunk
              * into the menu rather than drawn on top of it. */
             int mid = it->y + it->h / 2;
-            ween_surface_hline(s, border, mid - 1, w - 2 * border, WEEN_SHADOW);
-            ween_surface_hline(s, border, mid, w - 2 * border, WEEN_WHITE);
+            int sx = ween_ncm(MENU_SEP_INSET);
+            ween_surface_hline(s, sx, mid - 1, w - 2 * sx, WEEN_SHADOW);
+            ween_surface_hline(s, sx, mid, w - 2 * sx, WEEN_WHITE);
             continue;
         }
         if (i == hot && !(it->flags & MF_GRAYED)) {
@@ -474,7 +476,9 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
         if (it->flags & MF_GRAYED)
             fg = WEEN_SHADOW;
 
-        int ty = it->y + (it->h - cell) / 2;
+        /* The four pixels an item has over the font's cell are not split
+         * evenly: the machine leaves one above the text and three below. */
+        int ty = it->y + (it->h - cell) / 2 - 1;
         if (it->flags & MF_CHECKED) /* a bare tick in the gutter, not a box */
             ween_classic_checkmark(s, inset + ween_ncm(2), ty, cell, cell, fg);
         /* the default item is drawn bold, which is how a menu says which one
