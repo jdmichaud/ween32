@@ -966,7 +966,7 @@ static void fill_children(HTREEITEM parent, const char *path)
  * To carrying a submenu. They are made once and kept, because a context menu
  * is the same menu wherever it is asked for — only what it acts on changes.
  */
-static HMENU g_folder_menu, g_file_menu, g_back_menu;
+static HMENU g_folder_menu, g_file_menu, g_back_menu, g_col_menu;
 
 /* Send To is a menu with pictures in it, so here are its four, taken the same
  * way as the toolbar's and in the same form. Nothing is masked out: a menu
@@ -1180,6 +1180,25 @@ static HMENU build_background_menu(void)
     return m;
 }
 
+/* The menu the header puts up: which columns the view is showing, with a tick
+ * against each. Name is always there, so it is ticked and greyed. Measured at
+ * 92 x 168 on the machine. */
+static HMENU build_column_menu(void)
+{
+    HMENU m = CreatePopupMenu();
+    AppendMenuA(m, MF_STRING | MF_CHECKED | MF_GRAYED, 0, "Name");
+    AppendMenuA(m, MF_STRING | MF_CHECKED, 0, "Size");
+    AppendMenuA(m, MF_STRING | MF_CHECKED, 0, "Type");
+    AppendMenuA(m, MF_STRING | MF_CHECKED, 0, "Modified");
+    AppendMenuA(m, MF_STRING, 0, "Attributes");
+    AppendMenuA(m, MF_STRING, 0, "Comment");
+    AppendMenuA(m, MF_STRING, 0, "Created");
+    AppendMenuA(m, MF_STRING, 0, "Accessed");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_STRING, 0, "More...");
+    return m;
+}
+
 static void build_context_menus(void)
 {
     g_folder_menu = CreatePopupMenu();
@@ -1202,6 +1221,7 @@ static void build_context_menus(void)
     AppendMenuA(g_folder_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
 
     g_back_menu = build_background_menu();
+    g_col_menu = build_column_menu();
 
     g_file_menu = CreatePopupMenu();
     AppendMenuA(g_file_menu, MF_STRING | MF_DEFAULT, IDM_CTX_OPEN, "&Open");
@@ -1966,11 +1986,18 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             hi.pt = pt;
             ScreenToClient(g_list, &hi.pt);
             if (SendMessageA(g_list, LVM_HITTEST, 0, (LPARAM)&hi) < 0) {
-                /* Off every name — the cells to the right of one, or under
-                 * the last row. The list has dropped its selection by now,
-                 * and what the machine puts up is the folder's own menu. */
+                /* Off every name. Above the first row it is the header, and
+                 * the machine offers the columns there; anywhere else — the
+                 * cells to the right of a name, or under the last row — it is
+                 * the folder's background, and the list has dropped its
+                 * selection by now, so what comes up is the folder's own. */
+                RECT ir;
                 g_ctx_row = -1;
-                menu = g_back_menu;
+                ir.left = LVIR_BOUNDS;
+                menu = (SendMessageA(g_list, LVM_GETITEMRECT, 0, (LPARAM)&ir) &&
+                        hi.pt.y < ir.top)
+                           ? g_col_menu
+                           : g_back_menu;
             } else {
                 int is_dir;
                 g_ctx_row = hi.iItem;

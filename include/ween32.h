@@ -484,6 +484,15 @@ typedef struct tagTVHITTESTINFO {
 #define LVNI_SELECTED 0x0002
 #define LVNI_FOCUSED 0x0001
 #define LVM_HITTEST (LVM_FIRST + 18)
+/* Where an item is, in client coordinates. The code goes in on rect.left:
+ * the whole row, or just the label — which is the box a click has to land in
+ * for the row to be picked. An application also uses it to tell the header
+ * from the rows, since the first row's top is where the header ends. */
+#define LVM_GETITEMRECT (LVM_FIRST + 14)
+#define LVIR_BOUNDS 0
+#define LVIR_ICON 1
+#define LVIR_LABEL 2
+#define LVIR_SELECTBOUNDS 3
 #define LVHT_NOWHERE 0x0001
 #define LVHT_ONITEMICON 0x0002
 #define LVHT_ONITEMLABEL 0x0004

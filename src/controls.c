@@ -2581,6 +2581,33 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case LVM_GETITEMRECT: {
+        RECT *out = (RECT *)lp;
+        int i = (int)wp, code;
+        l = list_of(wnd);
+        if (!out || !l || i < 0 || i >= l->nrow)
+            return FALSE;
+        code = (int)out->left; /* win32 passes the code in on left */
+        out->top = WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
+        out->bottom = out->top + WEEN_LV_ITEM_H;
+        if (code == LVIR_BOUNDS) {
+            out->left = -l->scroll_x;
+            out->right = lv_content_w(l) - l->scroll_x;
+        } else {
+            int icon_w = 0, icon_h = 0, indent;
+            if (l->images)
+                ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+            indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
+            if (code == LVIR_ICON) {
+                out->left = 2 - l->scroll_x;
+                out->right = out->left + icon_w;
+            } else { /* the label, and the selection is the same box */
+                out->left = 2 + indent - l->scroll_x;
+                out->right = out->left + lv_label_w(wnd, l, i, indent);
+            }
+        }
+        return TRUE;
+    }
     case LVM_HITTEST: {
         LVHITTESTINFO *hi = (LVHITTESTINFO *)lp;
         int i;

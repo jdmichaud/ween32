@@ -564,7 +564,8 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
             ween_classic_menu_bullet(s, inset + ween_ncm(5),
                                      it->y + (it->h - 6) / 2, fg);
         else if (it->flags & MF_CHECKED) /* a bare tick, not a box */
-            ween_classic_checkmark(s, inset + ween_ncm(2), ty, cell, cell, fg);
+            ween_classic_menu_check(s, inset + ween_ncm(4),
+                                    it->y + (it->h - 7) / 2, fg);
         if (it->bmp) { /* opaque, as Windows blits a menu bitmap */
             const ween_surface *b = &it->bmp->bitmap;
             int bx = ween_ncm(MENU_BMP_X);
