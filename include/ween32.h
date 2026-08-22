@@ -800,6 +800,46 @@ typedef struct {
     int iItem;
 } NMTOOLBAR;
 
+/* ---- rebar ----------------------------------------------------------------
+ *
+ * The bands a shell's toolbars sit in: each is a row with a gripper at its
+ * left, an optional label, and one control filling the rest. An etched line
+ * runs above every band, which is what separates them.
+ *
+ * Bands are stacked, one per row. A real rebar can put two side by side and
+ * let them be dragged; this does the arrangement a shell actually uses. */
+#define REBARCLASSNAMEA "ReBarWindow32"
+
+#define RBBIM_STYLE 0x00000001
+#define RBBIM_TEXT 0x00000004
+#define RBBIM_CHILD 0x00000010
+#define RBBIM_CHILDSIZE 0x00000020
+#define RBBIM_SIZE 0x00000040
+
+#define RBBS_GRIPPERALWAYS 0x00000080
+#define RBBS_NOGRIPPER 0x00000100
+
+typedef struct {
+    UINT cbSize;
+    UINT fMask;
+    UINT fStyle;
+    COLORREF clrFore;
+    COLORREF clrBack;
+    LPSTR lpText;
+    UINT cch;
+    int iImage;
+    HWND hwndChild;
+    UINT cxMinChild;
+    UINT cyMinChild;
+    UINT cx;
+} REBARBANDINFOA;
+
+#define RB_INSERTBANDA (WM_USER + 1)
+#define RB_SETBANDINFOA (WM_USER + 6)
+#define RB_GETBANDCOUNT (WM_USER + 12)
+#define RB_GETBARHEIGHT (WM_USER + 27)
+
+#define WEEN32_HAS_REBAR 1
 #define WEEN32_HAS_TOOLBAR 1
 #define WEEN32_HAS_MENU 1
 #define WEEN32_HAS_MESSAGEBOX 1

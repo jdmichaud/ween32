@@ -1854,7 +1854,15 @@ typedef struct {
     int nrow, caprow, sel;
     int top;      /* the first row drawn: a file list has to scroll */
     int pressed;  /* the header column being held down, -1 for none */
+    int sizing;   /* the divider being dragged, -1 for none */
+    int size_x0;  /* where the drag started, and the width it started at */
+    int size_w0;
 } ween_list;
+
+/* How near a header divider counts as being on it. Windows uses about this,
+ * and it has to be wide enough to hit without being so wide that clicking the
+ * column to sort it becomes hard. */
+#define WEEN_LV_DIVIDER 4
 
 static void list_ctl_free(void *p);
 
@@ -1863,8 +1871,10 @@ static ween_list *list_of(HWND w)
     if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_list));
         w->ctl_free = list_ctl_free;
-        if (w->ctl)
+        if (w->ctl) {
             ((ween_list *)w->ctl)->pressed = -1;
+            ((ween_list *)w->ctl)->sizing = -1;
+        }
     }
     return w->ctl;
 }
@@ -1908,6 +1918,20 @@ static void lv_scroll_to(HWND wnd, ween_list *l, int top)
         return;
     l->top = top;
     InvalidateRect(wnd, NULL, FALSE);
+}
+
+/* The column whose right-hand divider is under x, or -1. */
+static int lv_divider_at(const ween_list *l, int x, int y)
+{
+    int edge = 0;
+    if (y >= WEEN_LV_HEADER_H)
+        return -1;
+    for (int c = 0; c < l->ncol; c++) {
+        edge += l->width[c];
+        if (x >= edge - WEEN_LV_DIVIDER && x <= edge + WEEN_LV_DIVIDER)
+            return c;
+    }
+    return -1;
 }
 
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
@@ -2085,6 +2109,18 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             lv_scroll_to(wnd, l, pos);
             return 0;
         }
+        /* a press on a header divider drags the column's width instead of
+         * pressing the column, which is what a divider is for */
+        if (GET_Y_LPARAM(lp) < WEEN_LV_HEADER_H) {
+            int d = lv_divider_at(l, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+            if (d >= 0) {
+                l->sizing = d;
+                l->size_x0 = GET_X_LPARAM(lp);
+                l->size_w0 = l->width[d];
+                SetCapture(wnd);
+                return 0;
+            }
+        }
         /* a press on the header: it goes down, and the app hears about it on
          * the release, which is how a column is sorted */
         if (GET_Y_LPARAM(lp) < WEEN_LV_HEADER_H) {
@@ -2109,8 +2145,27 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_SETCURSOR:
+        /* a resize arrow over a divider, an ordinary one everywhere else */
+        l = list_of(wnd);
+        if (l && l->sizing >= 0) {
+            SetCursor(LoadCursorA(NULL, IDC_SIZEWE));
+            return TRUE;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+
     case WM_MOUSEMOVE:
         l = list_of(wnd);
+        if (l && l->sizing >= 0 && GetCapture() == wnd) {
+            int w = l->size_w0 + GET_X_LPARAM(lp) - l->size_x0;
+            if (w < WEEN_LV_DIVIDER * 2) /* never smaller than its divider */
+                w = WEEN_LV_DIVIDER * 2;
+            if (w != l->width[l->sizing]) {
+                l->width[l->sizing] = w;
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+            return 0;
+        }
         if (l && GetCapture() == wnd && l->pressed < 0) {
             RECT cr;
             ween_sbstate st = { l->top, 0, lv_max_top(wnd, l), lv_visible(wnd),
@@ -2123,6 +2178,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_LBUTTONUP:
         l = list_of(wnd);
+        if (l && l->sizing >= 0) {
+            l->sizing = -1;
+            ReleaseCapture();
+            return 0;
+        }
         if (l && GetCapture() == wnd) {
             ReleaseCapture();
             if (l->pressed >= 0) {
@@ -2695,6 +2755,7 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 /* ---- registration --------------------------------------------------------- */
 
 static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
+static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 
 void ween_register_controls(void)
 {
@@ -2738,6 +2799,9 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = toolbar_proc;
     wc.lpszClassName = TOOLBARCLASSNAMEA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = rebar_proc;
+    wc.lpszClassName = REBARCLASSNAMEA;
     RegisterClassA(&wc);
 
 }
@@ -3093,6 +3157,198 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         if (wnd->ctl) {
             toolbar_free(wnd->ctl);
+            wnd->ctl = NULL;
+        }
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the rebar ------------------------------------------------------------
+ *
+ * The bands a shell's toolbars sit in. Each band is a row: an etched line
+ * across the top of it, then a gripper — a three-pixel raised bar, inset two
+ * from the band's left edge and two from its top and bottom — then an optional
+ * label, then the control filling what is left.
+ *
+ * Measured off a Windows 2000 shell: the etched line is a shadow row with a
+ * white one under it, and the content starts nine pixels in from the band's
+ * left, which is two, the three of the gripper, then four.
+ */
+
+#define WEEN_RB_GRIPPER_W 3
+#define WEEN_RB_GRIPPER_INSET 2
+#define WEEN_RB_CONTENT_X 9
+#define WEEN_RB_EDGE_H 2 /* the etched line above each band */
+#define WEEN_RB_LABEL_GAP 6
+
+typedef struct {
+    HWND child;
+    char *text;
+    UINT style;
+    int min_h;  /* what the band asked for, or the child's height when it went
+                 * in — never re-read from the child, because the layout
+                 * resizes the child and the two would chase each other down */
+    int y, h;   /* filled in by the layout */
+} ween_rbband;
+
+typedef struct {
+    ween_rbband *band;
+    int count, cap;
+} ween_rebar;
+
+static void rebar_free(void *p)
+{
+    ween_rebar *rb = p;
+    for (int i = 0; i < rb->count; i++)
+        free(rb->band[i].text);
+    free(rb->band);
+    free(rb);
+}
+
+static ween_rebar *rebar_of(HWND w)
+{
+    if (!w->ctl) {
+        w->ctl = calloc(1, sizeof(ween_rebar));
+        w->ctl_free = rebar_free;
+    }
+    return w->ctl;
+}
+
+/* Stack the bands and put each child where its band says. */
+static void rebar_layout(HWND wnd, ween_rebar *rb)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    RECT cr;
+    int y = 0;
+    GetClientRect(wnd, &cr);
+    for (int i = 0; i < rb->count; i++) {
+        ween_rbband *b = &rb->band[i];
+        RECT chr;
+        int content = ween_ncm(WEEN_RB_CONTENT_X);
+        (void)chr;
+        b->y = y;
+        b->h = ween_ncm(WEEN_RB_EDGE_H) + b->min_h;
+        if (b->text && f)
+            content += ween_strike_text_width(f, b->text,
+                                              (int)strlen(b->text)) +
+                       ween_ncm(WEEN_RB_LABEL_GAP);
+        if (b->child)
+            MoveWindow(b->child, content, y + ween_ncm(WEEN_RB_EDGE_H),
+                       cr.right - content, b->h - ween_ncm(WEEN_RB_EDGE_H),
+                       TRUE);
+        y += b->h;
+    }
+}
+
+static int rebar_height(HWND wnd, ween_rebar *rb)
+{
+    int h = 0;
+    rebar_layout(wnd, rb);
+    for (int i = 0; i < rb->count; i++)
+        h += rb->band[i].h;
+    return h;
+}
+
+static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_rebar *rb = rebar_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int th = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    RECT r = ps->rcPaint;
+    int ox, oy;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    if (!rb)
+        return;
+    rebar_layout(wnd, rb);
+
+    for (int i = 0; i < rb->count; i++) {
+        ween_rbband *b = &rb->band[i];
+        int by = oy + b->y;
+        int inner = b->h - ween_ncm(WEEN_RB_EDGE_H);
+        /* the etched line across the top of the band */
+        ween_surface_hline(&top->surface, ox, by, r.right, WEEN_SHADOW);
+        ween_surface_hline(&top->surface, ox, by + 1, r.right, WEEN_WHITE);
+        by += ween_ncm(WEEN_RB_EDGE_H);
+
+        if (!(b->style & RBBS_NOGRIPPER)) {
+            int gi = ween_ncm(WEEN_RB_GRIPPER_INSET);
+            ween_classic_edge(&top->surface, ox + gi, by + gi,
+                              ween_ncm(WEEN_RB_GRIPPER_W), inner - 2 * gi,
+                              EDGE_RAISED, BF_RECT, NULL);
+        }
+        if (b->text && f)
+            ween_strike_draw(f, &top->surface, ox + ween_ncm(WEEN_RB_CONTENT_X),
+                             by + (inner - th) / 2, b->text,
+                             (int)strlen(b->text), WEEN_BLACK);
+    }
+}
+
+static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_rebar *rb;
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        rebar_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case RB_INSERTBANDA: {
+        const REBARBANDINFOA *info = (const REBARBANDINFOA *)lp;
+        rb = rebar_of(wnd);
+        if (!rb || !info)
+            return FALSE;
+        if (rb->count == rb->cap) {
+            int cap = rb->cap ? rb->cap * 2 : 4;
+            ween_rbband *grown = realloc(rb->band, (size_t)cap * sizeof *grown);
+            if (!grown)
+                return FALSE;
+            rb->band = grown;
+            rb->cap = cap;
+        }
+        ween_rbband *b = &rb->band[rb->count];
+        memset(b, 0, sizeof(*b));
+        if (info->fMask & RBBIM_CHILD)
+            b->child = info->hwndChild;
+        if (info->fMask & RBBIM_STYLE)
+            b->style = info->fStyle;
+        if ((info->fMask & RBBIM_TEXT) && info->lpText)
+            b->text = dup_str(info->lpText);
+        /* the height the band keeps: what it asked for, else what the child
+         * was when it went in, else a toolbar's worth */
+        b->min_h = (info->fMask & RBBIM_CHILDSIZE) ? (int)info->cyMinChild : 0;
+        if (!b->min_h && b->child) {
+            RECT chr;
+            GetClientRect(b->child, &chr);
+            b->min_h = chr.bottom;
+        }
+        if (!b->min_h)
+            b->min_h = ween_ncm(WEEN_TB_HEIGHT);
+        rb->count++;
+        rebar_layout(wnd, rb);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case RB_GETBANDCOUNT:
+        rb = rebar_of(wnd);
+        return rb ? rb->count : 0;
+    case RB_GETBARHEIGHT:
+        rb = rebar_of(wnd);
+        return rb ? rebar_height(wnd, rb) : 0;
+    case WM_SIZE:
+        rb = rebar_of(wnd);
+        if (rb)
+            rebar_layout(wnd, rb);
+        return 0;
+    case WM_DESTROY:
+        if (wnd->ctl) {
+            rebar_free(wnd->ctl);
             wnd->ctl = NULL;
         }
         return 0;

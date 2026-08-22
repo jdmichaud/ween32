@@ -19,13 +19,11 @@ that no application has asked for:
 - [ ] **The clipboard between applications.** Cut, copy and paste work within
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
-- [ ] **A rebar**, the bands with grippers a shell toolbar sits in. A toolbar
-  can be positioned by hand meanwhile, which is what an app would do.
+
 - [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
   repeats a held arrow; the list box, tree view and list view draw and handle
   their bars inline and do not.
-- [ ] **Column resizing** by dragging a list view's header dividers. A column
-  can be set to a width; it cannot yet be dragged to one.
+
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
   scrolls rather than being clipped.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
@@ -84,7 +82,8 @@ a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
 `DrawIconEx`. The tree and list views draw the image an item names.
 
 **A shell's controls** — a `ToolbarWindow32` with flat, hot-tracked, checkable
-and drop-down buttons; cursors (`LoadCursorA`/`SetCursor`/`WM_SETCURSOR`, a
+and drop-down buttons, in a `ReBarWindow32` of stacked bands with grippers and
+labels; a list view whose columns resize by dragging a header divider; cursors (`LoadCursorA`/`SetCursor`/`WM_SETCURSOR`, a
 class cursor, and the shapes a splitter needs); minimize and maximize beside
 the close box, with `WM_SYSCOMMAND` behind them; and both views able to be
 emptied, walked and scrolled rather than only filled.

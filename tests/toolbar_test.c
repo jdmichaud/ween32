@@ -166,6 +166,47 @@ int main(void)
     SendMessageA(g_tb, WM_LBUTTONUP, 0, MAKELPARAM(button_middle(3), 10));
     CHECK(g_command == 0, "dragging off a button before letting go cancels it");
 
+    /* A rebar: the bands a shell's toolbars sit in, each a row with a gripper
+     * and the control filling what is left of it. */
+    {
+        HWND rebar = CreateWindowExA(0, REBARCLASSNAMEA, "",
+                                     WS_CHILD | WS_VISIBLE, 0, 30, 460, 60, w,
+                                     NULL, NULL, NULL);
+        CHECK(rebar != NULL, "a rebar");
+
+        HWND addr = CreateWindowExA(WS_EX_CLIENTEDGE, "COMBOBOX", "",
+                                    WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0,
+                                    0, 200, 21, rebar, NULL, NULL, NULL);
+        REBARBANDINFOA bi;
+        memset(&bi, 0, sizeof(bi));
+        bi.cbSize = sizeof(bi);
+        bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE;
+        bi.hwndChild = g_tb;
+        bi.cyMinChild = 22;
+        CHECK(SendMessageA(rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi),
+              "a band holding the toolbar went in");
+
+        bi.fMask = RBBIM_CHILD | RBBIM_TEXT | RBBIM_CHILDSIZE;
+        bi.hwndChild = addr;
+        bi.lpText = (char *)"Address";
+        CHECK(SendMessageA(rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi),
+              "and a second one with a label before its control");
+        CHECK(SendMessageA(rebar, RB_GETBANDCOUNT, 0, 0) == 2,
+              "the rebar counts two bands");
+
+        int height = (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0);
+        CHECK(height > 40, "and is as tall as both of them together");
+
+        /* the bands moved their children into place, stacked */
+        RECT tbr, ar;
+        GetWindowRect(g_tb, &tbr);
+        GetWindowRect(addr, &ar);
+        CHECK(ar.top > tbr.top, "the second band sits below the first");
+        CHECK(tbr.left > 0 && ar.left > tbr.left,
+              "both are inset past the gripper, and the labelled one further");
+        DestroyWindow(rebar);
+    }
+
     DestroyWindow(w);
 
     if (g_failures) {

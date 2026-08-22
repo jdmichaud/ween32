@@ -185,6 +185,42 @@ int main(void)
               "and the whole tree emptied for the next folder");
     }
 
+    /* Dragging a header divider resizes the column, and does not sort it. */
+    {
+        LVCOLUMNA col;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.pszText = (char *)"Name";
+        col.cx = 120;
+        g_column_clicked = -1;
+
+        /* the divider at the right of column 0 is at x = 120 */
+        SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(120, 4));
+        SendMessageA(g_list, WM_MOUSEMOVE, 0, MAKELPARAM(160, 4));
+        SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(160, 4));
+        /* the width is read back by putting something at that column's edge:
+         * the next divider has moved with it */
+        SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(160, 4));
+        SendMessageA(g_list, WM_MOUSEMOVE, 0, MAKELPARAM(150, 4));
+        SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(150, 4));
+        CHECK(g_column_clicked == -1,
+              "dragging a divider resizes rather than sorting");
+
+        /* and setting a width explicitly still works */
+        SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0, MAKELPARAM(90, 0));
+        SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(90, 4));
+        SendMessageA(g_list, WM_MOUSEMOVE, 0, MAKELPARAM(140, 4));
+        SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(140, 4));
+        CHECK(g_column_clicked == -1,
+              "a column set to a width can then be dragged from it");
+
+        /* a press away from any divider is a sort, as before */
+        SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(60, 4));
+        SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(60, 4));
+        CHECK(g_column_clicked == 0,
+              "and a press away from one still sorts the column");
+    }
+
     /* Cursors: a class carries one, and a control can override it over part
      * of itself — which is what a splitter needs. */
     {
