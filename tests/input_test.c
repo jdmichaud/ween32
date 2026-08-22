@@ -25,7 +25,9 @@ static int g_failures = 0;
 enum { ID_EDIT = 100, ID_CHECK, ID_LIST, ID_TRACK, ID_GROUP, ID_NESTED };
 
 static HWND g_edit, g_check, g_list, g_track, g_group, g_nested;
-static int g_nested_clicked, g_left;
+static int g_nested_clicked, g_left, g_nested_rdown;
+static HWND g_ctx_from;
+static int g_ctx_x, g_ctx_y;
 
 /* A control that wants a hot state: it asks to hear when the pointer goes. */
 static LRESULT CALLBACK nested_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -47,6 +49,10 @@ static LRESULT CALLBACK nested_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         g_nested_clicked++;
         return 0;
     }
+    if (msg == WM_RBUTTONDOWN) {
+        g_nested_rdown++;
+        return 0;
+    }
     return DefWindowProcA(w, msg, wp, lp);
 }
 static int g_edit_changed, g_check_clicked, g_list_changed, g_scrolled;
@@ -55,6 +61,13 @@ static int g_edit_changed, g_check_clicked, g_list_changed, g_scrolled;
 static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    /* a control that has no menu of its own leaves the request to its
+     * parent, and it arrives here naming the window it started in */
+    case WM_CONTEXTMENU:
+        g_ctx_from = (HWND)wp;
+        g_ctx_x = GET_X_LPARAM(lp);
+        g_ctx_y = GET_Y_LPARAM(lp);
+        return 0;
     case WM_CREATE:
         g_edit = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "abc",
                                  WS_CHILD | WS_VISIBLE | ES_LEFT, 10, 10, 120,
@@ -111,6 +124,20 @@ static void inject(ween_ev_kind kind, int x, int y)
     ev.x = x;
     ev.y = y;
     ev.button = 1;
+    ween_headless_inject(ev);
+}
+
+/* the right button, which is the one that asks for a context menu */
+static void right_click(int x, int y)
+{
+    ween_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.x = x;
+    ev.y = y;
+    ev.button = 3;
+    ev.kind = WEEN_EV_MOUSE_DOWN;
+    ween_headless_inject(ev);
+    ev.kind = WEEN_EV_MOUSE_UP;
     ween_headless_inject(ev);
 }
 
@@ -187,6 +214,10 @@ int main(void)
     inject(WEEN_EV_MOUSE_MOVE, cx + 130 + 20, cy + 10 + 30);
     inject(WEEN_EV_MOUSE_DOWN, cx + 130 + 20, cy + 10 + 30);
     inject(WEEN_EV_MOUSE_UP, cx + 130 + 20, cy + 10 + 30);
+
+    /* the same spot with the right button: the control hears the press and
+     * the request for a menu goes up to the frame */
+    right_click(cx + 130 + 20, cy + 10 + 30);
     /* and moving off it is what WM_MOUSELEAVE is for */
     inject(WEEN_EV_MOUSE_MOVE, cx + 5, cy + 5);
 
@@ -244,6 +275,20 @@ int main(void)
     CHECK(g_nested_clicked == 1,
           "a control nested inside another got the click, not its parent");
     CHECK(g_left == 1, "and heard WM_MOUSELEAVE when the pointer went away");
+
+    CHECK(g_nested_rdown == 1, "the right button reached the control too");
+    CHECK(g_ctx_from == g_nested,
+          "and its parent was asked for a menu, told which window it was in");
+    {
+        /* the click landed ten in and ten down inside the control, which
+         * sits at (10,20) in a group box at (130,10) */
+        POINT pt;
+        pt.x = 10;
+        pt.y = 10;
+        ClientToScreen(g_nested, &pt);
+        CHECK(g_ctx_x == pt.x && g_ctx_y == pt.y,
+              "the point comes in screen coordinates, where a menu goes");
+    }
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

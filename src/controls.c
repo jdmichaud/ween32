@@ -1973,6 +1973,37 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return (LRESULT)(UINT_PTR)was;
         }
         return 0;
+    case TVM_HITTEST: {
+        TVHITTESTINFO *hi = (TVHITTESTINFO *)lp;
+        RECT cr;
+        int row, depth = 0, want, sb = ween_scroll_metric();
+        ween_tvitem *hit;
+        t = tree_of(wnd);
+        if (!hi || !t)
+            return 0;
+        hi->hItem = NULL;
+        hi->flags = 0;
+        GetClientRect(wnd, &cr);
+        if (hi->pt.x >= cr.right - sb && t->rows * WEEN_TV_ITEM_H > cr.bottom)
+            return 0; /* the bar down the side is not an item */
+        want = hi->pt.y / WEEN_TV_ITEM_H + t->scroll_row;
+        row = 0;
+        hit = tree_at_row(t->root, 0, want, &row, &depth);
+        if (!hit)
+            return 0;
+        hi->hItem = hit;
+        {   /* which part of it: the box that opens it, or the item itself */
+            int bx = 5 + depth * WEEN_TV_INDENT;
+            int x = hi->pt.x + t->scroll_x;
+            hi->flags = (x >= bx && x < bx + WEEN_TV_BUTTON)
+                            ? TVHT_ONITEMBUTTON
+                            : TVHT_ONITEMLABEL;
+        }
+        return (LRESULT)(INT_PTR)hit;
+    }
+    case WM_RBUTTONDOWN:
+        SetFocus(wnd);
+        return 0;
     case TVM_EXPAND:
         tree_expand(wnd, (ween_tvitem *)lp, (wp & TVE_EXPAND) != 0);
         return TRUE;
@@ -2447,6 +2478,44 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->sel = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, NM_DBLCLK);
+        }
+        return 0;
+    }
+    case LVM_HITTEST: {
+        LVHITTESTINFO *hi = (LVHITTESTINFO *)lp;
+        ween_lv_layout g;
+        int i;
+        l = list_of(wnd);
+        if (!hi || !l)
+            return -1;
+        hi->iItem = -1;
+        hi->iSubItem = 0;
+        hi->flags = 0;
+        g = lv_layout(wnd, l);
+        if (hi->pt.y < WEEN_LV_HEADER_H || (g.vbar && hi->pt.x >= g.view_w) ||
+            (g.hbar && hi->pt.y >= g.view_h))
+            return -1;
+        i = (hi->pt.y - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
+        if (i < 0 || i >= l->nrow)
+            return -1;
+        hi->iItem = i;
+        hi->flags = LVHT_ONITEMLABEL;
+        return i;
+    }
+    case WM_RBUTTONDOWN: {
+        /* A press of the right button picks the row under it, the way win32
+         * does, so that whatever menu follows is about that row. */
+        LVHITTESTINFO hi;
+        l = list_of(wnd);
+        memset(&hi, 0, sizeof(hi));
+        hi.pt.x = GET_X_LPARAM(lp);
+        hi.pt.y = GET_Y_LPARAM(lp);
+        SetFocus(wnd);
+        if (l && SendMessageA(wnd, LVM_HITTEST, 0, (LPARAM)&hi) >= 0 &&
+            l->sel != hi.iItem + 1) {
+            l->sel = hi.iItem + 1;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, LVN_ITEMCHANGED);
         }
         return 0;
     }

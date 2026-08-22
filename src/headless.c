@@ -68,16 +68,19 @@ static void inject_script(const char *script)
             ev.kind = WEEN_EV_TIME; /* w:500 — let 500ms of timer time pass */
             ev.x = (int)strtol(p + 2, (char **)&p, 10);
             ween_headless_inject(ev);
-        } else if ((kind == 'd' || kind == 'u' || kind == 'm') && p[1] == ':') {
+        } else if ((kind == 'd' || kind == 'u' || kind == 'm' || kind == 'D' ||
+                    kind == 'U') && p[1] == ':') {
             char *end;
             ev.x = (int)strtol(p + 2, &end, 10);
             if (*end == ',')
                 ev.y = (int)strtol(end + 1, &end, 10);
             p = end;
-            ev.kind = kind == 'd' ? WEEN_EV_MOUSE_DOWN
-                      : kind == 'u' ? WEEN_EV_MOUSE_UP
-                                    : WEEN_EV_MOUSE_MOVE;
-            ev.button = 1;
+            ev.kind = (kind == 'd' || kind == 'D') ? WEEN_EV_MOUSE_DOWN
+                      : (kind == 'u' || kind == 'U') ? WEEN_EV_MOUSE_UP
+                                                     : WEEN_EV_MOUSE_MOVE;
+            /* the capitals are the right button, which is what asks for a
+             * context menu */
+            ev.button = (kind == 'D' || kind == 'U') ? 3 : 1;
             ween_headless_inject(ev);
         } else {
             break; /* malformed: stop rather than loop */

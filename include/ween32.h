@@ -246,6 +246,13 @@ typedef struct tagCREATESTRUCTA {
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
 #define WM_LBUTTONDBLCLK 0x0203
+#define WM_RBUTTONDOWN 0x0204
+#define WM_RBUTTONUP 0x0205
+/* Sent once the right button comes back up, carrying the point in desktop
+ * coordinates — which is where a context menu goes. DefWindowProc sends it,
+ * so a window that does not want one need do nothing. */
+#define WM_CONTEXTMENU 0x007B
+#define MK_RBUTTON 0x0002
 /* A window is only sent double-click messages if its class asked for them.
  * Without this the second of two quick clicks arrives as another plain
  * WM_LBUTTONDOWN, which is what a control that does not care about double
@@ -426,6 +433,13 @@ typedef struct tagCOMBOBOXEXITEMA {
 #define TVGN_CARET 0x0009
 #define TVM_EXPAND (TV_FIRST + 2)
 #define TVM_SELECTITEM (TV_FIRST + 11)
+#define TVM_HITTEST (TV_FIRST + 17)
+#define TVHT_ONITEMICON 0x0002
+#define TVHT_ONITEMLABEL 0x0004
+#define TVHT_ONITEMBUTTON 0x0010
+#define TVHT_ONITEMRIGHT 0x0020
+#define TVHT_ONITEMSTATEICON 0x0040
+#define TVHT_ONITEM (TVHT_ONITEMICON | TVHT_ONITEMLABEL | TVHT_ONITEMSTATEICON)
 
 typedef struct ween_tvitem *HTREEITEM;
 typedef struct tagTVITEMA {
@@ -441,6 +455,12 @@ typedef struct tagTVINSERTSTRUCTA {
     HTREEITEM hInsertAfter;
     TVITEMA item;
 } TVINSERTSTRUCTA;
+
+typedef struct tagTVHITTESTINFO {
+    POINT pt;
+    UINT flags;
+    HTREEITEM hItem;
+} TVHITTESTINFO;
 
 #define LVS_REPORT 0x0001L
 #define LVS_SINGLESEL 0x0004L
@@ -462,6 +482,17 @@ typedef struct tagTVINSERTSTRUCTA {
 #define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
 #define LVM_ENSUREVISIBLE (LVM_FIRST + 19)
 #define LVNI_SELECTED 0x0002
+#define LVM_HITTEST (LVM_FIRST + 18)
+#define LVHT_ONITEMICON 0x0002
+#define LVHT_ONITEMLABEL 0x0004
+#define LVHT_ONITEMSTATEICON 0x0008
+#define LVHT_ONITEM (LVHT_ONITEMICON | LVHT_ONITEMLABEL | LVHT_ONITEMSTATEICON)
+typedef struct tagLVHITTESTINFO {
+    POINT pt;
+    UINT flags;
+    int iItem;
+    int iSubItem;
+} LVHITTESTINFO;
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
 

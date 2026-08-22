@@ -1690,6 +1690,10 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         break;
     case WEEN_EV_MOUSE_DOWN: {
         LRESULT hit;
+        if (ev->button == 3) { /* the right one, which asks for a menu */
+            route_mouse(top, WM_RBUTTONDOWN, ev->x, ev->y);
+            break;
+        }
         if (ev->button != 1) /* the wheel arrives as buttons 4 and 5 */
             break;
         /* Two presses close together in time and place are a double click.
@@ -1746,6 +1750,10 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         break;
     }
     case WEEN_EV_MOUSE_UP:
+        if (ev->button == 3) {
+            route_mouse(top, WM_RBUTTONUP, ev->x, ev->y);
+            break;
+        }
         if (ev->button != 1)
             break;
         route_mouse(top, WM_LBUTTONUP, ev->x, ev->y);
@@ -1846,6 +1854,23 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_RBUTTONUP: {
+        /* What asks for a context menu, carrying the point in desktop
+         * coordinates the way TrackPopupMenu wants it. A control that does
+         * not handle it passes it up, so the window gets asked in the end. */
+        POINT pt;
+        pt.x = GET_X_LPARAM(lp);
+        pt.y = GET_Y_LPARAM(lp);
+        ClientToScreen(wnd, &pt);
+        return SendMessageA(wnd, WM_CONTEXTMENU, (WPARAM)wnd,
+                            MAKELPARAM((WORD)pt.x, (WORD)pt.y));
+    }
+    case WM_CONTEXTMENU:
+        /* Unhandled here means the parent is asked, which is how a control
+         * inside a window comes to show the window's menu. */
+        if (wnd->parent)
+            return SendMessageA(wnd->parent, WM_CONTEXTMENU, wp, lp);
+        return 0;
     case WM_SETICON: {
         /* One icon, not win32's small-and-large pair: the caption is the only
          * place ween32 draws one, and it wants the small one. */

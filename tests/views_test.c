@@ -212,6 +212,21 @@ int main(void)
                                       (LPARAM)root) == kid,
               "and for a node's first child");
 
+        /* Which item a point is on. A right click needs this before it can
+         * put a menu on the folder under the pointer. */
+        {
+            TVHITTESTINFO ht;
+            memset(&ht, 0, sizeof(ht));
+            ht.pt.x = 30;
+            ht.pt.y = 5; /* the first row */
+            CHECK((HTREEITEM)SendMessageA(g_tree, TVM_HITTEST, 0,
+                                          (LPARAM)&ht) == root,
+                  "the tree says which item a point is on");
+            ht.pt.y = 900; /* past the last */
+            CHECK(SendMessageA(g_tree, TVM_HITTEST, 0, (LPARAM)&ht) == 0,
+                  "and nothing below them");
+        }
+
         char buf[64];
         TVITEMA q;
         memset(&q, 0, sizeof(q));
@@ -382,6 +397,9 @@ int main(void)
         it.mask = LVIF_TEXT;
         it.pszText = (char *)"a name far longer than sixty pixels of Tahoma";
         SendMessageA(narrow, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        it.iItem = 1;
+        it.pszText = (char *)"second";
+        SendMessageA(narrow, LVM_INSERTITEMA, 0, (LPARAM)&it);
 
         InvalidateRect(lw, NULL, TRUE);
         ween_flush_paint();
@@ -398,6 +416,27 @@ int main(void)
                 }
         CHECK(within > 0, "a long name is drawn");
         CHECK(beyond == 0, "and stops at its column rather than running on");
+
+        /* The same seventeen and fourteen say where the second row is, which
+         * is what a right click has to turn a point into. */
+        {
+            LVHITTESTINFO ht;
+            memset(&ht, 0, sizeof(ht));
+            ht.pt.x = 20;
+            ht.pt.y = 17 + 14 + 7;
+            CHECK(SendMessageA(narrow, LVM_HITTEST, 0, (LPARAM)&ht) == 1,
+                  "the list says which row a point is on");
+            ht.pt.y = 5; /* in the header */
+            CHECK(SendMessageA(narrow, LVM_HITTEST, 0, (LPARAM)&ht) == -1,
+                  "and nothing for a point above the rows");
+            /* the right button picks that row, as the shell does, so the menu
+             * that follows is about the file under the pointer */
+            SendMessageA(narrow, WM_RBUTTONDOWN, 0,
+                         MAKELPARAM(20, 17 + 14 + 7));
+            CHECK(SendMessageA(narrow, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED) == 1,
+                  "and the right button selects it");
+        }
         DestroyWindow(lw);
     }
 
