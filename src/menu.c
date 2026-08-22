@@ -55,6 +55,10 @@
 #define MENU_BMP_PAD 3      /* over and under it, which is what heightens the
                              * item: sixteen and three each way is twenty-two */
 #define MENU_BMP_MARGIN 4   /* and the extra such a menu keeps on the right */
+/* Ours, kept clear of every MF_ bit: the item is one of a set, so its check
+ * is drawn as a dot. Windows carries this as MFT_RADIOCHECK in a different
+ * word, which is why it does not need a private bit here. */
+#define WEEN_MENU_RADIO 0x40000000u
 
 struct ween_menu {
     ween_menuitem *item;
@@ -215,6 +219,29 @@ BOOL SetMenuItemBitmaps(HMENU menu, UINT item, UINT flags, HBITMAP unchecked,
     if (!it)
         return FALSE;
     it->bmp = unchecked ? unchecked : checked;
+    return TRUE;
+}
+
+/* One of a set: the items from `first` to `last` are marked as a set and the
+ * one named by `check` is the one it is on, which a menu shows with a dot
+ * rather than a tick. */
+BOOL CheckMenuRadioItem(HMENU menu, UINT first, UINT last, UINT check,
+                        UINT flags)
+{
+    if (!menu)
+        return FALSE;
+    for (int i = 0; i < menu->count; i++) {
+        ween_menuitem *it = &menu->item[i];
+        UINT key = (flags & MF_BYPOSITION) ? (UINT)i : it->id;
+        if ((flags & MF_BYPOSITION) ? (key < first || key > last)
+                                    : (it->id < first || it->id > last))
+            continue;
+        it->flags |= WEEN_MENU_RADIO;
+        if (key == check)
+            it->flags |= MF_CHECKED;
+        else
+            it->flags &= ~MF_CHECKED;
+    }
     return TRUE;
 }
 
@@ -533,7 +560,10 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
          * the machine leaves one fewer above the text than below, in an item
          * of seventeen and in the taller one a picture makes. */
         int ty = it->y + (it->h - cell) / 2 - 1;
-        if (it->flags & MF_CHECKED) /* a bare tick in the gutter, not a box */
+        if ((it->flags & MF_CHECKED) && (it->flags & WEEN_MENU_RADIO))
+            ween_classic_menu_bullet(s, inset + ween_ncm(5),
+                                     it->y + (it->h - 6) / 2, fg);
+        else if (it->flags & MF_CHECKED) /* a bare tick, not a box */
             ween_classic_checkmark(s, inset + ween_ncm(2), ty, cell, cell, fg);
         if (it->bmp) { /* opaque, as Windows blits a menu bitmap */
             const ween_surface *b = &it->bmp->bitmap;
@@ -544,14 +574,26 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
                     ween_surface_pixel(s, bx + px, by + py,
                                        b->px[(size_t)py * b->w + px]);
         }
-        /* the default item is drawn bold, which is how a menu says which one
-         * a double click would have picked */
-        draw_label(s, (it->flags & MF_DEFAULT) ? ween_gui_font_bold() : f,
-                   gutter, ty, it->text, len, fg);
+        const ween_strike *lf =
+            (it->flags & MF_DEFAULT) ? ween_gui_font_bold() : f;
+        /* A disabled label is embossed, not merely pale: white one down and
+         * one right, with the shadow colour over it. Windows draws every
+         * greyed thing this way — a menu item, a bar item, a button's face —
+         * and without the white it reads as a lighter black instead. */
+        if (fg == WEEN_SHADOW && i != hot) {
+            draw_label(s, lf, gutter + 1, ty + 1, it->text, len, WEEN_WHITE);
+            if (acc)
+                draw_label(s, f, accel_x + 1, ty + 1, acc, (int)strlen(acc),
+                           WEEN_WHITE);
+        }
+        draw_label(s, lf, gutter, ty, it->text, len, fg);
         if (acc)
             draw_label(s, f, accel_x, ty, acc, (int)strlen(acc), fg);
         if (it->popup) { /* centred in its column at the right */
             int col = w - inset - arrow_col;
+            if (fg == WEEN_SHADOW && i != hot)
+                ween_classic_menu_arrow(s, col + ween_ncm(2) + 1, ty + 1, cell,
+                                        WEEN_WHITE);
             ween_classic_menu_arrow(s, col + ween_ncm(2), ty, cell, fg);
         }
         (void)has_arrow;

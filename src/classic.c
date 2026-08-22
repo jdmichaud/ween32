@@ -289,6 +289,16 @@ static void fill_ellipse(ween_surface *s, int x, int y, int w, int h, int half,
 /* The bare tick a menu puts beside a checked item — Wine's six-point mark,
  * with no box around it. A menu is not a check box; drawing the frame too was
  * the difference between "checked" and a control sitting in the gutter. */
+/* The dot a menu puts beside the one of a set it is on: six by six with its
+ * corners off, which is what a Windows 2000 View menu has beside Details. */
+void ween_classic_menu_bullet(ween_surface *s, int x, int y, ween_color c)
+{
+    ween_surface_hline(s, x + 1, y, 4, c);
+    for (int i = 1; i < 5; i++)
+        ween_surface_hline(s, x, y + i, 6, c);
+    ween_surface_hline(s, x + 1, y + 5, 4, c);
+}
+
 void ween_classic_checkmark(ween_surface *s, int x, int y, int w, int h,
                             ween_color c)
 {

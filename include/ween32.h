@@ -1034,6 +1034,10 @@ int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags);
 BOOL SetMenuItemBitmaps(HMENU menu, UINT item, UINT flags, HBITMAP unchecked,
                         HBITMAP checked);
 DWORD CheckMenuItem(HMENU menu, UINT id, UINT check);
+/* Which one of a set of items a menu is on: the range is marked as a set and
+ * the one named is ticked with a dot rather than a check mark. */
+BOOL CheckMenuRadioItem(HMENU menu, UINT first, UINT last, UINT check,
+                        UINT flags);
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
                     HWND owner, const RECT *unused);

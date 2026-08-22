@@ -58,6 +58,7 @@ enum {
     IDM_CTX_EXPLORE,
     IDM_CTX_OPEN,
     IDM_CTX_PROPERTIES,
+    IDM_CTX_REFRESH,
     IDM_CLOSE,
     IDM_ABOUT
 };
@@ -837,7 +838,7 @@ static void fill_children(HTREEITEM parent, const char *path)
  * To carrying a submenu. They are made once and kept, because a context menu
  * is the same menu wherever it is asked for — only what it acts on changes.
  */
-static HMENU g_folder_menu, g_file_menu;
+static HMENU g_folder_menu, g_file_menu, g_back_menu;
 
 /* Send To is a menu with pictures in it, so here are its four, taken the same
  * way as the toolbar's and in the same form. Nothing is masked out: a menu
@@ -998,6 +999,59 @@ static HMENU build_send_to(void)
     return m;
 }
 
+/* The menu the machine puts on the background of a folder view: nothing is
+ * selected, so it is about the folder rather than about a file. Measured at
+ * 160 x 204 with these thirteen entries. */
+static HMENU build_background_menu(void)
+{
+    HMENU m = CreatePopupMenu();
+    HMENU view = CreatePopupMenu();
+    HMENU arrange = CreatePopupMenu();
+    HMENU new_menu = CreatePopupMenu();
+
+    AppendMenuA(view, MF_STRING, 0, "Lar&ge Icons");
+    AppendMenuA(view, MF_STRING, 0, "S&mall Icons");
+    AppendMenuA(view, MF_STRING, 0, "&List");
+    AppendMenuA(view, MF_STRING, 0, "&Details");
+    AppendMenuA(view, MF_STRING, 0, "Thu&mbnails");
+    /* Details is the view this explorer is in, and a menu says which of a set
+     * it is on with a bullet rather than a tick */
+    CheckMenuRadioItem(view, 0, 4, 3, MF_BYPOSITION);
+
+    AppendMenuA(arrange, MF_STRING, 0, "by &Name");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Type");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Size");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Date");
+    AppendMenuA(arrange, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(arrange, MF_STRING | MF_GRAYED, 0, "&Auto Arrange");
+
+    AppendMenuA(new_menu, MF_STRING, 0, "&Folder");
+    AppendMenuA(new_menu, MF_STRING, 0, "&Shortcut");
+    AppendMenuA(new_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(new_menu, MF_STRING, 0, "Briefcase");
+    AppendMenuA(new_menu, MF_STRING, 0, "Bitmap Image");
+    AppendMenuA(new_menu, MF_STRING, 0, "WordPad Document");
+    AppendMenuA(new_menu, MF_STRING, 0, "Rich Text Document");
+    AppendMenuA(new_menu, MF_STRING, 0, "Text Document");
+    AppendMenuA(new_menu, MF_STRING, 0, "Wave Sound");
+
+    AppendMenuA(m, MF_POPUP, (UINT_PTR)view, "&View");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_POPUP, (UINT_PTR)arrange, "Arrange &Icons");
+    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "Li&ne Up Icons");
+    AppendMenuA(m, MF_STRING, IDM_CTX_REFRESH, "R&efresh");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_STRING, 0, "C&ustomize This Folder...");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "&Paste");
+    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "Paste &Shortcut");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_POPUP, (UINT_PTR)new_menu, "Ne&w");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(m, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
+    return m;
+}
+
 static void build_context_menus(void)
 {
     g_folder_menu = CreatePopupMenu();
@@ -1018,6 +1072,8 @@ static void build_context_menus(void)
     AppendMenuA(g_folder_menu, MF_STRING, 0, "Rena&me");
     AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(g_folder_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
+
+    g_back_menu = build_background_menu();
 
     g_file_menu = CreatePopupMenu();
     AppendMenuA(g_file_menu, MF_STRING | MF_DEFAULT, IDM_CTX_OPEN, "&Open");
@@ -1711,12 +1767,18 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             memset(&hi, 0, sizeof(hi));
             hi.pt = pt;
             ScreenToClient(g_list, &hi.pt);
-            if (SendMessageA(g_list, LVM_HITTEST, 0, (LPARAM)&hi) < 0)
-                return 0; /* the empty part of the pane has none of its own */
-            g_ctx_row = hi.iItem;
-            menu = (hi.iItem < g_entries && g_entry[hi.iItem].is_dir)
-                       ? g_folder_menu
-                       : g_file_menu;
+            if (SendMessageA(g_list, LVM_HITTEST, 0, (LPARAM)&hi) < 0) {
+                /* Off every name — the cells to the right of one, or under
+                 * the last row. The list has dropped its selection by now,
+                 * and what the machine puts up is the folder's own menu. */
+                g_ctx_row = -1;
+                menu = g_back_menu;
+            } else {
+                g_ctx_row = hi.iItem;
+                menu = (hi.iItem < g_entries && g_entry[hi.iItem].is_dir)
+                           ? g_folder_menu
+                           : g_file_menu;
+            }
         } else if (from == g_tree) {
             TVHITTESTINFO hi;
             memset(&hi, 0, sizeof(hi));
