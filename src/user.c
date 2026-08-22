@@ -1995,7 +1995,12 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* the gradient holds its end colours behind the icon and the
          * buttons; see ween_classic_caption */
         int icon_w = (wnd->style & WS_SYSMENU) ? ween_ncm(WEEN_NC_SMICON) : 0;
-        int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
+        /* The gradient stops short of every caption button, not just the
+         * close one: on the machine it has reached its end colour three
+         * pixels before the leftmost of the three. */
+        int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0);
+        RECT lb = nc_button_rect(wnd, nbtn - 1);
+        int buttons_w = wnd->w - frame - (lb.left - ween_ncm(3));
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
                              icon_w, buttons_w);
         /* The gradient already holds its start colour across icon_w; this is

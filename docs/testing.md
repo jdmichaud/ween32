@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 5746 / 298596 — 1.9%
+tools/refcapture/pxdiff.py                  # expect 13318 / 298596 — 4.5%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -78,7 +78,13 @@ items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
 
-About 3100 of the controls sampler's 1.9% is the tree and the list view, and
+About 8000 of the controls sampler's 4.5% is its caption: the gradient now
+stops three pixels before the leftmost caption button rather than one button's
+width from the right edge, which is where the machine's stops. The sampler's
+window has one button and the machine's three, so the two cannot be checked
+against each other; the machine is followed and every column of the sampler's
+gradient lands a shade off wine's. About 3100 more is the tree and the list
+view, and
 is deliberate in the same way. The tree's indent, the column its buttons sit
 in and the pixel of white above its first row are measured against a Windows
 2000 shell tree; the list's two rows of white between its header and its first

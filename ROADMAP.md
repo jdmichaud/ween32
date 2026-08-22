@@ -356,6 +356,12 @@ Wine's classic list has no gap under its header and its header text eight in.
 As with the tree the two configurations do not overlap, so the machine is
 followed.
 
+And the caption gradient is the fourth: it holds its start colour behind the
+icon, runs from there to three pixels before the leftmost caption button, and
+holds its end colour behind the buttons. Wine reserves one button's width
+whatever the window has. Measured on a window with three buttons, whose
+gradient reaches its end at x=596 of 654.
+
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting
 the guess. A photograph of the real thing settles it.

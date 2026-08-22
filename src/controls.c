@@ -2405,7 +2405,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* the first column leaves room for an icon; the rest sit closer */
             /* the name sits two past its box, which starts where the icon
              * ends; the other cells sit closer to their own column */
-            int lead = c ? 5 : (indent ? indent + 2 : 7);
+            int lead = c ? 6 : (indent ? indent + 2 : 7);
             if (f && l->row[i].text[c]) {
                 int len;
                 const char *t = fit_text(f, l->row[i].text[c],
