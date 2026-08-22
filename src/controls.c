@@ -3339,12 +3339,20 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int ix = bx + ween_ncm(WEEN_TB_ICON_X) + (b->text ? 0 : -1) +
                      shift;
             int iy = by + (h - 16) / 2 + shift;
-            /* Not greyed here. A dead image is not the live one embossed —
-             * it keeps its own detail, which an embossed silhouette loses —
-             * so the strip carries both and the application hands over the
-             * one it wants. Only the arrow is drawn, and greyed, here. */
-            if (from && b->image >= 0)
-                ween_imagelist_draw(from, b->image, &top->surface, ix, iy);
+            if (from && b->image >= 0) {
+                if (enabled) {
+                    ween_imagelist_draw(from, b->image, &top->surface, ix, iy);
+                } else {
+                    /* Embossed, the same as a dead arrow: the silhouette in
+                     * white a pixel down and to the right, then again in
+                     * shadow on the spot. Which is why it reaches a pixel
+                     * past the image's own cell. */
+                    ween_imagelist_draw_mono(from, b->image, &top->surface,
+                                             ix + 1, iy + 1, WEEN_WHITE);
+                    ween_imagelist_draw_mono(from, b->image, &top->surface, ix,
+                                             iy, WEEN_SHADOW);
+                }
+            }
         }
         if (f && b->text)
             ween_strike_draw(f, &top->surface,

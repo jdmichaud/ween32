@@ -39,6 +39,7 @@ enum {
     ID_PANEHEAD,
     ID_MENUBAR,
     ID_ADDRBAND,
+    ID_BRAND,
     ID_GO,
 
     /* toolbar and menu commands */
@@ -220,50 +221,53 @@ static const char *const GLYPH_HISTORY[] = {
     ".....000000.....",
 };
 
-#define MOVETO_N 2
+#define MOVETO_N 9
 static const COLORREF MOVETO_PAL[MOVETO_N] = {
-    RGB(128, 128, 128), RGB(255, 255, 255),
+    RGB(255, 255, 255), RGB(4, 4, 4), RGB(134, 134, 134),
+    RGB(204, 204, 204), RGB(178, 178, 178), RGB(221, 221, 221),
+    RGB(95, 95, 95), RGB(51, 51, 51), RGB(192, 192, 192),
 };
 static const char *const GLYPH_MOVETO[] = {
-    "000000..........",
-    "0111100...000...",
-    "01...010...110..",
-    "01...0000..00000",
-    "01..000001..0001",
-    "01..000001...011",
-    "01.0000001....1.",
-    "01000111000000..",
-    "010001...111110.",
-    "000001.000000001",
-    "0000010000000001",
-    ".111010000000001",
-    "....010000000001",
-    "....010000000001",
-    "....000000000001",
-    ".....11111111111",
+    "222222..........",
+    "2000021...111...",
+    "20000201.....1..",
+    "200001111..66711",
+    "200055331...171.",
+    "200053381....1..",
+    "200552221.......",
+    "20552000122222..",
+    "205520000000001.",
+    "233320055334341.",
+    "111120553343441.",
+    "....20533434421.",
+    "....20334344241.",
+    "....20343442421.",
+    "....11111111111.",
 };
 
-#define COPYTO_N 2
+#define COPYTO_N 10
 static const COLORREF COPYTO_PAL[COPYTO_N] = {
-    RGB(128, 128, 128), RGB(255, 255, 255),
+    RGB(4, 4, 4), RGB(255, 255, 255), RGB(119, 119, 119),
+    RGB(204, 204, 204), RGB(134, 134, 134), RGB(221, 221, 221),
+    RGB(178, 178, 178), RGB(95, 95, 95), RGB(51, 51, 51),
+    RGB(192, 192, 192),
 };
 static const char *const GLYPH_COPYTO[] = {
-    "0000000.........",
-    "00000001..000...",
-    "000000000..110..",
-    "0001111001.00000",
-    "0001...001..0001",
-    "0001...001...011",
-    "0001..0001....1.",
-    "0001.00001......",
-    "000100000000....",
-    ".1000000111000..",
-    "..0000001...110.",
-    "...111101.000001",
-    ".......010000001",
-    ".......010000001",
-    ".......000000001",
-    "........11111111",
+    "4444442.........",
+    "4333330...000...",
+    "432222220....0..",
+    "432111130..77800",
+    "432111130...080.",
+    "432111130....0..",
+    "432111530.......",
+    "492115530.......",
+    "002155532222....",
+    "..233332111222..",
+    "..0000021111110.",
+    ".......21153660.",
+    ".......21536640.",
+    ".......21364440.",
+    ".......00000000.",
 };
 
 #define DELETE_N 5
@@ -405,8 +409,8 @@ static const glyph GLYPHS[] = {
     { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
     { 15, 14, 0, 1, GLYPH_FOLDERS, FOLDERS_PAL, FOLDERS_N },
     { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
-    { 16, 16, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
-    { 16, 16, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
+    { 16, 15, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
+    { 16, 15, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
     { 13, 13, 1, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
     { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
     { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
@@ -422,8 +426,8 @@ static const glyph GLYPHS_HOT[] = {
     { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
     { 15, 14, 0, 1, GLYPH_FOLDERS_HOT, FOLDERS_HOT_PAL, FOLDERS_HOT_N },
     { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
-    { 16, 16, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
-    { 16, 16, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
+    { 16, 15, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
+    { 16, 15, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
     { 13, 13, 1, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
     { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
     { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
@@ -442,6 +446,11 @@ static COLORREF glyph_colour(const glyph *g, char c)
 
 static HWND g_main, g_tree, g_list, g_toolbar, g_rebar, g_address, g_status;
 static HWND g_menubar, g_addrband;
+/* The brand stands a row taller than the band beside it, and its edge
+ * reaches over the rule beneath: see brand_proc. */
+#define BRAND_W 40
+#define BRAND_H 23
+static HWND g_brand;
 static HWND g_split, g_panehead;
 static HIMAGELIST g_images, g_hot_images;
 static HFONT g_font;
@@ -481,8 +490,15 @@ static void layout(HWND w)
     if (left_w > cr.right - 120)
         left_w = cr.right - 120;
 
-    if (g_rebar)
+    if (g_rebar) {
         MoveWindow(g_rebar, 0, 0, cr.right, top, TRUE);
+        if (g_brand) { /* against the rebar's right edge */
+            RECT rr;
+            GetClientRect(g_rebar, &rr);
+            MoveWindow(g_brand, rr.right - 2 - BRAND_W, 2, BRAND_W, BRAND_H,
+                       TRUE);
+        }
+    }
     if (g_panehead)
         MoveWindow(g_panehead, 0, top, left_w, PANE_HEAD_H, TRUE);
     if (g_tree)
@@ -906,20 +922,6 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             DrawTextA(dc, label, -1, &r,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
-        /* The brand at the right: a black box the shell plays an animation
-         * in. The box is the constant part — what runs in it is not, so no
-         * frame of it is the one to match. */
-        {
-            RECT b;
-            b.left = cr.right - MENUBAR_BRAND;
-            b.top = 0;
-            b.right = cr.right;
-            b.bottom = cr.bottom;
-            FillRect(dc, &b, (HBRUSH)GetStockObject(BLACK_BRUSH));
-            b.left -= 2;
-            b.right = b.left + 2;
-            DrawEdge(dc, &b, EDGE_ETCHED, BF_LEFT);
-        }
         EndPaint(w, &ps);
         return 0;
     }
@@ -942,6 +944,40 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(w, NULL, FALSE);
         return 0;
     }
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
+/* ---- the brand -----------------------------------------------------------
+ *
+ * The black box at the right of the menu bar, which the shell plays an
+ * animation in. It is not part of the menu band: it stands a row taller and
+ * its edge reaches over the rule beneath, so it is a window of the rebar's
+ * own rather than a child of any band. The box is the constant part — what
+ * runs in it is not, so no frame of it is the one to match.
+ */
+static LRESULT CALLBACK brand_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(w, &ps);
+        RECT cr, r;
+        GetClientRect(w, &cr);
+        r = cr;
+        r.bottom -= 1; /* the last row belongs to the rule underneath */
+        r.left = 2;
+        FillRect(dc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
+        r = cr;
+        r.right = 2;
+        DrawEdge(dc, &r, EDGE_ETCHED, BF_LEFT);
+        /* the rule carries on under it, bar the pixel the edge takes */
+        r.left = 2;
+        r.right = cr.right;
+        r.top = cr.bottom - 1;
+        r.bottom = cr.bottom;
+        FillRect(dc, &r, GetSysColorBrush(COLOR_BTNSHADOW));
+        EndPaint(w, &ps);
+        return 0;
     }
     return DefWindowProcA(w, msg, wp, lp);
 }
@@ -1283,22 +1319,22 @@ static void build_bands(HWND w)
      * nothing selected, as the shot has it — all but the first two dead. */
     b[n].iBitmap = IMG_MOVETO;
     b[n].idCommand = IDM_MOVETO;
-    b[n].fsState = TBSTATE_ENABLED;
+    b[n].fsState = 0;
     b[n].fsStyle = TBSTYLE_BUTTON;
     n++;
     b[n].iBitmap = IMG_COPYTO;
     b[n].idCommand = IDM_COPYTO;
-    b[n].fsState = TBSTATE_ENABLED;
+    b[n].fsState = 0;
     b[n].fsStyle = TBSTYLE_BUTTON;
     n++;
     b[n].iBitmap = IMG_DELETE;
     b[n].idCommand = IDM_DELETE;
-    b[n].fsState = 0;
+    b[n].fsState = TBSTATE_ENABLED;
     b[n].fsStyle = TBSTYLE_BUTTON;
     n++;
     b[n].iBitmap = IMG_UNDO;
     b[n].idCommand = IDM_UNDO;
-    b[n].fsState = 0;
+    b[n].fsState = TBSTATE_ENABLED;
     b[n].fsStyle = TBSTYLE_BUTTON;
     n++;
     b[n].fsStyle = TBSTYLE_SEP;
@@ -1352,6 +1388,9 @@ static void build_bands(HWND w)
     g_menubar = CreateWindowA("explorermenu", "", WS_CHILD | WS_VISIBLE, 0, 0,
                               100, 22, g_rebar, (HMENU)(UINT_PTR)ID_MENUBAR,
                               NULL, NULL);
+    g_brand = CreateWindowA("explorerbrand", "", WS_CHILD | WS_VISIBLE, 0, 2,
+                            BRAND_W, BRAND_H, g_rebar,
+                            (HMENU)(UINT_PTR)ID_BRAND, NULL, NULL);
 
     memset(&bi, 0, sizeof(bi));
     bi.cbSize = sizeof(bi);
@@ -1556,6 +1595,12 @@ int main(int argc, char **argv)
 #if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
 #endif
+    RegisterClassA(&wc);
+
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = brand_proc;
+    wc.lpszClassName = "explorerbrand";
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));
