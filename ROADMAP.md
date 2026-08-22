@@ -402,8 +402,9 @@ Measured against the machine, band by band:
 | menu band | **0**, outside the animation the shell plays at its right |
 | address band | **0**, outside what is written in the combo box |
 | toolbar band | **0** |
-| the context menu on a folder | **0** |
-| its "Send To" submenu | **4**, inside the fraction in "3 1/2 Floppy (A)" |
+| the context menu on a folder, from either panel | **0** |
+| the context menu on a file | **0** |
+| the "Send To" submenu | **4**, inside the fraction in "3 1/2 Floppy (A)" |
 
 Nothing is left in it. What differs in the window is the animation playing
 in the brand box and the path written in the address combo — the machine is
@@ -416,7 +417,9 @@ The menus were measured with the machine's own menu open beside ours: the
 count is over everything the screenshot is not drawing something else over,
 which is the row the pointer was hovering, the submenu overlapping its
 parent's border, and the mouse pointer itself, which the frame buffer has
-drawn into it.
+drawn into it. The menu a right click brings up in the tree is the same one
+it brings up in the list, on the machine as here — 121 x 238 with the same
+eleven items — and the one on a file is 121 x 212.
 
 The last three took the longest and were all one mistake, made twice: a
 dead image *is* the live one embossed, but the silhouette leaves white out.
