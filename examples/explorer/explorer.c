@@ -473,6 +473,69 @@ static void build_menu(HWND w)
 }
 #endif
 
+/* Where the icons are.
+ *
+ * Run from the top of the source tree the example finds them under the
+ * working directory, but nothing says it will be run from there, and an
+ * example that only works from one directory is a trap. So it also looks
+ * beside its own executable, which is the one thing it always knows. Set
+ * WEEN32_ASSETS to override both.
+ */
+static char g_argv0[512];
+
+static const char *asset_dir(void)
+{
+    static char base[512];
+    static int looked;
+    const char *tries[4];
+    char beside[600], up[640];
+    int n = 0;
+
+    if (looked)
+        return base;
+    looked = 1;
+
+    {   /* the directory the executable is in, and the tree above it */
+        const char *slash = strrchr(g_argv0, '/');
+#ifdef _WIN32
+        const char *back = strrchr(g_argv0, '\\');
+        if (back && (!slash || back > slash))
+            slash = back;
+#endif
+        if (slash) {
+            size_t len = (size_t)(slash - g_argv0);
+            if (len > sizeof(beside) - 32)
+                len = sizeof(beside) - 32;
+            memcpy(beside, g_argv0, len);
+            beside[len] = 0;
+            snprintf(up, sizeof(up), "%s/../../assets/icons", beside);
+            strcat(beside, "/assets/icons");
+            tries[n++] = up;
+            tries[n++] = beside;
+        }
+    }
+    tries[n++] = "assets/icons";
+    tries[n++] = "../../assets/icons";
+
+    for (int i = 0; i < n; i++) {
+        char probe[600];
+        FILE *f;
+        snprintf(probe, sizeof(probe), "%s/" ICON_FOLDER ".ico", tries[i]);
+        f = fopen(probe, "rb");
+        if (f) {
+            fclose(f);
+            snprintf(base, sizeof(base), "%s", tries[i]);
+            return base;
+        }
+    }
+    {
+        const char *env = getenv("WEEN32_ASSETS");
+        if (env)
+            snprintf(base, sizeof(base), "%s", env);
+    }
+    return base;
+}
+
 #if HAVE(IMAGELIST)
 /* The art, centred in a 16x16 bitmap and handed over with its background
  * named as the transparent colour — which is all ImageList_AddMasked wants. */
@@ -502,6 +565,25 @@ static void add_glyph(const glyph *g)
     DeleteObject(bmp);
 }
 
+/* Nothing, but it takes up a slot. Every image is named by its index, so an
+ * icon that will not load has to leave a hole rather than close the gap: skip
+ * it and every image after it answers to the wrong name — the tree draws
+ * arrows for its folders and a toolbar button wears its neighbour's icon. */
+static void add_blank(void)
+{
+    unsigned char bits[16 * 16 * 4];
+    HBITMAP bmp;
+    for (int i = 0; i < 16 * 16; i++) {
+        bits[i * 4 + 0] = 0xff;
+        bits[i * 4 + 1] = 0x00;
+        bits[i * 4 + 2] = 0xff;
+        bits[i * 4 + 3] = 0;
+    }
+    bmp = CreateBitmap(16, 16, 1, 32, bits);
+    ImageList_AddMasked(g_images, bmp, RGB(255, 0, 255));
+    DeleteObject(bmp);
+}
+
 static void load_icons(void)
 {
     static const char *names[] = {
@@ -509,20 +591,30 @@ static void load_icons(void)
         ICON_DRIVE,  ICON_UP,          ICON_SEARCH, ICON_HISTORY,
         ICON_MOVETO, ICON_COPYTO
     };
+    int missing = 0;
+
     g_images = ImageList_Create(16, 16, ILC_MASK, IMG_COUNT, 4);
     for (int i = 0; i < (int)(sizeof(names) / sizeof(*names)); i++) {
-        char path[128];
+        char path[600];
         HICON icon;
-        snprintf(path, sizeof(path), "assets/icons/%s.ico", names[i]);
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), names[i]);
         icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
                                  LR_LOADFROMFILE);
         if (icon) {
             ImageList_AddIcon(g_images, icon);
             DestroyIcon(icon);
+        } else {
+            add_blank();
+            missing++;
         }
     }
     for (int i = 0; i < (int)(sizeof(GLYPHS) / sizeof(*GLYPHS)); i++)
         add_glyph(&GLYPHS[i]);
+    if (missing)
+        fprintf(stderr,
+                "explorer: %d of the icons are missing — looked in \"%s\". "
+                "Set WEEN32_ASSETS to the assets/icons directory.\n",
+                missing, asset_dir()[0] ? asset_dir() : "assets/icons");
 }
 #endif
 
@@ -753,16 +845,23 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(w, msg, wp, lp);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     WNDCLASSA wc;
+
+    if (argc > 0 && argv[0])
+        snprintf(g_argv0, sizeof(g_argv0), "%s", argv[0]);
 
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = explorer_proc;
     wc.lpszClassName = "ween32explorer";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-    wc.hIcon = (HICON)LoadImageA(NULL, "assets/icons/" ICON_APP ".ico",
-                                 IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+    {
+        char path[600];
+        snprintf(path, sizeof(path), "%s/" ICON_APP ".ico", asset_dir());
+        wc.hIcon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
+                                     LR_LOADFROMFILE);
+    }
 #if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
 #endif
