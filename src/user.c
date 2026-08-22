@@ -1994,7 +1994,15 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int cap = ween_ncm(WEEN_NC_CAPTION);
         /* the gradient holds its end colours behind the icon and the
          * buttons; see ween_classic_caption */
-        int icon_w = (wnd->style & WS_SYSMENU) ? ween_ncm(WEEN_NC_SMICON) : 0;
+        /* What the gradient holds its start colour across. Two past the
+         * icon when there is one to draw: the machine's ramp starts there,
+         * and starting it at the icon's edge puts every step two columns
+         * early. A window that reserves the room without drawing anything
+         * gets the room alone. */
+        int icon_w = (wnd->style & WS_SYSMENU)
+                         ? ween_ncm(WEEN_NC_SMICON) +
+                               (wnd->icon ? ween_ncm(2) : 0)
+                         : 0;
         /* The gradient stops short of every caption button, not just the
          * close one: on the machine it has reached its end colour three
          * pixels before the leftmost of the three. A caption with only a
@@ -2005,7 +2013,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
         if (nbtn > 1) {
             RECT lb = nc_button_rect(wnd, nbtn - 1);
-            buttons_w = wnd->w - frame - (lb.left - ween_ncm(3));
+            buttons_w = wnd->w - frame - (lb.left - ween_ncm(2));
         }
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
                              icon_w, buttons_w);
