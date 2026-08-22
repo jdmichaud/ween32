@@ -168,8 +168,22 @@ there meant saying outright what a library would otherwise work out for
 itself — each toolbar button's width and each menu title's, since comctl32's
 padding is not the machine's.
 
-A screenshot is the wrong instrument for the last of it, because wine's text is
-wider than the machine's and every wrong pixel after that is a consequence.
+A screenshot is the wrong instrument for the last of it. Wine measures text one
+way and draws it another: `GetTextExtentPoint32`, `GetCharWidth32` and
+`GetCharABCWidths` all say "Documents and Settings" is 128 pixels — the outline
+scaled — while what it puts on the screen is the 11-pixel embedded strike, the
+same 116 pixels ween32 draws. Every layout decision made from a measurement
+inherits the 10%: the application's own button widths, the list view's
+truncation, the row height comctl32 derives.
+
+Real Windows does not do that, and the machine says so. With Alt down, its menu
+band's six titles have their text starting at 10, 42, 76, 114, 175 and 216
+pixels. ween32 puts them at 10, 42, 76, 114, 175 and 216. Wine puts them at 10,
+45, 81, 122, 185 and 228. The same source laid out on the machine would land
+where ween32 lands; it is wine in between that cannot agree with itself.
+
+So the two builds will not come out pixel for pixel under wine, and chasing
+that is chasing wine.
 Ask for the geometry instead: paste a block into `layout()` that dumps every
 control's rectangle — `GetWindowRect` relative to the client origin, plus
 `TB_GETITEMRECT` for each button and `LVM_GETCOLUMNWIDTH` for each column —
