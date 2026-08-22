@@ -381,19 +381,21 @@ Measured against the machine, band by band:
 | the rebar's own edge | 0 |
 | menu band | 0, outside the animation the shell plays at its right |
 | address band | 0, outside what is written in the combo box |
-| toolbar band | 523 |
+| toolbar band | 229 — the third separator and Views (172 of it), the
+Forward drop-down arrow (15), the checked button's interior (39) |
 
 Still out, all of it in the toolbar:
 
 - the **Forward button's drop-down arrow**, two pixels
-- the **four buttons between the second and third separators**, one pixel,
-  and with them the third separator and the Views button. Every rule that
-  fits the first separator, the hot Search button and the hot Views button
-  puts these one pixel right; the only arithmetic that fits them as well
-  needs the second separator to be six wide where the other two are seven,
-  which is not a rule so much as a coincidence. It wants a measurement of a
-  button in that group, and all four are disabled unless something is
-  selected — so it wants a selection made on the machine first.
+- the **third separator**, one pixel, and with it the Views button beside
+  it. This was measured properly in the end — a selection made on the
+  machine to enable the four buttons after History, then each of them
+  hovered — and they all start exactly where this puts them, Undo included
+  at twenty-four wide. What does not fit is the separator after them: the
+  first two are seven wide with their line four in, and this one has to be
+  six with its line three in for the Views button to land where the machine
+  has it. Nothing distinguishes it but the button that follows it being a
+  drop-down. Left as it is rather than special-cased on that.
 
 ### The explorer, against its screenshot
 
