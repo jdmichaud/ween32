@@ -990,6 +990,7 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
 #define SM_CYMENUCHECK 72
 int GetSystemMetrics(int index);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);
+HWND GetParent(HWND wnd);
 BOOL ClientToScreen(HWND wnd, POINT *pt);
 BOOL ScreenToClient(HWND wnd, POINT *pt);
 

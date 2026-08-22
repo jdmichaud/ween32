@@ -324,6 +324,11 @@ BOOL GetWindowRect(HWND wnd, LPRECT rect)
  * top-level's own origin comes from the window system rather than from where
  * it asked to be, because a window manager may have put it somewhere else.
  */
+HWND GetParent(HWND wnd)
+{
+    return wnd ? wnd->parent : NULL;
+}
+
 BOOL ClientToScreen(HWND wnd, POINT *pt)
 {
     struct ween_wnd *top;
@@ -683,8 +688,18 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
         if (ween_active_backend && ween_active_backend->resize)
             ween_active_backend->resize(wnd->backend_win, wnd->w, wnd->h);
     } else {
+        int moved = w != wnd->w || h != wnd->h;
         wnd->w = w;
         wnd->h = h;
+        /* Moving a child is a size change like any other, and win32 says so.
+         * A control that lays its own contents out — which is the usual way
+         * to write one — otherwise never hears that it grew. */
+        if (moved) {
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            SendMessageA(wnd, WM_SIZE, SIZE_RESTORED,
+                         MAKELPARAM((WORD)cr.right, (WORD)cr.bottom));
+        }
     }
     if (repaint)
         ween_top_level(wnd)->dirty = 1;

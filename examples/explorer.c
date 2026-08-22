@@ -38,6 +38,8 @@ enum {
     ID_SPLIT,
     ID_PANEHEAD,
     ID_MENUBAR,
+    ID_ADDRBAND,
+    ID_GO,
 
     /* toolbar and menu commands */
     IDM_BACK = 200,
@@ -51,6 +53,7 @@ enum {
     IDM_DELETE,
     IDM_UNDO,
     IDM_VIEWS,
+    IDM_GO,
     IDM_CLOSE,
     IDM_ABOUT
 };
@@ -68,7 +71,8 @@ enum {
  * — they came out of one bitmap strip — and so are drawn here. */
 enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
        IMG_BACK, IMG_FORWARD, IMG_UP, IMG_SEARCH, IMG_FOLDERS, IMG_HISTORY,
-       IMG_MOVETO, IMG_COPYTO, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_COUNT };
+       IMG_MOVETO, IMG_COPYTO, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_GO,
+       IMG_COUNT };
 
 /* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
  * They were never icons — one bitmap strip held the lot — so there is nothing
@@ -348,6 +352,30 @@ static const char *const GLYPH_FOLDERS_HOT[] = {
     "....33333333333",
 };
 
+#define GO_N 8
+static const COLORREF GO_PAL[GO_N] = {
+    RGB(0, 0, 0), RGB(134, 134, 134), RGB(248, 248, 248),
+    RGB(221, 221, 221), RGB(178, 178, 178), RGB(192, 192, 192),
+    RGB(204, 204, 204), RGB(150, 150, 150),
+};
+static const char *const GLYPH_GO[] = {
+    ".......1.....",
+    ".......10....",
+    ".......120...",
+    ".....111230..",
+    "...112223550.",
+    "..12233355410",
+    ".12361144410.",
+    ".1340000410..",
+    "1260...010...",
+    "130....00....",
+    "160....0.....",
+    "150..........",
+    "170..........",
+    ".070.........",
+    "..000........",
+};
+
 /* The Back arrow again, in the colours it wears under the pointer: a
  * toolbar had two sets of images and swapped to the second for whichever
  * button the pointer was on. */
@@ -382,6 +410,7 @@ static const glyph GLYPHS[] = {
     { 13, 13, 0, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
     { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
     { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
+    { 13, 15, 3, 0, GLYPH_GO, GO_PAL, GO_N },
 };
 
 /* The same set for the hot list, differing only where a glyph has a
@@ -398,6 +427,7 @@ static const glyph GLYPHS_HOT[] = {
     { 13, 13, 0, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
     { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
     { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
+    { 13, 15, 3, 0, GLYPH_GO, GO_PAL, GO_N },
 };
 
 static COLORREF glyph_colour(const glyph *g, char c)
@@ -411,7 +441,7 @@ static COLORREF glyph_colour(const glyph *g, char c)
 }
 
 static HWND g_main, g_tree, g_list, g_toolbar, g_rebar, g_address, g_status;
-static HWND g_menubar;
+static HWND g_menubar, g_addrband;
 static HWND g_split, g_panehead;
 static HIMAGELIST g_images, g_hot_images;
 static HFONT g_font;
@@ -789,6 +819,7 @@ static void fill_children(HTREEITEM parent, const char *path)
  */
 #define MENUBAR_PAD 16  /* around each label, as Windows 2000 spaces them */
 #define MENUBAR_LEAD 1  /* and the band leads in by one before the first */
+#define MENUBAR_BRAND 38 /* the box at the right the shell animates in */
 
 static HMENU g_menu;
 static int g_menu_open = -1; /* the item whose drop-down is showing */
@@ -875,6 +906,20 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             DrawTextA(dc, label, -1, &r,
                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
+        /* The brand at the right: a black box the shell plays an animation
+         * in. The box is the constant part — what runs in it is not, so no
+         * frame of it is the one to match. */
+        {
+            RECT b;
+            b.left = cr.right - MENUBAR_BRAND;
+            b.top = 0;
+            b.right = cr.right;
+            b.bottom = cr.bottom;
+            FillRect(dc, &b, (HBRUSH)GetStockObject(BLACK_BRUSH));
+            b.left -= 2;
+            b.right = b.left + 2;
+            DrawEdge(dc, &b, EDGE_ETCHED, BF_LEFT);
+        }
         EndPaint(w, &ps);
         return 0;
     }
@@ -898,6 +943,31 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
+/* ---- the address band ----------------------------------------------------
+ *
+ * A rebar band holds one child, and this band has two things in it, so the
+ * child is a plain window that holds them: the combo box across most of it
+ * and a one-button toolbar at the right for Go.
+ */
+#define GO_W 49 /* what the Go button takes off the right of the band */
+
+static HWND g_go;
+
+static LRESULT CALLBACK address_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_SIZE) {
+        int cw = LOWORD(lp), ch = HIWORD(lp);
+        if (g_address)
+            MoveWindow(g_address, 0, 0, cw - GO_W, ch, TRUE);
+        if (g_go)
+            MoveWindow(g_go, cw - GO_W + 1, 0, GO_W - 1, ch, TRUE);
+        return 0;
+    }
+    if (msg == WM_NOTIFY || msg == WM_COMMAND)
+        return SendMessageA(GetParent(w), msg, wp, lp);
     return DefWindowProcA(w, msg, wp, lp);
 }
 
@@ -1240,10 +1310,30 @@ static void build_bands(HWND w)
     n++;
     SendMessageA(g_toolbar, TB_ADDBUTTONSA, n, (LPARAM)b);
 
+    g_addrband = CreateWindowA("exploreraddr", "", WS_CHILD | WS_VISIBLE, 0, 0,
+                               300, 22, g_rebar, (HMENU)(UINT_PTR)ID_ADDRBAND,
+                               NULL, NULL);
     g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
                                 WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0,
-                                300, 21, g_rebar, (HMENU)(UINT_PTR)ID_ADDRESS,
-                                NULL, NULL);
+                                300, 21, g_addrband,
+                                (HMENU)(UINT_PTR)ID_ADDRESS, NULL, NULL);
+    g_go = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                           WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST,
+                           0, 0, GO_W, 22, g_addrband,
+                           (HMENU)(UINT_PTR)ID_GO, NULL, NULL);
+    SendMessageA(g_go, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    SendMessageA(g_go, TB_SETIMAGELIST, 0, (LPARAM)g_images);
+    SendMessageA(g_go, TB_SETHOTIMAGELIST, 0, (LPARAM)g_hot_images);
+    {
+        TBBUTTON g;
+        memset(&g, 0, sizeof(g));
+        g.iBitmap = IMG_GO;
+        g.idCommand = IDM_GO;
+        g.fsState = TBSTATE_ENABLED;
+        g.fsStyle = TBSTYLE_BUTTON;
+        g.iString = (INT_PTR) "Go";
+        SendMessageA(g_go, TB_ADDBUTTONSA, 1, (LPARAM)&g);
+    }
 #if HAVE(IMAGELIST)
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
 #endif
@@ -1265,7 +1355,7 @@ static void build_bands(HWND w)
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
 
     bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_TEXT;
-    bi.hwndChild = g_address;
+    bi.hwndChild = g_addrband;
     bi.cyMinChild = 22;
     bi.lpText = (char *)"Address";
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
@@ -1455,6 +1545,12 @@ int main(int argc, char **argv)
 #if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
 #endif
+    RegisterClassA(&wc);
+
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = address_proc;
+    wc.lpszClassName = "exploreraddr";
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));
