@@ -339,6 +339,41 @@ The rest — check boxes, option buttons, group box, list box, combo box, both
 progress bars, the scroll bar, the tree view, the list view, the status bar and
 the trackbars — is within a handful of pixels or exact.
 
+### The explorer, against its screenshot
+
+`examples/explorer` is laid out against a screenshot of the real thing, and
+the parts that are geometry now land on it: the four column dividers, both
+edges of the checked toolbar button, the first separator, the splitter, the
+caption icon and title, and the status bar's two divisions. Three toolbar
+metrics were corrected to get there and are pinned in `toolbar_test`.
+
+What still differs, and why:
+
+- The **sort arrow** on the Name column. In win32 that is `HDF_SORTUP` on a
+  header item reached through `LVM_GETHEADER`, and there is no header control
+  to reach. Faking it with a message win32 does not have would cost more than
+  the arrow is worth.
+- The **address bar** has no icon inside the combo box and no Go button beside
+  it. The first wants an image-bearing combo; the second wants two children in
+  one rebar band.
+- The **menu bar** is drawn by the frame. The real one is a rebar band with a
+  gripper, which is why the shot has a gripper to the left of File.
+- **Move To** and **Copy To** use the icon set's folders. The real ones come
+  from the same toolbar strip as the arrows and are a different drawing of the
+  same idea.
+- A **disabled toolbar button** draws its image unchanged; win32 greys it. The
+  shot does not show this because the strip carried its own greyed images,
+  which is what the example hands over.
+- The tree lists the **file system** rather than the shell namespace, so it
+  starts at a directory instead of at Desktop, My Documents and My Computer.
+
+Not a difference, though it looks like one: the shot's menu bar has no
+underlines under its accelerators and ween32 draws them. Windows 2000 added
+the setting that hides them until Alt is pressed, and the other Windows 2000
+screenshot in hand — a shell context menu over the same explorer — has them
+on the menu bar and in the drop-down both. Two configurations, not two
+renderings.
+
 ## Testing
 
 `make test` covers the engine pixels, the API path, the dialog manager, input
