@@ -31,7 +31,13 @@
  * seventeen and separators of nine, then margin and edge again. Every one of
  * those numbers tiles the real menu exactly — 121 x 195 for its nine items and
  * four separators. */
-#define MENU_BAR_ITEMS_SPACE 12 /* the bar, which wine does get right */
+/* A bar item is its label plus this, half of it each side. Measured off the
+ * Windows 2000 screenshot's own menu bar: the gap between one label's ink and
+ * the next is a constant seventeen pixels across File, Edit, View, Favorites
+ * and Tools, which comes out as exactly sixteen of padding on every one of
+ * them once the label's drawn width is taken off. Wine's MENU_BAR_ITEMS_SPACE
+ * is twelve, and it was twelve here until the screenshot said otherwise. */
+#define MENU_BAR_ITEMS_SPACE 16
 #define MENU_BORDER 2       /* the raised edge */
 #define MENU_PAD 1          /* between the edge and the first/last item */
 #define MENU_GUTTER 20      /* the popup's left edge to the label */
@@ -185,23 +191,17 @@ static const char *accel_of(const char *text, int *label_len)
     return tab ? tab + 1 : NULL;
 }
 
-/* Two ways to measure a string, and the menu needs both.
+/* Menus are laid out on the width the glyphs actually occupy — the strike's
+ * own advances — everywhere: the bar and the drop-downs alike.
  *
- * `drawn` is the width the glyphs actually occupy, laid out on the strike's
- * own advances. `reported` is what GDI would say, which rounds each
- * character's outline advance up and so runs a little wide — by half a pixel
- * a character, which on a twelve-character label is six.
- *
- * The bar is laid out on the reported width, because that is what matches the
- * reference. A drop-down's columns are laid out on the drawn width, because
- * that is what matches *there* — 142 against wine's 142, where the reported
- * width gives 151. Neither is principled; both were measured. Rounding them
- * the same way was tried and is worse on both counts. */
-static int text_reported(const ween_strike *f, const char *s, int len)
-{
-    return (!f || !s || len <= 0) ? 0 : ween_strike_text_extent(f, s, len);
-}
-
+ * The other measure available is what GDI reports, which rounds each
+ * character's outline advance up and so runs wide by about half a pixel a
+ * character. The bar used it for a while because it matched a wine capture.
+ * Against a screenshot of Windows itself the drawn width is plainly the right
+ * one: it makes the bar's padding come out as the same sixteen pixels on five
+ * labels of very different lengths, where the reported width gives thirteen,
+ * fifteen, thirteen, fifteen, fourteen. A constant that is only constant under
+ * one of two measures is telling you which measure it was built from. */
 static int text_drawn(const ween_strike *f, const char *s, int len)
 {
     return (!f || !s || len <= 0) ? 0 : ween_strike_text_width(f, s, len);
@@ -222,13 +222,6 @@ static int strip_mnemonic(const char *text, int len, char *buf, int cap)
     return n;
 }
 
-static int label_reported(const ween_strike *f, const char *text, int len)
-{
-    char buf[256];
-    int n = strip_mnemonic(text, len, buf, (int)sizeof(buf));
-    return text_reported(f, buf, n);
-}
-
 static int label_drawn(const ween_strike *f, const char *text, int len)
 {
     char buf[256];
@@ -246,7 +239,7 @@ void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width)
         ween_menuitem *it = &menu->item[i];
         int len;
         accel_of(it->text, &len);
-        it->w = label_reported(f, it->text, len) +
+        it->w = label_drawn(f, it->text, len) +
                 ween_ncm(MENU_BAR_ITEMS_SPACE);
         it->x = x;
         it->y = 0;

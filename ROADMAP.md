@@ -298,12 +298,20 @@ them is in one of four places:
 ### Where wine is not the reference
 
 Wine's classic rendering matches Windows 2000 everywhere ween32 has checked it
-— except menus. A wine drop-down has a flat one-pixel `COLOR_3DSHADOW` border
-and single-line separators; a real Windows 2000 menu has a two-pixel raised
-edge and etched separators, and the two do not look alike. The drop-down
-metrics here are measured against screenshots of Windows itself instead: a
-shell context menu, whose nine items and four separators tile a 121 x 195
-menu exactly, and an application File menu with a cascade open.
+— except menus, where it is wrong in three ways. A wine drop-down has a flat
+one-pixel `COLOR_3DSHADOW` border and single-line separators; a real Windows
+2000 menu has a two-pixel raised edge and etched separators. And wine spaces
+menu *bar* items by twelve pixels where Windows uses sixteen.
+
+The menu metrics here are measured against screenshots of Windows itself
+instead: a shell context menu, whose nine items and four separators tile a
+121 x 195 menu exactly, and an application File menu with a cascade open. The
+bar's sixteen is the same on all five of File, Edit, View, Favorites and
+Tools — a constant across labels of that range is hard to get by accident.
+
+This means `menu-reference.png`, which is a wine render, is now something
+ween32 deliberately differs from in the menu-bar band. That difference is
+about 242 pixels and is not a regression.
 
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting
