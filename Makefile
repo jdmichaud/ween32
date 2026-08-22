@@ -10,7 +10,7 @@ CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o \
-       src/gdi.o src/menu.o src/imagelist.o src/files.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
+       src/gdi.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
 ifeq ($(X11),1)
@@ -85,9 +85,6 @@ tests/views_test: tests/views_test.c libween32.a
 tests/toolbar_test: tests/toolbar_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/toolbar_test.c libween32.a $(LIBS)
 
-tests/files_test: tests/files_test.c libween32.a
-	$(CC) $(CFLAGS) -o $@ tests/files_test.c libween32.a $(LIBS)
-
 test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
       tests/resize_test tests/multiwin_test tests/timer_test \
       tests/keys_test tests/menu_test \
@@ -107,7 +104,6 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	./tests/geometry_test
 	./tests/views_test
 	./tests/toolbar_test
-	./tests/files_test
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \

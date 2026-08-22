@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **273 `ok` lines and no `FAIL`**, ending with each suite reporting
+Expect **259 `ok` lines and no `FAIL`**, ending with each suite reporting
 `all passed`. The count only goes up — if it has dropped, a test file stopped
 being built rather than a test starting to pass.
 

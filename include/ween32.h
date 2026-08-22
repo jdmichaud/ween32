@@ -840,7 +840,6 @@ typedef struct {
 #define RB_GETBARHEIGHT (WM_USER + 27)
 
 #define WEEN32_HAS_REBAR 1
-#define WEEN32_HAS_FINDFILE 1
 #define WEEN32_HAS_TOOLBAR 1
 #define WEEN32_HAS_MENU 1
 #define WEEN32_HAS_MESSAGEBOX 1
@@ -1020,47 +1019,6 @@ int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg);
  * dialog sends itself rather than calling SetFocus, so the dialog manager can
  * keep track of the default button. */
 #define WM_NEXTDLGCTL 0x0028
-
-/* ---- finding files --------------------------------------------------------
- *
- * Not GUI, and here for one reason: an example that browses files has to
- * compile unchanged against real <windows.h> as well as against ween32, the
- * same as every other example, and it cannot do that if it reaches for a
- * POSIX directory walk behind an #ifdef.
- *
- * It is the smallest set that lets a filesystem be walked. Anything else an
- * app wants from kernel32 it should take from the C library. */
-#define FILE_ATTRIBUTE_READONLY 0x00000001
-#define FILE_ATTRIBUTE_HIDDEN 0x00000002
-#define FILE_ATTRIBUTE_DIRECTORY 0x00000010
-#define FILE_ATTRIBUTE_NORMAL 0x00000080
-#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
-#define INVALID_HANDLE_VALUE ((HANDLE)(INT_PTR)-1)
-#define MAX_PATH 260
-
-typedef struct {
-    DWORD dwLowDateTime;
-    DWORD dwHighDateTime;
-} FILETIME;
-
-typedef struct {
-    DWORD dwFileAttributes;
-    FILETIME ftCreationTime;
-    FILETIME ftLastAccessTime;
-    FILETIME ftLastWriteTime;
-    DWORD nFileSizeHigh;
-    DWORD nFileSizeLow;
-    DWORD dwReserved0;
-    DWORD dwReserved1;
-    char cFileName[MAX_PATH];
-    char cAlternateFileName[14];
-} WIN32_FIND_DATAA;
-
-HANDLE FindFirstFileA(LPCSTR spec, WIN32_FIND_DATAA *data);
-BOOL FindNextFileA(HANDLE handle, WIN32_FIND_DATAA *data);
-BOOL FindClose(HANDLE handle);
-DWORD GetFileAttributesA(LPCSTR path);
-DWORD GetLogicalDriveStringsA(DWORD len, LPSTR buf);
 
 BOOL PostMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 BOOL TranslateMessage(const MSG *msg);

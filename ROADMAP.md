@@ -88,13 +88,6 @@ a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
 `AddMasked`/`AddIcon`/`Draw`/`Destroy`) with one-bit transparency, and
 `DrawIconEx`. The tree and list views draw the image an item names.
 
-**Finding files** — `FindFirstFileA`/`FindNextFileA`/`FindClose`,
-`GetFileAttributesA`, `GetLogicalDriveStringsA`. Not GUI, and deliberately the
-smallest set that lets a filesystem be walked: an example that browses files
-has to compile unchanged against real `<windows.h>` like every other example,
-and it cannot do that reaching for `readdir` behind an `#ifdef`. Anything else
-an app wants from kernel32 it takes from the C library.
-
 **A shell's controls** — a `ToolbarWindow32` with flat, hot-tracked, checkable
 and drop-down buttons, in a `ReBarWindow32` of stacked bands with grippers and
 labels; a list view whose columns resize by dragging a header divider; cursors (`LoadCursorA`/`SetCursor`/`WM_SETCURSOR`, a
