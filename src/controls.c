@@ -1434,9 +1434,12 @@ static void tree_ctl_free(void *p)
     free(t);
 }
 
+/* Every other pixel, counted from where the run starts. Every run in a tree
+ * begins on a row edge or a row centre, and rows are an even number of pixels
+ * apart, so they all come out on the same parity and a line drawn in two goes
+ * still reads as one. */
 static void dotted_v(ween_surface *s, int x, int y0, int y1, ween_color c)
 {
-    /* every other pixel, counted from where the line starts */
     for (int y = y0; y < y1; y += 2)
         ween_surface_pixel(s, x, y, c);
 }
@@ -1469,8 +1472,6 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             dotted_h(s, cy, cx, tx - 3, WEEN_SHADOW);
             if (it != first || depth > 0) /* up to the sibling or the parent */
                 dotted_v(s, cx, y, cy, WEEN_SHADOW);
-            if (it->next)
-                dotted_v(s, cx, cy, y + WEEN_TV_ITEM_H, WEEN_SHADOW);
         }
         if (it->child || it->cchildren) {
             /* the button: a grey box with a plus or minus in it */
@@ -1504,14 +1505,15 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                              selected ? WEEN_WHITE : WEEN_BLACK);
         }
         row++;
-        if (it->expanded && it->child) {
-            int start = row;
+        if (it->expanded && it->child)
             row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines, sel,
                             images);
-            if (lines) /* the parent's line down past its children */
-                dotted_v(s, cx, y + WEEN_TV_ITEM_H,
-                         oy + (start + 0) * WEEN_TV_ITEM_H, WEEN_SHADOW);
-        }
+        /* Down to the next sibling — past this item's children, when it has
+         * any open. Drawn after them so the run is one length rather than
+         * one per row, and so an item with a subtree under it still has the
+         * line running down its own level beside that subtree. */
+        if (lines && it->next)
+            dotted_v(s, cx, cy, oy + row * WEEN_TV_ITEM_H, WEEN_SHADOW);
     }
     return row;
 }

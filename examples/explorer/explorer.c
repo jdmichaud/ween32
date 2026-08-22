@@ -469,6 +469,24 @@ static void path_of_item(HTREEITEM item, char *out, size_t len)
         strncpy(out, "/", len - 1);
 }
 
+/* Whether a folder has any folder in it, which is what decides the box to
+ * open it with. The shell looks — a folder with nothing under it gets no
+ * plus, and the only way to know is to read it. It stops at the first one
+ * found, so the usual case costs one directory entry. */
+static int has_subdir(const char *path)
+{
+    fs_dir d;
+    fs_entry e;
+    int found = 0;
+    if (!fs_open(&d, path))
+        return 0;
+    while (!found && fs_next(&d, &e))
+        if (e.is_dir && e.name[0] != '.')
+            found = 1;
+    fs_close(&d);
+    return found;
+}
+
 /* One level of the tree, filled when its parent is opened — once. */
 static void fill_children(HTREEITEM parent, const char *path)
 {
@@ -479,9 +497,13 @@ static void fill_children(HTREEITEM parent, const char *path)
     if (!fs_open(&d, path))
         return;
     while (fs_next(&d, &e)) {
+        char child[1400];
         if (!e.is_dir || e.name[0] == '.')
             continue;
-        add_node(parent, e.name, IMG_FOLDER, IMG_FOLDER_OPEN, 1);
+        snprintf(child, sizeof(child), "%s%s%s", path,
+                 strcmp(path, "/") ? "/" : "", e.name);
+        add_node(parent, e.name, IMG_FOLDER, IMG_FOLDER_OPEN,
+                 has_subdir(child));
     }
     fs_close(&d);
 }
