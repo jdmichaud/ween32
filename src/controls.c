@@ -1538,7 +1538,7 @@ static void dotted_h(ween_surface *s, int y, int x0, int x1, ween_color c)
 
 /* Draw one level of the tree; returns the row after the last one drawn. */
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
-                     int ox, int oy, int depth, int row, int lines,
+                     int ox, int oy, int depth, int row, int lines, int at_root,
                      const ween_tvitem *sel, HIMAGELIST images)
 {
     int th = f ? f->ascent - f->descent : 13;
@@ -1552,14 +1552,18 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         int cy = y + WEEN_TV_ITEM_H / 2;
         int tx = bx + WEEN_TV_BUTTON + 7;
 
-        if (lines) {
+        /* TVS_LINESATROOT is what carries the lines and the boxes out to the
+         * top level. Without it the roots sit bare and only what is under
+         * them is joined up, which is what win32 does with the style off. */
+        int marked = depth > 0 || at_root;
+        if (lines && marked) {
             /* the stub out to the text, the run up to the sibling above and
              * the one down to the sibling below */
             dotted_h(s, cy, cx, tx - 3, WEEN_SHADOW);
             if (it != first || depth > 0) /* up to the sibling or the parent */
                 dotted_v(s, cx, y, cy, WEEN_SHADOW);
         }
-        if (it->child || it->cchildren) {
+        if ((it->child || it->cchildren) && marked) {
             /* the button: a grey box with a plus or minus in it */
             ween_surface_rect(s, bx, cy - 4, WEEN_TV_BUTTON, WEEN_TV_BUTTON,
                               WEEN_SHADOW);
@@ -1592,13 +1596,13 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         }
         row++;
         if (it->expanded && it->child)
-            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines, sel,
-                            images);
+            row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines,
+                            at_root, sel, images);
         /* Down to the next sibling — past this item's children, when it has
          * any open. Drawn after them so the run is one length rather than
          * one per row, and so an item with a subtree under it still has the
          * line running down its own level beside that subtree. */
-        if (lines && it->next)
+        if (lines && marked && it->next)
             dotted_v(s, cx, cy, oy + row * WEEN_TV_ITEM_H, WEEN_SHADOW);
     }
     return row;
@@ -1727,7 +1731,8 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                           clip.top);
     tree_draw(&top->surface, f, t->root, ox - t->scroll_x,
               oy - t->scroll_row * WEEN_TV_ITEM_H, 0, 0,
-              (wnd->style & TVS_HASLINES) != 0, t->sel, t->images);
+              (wnd->style & TVS_HASLINES) != 0,
+              (wnd->style & TVS_LINESATROOT) != 0, t->sel, t->images);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -1803,7 +1808,8 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         {   /* the button toggles, anywhere else selects */
             int bx = 5 + depth * WEEN_TV_INDENT, x = GET_X_LPARAM(lp);
-            if ((hit->child || hit->cchildren) && x >= bx &&
+            if ((hit->child || hit->cchildren) &&
+                (depth > 0 || (wnd->style & TVS_LINESATROOT)) && x >= bx &&
                 x < bx + WEEN_TV_BUTTON) {
                 tree_expand(wnd, hit, !hit->expanded);
             } else {

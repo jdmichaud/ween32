@@ -976,16 +976,21 @@ static void build_views(HWND w)
     g_panehead = CreateWindowA("explorerpane", "", WS_CHILD | WS_VISIBLE, 0, 0,
                                10, 10, w, (HMENU)(UINT_PTR)ID_PANEHEAD, NULL,
                                NULL);
+    /* LINESATROOT is what carries the lines and the boxes out to the top
+     * level; without it the root sits bare, which is not what the shot has. */
     g_tree = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "",
                              WS_CHILD | WS_VISIBLE | TVS_HASLINES |
-                                 TVS_HASBUTTONS,
+                                 TVS_HASBUTTONS | TVS_LINESATROOT,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_TREE, NULL,
                              NULL);
     g_split = CreateWindowA("explorersplit", "", WS_CHILD | WS_VISIBLE, 0, 0,
                             10, 10, w, (HMENU)(UINT_PTR)ID_SPLIT, NULL, NULL);
+    /* REPORT is the view with the columns in it. A list view left to itself
+     * comes up as icons, which is not what a details pane is. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
-                             WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, w,
-                             (HMENU)(UINT_PTR)ID_LIST, NULL, NULL);
+                             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
+                             0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
+                             NULL);
 
 #if HAVE(IMAGELIST)
     SendMessageA(g_tree, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)g_images);
@@ -1111,6 +1116,23 @@ int main(int argc, char **argv)
 
     if (argc > 0 && argv[0])
         snprintf(g_argv0, sizeof(g_argv0), "%s", argv[0]);
+
+#ifdef _WIN32
+    /* Built as a console app so that main() serves both worlds; on Windows
+     * this is a GUI program, so drop the console window it came with. */
+    FreeConsole();
+    /* And the common controls have to be asked for by name there: the rebar
+     * wants COOL, the address bar's ComboBoxEx wants USEREX, and the tree,
+     * the list, the toolbar and the status bar are all in WIN95. Without
+     * this every one of them fails to create and the window comes up empty.
+     * ween32 registers its own, so this is the win32 side only. */
+    {
+        INITCOMMONCONTROLSEX ic = { sizeof ic, ICC_WIN95_CLASSES |
+                                                   ICC_USEREX_CLASSES |
+                                                   ICC_COOL_CLASSES };
+        InitCommonControlsEx(&ic);
+    }
+#endif
 
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = explorer_proc;

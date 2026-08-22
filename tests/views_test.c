@@ -97,9 +97,13 @@ int main(void)
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
                              WS_CHILD | WS_VISIBLE, 10, 10, 240, 160, w,
                              (HMENU)(UINT_PTR)1, NULL, NULL);
+    /* LINESATROOT carries the lines and the boxes out to the top level;
+     * without it the roots have neither, on either side of the build. */
     g_tree = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "",
-                             WS_CHILD | WS_VISIBLE, 260, 10, 120, 160, w,
-                             (HMENU)(UINT_PTR)2, NULL, NULL);
+                             WS_CHILD | WS_VISIBLE | TVS_HASLINES |
+                                 TVS_HASBUTTONS | TVS_LINESATROOT,
+                             260, 10, 120, 160, w, (HMENU)(UINT_PTR)2, NULL,
+                             NULL);
     CHECK(g_list && g_tree, "a list view and a tree view");
 
     {

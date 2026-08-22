@@ -215,8 +215,9 @@ int main(void)
                                  WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0, 240,
                                  160, NULL, NULL, NULL, NULL);
         HWND tv = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "",
-                                  WS_CHILD | WS_VISIBLE, 10, 10, 200, 100, w,
-                                  NULL, NULL, NULL);
+                                  WS_CHILD | WS_VISIBLE | TVS_HASLINES |
+                                      TVS_HASBUTTONS | TVS_LINESATROOT,
+                                  10, 10, 200, 100, w, NULL, NULL, NULL);
         CHECK(tv != NULL, "a tree view to hang it on");
         SendMessageA(tv, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)il);
 

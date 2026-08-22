@@ -89,30 +89,23 @@ tests/views_test: tests/views_test.c libween32.a
 tests/toolbar_test: tests/toolbar_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/toolbar_test.c libween32.a $(LIBS)
 
-test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
-      tests/resize_test tests/multiwin_test tests/timer_test \
-      tests/keys_test tests/menu_test \
-      tests/modal_test tests/clip_test tests/image_test tests/image_test
-	./tests/render_test
-	./tests/api_test
-	./tests/dlg_test
-	./tests/input_test
-	./tests/resize_test
-	./tests/multiwin_test
-	./tests/timer_test
-	./tests/keys_test
-	./tests/menu_test
-	./tests/modal_test
-	./tests/clip_test
-	./tests/image_test
-	./tests/geometry_test
-	./tests/views_test
-	./tests/toolbar_test
+# One list, used to build them, to run them and to clean them. Kept in one
+# place because it drifted: three of the tests were run without being named
+# as something `test` depends on, so a stale binary could report a pass for
+# code that was no longer there.
+TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
+        tests/resize_test tests/multiwin_test tests/timer_test \
+        tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
+        tests/image_test tests/geometry_test tests/views_test \
+        tests/toolbar_test
+
+EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
+           examples/explorer/explorer
+
+test: $(TESTS)
+	@for t in $(TESTS); do ./$$t || exit 1; done
 
 clean:
-	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \
-	      examples/explorer/explorer \
-	      tests/render_test tests/api_test tests/dlg_test tests/input_test \
-	      tests/resize_test tests/multiwin_test tests/timer_test tests/keys_test tests/menu_test tests/timer_test
+	rm -f $(OBJS) libween32.a $(EXAMPLES) $(TESTS)
 
 .PHONY: all test clean
