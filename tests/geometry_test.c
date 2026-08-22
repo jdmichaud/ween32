@@ -174,6 +174,26 @@ int main(void)
     CHECK(g_clicks_fixed == 1,
           "and a click where its button appears on screen reached it");
 
+    /* GetWindowRect and ClientToScreen have to measure from the same corner.
+     * A window that wants to know where the pointer is inside itself reads a
+     * child's rectangle back and puts it through ScreenToClient — the way a
+     * splitter follows a drag — and if the two disagree it lands wherever the
+     * difference is. */
+    {
+        HWND child = CreateWindowA("BUTTON", "x", WS_CHILD | WS_VISIBLE, 37,
+                                   23, 40, 20, g_big, NULL, NULL, NULL);
+        RECT r;
+        POINT pt;
+        GetWindowRect(child, &r);
+        pt.x = r.left;
+        pt.y = r.top;
+        ScreenToClient(g_big, &pt);
+        CHECK(pt.x == 37 && pt.y == 23,
+              "a child's rectangle comes back through ScreenToClient as the "
+              "place it was put");
+        DestroyWindow(child);
+    }
+
     DestroyWindow(g_big);
     DestroyWindow(g_fixed);
     ween_headless_set_window_size(0, 0);

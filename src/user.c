@@ -300,7 +300,11 @@ BOOL GetWindowRect(HWND wnd, LPRECT rect)
     if (!wnd || !rect)
         return FALSE;
     /* A top-level window's rectangle is where the backend put it; a child's is
-     * relative to the same origin, reached through its parents. */
+     * relative to the same origin, reached through its parents. The top's
+     * corner comes from the same place ClientToScreen takes it, or the two
+     * disagree and ScreenToClient of a rectangle read back here — which is
+     * how a window works out where the pointer is inside itself — lands
+     * somewhere else entirely. */
     int x = 0, y = 0;
     for (const struct ween_wnd *w = wnd; w; w = w->parent) {
         if (w->parent) {
@@ -309,8 +313,10 @@ BOOL GetWindowRect(HWND wnd, LPRECT rect)
             x += w->x + cox;
             y += w->y + coy;
         } else {
-            x += w->x;
-            y += w->y;
+            int wx, wy;
+            ween_window_origin((struct ween_wnd *)w, &wx, &wy);
+            x += wx;
+            y += wy;
         }
     }
     rect->left = x;

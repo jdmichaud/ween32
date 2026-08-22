@@ -1724,10 +1724,17 @@ static LRESULT CALLBACK splitter_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_MOUSEMOVE:
         if (g_dragging && GetCapture() == w) {
-            RECT wr, mr;
+            /* The split is a client coordinate, so the pointer has to come
+             * back through the client origin: measured off the window rect it
+             * carries the sizing frame with it and the splitter jumps by four
+             * the moment it is picked up. */
+            RECT wr;
+            POINT pt;
             GetWindowRect(w, &wr);
-            GetWindowRect(g_main, &mr);
-            g_split_x = wr.left + GET_X_LPARAM(lp) - mr.left;
+            pt.x = wr.left + GET_X_LPARAM(lp);
+            pt.y = wr.top + GET_Y_LPARAM(lp);
+            ScreenToClient(g_main, &pt);
+            g_split_x = pt.x;
             layout(g_main);
             InvalidateRect(g_main, NULL, TRUE);
         }
