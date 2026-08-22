@@ -835,6 +835,25 @@ typedef struct {
 #define TB_ISBUTTONENABLED (WM_USER + 9)
 #define TB_ADDBUTTONSA (WM_USER + 20)
 #define TB_BUTTONSTRUCTSIZE (WM_USER + 30)
+/* One button's own size, which is how a button that does not follow from
+ * its label and its image gets the width it wants. */
+#define TB_SETBUTTONINFOA (WM_USER + 66)
+#define TBIF_IMAGE 0x0001
+#define TBIF_STYLE 0x0008
+#define TBIF_SIZE 0x0040
+typedef struct tagTBBUTTONINFOA {
+    UINT cbSize;
+    DWORD dwMask;
+    int idCommand;
+    int iImage;
+    BYTE fsState;
+    BYTE fsStyle;
+    WORD cx;
+    DWORD_PTR lParam;
+    LPSTR pszText;
+    int cchText;
+} TBBUTTONINFOA;
+
 #define TB_SETIMAGELIST (WM_USER + 48)
 /* The second set of images, used for whichever button the pointer is on.
  * Windows 2000 drew a toolbar's arrows grey and swapped to coloured ones

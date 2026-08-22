@@ -3160,7 +3160,8 @@ typedef struct {
     char *text;
     UINT style;
     UINT state;
-    int x, w; /* filled in by the layout */
+    int x, w;  /* filled in by the layout */
+    int fixed; /* a width the app set itself, 0 for none */
 } ween_tbbutton;
 
 typedef struct {
@@ -3213,6 +3214,11 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
             /* A button with nothing but an image is not symmetric: the
              * image keeps its left inset and only two pixels follow it. */
             int drop = (b->style & TBSTYLE_DROPDOWN) != 0;
+            if (b->fixed) { /* the app said how wide, so that is how wide */
+                b->w = b->fixed;
+                x += b->w;
+                continue;
+            }
             /* A label is followed by seven pixels, or by four when an arrow
              * half comes after it and takes the rest. */
             b->w = text ? ween_ncm(WEEN_TB_TEXT_X) + text +
@@ -3333,8 +3339,10 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int ix = bx + ween_ncm(WEEN_TB_ICON_X) + (b->text ? 0 : -1) +
                      shift;
             int iy = by + (h - 16) / 2 + shift;
-            /* Not greyed here: a toolbar's strip carries its own dead
-             * images, which is what the app hands over. */
+            /* Not greyed here. A dead image is not the live one embossed —
+             * it keeps its own detail, which an embossed silhouette loses —
+             * so the strip carries both and the application hands over the
+             * one it wants. Only the arrow is drawn, and greyed, here. */
             if (from && b->image >= 0)
                 ween_imagelist_draw(from, b->image, &top->surface, ix, iy);
         }
@@ -3383,6 +3391,23 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case TB_BUTTONSTRUCTSIZE:
         return 0; /* nothing here depends on the app's struct size */
+    case TB_SETBUTTONINFOA: {
+        const TBBUTTONINFOA *bi = (const TBBUTTONINFOA *)lp;
+        tb = toolbar_of(wnd);
+        for (int i = 0; tb && bi && i < tb->count; i++) {
+            if (tb->btn[i].id != (int)wp)
+                continue;
+            if (bi->dwMask & TBIF_SIZE)
+                tb->btn[i].fixed = bi->cx;
+            if (bi->dwMask & TBIF_IMAGE)
+                tb->btn[i].image = bi->iImage;
+            if (bi->dwMask & TBIF_STYLE)
+                tb->btn[i].style = bi->fsStyle;
+            InvalidateRect(wnd, NULL, FALSE);
+            return TRUE;
+        }
+        return FALSE;
+    }
     case TB_SETHOTIMAGELIST:
         tb = toolbar_of(wnd);
         if (tb)

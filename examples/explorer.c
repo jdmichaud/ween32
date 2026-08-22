@@ -1309,6 +1309,17 @@ static void build_bands(HWND w)
     b[n].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
     n++;
     SendMessageA(g_toolbar, TB_ADDBUTTONSA, n, (LPARAM)b);
+    {
+        /* The views button does not follow from its image and its arrow the
+         * way the others do: the shell gives it thirty-one, which puts its
+         * arrow four into the last twelve of that. */
+        TBBUTTONINFOA bi;
+        memset(&bi, 0, sizeof(bi));
+        bi.cbSize = sizeof(bi);
+        bi.dwMask = TBIF_SIZE;
+        bi.cx = 31;
+        SendMessageA(g_toolbar, TB_SETBUTTONINFOA, IDM_VIEWS, (LPARAM)&bi);
+    }
 
     g_addrband = CreateWindowA("exploreraddr", "", WS_CHILD | WS_VISIBLE, 0, 0,
                                300, 22, g_rebar, (HMENU)(UINT_PTR)ID_ADDRBAND,
