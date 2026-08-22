@@ -188,12 +188,35 @@ static int blank_advance(void)
     return 3; /* space and unknown glyphs */
 }
 
+/* Where the shipped Tahoma's own eleven-pixel strike disagrees with the one
+ * Windows 2000 has.
+ *
+ * The advance comes out of the font file — these faces carry a hand-tuned
+ * bitmap for this size, advances and all — so this is a difference between
+ * two Tahomas rather than a rounding of ours. It shows up as a word being a
+ * pixel wide: "History" on a toolbar comes to 34 here and 33 there, and
+ * everything laid out after it is a pixel out.
+ *
+ * Measured against a running Windows 2000: 'y' is five there and six here.
+ * The letter is otherwise identical — the ink matches, only the step to the
+ * next glyph does not. Kept as a list rather than a rounding rule because
+ * these are hinted values, and there is no rule that reproduces them.
+ */
+static int tahoma_11_fix(const ween_strike *f, unsigned char c, int adv)
+{
+    if (f->ppem != 11 || f->embolden)
+        return adv;
+    if (c == 'y')
+        return adv - 1;
+    return adv;
+}
+
 int ween_strike_char_advance(const ween_strike *f, unsigned char c)
 {
     ween_glyph g;
     if (!glyph_bitmap(f, glyph_index(f, c), &g))
         return blank_advance();
-    return g.adv + f->embolden;
+    return tahoma_11_fix(f, c, g.adv + f->embolden);
 }
 
 /* The advance GDI would report for a character: the outline's, scaled to the
