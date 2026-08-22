@@ -401,6 +401,8 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
         len = strip_prefix(text, len, stripped, (int)sizeof(stripped),
                            &underline);
         text = stripped;
+        if (format & DT_HIDEPREFIX)
+            underline = -1; /* the '&' goes, the line under it never comes */
     }
 
     /* Alignment is done with the *measured* width and cell height; the glyphs

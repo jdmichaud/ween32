@@ -202,6 +202,11 @@ ween_color ween_cr_to_px(COLORREF c);
  *
  * The item rectangles are filled in by the layout pass and then used by both
  * the drawing and the hit-testing, so the two can never disagree. */
+/* The underlines under the letters a menu answers to. Windows 2000 keeps them
+ * hidden until the keyboard has been used to reach a menu, and shows them from
+ * then on; a menu opened and worked with the mouse never grows them. */
+extern int ween_menu_cues;
+
 typedef struct ween_menuitem {
     char *text;   /* NULL for a separator; "label\taccelerator" otherwise */
     UINT id;

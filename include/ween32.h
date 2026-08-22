@@ -781,6 +781,10 @@ typedef struct tagTCITEMA {
 #define DT_SINGLELINE 0x00000020
 #define DT_NOCLIP 0x00000100
 #define DT_NOPREFIX 0x00000800
+/* Draw the label without the '&' and without the underline under the letter
+ * after it. Windows hides those until the keyboard has been used, and asks
+ * for them this way when they are hidden. */
+#define DT_HIDEPREFIX 0x00100000
 
 /* ---- GDI misc ------------------------------------------------------------ */
 

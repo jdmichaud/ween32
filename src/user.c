@@ -1640,6 +1640,7 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     } else if (vk != VK_MENU && vk != VK_F10) {
         return 0;
     }
+    ween_menu_cues = 1; /* the bar was reached by key, so the letters show */
     UINT cmd = ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);

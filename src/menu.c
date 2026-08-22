@@ -372,6 +372,8 @@ int ween_menu_mnemonic(HMENU menu, unsigned ch)
 /* ---- drawing -------------------------------------------------------------- */
 
 /* One label, with its mnemonic underlined; DrawTextA already knows how. */
+int ween_menu_cues = 0;
+
 static void draw_label(ween_surface *s, const ween_strike *f, int x, int y,
                        const char *text, int len, ween_color c)
 {
@@ -387,7 +389,8 @@ static void draw_label(ween_surface *s, const ween_strike *f, int x, int y,
     r.top = y;
     r.right = s->w;
     r.bottom = y + 32;
-    DrawTextA(&dc, text, len, &r, DT_LEFT | DT_SINGLELINE);
+    DrawTextA(&dc, text, len, &r,
+              DT_LEFT | DT_SINGLELINE | (ween_menu_cues ? 0 : DT_HIDEPREFIX));
 }
 
 void ween_menu_draw_bar(HMENU menu, ween_surface *s, int ox, int oy, int width,
@@ -786,6 +789,14 @@ static void session_run(menu_session *s)
             break;
 
         case WEEN_EV_KEY:
+            /* the keyboard has been used, so from here on the letters are
+             * underlined — including in the menu this key is navigating */
+            if (!ween_menu_cues) {
+                ween_menu_cues = 1;
+                for (int i = 0; i < s->depth; i++)
+                    if (s->level[i].wnd)
+                        s->level[i].wnd->dirty = 1;
+            }
             switch (ev.vk) {
             case VK_ESCAPE:
                 if (s->depth > 1)
