@@ -470,6 +470,9 @@ typedef struct tagTVHITTESTINFO {
 #define LVIF_STATE 0x0008
 #define LVSIL_SMALL 1
 #define LVIS_FOCUSED 0x0001
+/* A cut item, drawn ghosted: the shell marks a hidden file this way too, and
+ * what it comes to is the icon blended half way into the background. */
+#define LVIS_CUT 0x0004
 #define LVIS_SELECTED 0x0002
 #define LVCF_FMT 0x0001
 #define LVCF_WIDTH 0x0002

@@ -81,7 +81,8 @@ enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
         * them, but the machine's tree is full of them */
        IMG_SHELL_DESKTOP, IMG_SHELL_MYDOCS, IMG_SHELL_COMPUTER,
        IMG_SHELL_DISK, IMG_SHELL_CPANEL, IMG_SHELL_NETWORK, IMG_SHELL_BIN,
-       IMG_SHELL_IE, IMG_SHELL_CFG, IMG_COUNT };
+       IMG_SHELL_IE, IMG_SHELL_CFG, IMG_SHELL_BAT, IMG_SHELL_SYS,
+       IMG_COUNT };
 
 /* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
  * They were never icons — one bitmap strip held the lot — so there is nothing
@@ -716,15 +717,21 @@ static const struct {
     const char *type;
     const char *modified;
     int is_dir;
-    int image; /* -1 for the folder or the plain file icon */
+    int image;  /* -1 for the folder or the plain file icon */
+    int hidden; /* drawn ghosted, the way the shell draws a hidden file */
 } g_fix_list[] = {
-    { "Documents and Settings", "", "File Folder", "7/8/2017 6:26 PM", 1, -1 },
-    { "Program Files", "", "File Folder", "7/8/2017 6:27 PM", 1, -1 },
-    { "WINNT", "", "File Folder", "7/8/2017 6:26 PM", 1, -1 },
-    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", "7/8/2017 6:33 PM", 0, -1 },
+    { "Documents and Settings", "", "File Folder", "7/8/2017 6:26 PM", 1, -1,
+      0 },
+    { "Program Files", "", "File Folder", "7/8/2017 6:27 PM", 1, -1, 0 },
+    { "WINNT", "", "File Folder", "7/8/2017 6:26 PM", 1, -1, 0 },
+    /* the two hidden ones are drawn ghosted, as the shell draws a hidden
+     * file — which is what the machine has here */
+    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", "7/8/2017 6:33 PM", 0,
+      IMG_SHELL_BAT, 1 },
     { "boot", "1 KB", "Configuration Settings", "7/22/2017 7:37 PM", 0,
-      IMG_SHELL_CFG },
-    { "CONFIG.SYS", "0 KB", "System file", "7/8/2017 6:33 PM", 0, -1 },
+      IMG_SHELL_CFG, 0 },
+    { "CONFIG.SYS", "0 KB", "System file", "7/8/2017 6:33 PM", 0,
+      IMG_SHELL_SYS, 1 },
 };
 
 static void status_for_directory(void)
@@ -852,6 +859,14 @@ static void fill_fixture_list(void)
         set_cell(g_list, row, 1, g_fix_list[row].size);
         set_cell(g_list, row, 2, g_fix_list[row].type);
         set_cell(g_list, row, 3, g_fix_list[row].modified);
+        if (g_fix_list[row].hidden) {
+            LVITEMA st;
+            memset(&st, 0, sizeof(st));
+            st.mask = LVIF_STATE;
+            st.state = LVIS_CUT;
+            st.stateMask = LVIS_CUT;
+            SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)row, (LPARAM)&st);
+        }
     }
     focus_first_row();
     mark_sorted_column();
@@ -1825,8 +1840,9 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
      * the indices the same when it is off, since a button names its image by
      * number and everything after a hole would answer to the wrong one. */
     {
-        static const char *shell[] = { "35", "21",  NULL, "9",
-                                       "137", "18", "32", "512", "151" };
+        static const char *shell[] = { "35", "mydocs", NULL, "9",
+                                       "137", "18", "32", "512", "151",
+                                       "153", "154" };
         for (int i = 0; i < (int)(sizeof(shell) / sizeof(*shell)); i++) {
             char path[600];
             HICON icon = NULL;

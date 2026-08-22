@@ -103,18 +103,23 @@ Set the machine to Tools > Folder Options > Web View > "Use Windows classic
 folders" first: with the web view on, the shell puts a third panel between
 the tree and the list and nothing lines up.
 
-As of the last pass the whole window differs by 3970 of 355776 pixels —
-1.1% — and it breaks down like this:
+As of the last pass the whole window differs by 3917 of 355776 pixels — 1.1%.
+Two thirds of that is ours quantised to 5-5-5, which is the machine drawing
+every icon through a sixteen bit image list, and a slice of the rest is the
+mouse pointer the screenshot has drawn into it. What is left over — neither
+of those — is 946 pixels:
 
 | band | differing | what it is |
 | --- | --- | --- |
-| caption | 8301 | the gradient, a shade out per column, and the bold title |
-| left pane | 2058 | icon art; 1460 of it ours quantised to 5-5-5 |
-| list pane | 1407 | the caret, two icons, quantisation |
-| status bar | 602 | the second and third parts' text |
-| address band | 114 | the drive icon's own colours |
 | menu band | 233 | the animation the shell plays at its right |
-| toolbar band | 88 | Back is live on the machine and dead here |
+| list pane | 119 | the caret on the first row: the machine's view lost it when the folder options refreshed it |
+| caption | 95 | the bold title — wine's Tahoma Bold is not the machine's, so "Local Disk (C:)" comes out two pixels wider |
+| toolbar band | 65 | Back is live on the machine and dead here |
+| left pane | 1 | one pixel of the Internet Explorer icon |
+| status bar | 1 | one pixel of a letter |
+| address band | 0 | |
+
+The rest of each band's count is the quantisation and the pointer.
 The tree pane is window-relative x 4..203, y 100..519. As of the last pass
 everything in it matches but the icons: every differing pixel is inside a
 16-pixel icon column, and all but two of those icons are ours quantised to

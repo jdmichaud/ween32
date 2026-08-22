@@ -2068,6 +2068,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 typedef struct {
     char *text[4];
     int image; /* index into the view's image list, -1 for none */
+    int cut;   /* LVIS_CUT: drawn ghosted, which is how a hidden file looks */
 } ween_lvrow;
 
 typedef struct {
@@ -2405,10 +2406,14 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         if (indent) {
             /* a picked row's picture goes blue with it, half way to the
              * highlight — the row is what is selected, not the text in it */
-            if (selected)
-                ween_imagelist_draw_blend(l->images, l->row[i].image,
-                                          &top->surface, ox - sx + 2,
-                                          y + (ih - icon_h) / 2, WEEN_CAP_LEFT);
+            /* A picked row's picture goes blue with it; a cut one — which is
+             * how the shell shows a hidden file — goes half way into the
+             * window's own colour instead. */
+            if (selected || l->row[i].cut)
+                ween_imagelist_draw_blend(
+                    l->images, l->row[i].image, &top->surface, ox - sx + 2,
+                    y + (ih - icon_h) / 2,
+                    selected ? WEEN_CAP_LEFT : WEEN_WHITE);
             else
                 ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
                                     ox - sx + 2, y + (ih - icon_h) / 2);
@@ -2846,6 +2851,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->sel = l->focus = (int)wp + 1;
         if (l && item && (item->state & LVIS_FOCUSED))
             l->focus = (int)wp + 1;
+        if (l && item && (item->stateMask & LVIS_CUT) && (int)wp >= 0 &&
+            (int)wp < l->nrow) {
+            l->row[(int)wp].cut = (item->state & LVIS_CUT) != 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         return TRUE;
     }
     case LVM_DELETEALLITEMS:
