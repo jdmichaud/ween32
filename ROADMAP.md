@@ -416,6 +416,9 @@ Measured against the machine, band by band:
 | the context menu on a folder, from either panel | **0** |
 | the context menu on a file | **0** |
 | the "Send To" submenu | **4**, inside the fraction in "3 1/2 Floppy (A)" |
+| the menu on the background | **0** |
+| the tree pane, frame and bar | **0** |
+| the tree itself | **0** outside the 16-pixel icon columns |
 
 Nothing is left in it. What differs in the window is the animation playing
 in the brand box and the path written in the address combo — the machine is

@@ -1972,10 +1972,15 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 g_ctx_row = -1;
                 menu = g_back_menu;
             } else {
+                int is_dir;
                 g_ctx_row = hi.iItem;
-                menu = (hi.iItem < g_entries && g_entry[hi.iItem].is_dir)
-                           ? g_folder_menu
-                           : g_file_menu;
+                if (g_fixture)
+                    is_dir = hi.iItem < (int)(sizeof(g_fix_list) /
+                                              sizeof(*g_fix_list)) &&
+                             g_fix_list[hi.iItem].is_dir;
+                else
+                    is_dir = hi.iItem < g_entries && g_entry[hi.iItem].is_dir;
+                menu = is_dir ? g_folder_menu : g_file_menu;
             }
         } else if (from == g_tree) {
             TVHITTESTINFO hi;

@@ -83,6 +83,27 @@ in the same way: its indent, the column its buttons sit in and the pixel of
 white above its first row are measured against a Windows 2000 shell tree.
 See the ROADMAP for what was measured.
 
+### The explorer beside the machine
+
+`WEEN32_EXPLORER_FIXTURE=1` fills both panes with what a Windows 2000
+explorer shows sitting on Local Disk (C:) — the same eleven items in the
+tree, the same six in the list — so the window can be put beside a
+screenshot of that machine and counted:
+
+```sh
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/fx%d.bmp ./examples/explorer
+```
+
+The window is at (132,132) on the machine's 1024x768 screen and 654x544, so
+a pixel at window-relative (x,y) is at (x+132,y+132) in a screenshot of it.
+The tree pane is window-relative x 4..203, y 100..519. As of the last pass
+everything in it matches but the icons: every differing pixel is inside a
+16-pixel icon column, and all but two of those icons are ours quantised to
+5-5-5, which is the machine drawing them through a sixteen bit image list.
+The two that are not are My Computer and My Documents, whose icons are not
+in `assets/icons`.
+
 **Wine is not the reference for drop-downs.** It renders a menu's border as a
 flat grey line and a separator as a single line; Windows draws a raised edge
 and an etched pair. Everywhere else in ween32 wine agrees with Windows, and is
