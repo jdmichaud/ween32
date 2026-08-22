@@ -44,6 +44,11 @@ enum {
     IDM_SEARCH,
     IDM_FOLDERS,
     IDM_HISTORY,
+    IDM_MOVETO,
+    IDM_COPYTO,
+    IDM_DELETE,
+    IDM_UNDO,
+    IDM_VIEWS,
     IDM_CLOSE,
     IDM_ABOUT
 };
@@ -54,16 +59,123 @@ enum {
 #define ICON_FILE "1"
 #define ICON_COMPUTER "16"
 #define ICON_DRIVE "9"
-#define ICON_BACK "137"
-#define ICON_FORWARD "138"
 #define ICON_UP "34"
+#define ICON_MOVETO "137"
+#define ICON_COPYTO "138"
 #define ICON_SEARCH "50"
 #define ICON_HISTORY "35"
 #define ICON_APP "46" /* the folder-and-magnifier the caption wears */
 
 /* Image-list indices, in the order they are added. */
 enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
-       IMG_BACK, IMG_FORWARD, IMG_UP, IMG_SEARCH, IMG_HISTORY, IMG_COUNT };
+       IMG_UP, IMG_SEARCH, IMG_HISTORY, IMG_MOVETO, IMG_COPYTO,
+       /* the drawn ones, added after everything read from disk */
+       IMG_BACK, IMG_FORWARD, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_COUNT };
+
+/* Some of a toolbar's glyphs were never icons — they came out of a bitmap
+ * strip — so they are drawn here instead, a pixel at a time. '.' is the
+ * colour the image list masks out and the digits index a grey ramp, which is
+ * all these need: an arrow lit from the top left, and the greys a button
+ * with nothing to act on wears. */
+typedef struct {
+    int w, h;
+    const char *const *rows;
+} glyph;
+
+static const char *const GLYPH_BACK[] = {
+    ".....0.......",
+    "....20.......",
+    "...260.......",
+    "..26502222220",
+    ".265555555520",
+    ".024422222220",
+    "..02200000000",
+    "...020.......",
+    "....00.......",
+    ".....0.......",
+    ".............",
+};
+
+static const char *const GLYPH_FORWARD[] = {
+    ".......2.....",
+    ".......22....",
+    ".......222...",
+    "22222222222..",
+    "222222222222.",
+    "2222222222226",
+    "2222222222266",
+    ".66666622266.",
+    ".......2266..",
+    ".......266...",
+    "........6....",
+};
+
+static const char *const GLYPH_DELETE[] = {
+    "222.........1",
+    "2640......20.",
+    ".2240....20..",
+    "...240..20...",
+    "....22020....",
+    ".....220.....",
+    "....22020....",
+    "...220..20...",
+    "..240....20..",
+    ".240......2..",
+    "2620.......1.",
+    "220..........",
+    ".0..........1",
+};
+
+static const char *const GLYPH_UNDO[] = {
+    "........22222...",
+    "......22566540..",
+    ".2...2644000440.",
+    ".20.26400...0440",
+    ".260640......240",
+    ".26640.......240",
+    ".25440.......240",
+    ".244440.....2440",
+    ".0000000....240.",
+    "............000.",
+    "................",
+    "................",
+};
+
+static const char *const GLYPH_VIEWS[] = {
+    "2222222222222220",
+    "2533333333333330",
+    "2111111111111110",
+    "2666666666666640",
+    "2630600663060040",
+    "2600666660066640",
+    "2666666666666640",
+    "2630600663060040",
+    "2600666660066640",
+    "2666666666666640",
+    "2630600663060040",
+    "2600666660066640",
+    "2444444444444440",
+    "0000000000000000",
+};
+
+/* indexed by IMG_BACK.. — the order add_glyph is called in */
+static const glyph GLYPHS[] = {
+    { 13, 11, GLYPH_BACK },
+    { 13, 11, GLYPH_FORWARD },
+    { 13, 13, GLYPH_DELETE },
+    { 16, 12, GLYPH_UNDO },
+    { 16, 14, GLYPH_VIEWS },
+};
+
+static COLORREF glyph_colour(char c)
+{
+    static const int ramp[] = { 0, 64, 128, 160, 192, 224, 255 };
+    int i;
+    if (c < '0' || c > '6')
+        return RGB(255, 0, 255); /* masked out */
+    i = c - '0';
+    return RGB(ramp[i], ramp[i], ramp[i]);
+}
 
 static HWND g_main, g_tree, g_list, g_toolbar, g_rebar, g_address, g_status;
 static HWND g_split, g_panehead;
@@ -362,14 +474,43 @@ static void build_menu(HWND w)
 #endif
 
 #if HAVE(IMAGELIST)
+/* The art, centred in a 16x16 bitmap and handed over with its background
+ * named as the transparent colour — which is all ImageList_AddMasked wants. */
+static void add_glyph(const glyph *g)
+{
+    unsigned char bits[16 * 16 * 4];
+    HBITMAP bmp;
+    int ox = (16 - g->w) / 2, oy = (16 - g->h) / 2;
+
+    for (int i = 0; i < 16 * 16; i++) {
+        bits[i * 4 + 0] = 0xff; /* B,G,R as every win32 DIB is */
+        bits[i * 4 + 1] = 0x00;
+        bits[i * 4 + 2] = 0xff;
+        bits[i * 4 + 3] = 0;
+    }
+    for (int y = 0; y < g->h; y++) {
+        for (int x = 0; x < g->w; x++) {
+            COLORREF c = glyph_colour(g->rows[y][x]);
+            unsigned char *p = bits + (((size_t)(y + oy) * 16) + x + ox) * 4;
+            p[0] = (unsigned char)(c >> 16);
+            p[1] = (unsigned char)(c >> 8);
+            p[2] = (unsigned char)c;
+        }
+    }
+    bmp = CreateBitmap(16, 16, 1, 32, bits);
+    ImageList_AddMasked(g_images, bmp, RGB(255, 0, 255));
+    DeleteObject(bmp);
+}
+
 static void load_icons(void)
 {
-    static const char *names[IMG_COUNT] = {
-        ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE, ICON_COMPUTER, ICON_DRIVE,
-        ICON_BACK,   ICON_FORWARD,     ICON_UP,   ICON_SEARCH,   ICON_HISTORY
+    static const char *names[] = {
+        ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE,   ICON_COMPUTER,
+        ICON_DRIVE,  ICON_UP,          ICON_SEARCH, ICON_HISTORY,
+        ICON_MOVETO, ICON_COPYTO
     };
     g_images = ImageList_Create(16, 16, ILC_MASK, IMG_COUNT, 4);
-    for (int i = 0; i < IMG_COUNT; i++) {
+    for (int i = 0; i < (int)(sizeof(names) / sizeof(*names)); i++) {
         char path[128];
         HICON icon;
         snprintf(path, sizeof(path), "assets/icons/%s.ico", names[i]);
@@ -380,13 +521,15 @@ static void load_icons(void)
             DestroyIcon(icon);
         }
     }
+    for (int i = 0; i < (int)(sizeof(GLYPHS) / sizeof(*GLYPHS)); i++)
+        add_glyph(&GLYPHS[i]);
 }
 #endif
 
 #if HAVE(TOOLBAR)
 static void build_bands(HWND w)
 {
-    TBBUTTON b[8];
+    TBBUTTON b[14];
     REBARBANDINFOA bi;
     int n = 0;
 
@@ -412,7 +555,6 @@ static void build_bands(HWND w)
     b[n].idCommand = IDM_FORWARD;
     b[n].fsState = 0; /* nowhere forward to go yet */
     b[n].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
-    b[n].iString = (INT_PTR) "Forward";
     n++;
     b[n].iBitmap = IMG_UP;
     b[n].idCommand = IDM_UP;
@@ -438,6 +580,37 @@ static void build_bands(HWND w)
     b[n].fsState = TBSTATE_ENABLED;
     b[n].fsStyle = TBSTYLE_BUTTON;
     b[n].iString = (INT_PTR) "History";
+    n++;
+    b[n].fsStyle = TBSTYLE_SEP;
+    n++;
+    /* The four that act on a selection, and so are labelless and — with
+     * nothing selected, as the shot has it — all but the first two dead. */
+    b[n].iBitmap = IMG_MOVETO;
+    b[n].idCommand = IDM_MOVETO;
+    b[n].fsState = TBSTATE_ENABLED;
+    b[n].fsStyle = TBSTYLE_BUTTON;
+    n++;
+    b[n].iBitmap = IMG_COPYTO;
+    b[n].idCommand = IDM_COPYTO;
+    b[n].fsState = TBSTATE_ENABLED;
+    b[n].fsStyle = TBSTYLE_BUTTON;
+    n++;
+    b[n].iBitmap = IMG_DELETE;
+    b[n].idCommand = IDM_DELETE;
+    b[n].fsState = 0;
+    b[n].fsStyle = TBSTYLE_BUTTON;
+    n++;
+    b[n].iBitmap = IMG_UNDO;
+    b[n].idCommand = IDM_UNDO;
+    b[n].fsState = 0;
+    b[n].fsStyle = TBSTYLE_BUTTON;
+    n++;
+    b[n].fsStyle = TBSTYLE_SEP;
+    n++;
+    b[n].iBitmap = IMG_VIEWS;
+    b[n].idCommand = IDM_VIEWS;
+    b[n].fsState = TBSTATE_ENABLED;
+    b[n].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
     n++;
     SendMessageA(g_toolbar, TB_ADDBUTTONSA, n, (LPARAM)b);
 
