@@ -313,11 +313,24 @@ one-pixel `COLOR_3DSHADOW` border and single-line separators; a real Windows
 2000 menu has a two-pixel raised edge and etched separators. And wine spaces
 menu *bar* items by twelve pixels where Windows uses sixteen.
 
-The menu metrics here are measured against screenshots of Windows itself
-instead: a shell context menu, whose nine items and four separators tile a
-121 x 195 menu exactly, and an application File menu with a cascade open. The
-bar's sixteen is the same on all five of File, Edit, View, Favorites and
-Tools — a constant across labels of that range is hard to get by accident.
+The menu metrics here are measured against Windows itself instead: the bar's
+sixteen is the same on all five of File, Edit, View, Favorites and Tools — a
+constant across labels of that range is hard to get by accident — and the
+popups are measured off a running machine, item by item.
+
+A shell context menu on a folder is 121 x 238 there and 121 x 238 here, with
+every label's ink in the same column and every separator between the same two
+rows. What that took, over what a single screenshot had settled: the label
+sits one pixel above the middle of its item, the cascade arrow is four wide
+and seven tall in a column of twelve with nine before it, the etched
+separator stops four pixels from each edge, and a cascade opens six pixels
+back over its parent, lifted by the popup's inset so its first item lines up
+with the item that opened it.
+
+A menu with pictures in it is laid out wider all round — gutter thirty-one,
+items twenty-two tall, four more on the right — which is what makes the
+shell's Send To 183 x 94 with its four icons where the same four labels alone
+make 168 x 74.
 
 This means `menu-reference.png`, which is a wine render, is now something
 ween32 deliberately differs from in the menu-bar band. That difference is
@@ -389,11 +402,21 @@ Measured against the machine, band by band:
 | menu band | **0**, outside the animation the shell plays at its right |
 | address band | **0**, outside what is written in the combo box |
 | toolbar band | **0** |
+| the context menu on a folder | **0** |
+| its "Send To" submenu | **4**, inside the fraction in "3 1/2 Floppy (A)" |
 
 Nothing is left in it. What differs in the window is the animation playing
 in the brand box and the path written in the address combo — the machine is
 looking at Local Disk (C:) and this is looking at a file system — and
-neither of those is a rendering.
+neither of those is a rendering. The four in the submenu are our Tahoma
+strike drawing the small one of the fraction with a foot where Windows
+draws it without.
+
+The menus were measured with the machine's own menu open beside ours: the
+count is over everything the screenshot is not drawing something else over,
+which is the row the pointer was hovering, the submenu overlapping its
+parent's border, and the mouse pointer itself, which the frame buffer has
+drawn into it.
 
 The last three took the longest and were all one mistake, made twice: a
 dead image *is* the live one embossed, but the silhouette leaves white out.
@@ -441,12 +464,12 @@ What still differs, and why:
 - The tree lists the **file system** rather than the shell namespace, so it
   starts at a directory instead of at Desktop, My Documents and My Computer.
 
-Not a difference, though it looks like one: the shot's menu bar has no
-underlines under its accelerators and ween32 draws them. Windows 2000 added
-the setting that hides them until Alt is pressed, and the other Windows 2000
-screenshot in hand — a shell context menu over the same explorer — has them
-on the menu bar and in the drop-down both. Two configurations, not two
-renderings.
+The underlines under a menu's accelerators looked like a difference and were
+a missing behaviour: Windows 2000 hides them until the keyboard has been used
+to reach a menu — Alt, F10, or an arrow key inside one — and shows them
+everywhere from then on. Which is why one screenshot in hand has none and
+another has them on the bar and in the drop-down both. ween32 now keeps the
+same flag, so a menu opened and picked from with the mouse has none.
 
 ## Testing
 
