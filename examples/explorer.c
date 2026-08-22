@@ -475,12 +475,36 @@ static int g_sort_down; /* and whether that order is reversed */
 /* ---- geometry ------------------------------------------------------------ */
 
 #define PANE_HEAD_H 20  /* the "Folders" bar above the tree */
+#define PANE_INSET 2    /* the pane frame's edge to what is inside it */
 #define SPLIT_W 2
 #define STATUS_H 20
 
 static int rebar_height(void)
 {
     return g_rebar ? (int)SendMessageA(g_rebar, RB_GETBARHEIGHT, 0, 0) : 0;
+}
+
+/* The tree pane's width, held between something usable and what is left of
+ * the window. Both the layout and the frame drawn round it ask for it here. */
+static int pane_width(const RECT *cr)
+{
+    int w = g_split_x;
+    if (w < 60)
+        w = 60;
+    if (w > cr->right - 120)
+        w = cr->right - 120;
+    return w;
+}
+
+/* The frame drawn round the "Folders" bar and the tree, in client
+ * coordinates: three pixels below the rebar, down to the status bar, and as
+ * wide as the pane less the splitter's own strip. */
+static void pane_frame(const RECT *cr, RECT *out)
+{
+    out->left = 0;
+    out->top = rebar_height() + 3;
+    out->right = pane_width(cr) - 3;
+    out->bottom = cr->bottom - STATUS_H;
 }
 
 static void layout(HWND w)
@@ -490,11 +514,7 @@ static void layout(HWND w)
     GetClientRect(w, &cr);
     top = rebar_height();
     bottom = cr.bottom - STATUS_H;
-    left_w = g_split_x;
-    if (left_w < 60)
-        left_w = 60;
-    if (left_w > cr.right - 120)
-        left_w = cr.right - 120;
+    left_w = pane_width(&cr);
 
     if (g_rebar) {
         MoveWindow(g_rebar, 0, 0, cr.right, top, TRUE);
@@ -505,11 +525,24 @@ static void layout(HWND w)
                        TRUE);
         }
     }
-    if (g_panehead)
-        MoveWindow(g_panehead, 0, top, left_w, PANE_HEAD_H, TRUE);
-    if (g_tree)
-        MoveWindow(g_tree, 0, top + PANE_HEAD_H, left_w,
-                   bottom - top - PANE_HEAD_H, TRUE);
+    /* The pane is a frame of its own: an etched rectangle three pixels below
+     * the rebar and three above the status bar, with the "Folders" bar and
+     * the tree inside it and a rule between them. The frame is drawn by this
+     * window — see WM_PAINT — and what goes in it is inset two pixels from
+     * its edge, which is where the machine has all of it. */
+    {
+        RECT fr;
+        int in_x, in_w, in_y;
+        pane_frame(&cr, &fr);
+        in_x = fr.left + PANE_INSET;
+        in_w = fr.right - fr.left - 2 * PANE_INSET;
+        in_y = fr.top + PANE_INSET;
+        if (g_panehead)
+            MoveWindow(g_panehead, in_x, in_y, in_w, PANE_HEAD_H, TRUE);
+        if (g_tree) /* the rule between them takes the row after the bar */
+            MoveWindow(g_tree, in_x, in_y + PANE_HEAD_H + 1, in_w,
+                       fr.bottom - PANE_INSET - (in_y + PANE_HEAD_H + 1), TRUE);
+    }
     if (g_split)
         MoveWindow(g_split, left_w, top, SPLIT_W, bottom - top, TRUE);
     if (g_list)
@@ -697,9 +730,82 @@ static void fill_list(void)
     status_for_directory();
 }
 
+
+/* ---- the fixture ----------------------------------------------------------
+ *
+ * WEEN32_EXPLORER_FIXTURE=1 fills both panes with what a Windows 2000
+ * explorer shows sitting on Local Disk (C:), so this window can be put beside
+ * a screenshot of that machine and the two counted pixel for pixel. Nothing
+ * else in the example knows about it: the tree and the list come from a table
+ * instead of from the file system, and that is the whole of the difference.
+ * Without it the example is an ordinary file browser, which is the point.
+ */
+static int g_fixture;
+
+static const struct {
+    int depth;
+    const char *name;
+    int image;
+    int children; /* 0 none, 1 a box that opens it, 2 already open */
+} g_fix_tree[] = {
+    { 0, "Desktop", IMG_COMPUTER, 2 },
+    { 1, "My Documents", IMG_FOLDER, 1 },
+    { 1, "My Computer", IMG_COMPUTER, 2 },
+    { 2, "Local Disk (C:)", IMG_DRIVE, 2 },
+    { 3, "Documents and Settings", IMG_FOLDER, 1 },
+    { 3, "Program Files", IMG_FOLDER, 1 },
+    { 3, "WINNT", IMG_FOLDER, 1 },
+    { 2, "Control Panel", IMG_FOLDER, 1 },
+    { 1, "My Network Places", IMG_FOLDER, 1 },
+    { 1, "Recycle Bin", IMG_FOLDER, 0 },
+    { 1, "Internet Explorer", IMG_FOLDER, 0 },
+};
+
+static const struct {
+    const char *name;
+    const char *size;
+    const char *type;
+    int is_dir;
+} g_fix_list[] = {
+    { "Documents and Settings", "", "File Folder", 1 },
+    { "Program Files", "", "File Folder", 1 },
+    { "WINNT", "", "File Folder", 1 },
+    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", 0 },
+    { "boot", "1 KB", "Configuration Settings", 0 },
+    { "CONFIG.SYS", "0 KB", "System file", 0 },
+};
+
+static void fill_fixture_list(void)
+{
+    int n = (int)(sizeof(g_fix_list) / sizeof(*g_fix_list));
+    SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
+    for (int row = 0; row < n; row++) {
+        LVITEMA it;
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT | LVIF_IMAGE;
+        it.iItem = row;
+        it.pszText = (char *)g_fix_list[row].name;
+        it.iImage = g_fix_list[row].is_dir ? IMG_FOLDER : IMG_FILE;
+        SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        set_cell(g_list, row, 1, g_fix_list[row].size);
+        set_cell(g_list, row, 2, g_fix_list[row].type);
+        set_cell(g_list, row, 3, "");
+    }
+    SendMessageA(g_status, SB_SETTEXTA, 0,
+                 (LPARAM) "6 object(s) (Disk free space: 499 MB)");
+    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM) "203 bytes");
+    SendMessageA(g_status, SB_SETTEXTA, 2, (LPARAM) "My Computer");
+    SetWindowTextA(g_main, "Local Disk (C:)");
+}
+
 /* Fill the list from a directory, and say in the status bar what is in it. */
 static void show_directory(const char *path)
 {
+    if (g_fixture) {
+        fill_fixture_list();
+        return;
+    }
+
     fs_dir d;
     fs_entry e;
     int cap = 0;
@@ -760,6 +866,24 @@ static HTREEITEM add_node(HTREEITEM parent, const char *text, int image,
     is.item.iSelectedImage = sel_image;
     is.item.cChildren = has_children;
     return (HTREEITEM)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&is);
+}
+
+static void fill_fixture_tree(void)
+{
+    int n = (int)(sizeof(g_fix_tree) / sizeof(*g_fix_tree));
+    HTREEITEM item[32], stack[8];
+    memset(stack, 0, sizeof(stack));
+    for (int i = 0; i < n && i < 32; i++) {
+        int d = g_fix_tree[i].depth;
+        item[i] = add_node(d ? stack[d - 1] : NULL, g_fix_tree[i].name,
+                           g_fix_tree[i].image, g_fix_tree[i].image,
+                           g_fix_tree[i].children != 0);
+        stack[d] = item[i];
+    }
+    /* opened afterwards, parents first, so each has its children by then */
+    for (int i = 0; i < n && i < 32; i++)
+        if (g_fix_tree[i].children == 2)
+            SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)item[i]);
 }
 
 /* The path of a tree item, walked back up to the root. */
@@ -1284,15 +1408,36 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         RECT r = ps.rcPaint, x;
         FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+        /* Six in and three down, not centred: the machine leaves three above
+         * the text and five below in a bar of twenty. */
+        GetClientRect(w, &r);
         r.left += 6;
-        DrawTextA(dc, "Folders", -1, &r, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        /* the close box at its right, as the real one has */
-        x = ps.rcPaint;
-        x.left = x.right - 18;
-        x.right = x.left + 14;
-        x.top += 3;
-        x.bottom = x.top + 14;
-        DrawFrameControl(dc, &x, DFC_CAPTION, DFCS_CAPTIONCLOSE);
+        r.top += 3;
+        DrawTextA(dc, "Folders", -1, &r, DT_LEFT | DT_SINGLELINE);
+        /* The close box at its right is a bare glyph, not a button: eight by
+         * seven, two pixels thick, seven in from the bar's right edge and six
+         * down. Windows only draws a frame round it once the pointer is over
+         * it — a caption button here reads far heavier than the machine. */
+        {
+            RECT cr;
+            HBRUSH ink = CreateSolidBrush(GetSysColor(COLOR_BTNTEXT));
+            int bx, by;
+            GetClientRect(w, &cr);
+            bx = cr.right - 15;
+            by = 6;
+            for (int k = 0; k < 7; k++) {
+                int d = k <= 3 ? k : 6 - k;
+                x.left = bx + d;
+                x.top = by + k;
+                x.right = x.left + 2;
+                x.bottom = x.top + 1;
+                FillRect(dc, &x, ink);
+                x.left = bx + 6 - d;
+                x.right = x.left + 2;
+                FillRect(dc, &x, ink);
+            }
+            DeleteObject(ink);
+        }
         EndPaint(w, &ps);
         return 0;
     }
@@ -1693,9 +1838,13 @@ static void build_views(HWND w)
                                NULL);
     /* LINESATROOT is what carries the lines and the boxes out to the top
      * level; without it the root sits bare, which is not what the shot has. */
-    g_tree = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "",
+    /* No edge of its own: the pane frame drawn round the "Folders" bar and
+     * the tree together is the only one the machine has. And no lines at the
+     * root either: the shell's tree gives Desktop neither a line nor a box,
+     * and everything under it both. */
+    g_tree = CreateWindowExA(0, WC_TREEVIEWA, "",
                              WS_CHILD | WS_VISIBLE | TVS_HASLINES |
-                                 TVS_HASBUTTONS | TVS_LINESATROOT,
+                                 TVS_HASBUTTONS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_TREE, NULL,
                              NULL);
     g_split = CreateWindowA("explorersplit", "", WS_CHILD | WS_VISIBLE, 0, 0,
@@ -1742,7 +1891,9 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         build_bands(w);
 #endif
         build_views(w);
-        {
+        if (g_fixture) {
+            fill_fixture_tree();
+        } else {
             HTREEITEM root = add_node(NULL, "/", IMG_COMPUTER, IMG_COMPUTER, 1);
             SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)root);
         }
@@ -1752,6 +1903,27 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         layout(w);
         return 0;
+
+    case WM_PAINT: {
+        /* The frame round the tree pane. It is the window's to draw because it
+         * goes round two children at once — the "Folders" bar and the tree —
+         * with a rule between them where they meet. */
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(w, &ps);
+        RECT cr, fr, r;
+        GetClientRect(w, &cr);
+        FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
+        pane_frame(&cr, &fr);
+        r = fr;
+        DrawEdge(dc, &r, EDGE_ETCHED, BF_RECT);
+        r.left = fr.left + PANE_INSET;
+        r.right = fr.right - PANE_INSET;
+        r.top = fr.top + PANE_INSET + PANE_HEAD_H;
+        r.bottom = r.top + 1;
+        FillRect(dc, &r, GetSysColorBrush(COLOR_BTNSHADOW));
+        EndPaint(w, &ps);
+        return 0;
+    }
 
     case WM_CONTEXTMENU: {
         /* Which of the two panes asked, and about what. The list answers with
@@ -1829,7 +2001,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         } else if (nm->code == TVN_ITEMEXPANDINGA) {
             /* read the level being opened, so it is there to be drawn */
             const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
-            if (tv->action == TVE_EXPAND && tv->itemNew.hItem) {
+            if (tv->action == TVE_EXPAND && tv->itemNew.hItem && !g_fixture) {
                 char path[1024];
                 path_of_item(tv->itemNew.hItem, path, sizeof(path));
                 fill_children(tv->itemNew.hItem, path);
@@ -1904,6 +2076,9 @@ int main(int argc, char **argv)
 
     if (argc > 0 && argv[0])
         snprintf(g_argv0, sizeof(g_argv0), "%s", argv[0]);
+    /* the fixed listing, for putting this window beside a screenshot of the
+     * machine it is a reimplementation of */
+    g_fixture = getenv("WEEN32_EXPLORER_FIXTURE") != NULL;
 
 #ifdef _WIN32
     /* Built as a console app so that main() serves both worlds; on Windows

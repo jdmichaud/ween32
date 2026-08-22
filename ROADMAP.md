@@ -336,6 +336,17 @@ This means `menu-reference.png`, which is a wine render, is now something
 ween32 deliberately differs from in the menu-bar band. That difference is
 about 242 pixels and is not a regression.
 
+The tree view is the second place. Measured against the machine's own folder
+tree, an item's picture starts at nineteen times its depth from the left edge,
+its label twenty-one past that, the button that opens it sits in the column
+before it, and the whole tree is one pixel down from the top of its window.
+Wine's classic tree puts the button one pixel further right and the label two,
+and starts at the very top. Neither can be checked against the other — the
+sampler's tree has lines at the root and no images, the shell's has images and
+no lines at the root — so the machine is followed and about 1270 pixels of
+`reference.png`, all of them in the tree's band, are now a deliberate
+difference.
+
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting
 the guess. A photograph of the real thing settles it.

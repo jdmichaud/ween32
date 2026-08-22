@@ -1487,6 +1487,10 @@ typedef struct {
 } ween_tree;
 
 #define WEEN_TV_ITEM_H 16
+/* The row of white a tree keeps above its first item. The shell's has one and
+ * it puts every line and every dot a pixel further down, which is enough to
+ * put the dotted runs out of phase with the machine's. */
+#define WEEN_TV_TOP_MARGIN 1
 #define WEEN_TV_INDENT 19
 #define WEEN_TV_BUTTON 9
 
@@ -1546,11 +1550,17 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
     if (images)
         ImageList_GetIconSize(images, &icon_w, &icon_h);
     for (ween_tvitem *it = first; it; it = it->next) {
-        int y = oy + row * WEEN_TV_ITEM_H;
-        int bx = ox + 5 + depth * WEEN_TV_INDENT;
+        int y = oy + WEEN_TV_TOP_MARGIN + row * WEEN_TV_ITEM_H;
+        /* The column this item's own picture starts in. TVS_LINESATROOT
+         * pushes the whole tree right by one level, because a root that has a
+         * button needs a column to put it in; without the style a root item
+         * starts hard against the left edge, which is where the shell's
+         * Desktop is. The button goes in the column before the picture. */
+        int col = ox + (depth + (at_root ? 1 : 0)) * WEEN_TV_INDENT;
+        int bx = col - WEEN_TV_INDENT + 4;
         int cx = bx + WEEN_TV_BUTTON / 2;
         int cy = y + WEEN_TV_ITEM_H / 2;
-        int tx = bx + WEEN_TV_BUTTON + 7;
+        int tx = col;
 
         /* TVS_LINESATROOT is what carries the lines and the boxes out to the
          * top level. Without it the roots sit bare and only what is under
@@ -1559,7 +1569,8 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         if (lines && marked) {
             /* the stub out to the text, the run up to the sibling above and
              * the one down to the sibling below */
-            dotted_h(s, cy, cx, tx - 3, WEEN_SHADOW);
+            /* right up to the picture, not three short of it */
+            dotted_h(s, cy, cx, tx, WEEN_SHADOW);
             if (it != first || depth > 0) /* up to the sibling or the parent */
                 dotted_v(s, cx, y, cy, WEEN_SHADOW);
         }
@@ -1581,7 +1592,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                                                         : it->image;
             ween_imagelist_draw(images, img, s, tx,
                                 y + (WEEN_TV_ITEM_H - icon_h) / 2);
-            tx += icon_w + 2;
+            tx += icon_w + 5;
         }
         if (f && it->text) {
             int ty = y + (WEEN_TV_ITEM_H - th) / 2;
@@ -1602,8 +1613,15 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
          * any open. Drawn after them so the run is one length rather than
          * one per row, and so an item with a subtree under it still has the
          * line running down its own level beside that subtree. */
-        if (lines && marked && it->next)
-            dotted_v(s, cx, cy, oy + row * WEEN_TV_ITEM_H, WEEN_SHADOW);
+        if (lines && marked && it->next) {
+            /* From below the button rather than from the middle of it: the
+             * dots are every other row from the item's top, so starting six
+             * past the centre clears the box and stays in step. */
+            int from = ((it->child || it->cchildren) && marked) ? cy + 6 : cy;
+            dotted_v(s, cx, from,
+                     oy + WEEN_TV_TOP_MARGIN + row * WEEN_TV_ITEM_H,
+                     WEEN_SHADOW);
+        }
     }
     return row;
 }
@@ -1674,17 +1692,23 @@ static ween_tvitem *tree_at_row(ween_tvitem *first, int depth, int want,
 
 /* How far right the widest item reaches — what the horizontal scroll bar
  * measures itself against. */
-static int tree_extent(const ween_strike *f, ween_tvitem *first, int depth)
+/* How far right the widest item reaches — the same arithmetic the drawing
+ * uses, because a bar that comes up when the text in fact fits is worse than
+ * no bar at all: the shell's tree has none here and ours had one. */
+static int tree_extent(const ween_strike *f, ween_tvitem *first, int depth,
+                       int at_root, int icon_w)
 {
     int max = 0;
     for (ween_tvitem *it = first; it; it = it->next) {
-        int w = 5 + depth * WEEN_TV_INDENT + WEEN_TV_BUTTON + 7;
+        int w = (depth + (at_root ? 1 : 0)) * WEEN_TV_INDENT;
+        if (icon_w && it->image >= 0)
+            w += icon_w + 5;
         if (f && it->text)
             w += ween_strike_text_width(f, it->text, (int)strlen(it->text));
         if (w > max)
             max = w;
         if (it->expanded && it->child) {
-            int c = tree_extent(f, it->child, depth + 1);
+            int c = tree_extent(f, it->child, depth + 1, at_root, icon_w);
             if (c > max)
                 max = c;
         }
@@ -1707,7 +1731,13 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         return;
 
     /* each bar takes a strip, and taking one can bring the other on */
-    t->content_w = tree_extent(f, t->root, 0) + 8;
+    {
+        int iw = 0, ih = 0;
+        if (t->images)
+            ImageList_GetIconSize(t->images, &iw, &ih);
+        t->content_w =
+            tree_extent(f, t->root, 0, (wnd->style & TVS_LINESATROOT) != 0, iw);
+    }
     t->rows = tree_rows(t->root);
     hbar = t->content_w > r.right;
     vbar = t->rows * WEEN_TV_ITEM_H > r.bottom - (hbar ? sb : 0);
@@ -1760,7 +1790,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_LBUTTONDOWN: {
         int row = 0, depth = 0;
-        int want = GET_Y_LPARAM(lp) / WEEN_TV_ITEM_H;
+        int want = (GET_Y_LPARAM(lp) - WEEN_TV_TOP_MARGIN) / WEEN_TV_ITEM_H;
         ween_tvitem *hit;
         RECT cr;
         int sb = ween_scroll_metric();
@@ -1986,7 +2016,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         GetClientRect(wnd, &cr);
         if (hi->pt.x >= cr.right - sb && t->rows * WEEN_TV_ITEM_H > cr.bottom)
             return 0; /* the bar down the side is not an item */
-        want = hi->pt.y / WEEN_TV_ITEM_H + t->scroll_row;
+        want = (hi->pt.y - WEEN_TV_TOP_MARGIN) / WEEN_TV_ITEM_H + t->scroll_row;
         row = 0;
         hit = tree_at_row(t->root, 0, want, &row, &depth);
         if (!hit)

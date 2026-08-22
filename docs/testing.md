@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 2651 / 298596 — 0.9%
+tools/refcapture/pxdiff.py                  # expect 3923 / 298596 — 1.3%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -77,6 +77,11 @@ Roughly 242 of that 1.8% is the menu bar, and is *deliberate*: wine spaces bar
 items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
+
+About 1270 of the controls sampler's 1.3% is the tree view, and is deliberate
+in the same way: its indent, the column its buttons sit in and the pixel of
+white above its first row are measured against a Windows 2000 shell tree.
+See the ROADMAP for what was measured.
 
 **Wine is not the reference for drop-downs.** It renders a menu's border as a
 flat grey line and a separator as a single line; Windows draws a raised edge
