@@ -1679,6 +1679,23 @@ static int tree_rows(ween_tvitem *first)
 }
 
 /* The item on a given visible row, and how deep it sits. */
+/* The visible row an item is on, counting from the first root, or -1. The
+ * keyboard walks the tree by row: what Down does is take the next one. */
+static int tree_row_of(ween_tvitem *first, const ween_tvitem *want, int *row)
+{
+    for (ween_tvitem *it = first; it; it = it->next) {
+        if (it == want)
+            return *row;
+        (*row)++;
+        if (it->expanded && it->child) {
+            int r = tree_row_of(it->child, want, row);
+            if (r >= 0)
+                return r;
+        }
+    }
+    return -1;
+}
+
 static ween_tvitem *tree_at_row(ween_tvitem *first, int depth, int want,
                                 int *row, int *depth_out)
 {
@@ -2039,9 +2056,87 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return (LRESULT)(INT_PTR)hit;
     }
-    case WM_RBUTTONDOWN:
+    case WM_RBUTTONDOWN: {
+        /* A press of the right button picks the item under it, the way the
+         * shell does, so the menu that follows is about that item. */
+        TVHITTESTINFO hi;
+        t = tree_of(wnd);
         SetFocus(wnd);
+        memset(&hi, 0, sizeof(hi));
+        hi.pt.x = GET_X_LPARAM(lp);
+        hi.pt.y = GET_Y_LPARAM(lp);
+        if (t && SendMessageA(wnd, TVM_HITTEST, 0, (LPARAM)&hi) && hi.hItem &&
+            t->sel != (ween_tvitem *)hi.hItem) {
+            t->sel = (ween_tvitem *)hi.hItem;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, TVN_SELCHANGEDA);
+        }
         return 0;
+    }
+    case WM_KEYDOWN: {
+        /* The arrows walk the visible rows; left and right close and open a
+         * branch, which is what a tree does everywhere in Windows. */
+        int row = 0, depth = 0, at, rows;
+        ween_tvitem *next = NULL;
+        t = tree_of(wnd);
+        if (!t || !t->root)
+            return 0;
+        rows = tree_rows(t->root);
+        at = t->sel ? tree_row_of(t->root, t->sel, &row) : -1;
+        switch (wp) {
+        case VK_DOWN:
+            row = 0;
+            next = tree_at_row(t->root, 0, at + 1 < rows ? at + 1 : at, &row,
+                               &depth);
+            break;
+        case VK_UP:
+            row = 0;
+            next = tree_at_row(t->root, 0, at > 0 ? at - 1 : 0, &row, &depth);
+            break;
+        case VK_HOME:
+            row = 0;
+            next = tree_at_row(t->root, 0, 0, &row, &depth);
+            break;
+        case VK_END:
+            row = 0;
+            next = tree_at_row(t->root, 0, rows - 1, &row, &depth);
+            break;
+        case VK_RIGHT:
+            if (t->sel && !t->sel->expanded && (t->sel->child ||
+                                                t->sel->cchildren))
+                tree_expand(wnd, t->sel, 1);
+            else if (t->sel && t->sel->child)
+                next = t->sel->child;
+            break;
+        case VK_LEFT:
+            if (t->sel && t->sel->expanded)
+                tree_expand(wnd, t->sel, 0);
+            else if (t->sel && t->sel->parent)
+                next = t->sel->parent;
+            break;
+        default:
+            return DefWindowProcA(wnd, msg, wp, lp);
+        }
+        ween_ui_focus_cues = 1; /* the keyboard has been used, so it shows */
+        if (next && next != t->sel) {
+            t->sel = next;
+            notify_parent(wnd, TVN_SELCHANGEDA);
+        }
+        /* keep it in view, which is the point of moving it */
+        {
+            RECT cr;
+            int r2 = 0, visible;
+            GetClientRect(wnd, &cr);
+            visible = cr.bottom / WEEN_TV_ITEM_H;
+            at = t->sel ? tree_row_of(t->root, t->sel, &r2) : 0;
+            if (at < t->scroll_row)
+                t->scroll_row = at;
+            else if (at >= t->scroll_row + visible)
+                t->scroll_row = at - visible + 1;
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
     case TVM_EXPAND:
         tree_expand(wnd, (ween_tvitem *)lp, (wp & TVE_EXPAND) != 0);
         return TRUE;
