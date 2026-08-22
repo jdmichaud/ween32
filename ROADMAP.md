@@ -19,16 +19,15 @@ that no application has asked for:
 - [ ] **The clipboard between applications.** Cut, copy and paste work within
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
-- [ ] **Icons proper** — `HICON`, `LoadIcon`, `DrawIconEx`. Image lists exist
-  and both views draw from them, but an icon needs a `.ico` decoder (several
-  sizes and depths in one file) that a `.bmp` reader does not give.
+- [ ] **A rebar**, the bands with grippers a shell toolbar sits in. A toolbar
+  can be positioned by hand meanwhile, which is what an app would do.
 - [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
   repeats a held arrow; the list box, tree view and list view draw and handle
   their bars inline and do not.
+- [ ] **Column resizing** by dragging a list view's header dividers. A column
+  can be set to a width; it cannot yet be dragged to one.
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
   scrolls rather than being clipped.
-- [ ] **Scrolling the list view's rows**, which the list box and tree view do
-  and it does not.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
   the list view.
 
@@ -79,11 +78,16 @@ Ctrl+X/C/V/A and `WM_CUT`/`WM_COPY`/`WM_PASTE`, and a double click selecting
 the word under it. Within one process: sharing with other X clients still
 needs selection ownership.
 
-**Images** — `CreateBitmap` from pixels in memory, `LoadImageA` for a `.bmp`
-on disk (the format the headless backend writes, so a screenshot loads back),
-and image lists — `ImageList_Create`/`Add`/`AddMasked`/`Draw`/`Destroy` with
-one-bit transparency, which is what the classic shell had. The tree view and
-list view draw the image an item names.
+**Images and icons** — `CreateBitmap` from pixels in memory, `LoadImageA` for
+a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
+`AddMasked`/`AddIcon`/`Draw`/`Destroy`) with one-bit transparency, and
+`DrawIconEx`. The tree and list views draw the image an item names.
+
+**A shell's controls** — a `ToolbarWindow32` with flat, hot-tracked, checkable
+and drop-down buttons; cursors (`LoadCursorA`/`SetCursor`/`WM_SETCURSOR`, a
+class cursor, and the shapes a splitter needs); minimize and maximize beside
+the close box, with `WM_SYSCOMMAND` behind them; and both views able to be
+emptied, walked and scrolled rather than only filled.
 
 **GDI** — `BeginPaint`/`EndPaint`, `FillRect`, `FrameRect`, `DrawEdge` (Wine's
 tables, every `BDR_`/`EDGE_` type and `BF_` flag), `DrawFrameControl`
