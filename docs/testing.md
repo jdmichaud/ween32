@@ -168,12 +168,30 @@ there meant saying outright what a library would otherwise work out for
 itself — each toolbar button's width and each menu title's, since comctl32's
 padding is not the machine's.
 
-Three things are left over, and all three are the environment rather than the
-code. The font and what is measured from it. Wine's Tahoma is
-not the machine's: "Documents and Settings" comes to 128 pixels there and 116
-here, so every run of text is wider, and comctl32 sizes a list's rows from it
-— 16 pixels against the 17 the machine has, which walks the rows apart down
-the list. The caption: with no window manager nothing takes the X
+A screenshot is the wrong instrument for the last of it, because wine's text is
+wider than the machine's and every wrong pixel after that is a consequence.
+Ask for the geometry instead: paste a block into `layout()` that dumps every
+control's rectangle — `GetWindowRect` relative to the client origin, plus
+`TB_GETITEMRECT` for each button and `LVM_GETCOLUMNWIDTH` for each column —
+compile that one file both ways, and diff the two dumps. Every line that
+differs is a question with an answer, and most of them turned out to be
+something the application had left to the library rather than saying outright.
+What still differs there is four numbers: the widths that follow from the font,
+the gripper a band leaves before its child (nine against ten), the rule a rebar
+puts under its last band, and the height a ComboBoxEx takes. ween32 has the
+machine's number for three of those.
+
+Three things are left over in the picture, and all three are the environment
+rather than the code. The font and what is measured from it. Tahoma carries embedded
+bitmap strikes — 8, 9, 10, 11, 12, 13, 15 and 16 pixels — and at eight points
+GDI draws the 11-pixel strike, which is what ween32 rasterises and why the
+machine matches to the pixel. Wine scales the outline instead: "Documents and
+Settings" comes to 128 pixels there against 116 here, near what the outline
+gives with each advance rounded up (130) and nowhere near the strike. So every
+run of text is wider, and comctl32 sizes a list's rows from it — 16 pixels
+against the 17 the machine has, which walks the rows apart down the list.
+Font smoothing on or off makes no difference; it is not the rasterising, it is
+which glyphs are being measured. The caption: with no window manager nothing takes the X
 focus, and wine paints an inactive caption over a window that reports itself
 active — `WM_ACTIVATE` arrives with `WA_ACTIVE` and `GetForegroundWindow`
 agrees, and a forced repaint keeps the grey. And the underlines under the menu
