@@ -607,7 +607,7 @@ typedef struct tagTCITEMA {
 #define SB_SETTEXTA (WM_USER + 1)
 #define SB_GETTEXTA (WM_USER + 2)
 /* An icon in a part, drawn before its text. */
-#define SB_SETICON (WM_USER + 27)
+#define SB_SETICON (WM_USER + 15)
 #define SB_SETPARTS (WM_USER + 4)
 #define SB_GETPARTS (WM_USER + 6)
 #define SB_SIMPLE (WM_USER + 9)
