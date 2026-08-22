@@ -18,10 +18,17 @@ A5 — `InitCommonControlsEx`, `lstrcmpiA`/`lstrcmpA`/`lstrlenA`, and
 same corner (they did not, which is a library bug this found). D4, D5, D6, D7,
 D9 — all fixed. D8 — Back and Forward walk a history.
 
-What is left is A1 (the menu band as a toolbar of drop-down buttons), the rest
-of A3 (the header drawing its own band), A4 (the pane's ✕ as a flat toolbar
-button), the rest of A5 (`TVIF_PARAM`, `LVIF_PARAM`, `LVM_SORTITEMS`,
-`ImageList_LoadImageA`), A7, B1 and B2. Those are on the ROADMAP's Next list.
+A1 — the menu band is a toolbar of drop-down buttons on both sides now, the
+application answers `TBN_DROPDOWN` with `TrackPopupMenu` and `SC_KEYMENU` by
+handing the bar the keyboard, and `ween_menu_band_*`, the `SetMenu` side
+channel and 175 lines of the application drawing a bar for ween32 to drive are
+all gone. The only `#ifdef _WIN32` left in the file are a path separator and a
+console to drop.
+
+What is left is the rest of A3 (the header drawing its own band), A4 (the
+pane's ✕ as a flat toolbar button), the rest of A5 (`TVIF_PARAM`,
+`LVIF_PARAM`, `LVM_SORTITEMS`, `ImageList_LoadImageA`), A7, B1 and B2. Those
+are on the ROADMAP's Next list.
 
 ## Summary
 

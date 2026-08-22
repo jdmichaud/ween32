@@ -38,7 +38,11 @@ that no application has asked for:
 
 [docs/review-explorer.md](docs/review-explorer.md) read `examples/explorer.c`
 against the question "would an application written to win32 have had to write
-this?". What it found that is still open, in the order it suggested:
+this?". The largest of its findings — that the menu band made the application
+the host of ween32's menu engine rather than its user — is done: the band is a
+toolbar of drop-down buttons, `TBN_DROPDOWN` puts the menu up, `SC_KEYMENU`
+brings the keyboard to it, and `ween_menu_band_*` is gone. What is still open,
+in the order it suggested:
 
 - [ ] **The header draws its own band.** `LVM_GETHEADER` hands back a real
   header and `HDM_SETITEM`/`HDM_GETITEM` answer against the list's columns,
@@ -46,18 +50,10 @@ this?". What it found that is still open, in the order it suggested:
   headings, so the header is a place and a store rather than a control. Doing
   it properly also lifts the four-column cap and gives `HDM_LAYOUT` and
   `HDM_HITTEST` something to answer with.
-- [ ] **A menu band that is a toolbar.** On the machine the menu in a rebar is
-  a `ToolbarWindow32` of drop-down buttons and the shell answers `TBN_DROPDOWN`
-  with `TrackPopupMenu`. ween32 offers `ween_menu_band_set/hot/open/track`
-  instead, which is a private API with one caller and process-global state, and
-  which forks the application's source: on Windows it falls back to a path with
-  no hover-switching and no Alt. The behaviour that is genuinely more than
-  comctl32 gives — sliding between drop-downs, Alt arming the bar, underlines
-  hidden until Alt — should be reached through what a toolbar already has
-  (`TB_SETHOTITEM`, `TBN_HOTITEMCHANGE`, `SC_KEYMENU`, `WM_QUERYUISTATE`).
 - [ ] **A flat toolbar button that hot-tracks and takes the keyboard**, so the
   ✕ on the explorer's Folders bar can be one instead of seven `FillRect` pairs
-  with a frame drawn by hand.
+  with a frame drawn by hand. (A toolbar takes the keyboard now — the menu band
+  is one — but a lone button still wants the focus rectangle and the hover.)
 - [ ] **The rest of the calls the explorer works around**: `TVIF_PARAM` and
   `LVIF_PARAM` with `LVM_GETITEMA` (so an item can carry what it stands for
   rather than having its path rebuilt from its text), `LVM_SORTITEMS`,
