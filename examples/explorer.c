@@ -2374,13 +2374,26 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                  * cells to the right of a name, or under the last row — it is
                  * the folder's background, and the list has dropped its
                  * selection by now, so what comes up is the folder's own. */
-                RECT ir;
+                /* The header is where the header is, not "above the first
+                 * row": asked that way an empty folder has no header at all
+                 * and its columns cannot be reached. */
+                HWND head = (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETHEADER,
+                                                        0, 0);
+                int in_header = 0;
                 g_ctx_row = -1;
-                ir.left = LVIR_BOUNDS;
-                menu = (SendMessageA(g_list, LVM_GETITEMRECT, 0, (LPARAM)&ir) &&
-                        hi.pt.y < ir.top)
-                           ? g_col_menu
-                           : g_back_menu;
+                if (head) {
+                    RECT hr;
+                    POINT top, bottom;
+                    GetWindowRect(head, &hr);
+                    top.x = hr.left;
+                    top.y = hr.top;
+                    bottom.x = hr.right;
+                    bottom.y = hr.bottom;
+                    ScreenToClient(g_list, &top);
+                    ScreenToClient(g_list, &bottom);
+                    in_header = hi.pt.y >= top.y && hi.pt.y < bottom.y;
+                }
+                menu = in_header ? g_col_menu : g_back_menu;
             } else {
                 int is_dir;
                 g_ctx_row = hi.iItem;

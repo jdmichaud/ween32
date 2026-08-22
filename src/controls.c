@@ -2705,6 +2705,15 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_list *l;
     switch (msg) {
+    case WM_SIZE:
+        /* the header stands across the band, so it follows the width */
+        l = list_of(wnd);
+        if (l && l->header) {
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            MoveWindow(l->header, 0, 0, cr.right, WEEN_LV_HEADER_H, FALSE);
+        }
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
@@ -3145,9 +3154,16 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (!l)
             return 0;
-        if (!l->header)
-            l->header = CreateWindowA(WC_HEADERA, "", WS_CHILD, 0, 0, 0, 0,
-                                      wnd, NULL, NULL, NULL);
+        if (!l->header) {
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            /* It stands where the band is drawn, so a window can ask where
+             * the headings are — the point of a control that is not shown is
+             * still to have a place. It is not visible, so it takes no
+             * mouse: the list answers for its own band. */
+            l->header = CreateWindowA(WC_HEADERA, "", WS_CHILD, 0, 0, cr.right,
+                                      WEEN_LV_HEADER_H, wnd, NULL, NULL, NULL);
+        }
         return (LRESULT)(INT_PTR)l->header;
     }
     case LVM_GETCOLUMNWIDTH:
