@@ -231,6 +231,10 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
         return 0;
     }
     memcpy(c->name, wc->lpszClassName, n);
+    c->style = wc->style;
+    /* A class cursor is a shape, not a handle: LoadCursorA hands back the
+     * shape number plus one, so there is nothing to keep alive. */
+    c->cursor = wc->hCursor ? (int)(INT_PTR)wc->hCursor - 1 : WEEN_CURSOR_ARROW;
     c->proc = wc->lpfnWndProc;
     c->background = wc->hbrBackground;
     c->in_use = 1;
@@ -1280,6 +1284,66 @@ static void hover_moved_to(struct ween_wnd *now)
     g_hot = now;
 }
 
+/* ---- cursors --------------------------------------------------------------
+ *
+ * A shape, not a bitmap: the window system has these already, and the classic
+ * shell used its own. A handle is the shape number plus one, so it is never
+ * NULL and there is nothing to free.
+ *
+ * The shape follows the pointer. A window's class says what it should be; a
+ * control that wants something different over part of itself answers
+ * WM_SETCURSOR, which is asked first — that is how a splitter shows a resize
+ * arrow over the bar and an ordinary one either side of it.
+ */
+
+static int g_cursor_override = -1; /* what SetCursor asked for, this move */
+
+HCURSOR LoadCursorA(HINSTANCE inst, LPCSTR name)
+{
+    int shape;
+    (void)inst;
+    switch ((int)(INT_PTR)name) {
+    case 32513: shape = WEEN_CURSOR_IBEAM; break;
+    case 32514: shape = WEEN_CURSOR_WAIT; break;
+    case 32515: shape = WEEN_CURSOR_CROSS; break;
+    case 32642: shape = WEEN_CURSOR_SIZENWSE; break;
+    case 32643: shape = WEEN_CURSOR_SIZENESW; break;
+    case 32644: shape = WEEN_CURSOR_SIZEWE; break;
+    case 32645: shape = WEEN_CURSOR_SIZENS; break;
+    case 32646: shape = WEEN_CURSOR_SIZEALL; break;
+    case 32649: shape = WEEN_CURSOR_HAND; break;
+    default: shape = WEEN_CURSOR_ARROW; break;
+    }
+    return (HCURSOR)(INT_PTR)(shape + 1);
+}
+
+HCURSOR SetCursor(HCURSOR cursor)
+{
+    int was = g_cursor_override;
+    g_cursor_override = cursor ? (int)(INT_PTR)cursor - 1 : WEEN_CURSOR_ARROW;
+    return was < 0 ? NULL : (HCURSOR)(INT_PTR)(was + 1);
+}
+
+/* Ask the window under the pointer what shape it wants, and tell the backend
+ * if it has changed. Called as the pointer moves, so this is the one place
+ * the shape is decided. */
+static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under)
+{
+    int shape;
+    if (!ween_active_backend || !ween_active_backend->set_cursor || !top ||
+        !under)
+        return;
+    g_cursor_override = -1;
+    SendMessageA(under, WM_SETCURSOR, (WPARAM)under, 0);
+    shape = g_cursor_override >= 0
+                ? g_cursor_override
+                : (under->cls ? under->cls->cursor : WEEN_CURSOR_ARROW);
+    if (shape != top->cursor_shown) {
+        top->cursor_shown = shape;
+        ween_active_backend->set_cursor(top->backend_win, shape);
+    }
+}
+
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
     int ox, oy;
@@ -1288,8 +1352,17 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
         dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst)
         dst = child_at(top, x, y);
-    if (msg == WM_MOUSEMOVE)
+    if (msg == WM_MOUSEMOVE) {
         hover_moved_to(dst);
+        apply_cursor(top, dst);
+    }
+    /* Whether the second of a quick pair is a double click is up to the window
+     * it lands on: only a class registered with CS_DBLCLKS hears about them.
+     * Anything else gets another ordinary press, which is what stops rapid
+     * clicking from losing every other one on a control that does not care. */
+    if (msg == WM_LBUTTONDOWN && g_dblclk && dst->cls &&
+        (dst->cls->style & CS_DBLCLKS))
+        msg = WM_LBUTTONDBLCLK;
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
     post_msg(dst, msg, 0, MAKELPARAM((WORD)(x - ox), (WORD)(y - oy)));
@@ -1526,8 +1599,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
                 (top->style & WS_THICKFRAME))
                 nc_drag_size(top, ev, (int)ch);
             else
-                route_mouse(top, g_dblclk ? WM_LBUTTONDBLCLK : WM_LBUTTONDOWN,
-                            ev->x, ev->y);
+                route_mouse(top, WM_LBUTTONDOWN, ev->x, ev->y);
         }
         break;
     }

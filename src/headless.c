@@ -102,6 +102,7 @@ static void inject_script(const char *script)
 typedef struct {
     ween_letterbox box;
     int open;
+    int cursor; /* the shape last asked for, so a test can see it */
 } hl_win;
 
 static hl_win g_wins[MAX_WINDOWS];
@@ -197,6 +198,17 @@ static void hl_set_resizable(void *win, int resizable)
     (void)resizable;
 }
 
+static void hl_set_cursor(void *win, int shape)
+{
+    if (win)
+        ((hl_win *)win)->cursor = shape;
+}
+
+int ween_headless_cursor(void *win)
+{
+    return win ? ((hl_win *)win)->cursor : WEEN_CURSOR_ARROW;
+}
+
 static void hl_move_by(void *win, int dx, int dy)
 {
     (void)win;
@@ -236,9 +248,9 @@ static void hl_close(void *win)
 
 const ween_backend *ween_backend_headless(void)
 {
-    static const ween_backend b = { hl_open,        hl_present,
-                                    hl_move_by,     hl_resize,
-                                    hl_set_resizable, hl_next_event,
-                                    hl_close };
+    static const ween_backend b = { hl_open,           hl_present,
+                                    hl_move_by,        hl_resize,
+                                    hl_set_resizable,  hl_set_cursor,
+                                    hl_next_event,     hl_close };
     return &b;
 }

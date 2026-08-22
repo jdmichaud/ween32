@@ -25,6 +25,11 @@ static int g_failures = 0;
 static HWND g_list, g_tree;
 static int g_column_clicked = -1;
 
+static LRESULT CALLBACK splitter_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_NOTIFY) {
@@ -178,6 +183,52 @@ int main(void)
         SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
         CHECK(SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_ROOT, 0) == 0,
               "and the whole tree emptied for the next folder");
+    }
+
+    /* Cursors: a class carries one, and a control can override it over part
+     * of itself — which is what a splitter needs. */
+    {
+        WNDCLASSA sp;
+        memset(&sp, 0, sizeof(sp));
+        sp.lpfnWndProc = splitter_proc;
+        sp.lpszClassName = "weensplit";
+        sp.hCursor = LoadCursorA(NULL, IDC_SIZEWE);
+        sp.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+        RegisterClassA(&sp);
+        HWND bar = CreateWindowA("weensplit", "", WS_CHILD | WS_VISIBLE, 250, 10,
+                                 6, 160, w, NULL, NULL, NULL);
+        CHECK(bar != NULL, "a splitter with a resize cursor on its class");
+
+        ween_event ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = WEEN_EV_MOUSE_MOVE;
+        ev.win = w->backend_win;
+        ev.x = WEEN_NC_FRAME + 252;
+        ev.y = WEEN_NC_FRAME + WEEN_NC_CAPTION + 80;
+        ween_headless_inject(ev);
+        ev.x = WEEN_NC_FRAME + 100; /* back over the list view */
+        ween_headless_inject(ev);
+        ween_event end;
+        memset(&end, 0, sizeof(end));
+        end.kind = WEEN_EV_END;
+        ween_headless_inject(end);
+
+        MSG msg;
+        int over_bar = -1, over_list = -1;
+        while (GetMessageA(&msg, NULL, 0, 0)) {
+            DispatchMessageA(&msg);
+            if (msg.message == WM_MOUSEMOVE) {
+                if (over_bar < 0)
+                    over_bar = ween_headless_cursor(w->backend_win);
+                else if (over_list < 0)
+                    over_list = ween_headless_cursor(w->backend_win);
+            }
+        }
+        CHECK(over_bar == WEEN_CURSOR_SIZEWE,
+              "the pointer over the splitter is a resize arrow");
+        CHECK(over_list == WEEN_CURSOR_ARROW,
+              "and an ordinary one again once it moves off");
+        DestroyWindow(bar);
     }
 
     DestroyWindow(w);

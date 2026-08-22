@@ -22,15 +22,20 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-static HWND g_edit, g_host;
-static int g_changes, g_button_clicks;
+static HWND g_edit;
+static int g_changes, g_button_clicks, g_list_selchanges;
 
-enum { ID_FAST = 700 };
+enum { ID_FAST = 700, ID_LIST };
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_COMMAND && LOWORD(wp) == ID_FAST) {
         g_button_clicks++;
+        return 0;
+    }
+    if (msg == WM_COMMAND && LOWORD(wp) == ID_LIST &&
+        HIWORD(wp) == LBN_SELCHANGE) {
+        g_list_selchanges++;
         return 0;
     }
     if (msg == WM_COMMAND && HIWORD(wp) == EN_CHANGE) {
@@ -42,6 +47,21 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     return DefWindowProcA(w, msg, wp, lp);
+}
+
+/* A press and release through the pump, named for the window they land on. */
+static void inject_click(HWND w, int x, int y)
+{
+    ween_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind = WEEN_EV_MOUSE_DOWN;
+    ev.button = 1;
+    ev.win = w->backend_win;
+    ev.x = x;
+    ev.y = y;
+    ween_headless_inject(ev);
+    ev.kind = WEEN_EV_MOUSE_UP;
+    ween_headless_inject(ev);
 }
 
 static void key(unsigned vk, int ctrl)
@@ -143,35 +163,41 @@ int main(void)
     }
 
     /* Clicking quickly must not lose clicks. A window is only sent double
-     * clicks if its class asked for them, and a control that did — the EDIT
-     * here — treats one as a click too. This was the bug: every second press
-     * arrived as WM_LBUTTONDBLCLK, controls that did not handle it dropped
-     * it, and half of a run of fast clicks vanished. */
+     * clicks if its class asked for them, and a control that did — BUTTON —
+     * treats one as a press too. This was the bug: every second press arrived
+     * as WM_LBUTTONDBLCLK and controls that did not handle it dropped it.
+     *
+     * Both controls are driven by injected events rather than SendMessage,
+     * because the gate lives in the routing and a sent message goes straight
+     * past it. A button alone would prove nothing either: it survives double
+     * clicks by handling them, so the list box is the one that tests the gate.
+     */
     {
         HWND host = CreateWindowExA(0, "weenclip", "fast",
                                     WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0,
-                                    200, 120, NULL, NULL, NULL, NULL);
+                                    240, 160, NULL, NULL, NULL, NULL);
         int cx = WEEN_NC_FRAME, cy = WEEN_NC_FRAME + WEEN_NC_CAPTION;
-        g_button_clicks = 0;
-        g_host = host;
         CreateWindowA("BUTTON", "Press", WS_CHILD | WS_VISIBLE, 10, 10, 80, 24,
                       host, (HMENU)(UINT_PTR)ID_FAST, NULL, NULL);
-        for (int i = 0; i < 4; i++) { /* four presses, one place, no waiting */
-            ween_event ev;
-            memset(&ev, 0, sizeof(ev));
-            ev.kind = WEEN_EV_MOUSE_DOWN;
-            ev.button = 1;
-            ev.win = host->backend_win;
-            ev.x = cx + 40;
-            ev.y = cy + 20;
-            ween_headless_inject(ev);
-            ev.kind = WEEN_EV_MOUSE_UP;
-            ween_headless_inject(ev);
-        }
+        HWND list = CreateWindowExA(WS_EX_CLIENTEDGE, "LISTBOX", "",
+                                    WS_CHILD | WS_VISIBLE | LBS_NOTIFY, 10, 50,
+                                    120, 60, host, (HMENU)(UINT_PTR)ID_LIST,
+                                    NULL, NULL);
+        SendMessageA(list, LB_ADDSTRING, 0, (LPARAM) "one");
+        SendMessageA(list, LB_ADDSTRING, 0, (LPARAM) "two");
+
+        for (int i = 0; i < 4; i++)
+            inject_click(host, cx + 40, cy + 20);   /* the button */
+        for (int i = 0; i < 4; i++)
+            inject_click(host, cx + 40, cy + 70);   /* the list box */
+
         MSG msg;
         while (GetMessageA(&msg, NULL, 0, 0))
             DispatchMessageA(&msg);
-        CHECK(g_button_clicks == 4, "four fast clicks are four clicks");
+
+        CHECK(g_button_clicks == 4, "four fast clicks on a button are four");
+        CHECK(g_list_selchanges == 4,
+              "and four on a control that never asked for double clicks");
         DestroyWindow(host);
     }
 

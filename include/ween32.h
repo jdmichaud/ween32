@@ -261,6 +261,28 @@ typedef struct {
     DWORD dwHoverTime;
 } TRACKMOUSEEVENT, *LPTRACKMOUSEEVENT;
 BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
+
+/* ---- cursors -------------------------------------------------------------
+ *
+ * The standard shapes, named as win32 names them. A window class carries one
+ * and it is set whenever the pointer is over that window; SetCursor overrides
+ * it until the pointer moves somewhere else, which is how a control shows a
+ * different shape over part of itself. There are no custom cursors: these are
+ * the window system's own, which is what the classic shell used. */
+#define IDC_ARROW ((LPCSTR)32512)
+#define IDC_IBEAM ((LPCSTR)32513)
+#define IDC_WAIT ((LPCSTR)32514)
+#define IDC_CROSS ((LPCSTR)32515)
+#define IDC_SIZENWSE ((LPCSTR)32642)
+#define IDC_SIZENESW ((LPCSTR)32643)
+#define IDC_SIZEWE ((LPCSTR)32644)
+#define IDC_SIZENS ((LPCSTR)32645)
+#define IDC_SIZEALL ((LPCSTR)32646)
+#define IDC_HAND ((LPCSTR)32649)
+
+HCURSOR LoadCursorA(HINSTANCE inst, LPCSTR name);
+HCURSOR SetCursor(HCURSOR cursor);
+#define WM_SETCURSOR 0x0020
 #define WHEEL_DELTA 120
 #define GET_WHEEL_DELTA_WPARAM(wp) ((short)HIWORD(wp))
 

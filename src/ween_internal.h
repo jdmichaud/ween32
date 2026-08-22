@@ -239,6 +239,8 @@ UINT ween_menu_track_bar(HWND top, int index, int from_keyboard);
 
 
 typedef struct ween_class {
+    UINT style;  /* CS_*: only CS_DBLCLKS is acted on */
+    int cursor;  /* WEEN_CURSOR_*: the shape over a window of this class */
     char *name;
     WNDPROC proc;
     HBRUSH background;
@@ -279,6 +281,7 @@ struct ween_wnd {
     UINT defid; /* default-command id, for Enter (DM_SETDEFID) */
 
     /* top-level only */
+    int cursor_shown; /* WEEN_CURSOR_*: what the backend was last told */
     HMENU menu;    /* the menu bar, drawn above the client area */
     int menu_hot;  /* the bar item whose drop-down is open, -1 for none */
     struct ween_wnd *next_top; /* the process's top-level windows, newest first */
@@ -371,6 +374,23 @@ typedef enum {
 
 #define WEEN_WIN_UNMANAGED 1u /* a menu: no decoration, no management */
 
+/* The pointer shapes a backend must know. These are the classic set; there
+ * are no custom cursors, because the window system's own are what the classic
+ * shell used and what X can supply without a bitmap of our own. */
+enum {
+    WEEN_CURSOR_ARROW,
+    WEEN_CURSOR_IBEAM,
+    WEEN_CURSOR_WAIT,
+    WEEN_CURSOR_CROSS,
+    WEEN_CURSOR_SIZENWSE,
+    WEEN_CURSOR_SIZENESW,
+    WEEN_CURSOR_SIZEWE,
+    WEEN_CURSOR_SIZENS,
+    WEEN_CURSOR_SIZEALL,
+    WEEN_CURSOR_HAND,
+    WEEN_CURSOR_COUNT
+};
+
 typedef struct {
     ween_ev_kind kind;
     void *win;          /* the backend window it belongs to (NULL: any) */
@@ -396,6 +416,8 @@ typedef struct {
      * resize the window themselves. */
     void (*resize)(void *win, int w, int h);
     void (*set_resizable)(void *win, int resizable);
+    /* The pointer's shape over this window, as one of WEEN_CURSOR_*. */
+    void (*set_cursor)(void *win, int shape);
     /* Blocks until the next event on any window; the event says which one.
      * timeout_ms < 0 waits indefinitely; otherwise it gives up after that
      * long and returns WEEN_EV_NONE, which is how a timer gets to run. */
@@ -415,6 +437,7 @@ void ween_headless_inject(ween_event ev);
 /* Make the fake window system impose a size, as a tiling window manager does;
  * 0 goes back to giving each window the size it asked for. */
 void ween_headless_set_window_size(int w, int h);
+int ween_headless_cursor(void *backend_win); /* the shape last asked for */
 void ween_headless_set_bmp_path(const char *path); /* written on present */
 const ween_surface *ween_headless_surface(void);   /* last presented */
 

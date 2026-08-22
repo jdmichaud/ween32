@@ -197,6 +197,8 @@ extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
 extern int XPutImage(XDisplay *, XWindow, XGC *, XImage *, int, int, int, int,
                      unsigned, unsigned);
 extern int XSetForeground(XDisplay *, XGC *, unsigned long);
+extern unsigned long XCreateFontCursor(XDisplay *, unsigned);
+extern int XDefineCursor(XDisplay *, XWindow, unsigned long);
 extern int XFillRectangle(XDisplay *, XWindow, XGC *, int, int, unsigned,
                           unsigned);
 extern int XNextEvent(XDisplay *, XEvent *);
@@ -434,6 +436,49 @@ static void x11_set_resizable(void *win, int resizable)
     XFlush(xw->dpy);
 }
 
+/* X's standard cursor font, by the names in X11/cursorfont.h. Windows has no
+ * exact match for some of these; these are the ones every desktop shows for
+ * the same job. */
+static unsigned cursor_glyph(int shape)
+{
+    switch (shape) {
+    case WEEN_CURSOR_IBEAM:
+        return 152; /* XC_xterm */
+    case WEEN_CURSOR_WAIT:
+        return 150; /* XC_watch */
+    case WEEN_CURSOR_CROSS:
+        return 34; /* XC_crosshair */
+    case WEEN_CURSOR_SIZENWSE:
+        return 12; /* XC_bottom_right_corner... the diagonal pair X has */
+    case WEEN_CURSOR_SIZENESW:
+        return 14; /* XC_bottom_left_corner */
+    case WEEN_CURSOR_SIZEWE:
+        return 108; /* XC_sb_h_double_arrow */
+    case WEEN_CURSOR_SIZENS:
+        return 116; /* XC_sb_v_double_arrow */
+    case WEEN_CURSOR_SIZEALL:
+        return 52; /* XC_fleur */
+    case WEEN_CURSOR_HAND:
+        return 58; /* XC_hand2 */
+    default:
+        return 68; /* XC_left_ptr */
+    }
+}
+
+static void x11_set_cursor(void *win, int shape)
+{
+    /* Made once each and kept: a cursor is a server resource, and the pointer
+     * crosses a window boundary often enough that creating one per crossing
+     * would be silly. */
+    static unsigned long made[WEEN_CURSOR_COUNT];
+    x11_win *xw = win;
+    if (shape < 0 || shape >= WEEN_CURSOR_COUNT)
+        shape = WEEN_CURSOR_ARROW;
+    if (!made[shape])
+        made[shape] = XCreateFontCursor(g_dpy, cursor_glyph(shape));
+    XDefineCursor(xw->dpy, xw->win, made[shape]);
+}
+
 static void x11_resize(void *win, int w, int h)
 {
     x11_win *xw = win;
@@ -645,10 +690,10 @@ static void x11_close(void *win)
 
 const ween_backend *ween_backend_x11(void)
 {
-    static const ween_backend b = { x11_open,       x11_present,
-                                    x11_move_by,    x11_resize,
-                                    x11_set_resizable, x11_next_event,
-                                    x11_close };
+    static const ween_backend b = { x11_open,          x11_present,
+                                    x11_move_by,       x11_resize,
+                                    x11_set_resizable, x11_set_cursor,
+                                    x11_next_event,    x11_close };
     return &b;
 }
 
