@@ -2053,7 +2053,6 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * A header of raised buttons over rows of text, one column per header item. */
 
 #define WEEN_LV_HEADER_H 17
-#define WEEN_LV_ITEM_H 14
 
 typedef struct {
     char *text[4];
@@ -2097,6 +2096,21 @@ static ween_list *list_of(HWND w)
     return w->ctl;
 }
 
+/* A row is as tall as the tallest thing in it and one more: sixteen for a
+ * small icon makes seventeen, which is what the shell's list has, and a list
+ * with no images falls back to the font's own cell. Windows sizes a report
+ * row this way rather than fixing it, which is why a list of files and a list
+ * of plain strings are not the same height. */
+static int lv_item_h(HWND wnd, const ween_list *l)
+{
+    const ween_strike *f = wnd && wnd->font ? wnd->font : ween_gui_font();
+    int th = f ? f->ascent - f->descent : 13;
+    int icon_w = 0, icon_h = 0;
+    if (l && l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    return (icon_h > th ? icon_h : th) + 1;
+}
+
 /* Columns, and every row's cells: the list view owns all of those strings. */
 static void list_ctl_free(void *p)
 {
@@ -2134,7 +2148,8 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     ween_lv_layout g;
     RECT cr;
     int sb = ween_scroll_metric(), content = lv_content_w(l);
-    int rows_h = (l ? l->nrow : 0) * WEEN_LV_ITEM_H + WEEN_LV_HEADER_H;
+    int ih = lv_item_h(wnd, l);
+    int rows_h = (l ? l->nrow : 0) * ih + WEEN_LV_HEADER_H;
 
     GetClientRect(wnd, &cr);
     g.hbar = content > cr.right;
@@ -2142,7 +2157,7 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     g.hbar = content > cr.right - (g.vbar ? sb : 0);
     g.view_w = cr.right - (g.vbar ? sb : 0);
     g.view_h = cr.bottom - (g.hbar ? sb : 0);
-    g.visible = (g.view_h - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
+    g.visible = (g.view_h - WEEN_LV_HEADER_H) / ih;
     if (g.visible < 1)
         g.visible = 1;
     return g;
@@ -2233,7 +2248,7 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
     if (y < WEEN_LV_HEADER_H || (g.vbar && x >= g.view_w) ||
         (g.hbar && y >= g.view_h))
         return -1;
-    row = (y - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
+    row = (y - WEEN_LV_HEADER_H) / lv_item_h(wnd, l) + l->top;
     if (row < 0 || row >= l->nrow)
         return -1;
     if (l->images)
@@ -2286,7 +2301,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     RECT r = ps->rcPaint, clip;
     int ox, oy, th = f ? f->ascent - f->descent : 13, x, sx;
-    int icon_w = 0, icon_h = 0;
+    int icon_w = 0, icon_h = 0, ih;
     ween_lv_layout g;
     char buf[260];
 
@@ -2294,6 +2309,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
     if (!l)
         return;
+    ih = lv_item_h(wnd, l);
 
     g = lv_layout(wnd, l);
     if (!g.hbar)
@@ -2336,7 +2352,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
-        int y = oy + WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
+        int y = oy + WEEN_LV_HEADER_H + (i - l->top) * ih;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         /* The caret is drawn on the row the arrows would move from, selected
          * or not — but only once the keyboard has been used, which is the same
@@ -2349,14 +2365,14 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int lw = lv_label_w(wnd, l, i, indent);
             if (selected)
                 ween_surface_fill(&top->surface, ox - sx + 2 + indent, y, lw,
-                                  WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
+                                  ih, WEEN_CAP_LEFT);
             if (caret)
                 ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
-                                        lw, WEEN_LV_ITEM_H);
+                                        lw, ih);
         }
         if (indent)
             ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
-                                ox - sx + 2, y + (WEEN_LV_ITEM_H - icon_h) / 2);
+                                ox - sx + 2, y + (ih - icon_h) / 2);
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             int lead = (c ? 5 : 7) + (c ? 0 : indent);
@@ -2505,7 +2521,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g.hbar && my >= g.view_h) {
             int grab;
             ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1, g.view_w,
-                                WEEN_LV_ITEM_H };
+                                lv_item_h(wnd, l) };
             int pos = sb_click(mx, g.view_w, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
@@ -2588,8 +2604,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!out || !l || i < 0 || i >= l->nrow)
             return FALSE;
         code = (int)out->left; /* win32 passes the code in on left */
-        out->top = WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
-        out->bottom = out->top + WEEN_LV_ITEM_H;
+        out->top = WEEN_LV_HEADER_H + (i - l->top) * lv_item_h(wnd, l);
+        out->bottom = out->top + lv_item_h(wnd, l);
         if (code == LVIR_BOUNDS) {
             out->left = -l->scroll_x;
             out->right = lv_content_w(l) - l->scroll_x;
@@ -2672,7 +2688,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                              wnd->drag_offset));
             } else if (g.hbar) {
                 ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1,
-                                    g.view_w, WEEN_LV_ITEM_H };
+                                    g.view_w, lv_item_h(wnd, l) };
                 int pos = sb_drag(GET_X_LPARAM(lp), g.view_w, &st,
                                   wnd->drag_offset);
                 pos = sb_clamp(pos, &st);
