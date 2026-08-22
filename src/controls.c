@@ -2563,6 +2563,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         /* mx had the scroll added for the header; the hit test adds its own */
+        /* the pointer has taken over: the caret goes until a key asks for it */
+        if (ween_ui_focus_cues) {
+            ween_ui_focus_cues = 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         i = lv_item_hit(wnd, l, mx - l->scroll_x, my, NULL);
         if (i >= 0) {
             l->sel = l->focus = i + 1;
@@ -2644,6 +2649,10 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         hi.pt.x = GET_X_LPARAM(lp);
         hi.pt.y = GET_Y_LPARAM(lp);
         SetFocus(wnd);
+        if (ween_ui_focus_cues) {
+            ween_ui_focus_cues = 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         if (l && SendMessageA(wnd, LVM_HITTEST, 0, (LPARAM)&hi) >= 0) {
             if (l->sel != hi.iItem + 1) {
                 l->sel = l->focus = hi.iItem + 1;

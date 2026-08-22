@@ -209,9 +209,9 @@ ween_color ween_cr_to_px(COLORREF c);
  * then on; a menu opened and worked with the mouse never grows them. */
 extern int ween_menu_cues;
 
-/* And the dotted rectangle round the thing the keyboard would act on, which
- * Windows 2000 hides by the same rule and on the same terms — except that it
- * is the arrow keys rather than Alt that bring this one out. */
+/* And the dotted rectangle round the thing the keyboard would act on. This
+ * one starts shown — a folder opens with it on the first item — and a click
+ * in a list puts it away, an arrow key brings it back. */
 extern int ween_ui_focus_cues;
 
 

@@ -675,66 +675,6 @@ static void fill_address(const char *path)
 
 /* What the status bar says about the whole directory, which is what it says
  * whenever nothing in it is picked out. */
-static void status_for_directory(void)
-{
-    unsigned long bytes = 0;
-    char line[256];
-    for (int i = 0; i < g_entries; i++)
-        if (!g_entry[i].is_dir)
-            bytes += g_entry[i].size;
-    snprintf(line, sizeof(line), "%d object(s)", g_entries);
-    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
-    snprintf(line, sizeof(line), "%lu bytes", bytes);
-    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
-}
-
-/* And what it says about one of them. */
-static void status_for_selection(int row)
-{
-    char line[256];
-    if (row < 0 || row >= g_entries) {
-        status_for_directory();
-        return;
-    }
-    snprintf(line, sizeof(line), "Type: %s", type_of(&g_entry[row]));
-    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
-    if (g_entry[row].is_dir)
-        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)"");
-    else {
-        snprintf(line, sizeof(line), "%lu bytes", g_entry[row].size);
-        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
-    }
-}
-
-/* Put what was read into the list, in whatever order the columns are in. */
-static void fill_list(void)
-{
-    SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
-    if (g_entries > 1)
-        qsort(g_entry, (size_t)g_entries, sizeof(*g_entry), entry_cmp);
-    for (int row = 0; row < g_entries; row++) {
-        const fs_entry *e = &g_entry[row];
-        LVITEMA it;
-        char size[32];
-        memset(&it, 0, sizeof(it));
-        it.mask = LVIF_TEXT | LVIF_IMAGE;
-        it.iItem = row;
-        it.pszText = (char *)e->name;
-        it.iImage = e->is_dir ? IMG_FOLDER : IMG_FILE;
-        SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
-        if (e->is_dir) {
-            set_cell(g_list, row, 1, "");
-        } else {
-            snprintf(size, sizeof(size), "%lu KB", (e->size + 1023) / 1024);
-            set_cell(g_list, row, 1, size);
-        }
-        set_cell(g_list, row, 2, type_of(e));
-        set_cell(g_list, row, 3, e->modified);
-    }
-    status_for_directory();
-}
-
-
 /* ---- the fixture ----------------------------------------------------------
  *
  * WEEN32_EXPLORER_FIXTURE=1 fills both panes with what a Windows 2000
@@ -779,6 +719,97 @@ static const struct {
     { "CONFIG.SYS", "0 KB", "System file", 0 },
 };
 
+static void status_for_directory(void)
+{
+    unsigned long bytes = 0;
+    char line[256];
+    if (g_fixture) { /* what the machine says about this folder */
+        SendMessageA(g_status, SB_SETTEXTA, 0,
+                     (LPARAM) "6 object(s) (Disk free space: 499 MB)");
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM) "203 bytes");
+        return;
+    }
+    for (int i = 0; i < g_entries; i++)
+        if (!g_entry[i].is_dir)
+            bytes += g_entry[i].size;
+    snprintf(line, sizeof(line), "%d object(s)", g_entries);
+    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
+    snprintf(line, sizeof(line), "%lu bytes", bytes);
+    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
+}
+
+/* And what it says about one of them. */
+static void status_for_selection(int row)
+{
+    char line[256];
+    if (g_fixture) {
+        int n = (int)(sizeof(g_fix_list) / sizeof(*g_fix_list));
+        if (row < 0 || row >= n) {
+            status_for_directory();
+            return;
+        }
+        SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM) "1 object(s) selected");
+        SendMessageA(g_status, SB_SETTEXTA, 1,
+                     (LPARAM)(g_fix_list[row].is_dir ? "" : g_fix_list[row].size));
+        return;
+    }
+    if (row < 0 || row >= g_entries) {
+        status_for_directory();
+        return;
+    }
+    snprintf(line, sizeof(line), "Type: %s", type_of(&g_entry[row]));
+    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
+    if (g_entry[row].is_dir)
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)"");
+    else {
+        snprintf(line, sizeof(line), "%lu bytes", g_entry[row].size);
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
+    }
+}
+
+/* A folder opens with the caret on its first item and nothing selected, which
+ * is what the shell does and why an arrow key straight after opening one moves
+ * from the top rather than from nowhere. */
+static void focus_first_row(void)
+{
+    LVITEMA it;
+    memset(&it, 0, sizeof(it));
+    it.mask = LVIF_STATE;
+    it.state = LVIS_FOCUSED;
+    it.stateMask = LVIS_FOCUSED;
+    SendMessageA(g_list, LVM_SETITEMSTATE, 0, (LPARAM)&it);
+}
+
+/* Put what was read into the list, in whatever order the columns are in. */
+static void fill_list(void)
+{
+    SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
+    if (g_entries > 1)
+        qsort(g_entry, (size_t)g_entries, sizeof(*g_entry), entry_cmp);
+    for (int row = 0; row < g_entries; row++) {
+        const fs_entry *e = &g_entry[row];
+        LVITEMA it;
+        char size[32];
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT | LVIF_IMAGE;
+        it.iItem = row;
+        it.pszText = (char *)e->name;
+        it.iImage = e->is_dir ? IMG_FOLDER : IMG_FILE;
+        SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        if (e->is_dir) {
+            set_cell(g_list, row, 1, "");
+        } else {
+            snprintf(size, sizeof(size), "%lu KB", (e->size + 1023) / 1024);
+            set_cell(g_list, row, 1, size);
+        }
+        set_cell(g_list, row, 2, type_of(e));
+        set_cell(g_list, row, 3, e->modified);
+    }
+    focus_first_row();
+    status_for_directory();
+}
+
+
 static void fill_fixture_list(void)
 {
     int n = (int)(sizeof(g_fix_list) / sizeof(*g_fix_list));
@@ -795,6 +826,7 @@ static void fill_fixture_list(void)
         set_cell(g_list, row, 2, g_fix_list[row].type);
         set_cell(g_list, row, 3, "");
     }
+    focus_first_row();
     SendMessageA(g_status, SB_SETTEXTA, 0,
                  (LPARAM) "6 object(s) (Disk free space: 499 MB)");
     SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM) "203 bytes");
@@ -806,7 +838,18 @@ static void fill_fixture_list(void)
 static void show_directory(const char *path)
 {
     if (g_fixture) {
+        COMBOBOXEXITEMA ci;
         fill_fixture_list();
+        /* the address bar has the folder in it, as the machine's has */
+        SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
+        memset(&ci, 0, sizeof(ci));
+        ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_SELECTEDIMAGE;
+        ci.iItem = 0;
+        ci.pszText = (char *)"Local Disk (C:)";
+        ci.iImage = IMG_DRIVE;
+        ci.iSelectedImage = IMG_DRIVE;
+        SendMessageA(g_address, CBEM_INSERTITEMA, 0, (LPARAM)&ci);
+        SendMessageA(g_address, CB_SETCURSEL, 0, 0);
         return;
     }
 

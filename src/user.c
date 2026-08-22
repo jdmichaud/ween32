@@ -1624,7 +1624,10 @@ static void nc_track_menu(struct ween_wnd *top, const ween_event *ev)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
 }
 
-int ween_ui_focus_cues = 0;
+/* Shown to begin with, unlike the menu's underlines: a Windows 2000 folder
+ * opens with the caret on its first item and no selection at all. A click in
+ * a list puts it away again, and a key brings it back. */
+int ween_ui_focus_cues = 1;
 
 /* Alt, or Alt+letter, opens the bar from the keyboard. Returns whether the
  * key was one the menu wanted. */
