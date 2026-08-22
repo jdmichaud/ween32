@@ -339,6 +339,42 @@ The rest — check boxes, option buttons, group box, list box, combo box, both
 progress bars, the scroll bar, the tree view, the list view, the status bar and
 the trackbars — is within a handful of pixels or exact.
 
+### The explorer, against the machine itself
+
+There is a Windows 2000 VM to compare against now, driven over MCP, and it
+mirrors its frame buffer into shared memory — so the comparison is against
+the real thing's pixels rather than a photograph of them. `tools/vm/grab.py`
+reads that buffer; its explorer window is 654 by 544, which is where the
+screenshots came from.
+
+Measured that way, and identical to it pixel for pixel:
+
+- the **rebar**, all of it — the etched rectangle round the control, the
+  rules between its bands, the grippers
+- the **menu band**, every pixel of it bar the animated flag at its right
+- the **Back button**, in both states, cold and under the pointer
+- the toolbar's **geometry** — every button boundary, every label, the first
+  separator, the checked button — and the images of Back, Forward, Up,
+  Search, Folders and History
+
+What that turned up, each of which was wrong before it was measured: a
+toolbar image sits three pixels down and not four; a separator is seven
+wide with its line four in; a button that is on is dithered on the opposite
+parity to a scroll bar, wears one pixel of edge a pixel in from its left,
+moves its content in by one, and draws from the toolbar's *second* set of
+images just as a hot one does; `GetTextExtentPoint32A` must report what the
+glyphs will take rather than a per-character ceiling; and a rebar is ruled
+off all the way round rather than only above each band.
+
+Still out, in the chrome:
+
+- the **Forward button's drop-down arrow**, two pixels
+- the **five buttons after History**, one to three pixels — their widths do
+  not resolve against the separator positions and want another measurement
+- the **animated flag** at the right of the menu band, which is not drawn
+- the **Go button** beside the address bar, which wants two children in one
+  rebar band
+
 ### The explorer, against its screenshot
 
 `examples/explorer` is laid out against screenshots of the real thing, and
