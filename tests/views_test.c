@@ -331,6 +331,48 @@ int main(void)
         /* back to a width whose dividers are nowhere near what follows */
         SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0, MAKELPARAM(120, 0));
 
+        /* The columns live in a header, and that is where the arrow saying
+         * which one the view is sorted by is asked for. */
+        {
+            HWND head = (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETHEADER, 0,
+                                                    0);
+            HDITEMA hd;
+            char text[32];
+            CHECK(head != NULL, "a list view has a header");
+            CHECK((HWND)(INT_PTR)SendMessageA(g_list, LVM_GETHEADER, 0, 0) ==
+                      head,
+                  "and hands back the same one every time");
+            CHECK(SendMessageA(head, HDM_GETITEMCOUNT, 0, 0) == 2,
+                  "which has an item per column");
+            memset(&hd, 0, sizeof(hd));
+            hd.mask = HDI_FORMAT;
+            hd.fmt = HDF_LEFT | HDF_SORTUP;
+            CHECK(SendMessageA(head, HDM_SETITEMA, 0, (LPARAM)&hd),
+                  "a heading takes the arrow that says it is sorted by");
+            memset(&hd, 0, sizeof(hd));
+            hd.mask = HDI_FORMAT | HDI_TEXT | HDI_WIDTH;
+            hd.pszText = text;
+            hd.cchTextMax = (int)sizeof(text);
+            SendMessageA(head, HDM_GETITEMA, 0, (LPARAM)&hd);
+            CHECK((hd.fmt & HDF_SORTUP) && !strcmp(text, "Name") &&
+                      hd.cxy == 120,
+                  "and reads back with its text and width");
+            /* setting the column's own format leaves the arrow alone: one is
+             * how the cells are laid out, the other is the heading's */
+            {
+                LVCOLUMNA col;
+                memset(&col, 0, sizeof(col));
+                col.mask = LVCF_FMT;
+                col.fmt = LVCFMT_LEFT;
+                SendMessageA(g_list, LVM_SETCOLUMNA, 0, (LPARAM)&col);
+                memset(&hd, 0, sizeof(hd));
+                hd.mask = HDI_FORMAT;
+                SendMessageA(head, HDM_GETITEMA, 0, (LPARAM)&hd);
+                CHECK((hd.fmt & HDF_SORTUP) != 0,
+                      "and a column's own format does not disturb it");
+            }
+        }
+
         /* a press away from any divider is a sort, as before */
         SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(60, 4));
         SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(60, 4));

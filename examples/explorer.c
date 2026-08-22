@@ -12,9 +12,7 @@
 
 #include <ween32.h>
 
-#ifdef _WIN32
-#include <commctrl.h>
-#include <windowsx.h> /* GET_X_LPARAM, which win32 keeps in its own header */
+#ifdef _WIN32 /* ween32.h reaches the rest of win32 for us */
 #define HAVE(feature) 1
 #else
 #define HAVE(feature) WEEN32_HAS_##feature
@@ -604,18 +602,6 @@ static const char *type_of(const fs_entry *e)
     return "File";
 }
 
-/* Case-insensitive, which is how a shell orders names. */
-static int name_cmp(const char *a, const char *b)
-{
-    for (; *a && *b; a++, b++) {
-        int ca = *a >= 'A' && *a <= 'Z' ? *a + 32 : *a;
-        int cb = *b >= 'A' && *b <= 'Z' ? *b + 32 : *b;
-        if (ca != cb)
-            return ca < cb ? -1 : 1;
-    }
-    return *a ? 1 : (*b ? -1 : 0);
-}
-
 /* Folders before files whatever the column, which is what the shell does,
  * and then by the column that was clicked. */
 static int entry_cmp(const void *pa, const void *pb)
@@ -629,16 +615,16 @@ static int entry_cmp(const void *pa, const void *pb)
         r = a->size < b->size ? -1 : (a->size > b->size ? 1 : 0);
         break;
     case 2: /* type */
-        r = name_cmp(type_of(a), type_of(b));
+        r = lstrcmpiA(type_of(a), type_of(b));
         break;
     case 3: /* modified, which is a string in a form that does not sort */
-        r = name_cmp(a->modified, b->modified);
+        r = lstrcmpiA(a->modified, b->modified);
         break;
     default:
         break;
     }
     if (r == 0)
-        r = name_cmp(a->name, b->name);
+        r = lstrcmpiA(a->name, b->name);
     return g_sort_down ? -r : r;
 }
 
@@ -811,14 +797,20 @@ static void focus_first_row(void)
  * which is how a win32 application asks for one. */
 static void mark_sorted_column(void)
 {
+    /* The arrow belongs to the heading, so it is asked of the header the list
+     * keeps its columns in — not of the column, whose format is only the
+     * alignment its cells are laid out to. */
+    HWND head = (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETHEADER, 0, 0);
+    if (!head)
+        return;
     for (int c = 0; c < 4; c++) {
-        LVCOLUMNA col;
-        memset(&col, 0, sizeof(col));
-        col.mask = LVCF_FMT;
-        col.fmt = (c == 1) ? LVCFMT_RIGHT : LVCFMT_LEFT;
+        HDITEMA hd;
+        memset(&hd, 0, sizeof(hd));
+        hd.mask = HDI_FORMAT;
+        hd.fmt = (c == 1) ? HDF_RIGHT : HDF_LEFT;
         if (c == g_sort_col)
-            col.fmt |= g_sort_down ? HDF_SORTDOWN : HDF_SORTUP;
-        SendMessageA(g_list, LVM_SETCOLUMNA, (WPARAM)c, (LPARAM)&col);
+            hd.fmt |= g_sort_down ? HDF_SORTDOWN : HDF_SORTUP;
+        SendMessageA(head, HDM_SETITEMA, (WPARAM)c, (LPARAM)&hd);
     }
 }
 
@@ -2575,18 +2567,18 @@ int main(int argc, char **argv)
     /* Built as a console app so that main() serves both worlds; on Windows
      * this is a GUI program, so drop the console window it came with. */
     FreeConsole();
-    /* And the common controls have to be asked for by name there: the rebar
-     * wants COOL, the address bar's ComboBoxEx wants USEREX, and the tree,
-     * the list, the toolbar and the status bar are all in WIN95. Without
-     * this every one of them fails to create and the window comes up empty.
-     * ween32 registers its own, so this is the win32 side only. */
+#endif
+    /* The common controls have to be asked for by name: the rebar wants COOL,
+     * the address bar's ComboBoxEx wants USEREX, and the tree, the list, the
+     * toolbar and the status bar are all in WIN95. Without this on Windows
+     * every one of them fails to create and the window comes up empty; ween32
+     * has them already and says so. */
     {
         INITCOMMONCONTROLSEX ic = { sizeof ic, ICC_WIN95_CLASSES |
                                                    ICC_USEREX_CLASSES |
                                                    ICC_COOL_CLASSES };
         InitCommonControlsEx(&ic);
     }
-#endif
 
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = explorer_proc;

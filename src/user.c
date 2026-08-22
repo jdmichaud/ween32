@@ -908,6 +908,31 @@ BOOL CheckRadioButton(HWND dlg, int first, int last, int check)
     return TRUE;
 }
 
+/* win32's own string calls. A shell orders names case-insensitively, and this
+ * is what it uses to do it. */
+int lstrcmpA(LPCSTR a, LPCSTR b)
+{
+    return strcmp(a ? a : "", b ? b : "");
+}
+
+int lstrcmpiA(LPCSTR a, LPCSTR b)
+{
+    const unsigned char *p = (const unsigned char *)(a ? a : "");
+    const unsigned char *q = (const unsigned char *)(b ? b : "");
+    for (; *p && *q; p++, q++) {
+        int ca = *p >= 'A' && *p <= 'Z' ? *p + 32 : *p;
+        int cb = *q >= 'A' && *q <= 'Z' ? *q + 32 : *q;
+        if (ca != cb)
+            return ca < cb ? -1 : 1;
+    }
+    return *p ? 1 : (*q ? -1 : 0);
+}
+
+int lstrlenA(LPCSTR s)
+{
+    return s ? (int)strlen(s) : 0;
+}
+
 /* Which window has the keyboard. A control drawing itself needs this: a
  * selection is one colour with the focus and another without it. */
 HWND GetFocus(void)

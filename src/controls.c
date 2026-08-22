@@ -2249,6 +2249,7 @@ typedef struct {
     int size_x0;  /* where the drag started, and the width it started at */
     int size_w0;
     int scroll_x; /* how far the columns are scrolled left, in pixels */
+    HWND header;  /* the header control, once something has asked for it */
 } ween_list;
 
 /* How near a header divider counts as being on it. Windows uses about this,
@@ -3129,13 +3130,25 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (!l || !col || i < 0 || i >= l->ncol)
             return FALSE;
-        if (col->mask & LVCF_FMT)
-            l->fmt[i] = col->fmt &
-                        (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN);
+        if (col->mask & LVCF_FMT) /* alignment; the arrows are the header's */
+            l->fmt[i] = (l->fmt[i] & (HDF_SORTUP | HDF_SORTDOWN)) |
+                        (col->fmt & LVCFMT_RIGHT);
         if (col->mask & LVCF_WIDTH)
             l->width[i] = col->cx;
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
+    }
+    case LVM_GETHEADER: {
+        /* Made when it is first asked for, and kept: an application holds on
+         * to the handle. It draws nothing — the list draws the band — so it
+         * is not shown. */
+        l = list_of(wnd);
+        if (!l)
+            return 0;
+        if (!l->header)
+            l->header = CreateWindowA(WC_HEADERA, "", WS_CHILD, 0, 0, 0, 0,
+                                      wnd, NULL, NULL, NULL);
+        return (LRESULT)(INT_PTR)l->header;
     }
     case LVM_GETCOLUMNWIDTH:
         l = list_of(wnd);
@@ -3647,6 +3660,69 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 
+/* ---- the header inside a list view ----------------------------------------
+ *
+ * A report-view list keeps its columns in a header control, and that is where
+ * an application sets the arrow that says which column the view is sorted by.
+ * The list still draws the band — see the ROADMAP — so this is where the
+ * columns are *said* to be rather than where they are drawn: it holds no
+ * state of its own and passes everything to the list it belongs to.
+ */
+static LRESULT header_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    HWND list = wnd->parent;
+    ween_list *l = list ? list_of(list) : NULL;
+    HDITEMA *hd = (HDITEMA *)lp;
+    int i = (int)wp;
+    switch (msg) {
+    case HDM_GETITEMCOUNT:
+        return l ? l->ncol : 0;
+    case HDM_SETITEMA:
+        if (!l || !hd || i < 0 || i >= l->ncol)
+            return FALSE;
+        if (hd->mask & HDI_FORMAT)
+            l->fmt[i] = hd->fmt &
+                        (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN);
+        if (hd->mask & HDI_WIDTH)
+            l->width[i] = hd->cxy;
+        InvalidateRect(list, NULL, FALSE);
+        return TRUE;
+    case HDM_GETITEMA:
+        if (!l || !hd || i < 0 || i >= l->ncol)
+            return FALSE;
+        if (hd->mask & HDI_FORMAT)
+            hd->fmt = l->fmt[i];
+        if (hd->mask & HDI_WIDTH)
+            hd->cxy = l->width[i];
+        if ((hd->mask & HDI_TEXT) && hd->pszText && hd->cchTextMax > 0) {
+            const char *t = l->col[i] ? l->col[i] : "";
+            int n = (int)strlen(t);
+            if (n > hd->cchTextMax - 1)
+                n = hd->cchTextMax - 1;
+            memcpy(hd->pszText, t, (size_t)n);
+            hd->pszText[n] = 0;
+        }
+        return TRUE;
+    }
+    return DefWindowProcA(wnd, msg, wp, lp);
+}
+
+/* win32 has an application register the common control classes before it uses
+ * one; ween32 registers them itself, so this only has to agree. Saying so
+ * rather than leaving it out is what lets an application call it on both
+ * sides without an #ifdef. */
+BOOL InitCommonControlsEx(const INITCOMMONCONTROLSEX *icc)
+{
+    (void)icc;
+    ween_register_controls();
+    return TRUE;
+}
+
+void InitCommonControls(void)
+{
+    ween_register_controls();
+}
+
 void ween_register_controls(void)
 {
     WNDCLASSA wc;
@@ -3681,6 +3757,9 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = tab_proc;
     wc.lpszClassName = WC_TABCONTROLA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = header_proc;
+    wc.lpszClassName = WC_HEADERA;
     RegisterClassA(&wc);
     /* A tree acts on a double click too: it opens the branch under it. */
     wc.style = CS_DBLCLKS;

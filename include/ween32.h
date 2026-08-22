@@ -16,8 +16,12 @@
 #define WEEN32_H
 
 #ifdef _WIN32
-/* On Windows, ween32 *is* win32: use the real thing. */
+/* On Windows, ween32 *is* win32: use the real thing — all of it a program
+ * written against this header uses, so it needs no #ifdef of its own to
+ * reach the common controls or the message crackers. */
 #include <windows.h>
+#include <commctrl.h>
+#include <windowsx.h>
 #else
 
 #include <stddef.h>
@@ -500,11 +504,43 @@ typedef struct tagTVHITTESTINFO {
  * a file's size on the right of its column and everything else on the left. */
 #define LVCFMT_LEFT 0x0000
 #define LVCFMT_RIGHT 0x0001
-/* A column's heading can carry the arrow that says the view is sorted by it.
- * These belong to the header control, and a list view passes its columns'
- * format through to it, which is how an application asks for one. */
+/* ---- the header inside a list view --------------------------------------
+ *
+ * A report-view list keeps its column headings in a header control, and an
+ * application reaches it with LVM_GETHEADER and then talks to it: HDM_SETITEM
+ * with HDI_FORMAT is how the arrow that says "sorted by this column" is asked
+ * for. ween32's list draws the band itself and the header is where the
+ * columns are said to be — see the ROADMAP for the header drawing its own.
+ */
+#define WC_HEADERA "SysHeader32"
+#define HDM_FIRST 0x1200
+#define HDM_GETITEMCOUNT (HDM_FIRST + 0)
+#define HDM_GETITEMA (HDM_FIRST + 3)
+#define HDM_SETITEMA (HDM_FIRST + 4)
+#define HDI_WIDTH 0x0001
+#define HDI_HEIGHT 0x0001
+#define HDI_TEXT 0x0002
+#define HDI_FORMAT 0x0004
+#define HDI_LPARAM 0x0008
+#define HDI_BITMAP 0x0010
+#define HDI_IMAGE 0x0020
+#define HDI_ORDER 0x0080
+#define HDF_LEFT 0x0000
+#define HDF_RIGHT 0x0001
+#define HDF_CENTER 0x0002
 #define HDF_SORTDOWN 0x0200
 #define HDF_SORTUP 0x0400
+typedef struct {
+    UINT mask;
+    int cxy;
+    LPSTR pszText;
+    HBITMAP hbm;
+    int cchTextMax;
+    int fmt;
+    LPARAM lParam;
+    int iImage;
+    int iOrder;
+} HDITEMA, *LPHDITEMA;
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
@@ -514,6 +550,7 @@ typedef struct tagTVHITTESTINFO {
 #define LVM_GETITEMCOUNT (LVM_FIRST + 4)
 #define LVM_GETNEXTITEM (LVM_FIRST + 12)
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
+#define LVM_GETHEADER (LVM_FIRST + 31)
 #define LVM_GETCOLUMNWIDTH (LVM_FIRST + 29)
 #define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
 /* Widths a column can be asked for instead of a number: fit what is in it,
@@ -997,6 +1034,34 @@ typedef struct {
 #define RB_GETBANDCOUNT (WM_USER + 12)
 #define RB_GETBARHEIGHT (WM_USER + 27)
 
+/* Registering the common control classes. ween32 has them registered before
+ * anything can ask for one, so this says yes and does nothing — but an
+ * application must still call it, because on Windows it is what puts the
+ * classes there. */
+typedef struct {
+    DWORD dwSize;
+    DWORD dwICC;
+} INITCOMMONCONTROLSEX, *LPINITCOMMONCONTROLSEX;
+#define ICC_LISTVIEW_CLASSES 0x00000001
+#define ICC_TREEVIEW_CLASSES 0x00000002
+#define ICC_BAR_CLASSES 0x00000004
+#define ICC_TAB_CLASSES 0x00000008
+#define ICC_UPDOWN_CLASS 0x00000010
+#define ICC_PROGRESS_CLASS 0x00000020
+#define ICC_HOTKEY_CLASS 0x00000040
+#define ICC_ANIMATE_CLASS 0x00000080
+#define ICC_WIN95_CLASSES 0x000000FF
+#define ICC_DATE_CLASSES 0x00000100
+#define ICC_USEREX_CLASSES 0x00000200
+#define ICC_COOL_CLASSES 0x00000400
+#define ICC_INTERNET_CLASSES 0x00000800
+#define ICC_PAGESCROLLER_CLASS 0x00001000
+#define ICC_NATIVEFNTCTL_CLASS 0x00002000
+#define ICC_STANDARD_CLASSES 0x00004000
+#define ICC_LINK_CLASS 0x00008000
+BOOL InitCommonControlsEx(const INITCOMMONCONTROLSEX *icc);
+void InitCommonControls(void);
+
 #define WEEN32_HAS_REBAR 1
 #define WEEN32_HAS_TOOLBAR 1
 #define WEEN32_HAS_MENU 1
@@ -1032,6 +1097,13 @@ HWND GetDlgItem(HWND dlg, int id);
 int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
 HWND GetFocus(void);
+
+/* The string calls win32 has of its own. Only the ones an application reaches
+ * for are here: a case-insensitive compare is what orders names in a shell,
+ * and doing it by hand gets the ASCII range right and nothing else. */
+int lstrcmpA(LPCSTR a, LPCSTR b);
+int lstrcmpiA(LPCSTR a, LPCSTR b);
+int lstrlenA(LPCSTR s);
 BOOL EnableWindow(HWND wnd, BOOL enable);
 BOOL IsWindowEnabled(HWND wnd);
 BOOL CheckDlgButton(HWND dlg, int id, UINT check);
