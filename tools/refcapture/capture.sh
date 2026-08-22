@@ -61,7 +61,11 @@ for _ in $(seq 40); do
     area=$((w * h))
     if [ "$area" -gt "$bestarea" ]; then bestarea=$area; best=$cand; fi
   done
-  if [ -n "$best" ] && [ "$bestarea" -ge $((DESK_W * DESK_H)) ]; then
+  # Take the largest viewable window with that name once it is big enough to
+  # be the desktop rather than a transient. A tiling window manager may hand
+  # wine something other than the size asked for, so this cannot insist on
+  # the exact area.
+  if [ -n "$best" ] && [ "$bestarea" -ge 40000 ]; then
     id=$best
     break
   fi

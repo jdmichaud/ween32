@@ -499,7 +499,7 @@ typedef struct tagLVITEMA {
 #define TCIF_TEXT 0x0001
 #define TCIF_IMAGE 0x0002
 #define TCN_SELCHANGE (0U - 551U)
-#define TVN_SELCHANGEDA (0U - 401U)
+#define TVN_SELCHANGEDA (0U - 402U)
 /* ITEMEXPANDING comes before the item opens, which is where a tree that
  * fills lazily puts the children; ITEMEXPANDED comes after. */
 #define TVN_ITEMEXPANDINGA (0U - 405U)
@@ -829,7 +829,7 @@ typedef struct {
 
 #define TB_ENABLEBUTTON (WM_USER + 1)
 #define TB_CHECKBUTTON (WM_USER + 2)
-#define TB_ISBUTTONCHECKED (WM_USER + 12)
+#define TB_ISBUTTONCHECKED (WM_USER + 10)
 #define TB_ISBUTTONENABLED (WM_USER + 9)
 #define TB_ADDBUTTONSA (WM_USER + 20)
 #define TB_BUTTONSTRUCTSIZE (WM_USER + 30)

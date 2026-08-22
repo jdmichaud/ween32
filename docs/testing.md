@@ -10,11 +10,25 @@ make clean && make
 make test
 ```
 
-Expect **259 `ok` lines and no `FAIL`**, ending with each suite reporting
-`all passed`. The count only goes up — if it has dropped, a test file stopped
-being built rather than a test starting to pass.
+Expect **291 `ok` lines and no `FAIL`**. The count only goes up — if it has
+dropped, a test file stopped being built rather than a test starting to pass.
 
-Then the two things `make test` does not cover:
+Then the three things `make test` does not cover:
+
+```sh
+# that the same example source still builds against the real windows.h, and
+# that every constant ween32 declares is the number Windows gives it
+make win32
+```
+
+This is the half of the promise the suite cannot see. It has caught the
+explorer failing to compile against win32 at all (GET_X_LPARAM lives in
+windowsx.h), the explorer creating common controls without asking for them
+(nothing would have been created on Windows), a list view left to default to
+the icon view instead of the report view, and two constants copied wrong —
+`TVN_SELCHANGEDA` sitting on `TVN_SELCHANGING`'s number and
+`TB_ISBUTTONCHECKED` on `TB_ISBUTTONHIDDEN`'s. Needs `zig`, for its bundled
+mingw-w64 headers; without it the target says so and passes.
 
 ```sh
 # the sanitizers, which have caught real bugs the suite passed through
@@ -31,6 +45,13 @@ One trap worth knowing: `make -B` rebuilds the library and the examples but
 **not** the tests. After changing library code, either `make clean` or name the
 test — `make tests/geometry_test` — or you will be running the old binary
 against the new library and drawing conclusions from it.
+
+The same trap once had a worse form: three of the tests were *run* by `make
+test` without being named among the things it depends on, so a stale binary
+could report a pass for code that no longer existed — and did. There is one
+`TESTS` list now, used to build them, run them and clean them, so that
+particular drift cannot happen again. If you add a test, add it there and
+nowhere else.
 
 ## 2. Fidelity against Wine
 

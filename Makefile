@@ -105,7 +105,23 @@ EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; done
 
+# The other half of the promise: the same example source has to build against
+# the real windows.h, and the constants have to be the numbers Windows gives
+# them. Needs zig for its bundled mingw-w64 headers; skipped without it.
+ZIGWIN = zig cc -target x86_64-windows-gnu -std=c99 -Iinclude
+
+win32:
+	@command -v zig >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
+	@for src in $(EXAMPLES:%=%.c); do \
+	   s=$${src%.c}.c; s=$${s#examples/}; s=examples/$${s}; \
+	   echo "  win32 $$s"; \
+	   $(ZIGWIN) $$s -luser32 -lgdi32 -lcomctl32 -o /tmp/ween32-win32.exe || exit 1; \
+	 done
+	@python3 tools/win32check/genconsts.py > /tmp/ween32-consts.c
+	@zig cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
+	   /tmp/ween32-consts.c && echo "  win32 constants agree"
+
 clean:
 	rm -f $(OBJS) libween32.a $(EXAMPLES) $(TESTS)
 
-.PHONY: all test clean
+.PHONY: all test win32 clean
