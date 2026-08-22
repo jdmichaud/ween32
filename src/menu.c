@@ -608,7 +608,12 @@ typedef struct {
 } menu_level;
 
 #define WEEN_MENU_MAX_DEPTH 8
-#define WEEN_MENU_CASCADE_OVERLAP 3 /* a cascade sits this far over its parent */
+/* Where a cascade goes beside the item that opened it: six pixels back over
+ * its parent's right edge, and lifted by the popup's own inset so that its
+ * first item lines up with that item. Both measured on the machine, whose
+ * "Send To" submenu starts six columns inside a 121-wide menu and three rows
+ * above the row it belongs to. */
+#define WEEN_MENU_CASCADE_OVERLAP 6
 
 typedef struct {
     HWND owner;    /* who hears WM_COMMAND */
@@ -670,8 +675,9 @@ static void level_open_cascade(menu_session *s, int depth)
     if (s->depth > depth + 1 && s->level[depth + 1].menu == it->popup)
         return; /* already showing, and showing the right one */
     level_close_to(s, depth + 1);
-    level_open(s, it->popup, l->wnd->x + l->wnd->w - WEEN_MENU_CASCADE_OVERLAP,
-               l->wnd->y + it->y - WEEN_MENU_CASCADE_OVERLAP);
+    level_open(s, it->popup,
+               l->wnd->x + l->wnd->w - ween_ncm(WEEN_MENU_CASCADE_OVERLAP),
+               l->wnd->y + it->y - ween_ncm(MENU_BORDER) - ween_ncm(MENU_PAD));
 }
 
 static void level_set_hot(menu_session *s, int depth, int hot)
