@@ -146,6 +146,13 @@ int main(void)
         CHECK(ween_menu_item(g_file, 0)->y == 3,
               "the first item starts below the border and its padding");
 
+        /* The window manager has put the window somewhere other than it
+         * asked to be, which is what a tiling one always does. The drop-down
+         * has to open beside where the window is, not where it asked to be:
+         * with these confused the menu appears somewhere off in the desktop,
+         * detached from the window it belongs to. */
+        ween_headless_set_window_origin(300, 200);
+
         mouse(WEEN_EV_MOUSE_DOWN, frame + 4, bar_y + 5); /* on "File" */
         mouse(WEEN_EV_MOUSE_MOVE, 10, open->y + open->h / 2);
         mouse(WEEN_EV_MOUSE_UP, 10, open->y + open->h / 2);
@@ -156,6 +163,15 @@ int main(void)
         CHECK(g_command == ID_OPEN,
               "clicking the bar opened the menu and chose from it");
         CHECK(w->menu_hot == -1, "and the bar item is no longer held open");
+        {
+            int px = 0, py = 0;
+            ween_headless_last_unmanaged_origin(&px, &py);
+            CHECK(px == 300 + frame + ween_menu_item(g_bar, 0)->x,
+                  "the drop-down opened under its bar item on the desktop");
+            CHECK(py == 200 + bar_y + WEEN_NC_MENU,
+                  "just below the bar, wherever the window itself was put");
+        }
+        ween_headless_set_window_origin(0, 0);
     }
 
     /* TrackPopupMenu on its own, with TPM_RETURNCMD: the command comes back

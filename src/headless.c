@@ -107,6 +107,7 @@ typedef struct {
 
 static hl_win g_wins[MAX_WINDOWS];
 static int g_win_w, g_win_h; /* what the "window manager" is imposing, if any */
+static int g_win_x, g_win_y; /* and where it is putting every window */
 
 /* Tell the fake window system to hand every window this size, whatever size
  * the app asked for — which is what a tiling window manager does. Zero puts
@@ -120,15 +121,27 @@ void ween_headless_set_window_size(int w, int h)
             ween_letterbox_window(&g_wins[i].box, w, h);
 }
 
+/* Where the last window the app placed itself was put. A menu is one of
+ * those — the window system is told exactly where to put it and does — so
+ * this is how a test sees where a drop-down landed. */
+static int g_unmanaged_x, g_unmanaged_y;
+
+void ween_headless_last_unmanaged_origin(int *x, int *y)
+{
+    *x = g_unmanaged_x;
+    *y = g_unmanaged_y;
+}
+
 static void *hl_open(int x, int y, int w, int h, const char *title,
                      unsigned flags)
 {
-    (void)flags;
-    (void)x;
-    (void)y;
     (void)w;
     (void)h;
     (void)title;
+    if (flags & WEEN_WIN_UNMANAGED) {
+        g_unmanaged_x = x;
+        g_unmanaged_y = y;
+    }
     if (!g_bmp_path[0]) {
         const char *env = getenv("WEEN32_BMP");
         if (env)
@@ -209,6 +222,24 @@ int ween_headless_cursor(void *win)
     return win ? ((hl_win *)win)->cursor : WEEN_CURSOR_ARROW;
 }
 
+/* Tell the fake window system to put every window here rather than where it
+ * asked to be, which is the other half of what a tiling window manager does
+ * to an application — and the half that decides where its menus land. */
+void ween_headless_set_window_origin(int x, int y)
+{
+    g_win_x = x;
+    g_win_y = y;
+}
+
+static void hl_origin(void *win, int *x, int *y)
+{
+    hl_win *w = win;
+    int ox = 0, oy = 0;
+    ween_letterbox_origin(&w->box, &ox, &oy);
+    *x = g_win_x + ox;
+    *y = g_win_y + oy;
+}
+
 static void hl_move_by(void *win, int dx, int dy)
 {
     (void)win;
@@ -251,6 +282,7 @@ const ween_backend *ween_backend_headless(void)
     static const ween_backend b = { hl_open,           hl_present,
                                     hl_move_by,        hl_resize,
                                     hl_set_resizable,  hl_set_cursor,
-                                    hl_next_event,     hl_close };
+                                    hl_origin,         hl_next_event,
+                                    hl_close };
     return &b;
 }

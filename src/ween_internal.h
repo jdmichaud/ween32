@@ -425,12 +425,23 @@ typedef struct {
     void (*set_resizable)(void *win, int resizable);
     /* The pointer's shape over this window, as one of WEEN_CURSOR_*. */
     void (*set_cursor)(void *win, int shape);
+    /* Where the window's surface actually is on the desktop. A window
+     * manager may put a window somewhere other than it asked to be — a
+     * tiling one always does — so a window that wants to place something
+     * beside itself, which is what a menu is, has to ask rather than assume.
+     * May be NULL, and may fail; both leave *x and *y alone. */
+    void (*origin)(void *win, int *x, int *y);
     /* Blocks until the next event on any window; the event says which one.
      * timeout_ms < 0 waits indefinitely; otherwise it gives up after that
      * long and returns WEEN_EV_NONE, which is how a timer gets to run. */
     ween_event (*next_event)(void *win, int timeout_ms);
     void (*close)(void *win);
 } ween_backend;
+
+/* Where a top-level window's client-area origin is on the desktop, for the
+ * benefit of anything placed in desktop coordinates. Falls back to where the
+ * window asked to be when the backend cannot say. */
+void ween_window_origin(struct ween_wnd *top, int *x, int *y);
 
 /* An expose arriving inside a nested loop belongs to the window it names. */
 void ween_mark_exposed(const ween_event *ev);
@@ -444,6 +455,8 @@ void ween_headless_inject(ween_event ev);
 /* Make the fake window system impose a size, as a tiling window manager does;
  * 0 goes back to giving each window the size it asked for. */
 void ween_headless_set_window_size(int w, int h);
+void ween_headless_set_window_origin(int x, int y);
+void ween_headless_last_unmanaged_origin(int *x, int *y);
 int ween_headless_cursor(void *backend_win); /* the shape last asked for */
 void ween_headless_set_bmp_path(const char *path); /* written on present */
 const ween_surface *ween_headless_surface(void);   /* last presented */

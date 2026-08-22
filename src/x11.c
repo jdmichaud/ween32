@@ -212,6 +212,8 @@ extern XAtom XInternAtom(XDisplay *, const char *, int);
 extern int XSetWMProtocols(XDisplay *, XWindow, XAtom *, int);
 extern void XSetWMNormalHints(XDisplay *, XWindow, XSizeHints *);
 extern int XMoveWindow(XDisplay *, XWindow, int, int);
+extern int XTranslateCoordinates(XDisplay *, XWindow, XWindow, int, int, int *,
+                                 int *, XWindow *);
 extern int XResizeWindow(XDisplay *, XWindow, unsigned, unsigned);
 extern int XChangeProperty(XDisplay *, XWindow, XAtom, XAtom, int, int,
                            const void *, int);
@@ -479,6 +481,28 @@ static void x11_set_cursor(void *win, int shape)
     XDefineCursor(xw->dpy, xw->win, made[shape]);
 }
 
+/* Where the surface's top-left is on the desktop.
+ *
+ * Not where the window asked to be: a window manager may have put it
+ * somewhere else, and a reparenting one wraps it in a frame, so the window's
+ * own coordinates are relative to that frame rather than the root. Asking the
+ * server to translate (0, 0) is the answer that survives both — and then the
+ * letterbox offset, because what is drawn need not fill what the window
+ * manager gave us.
+ */
+static void x11_origin(void *win, int *x, int *y)
+{
+    x11_win *xw = win;
+    XWindow child;
+    int rx = 0, ry = 0, ox = 0, oy = 0;
+    if (!XTranslateCoordinates(g_dpy, xw->win, XDefaultRootWindow(g_dpy), 0, 0,
+                               &rx, &ry, &child))
+        return; /* a different screen: leave the caller its own answer */
+    ween_letterbox_origin(&xw->box, &ox, &oy);
+    *x = (rx + ox) / xw->zoom;
+    *y = (ry + oy) / xw->zoom;
+}
+
 static void x11_resize(void *win, int w, int h)
 {
     x11_win *xw = win;
@@ -693,7 +717,8 @@ const ween_backend *ween_backend_x11(void)
     static const ween_backend b = { x11_open,          x11_present,
                                     x11_move_by,       x11_resize,
                                     x11_set_resizable, x11_set_cursor,
-                                    x11_next_event,    x11_close };
+                                    x11_origin,        x11_next_event,
+                                    x11_close };
     return &b;
 }
 

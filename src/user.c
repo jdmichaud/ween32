@@ -1594,6 +1594,15 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
  * belongs to whichever window it names, not to the loop. Swallowing it leaves
  * that window holding whatever was on screen before, which is how a window
  * ends up as a lump of grey after something in front of it goes away. */
+void ween_window_origin(struct ween_wnd *top, int *x, int *y)
+{
+    *x = top ? top->x : 0;
+    *y = top ? top->y : 0;
+    if (top && top->backend_win && ween_active_backend &&
+        ween_active_backend->origin)
+        ween_active_backend->origin(top->backend_win, x, y);
+}
+
 void ween_mark_exposed(const ween_event *ev)
 {
     struct ween_wnd *target = g_active;

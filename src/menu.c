@@ -652,6 +652,7 @@ static void bar_open(menu_session *s, int index)
 {
     ween_menuitem *it;
     int frame, bar_y;
+    int ox, oy;
     if (!s->bar_wnd || index < 0 || index >= ween_menu_count(s->bar))
         return;
     it = ween_menu_item(s->bar, index);
@@ -663,8 +664,12 @@ static void bar_open(menu_session *s, int index)
     s->bar_wnd->dirty = 1;
     frame = ween_frame_width(s->bar_wnd);
     bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
-    level_open(s, it->popup, s->bar_wnd->x + frame + it->x,
-               s->bar_wnd->y + bar_y + ween_ncm(WEEN_NC_MENU));
+    /* Where the window actually is, not where it asked to be: under a window
+     * manager that puts it somewhere else the two part company, and the menu
+     * opens beside a window that is not there. */
+    ween_window_origin(s->bar_wnd, &ox, &oy);
+    level_open(s, it->popup, ox + frame + it->x,
+               oy + bar_y + ween_ncm(WEEN_NC_MENU));
 }
 
 /* Left and right at the top of a menu walk the bar, as they do on Windows. */
