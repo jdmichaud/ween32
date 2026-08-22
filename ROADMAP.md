@@ -26,15 +26,48 @@ that no application has asked for:
 
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
   scrolls rather than being clipped.
-- [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
-  the list view.
+- [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
-- [ ] **A sort arrow in a list view's header.** `LVN_COLUMNCLICK` tells an app
-  which column was clicked; nothing draws the mark showing which one is
-  sorted, or which way.
-- [ ] **An icon in a status bar part**, and in the address bar's combo box.
 - [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
-  is the arrangement a shell uses, but it is not the whole control.
+  is the arrangement a shell uses, but a shell also puts a fixed-width band
+  beside one that stretches — `RBBIM_SIZE`, `RBBS_FIXEDSIZE`, `RBBS_BREAK` —
+  and until that exists the explorer's brand box is a stray child of the rebar
+  that the application places itself.
+
+### What a review of the explorer asked for
+
+[docs/review-explorer.md](docs/review-explorer.md) read `examples/explorer.c`
+against the question "would an application written to win32 have had to write
+this?". What it found that is still open, in the order it suggested:
+
+- [ ] **The header draws its own band.** `LVM_GETHEADER` hands back a real
+  header and `HDM_SETITEM`/`HDM_GETITEM` answer against the list's columns,
+  which is how the sort arrow is asked for — but the list still paints the
+  headings, so the header is a place and a store rather than a control. Doing
+  it properly also lifts the four-column cap and gives `HDM_LAYOUT` and
+  `HDM_HITTEST` something to answer with.
+- [ ] **A menu band that is a toolbar.** On the machine the menu in a rebar is
+  a `ToolbarWindow32` of drop-down buttons and the shell answers `TBN_DROPDOWN`
+  with `TrackPopupMenu`. ween32 offers `ween_menu_band_set/hot/open/track`
+  instead, which is a private API with one caller and process-global state, and
+  which forks the application's source: on Windows it falls back to a path with
+  no hover-switching and no Alt. The behaviour that is genuinely more than
+  comctl32 gives — sliding between drop-downs, Alt arming the bar, underlines
+  hidden until Alt — should be reached through what a toolbar already has
+  (`TB_SETHOTITEM`, `TBN_HOTITEMCHANGE`, `SC_KEYMENU`, `WM_QUERYUISTATE`).
+- [ ] **A flat toolbar button that hot-tracks and takes the keyboard**, so the
+  ✕ on the explorer's Folders bar can be one instead of seven `FillRect` pairs
+  with a frame drawn by hand.
+- [ ] **The rest of the calls the explorer works around**: `TVIF_PARAM` and
+  `LVIF_PARAM` with `LVM_GETITEMA` (so an item can carry what it stands for
+  rather than having its path rebuilt from its text), `LVM_SORTITEMS`,
+  `ImageList_LoadImageA` and `TB_ADDBITMAP` (so toolbar art is a bitmap in
+  `assets/` rather than 730 lines of ASCII in the application), `GetCursorPos`.
+- [ ] **`explorer.c` with no `#if` in it.** Once the above are in, the feature
+  gates go, the pixel art moves to `assets/`, and the fixture that fills both
+  panes with the machine's content moves behind the `fs.h` seam as a second
+  namespace provider — which is where "where do the entries come from" already
+  lives.
 
 Two things are deliberately *not* on this list.
 
@@ -486,17 +519,11 @@ reserves eleven; the image sits four pixels down from the top and the label
 one above the middle, neither centred; and the arrow is blue under the
 pointer, which is `TB_SETHOTIMAGELIST`.
 
-What still differs, and why:
+What still differs, and why. The sort arrow, the Go button beside the address
+bar and the menu bar as a rebar band were all on this list and are all here
+now — the arrow through `LVM_GETHEADER` and `HDM_SETITEM`, as in win32. What
+is left:
 
-- The **sort arrow** on the Name column. In win32 that is `HDF_SORTUP` on a
-  header item reached through `LVM_GETHEADER`, and there is no header control
-  to reach. Faking it with a message win32 does not have would cost more than
-  the arrow is worth. The sorting itself works; only the mark is missing.
-- The **address bar** has no Go button beside it, which wants two children in
-  one rebar band.
-- The **menu bar** is drawn by the frame. The real one is a rebar band with a
-  gripper, which is why the shot has a gripper to the left of File. Everything
-  below it therefore sits five pixels high of where the shot has it.
 - **Move To** and **Copy To** use the icon set's folders. The real ones come
   from the same toolbar strip as the arrows and are a different drawing of the
   same idea.
