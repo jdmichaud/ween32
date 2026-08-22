@@ -261,6 +261,22 @@ typedef struct tagCREATESTRUCTA {
 #define WM_MOUSEWHEEL 0x020A
 #define WM_MOUSELEAVE 0x02A3
 
+/* The keyboard cues: whether the underlines under mnemonics and the focus
+ * rectangles are showing. Windows keeps this per window and DefWindowProc
+ * answers for it, so an application that draws its own labels — a menu in a
+ * rebar band, say — asks rather than guesses. Alt is what turns the
+ * underlines on; ween32 answers for the whole process, which is as much as
+ * one keyboard can mean. */
+#define WM_CHANGEUISTATE 0x0127
+#define WM_UPDATEUISTATE 0x0128
+#define WM_QUERYUISTATE 0x0129
+#define UIS_SET 1
+#define UIS_CLEAR 2
+#define UIS_INITIALIZE 3
+#define UISF_HIDEFOCUS 0x1
+#define UISF_HIDEACCEL 0x2
+#define UISF_ACTIVE 0x4
+
 /* Hover tracking: ask, once, to be told when the pointer leaves. The reply is
  * a single WM_MOUSELEAVE, so a control that wants a hot state re-arms this
  * every time it is entered. */
@@ -322,6 +338,9 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define WS_EX_DLGMODALFRAME 0x00000001L
 #define WS_EX_CLIENTEDGE 0x00000200L
 #define WS_EX_CONTROLPARENT 0x00010000L
+/* A window that does not take the keyboard when it appears — which is what a
+ * menu is: the window under it keeps its focus, and its caret with it. */
+#define WS_EX_NOACTIVATE 0x08000000L
 #define WS_EX_STATICEDGE 0x00020000L
 
 /* EDIT styles */
@@ -1079,7 +1098,11 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
  * open, the arrows walk them, Alt arms the bar and a letter opens one.
  */
 void ween_menu_band_set(HWND top, HWND band, const RECT *items, int count);
+/* Which item the pointer or the keyboard is on, -1 for none, and whether its
+ * drop-down is showing: a band draws the two apart, raised for the one and
+ * pushed in for the other, as a toolbar does. */
 int ween_menu_band_hot(HWND band);
+int ween_menu_band_open(HWND band);
 UINT ween_menu_band_track(HWND band, int index, int from_keyboard);
 
 /* ---- system metrics ----------------------------------------------------- */

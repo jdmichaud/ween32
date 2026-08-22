@@ -569,8 +569,12 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         }
         wnd->next_top = g_tops;
         g_tops = wnd;
-        g_active = wnd;
-        g_focus = wnd;
+        /* A menu does not take the keyboard: the window under it keeps its
+         * focus, so its caret is still there when the menu goes away. */
+        if (!(ex_style & WS_EX_NOACTIVATE)) {
+            g_active = wnd;
+            g_focus = wnd;
+        }
     }
 
     CREATESTRUCTA cs;
@@ -1644,17 +1648,59 @@ int ween_ui_focus_cues = 1;
 /* Alt, or Alt+letter, opens the bar from the keyboard. Returns whether the
  * key was one the menu wanted. */
 /* Alt on its own arms the bar rather than opening it: the underlines come
- * out and the bar waits for a letter, which is what Windows does. */
+ * out, the first item goes under the keyboard, and the bar waits — for a
+ * letter, for the arrows to walk it, or for Down to open what it is on.
+ * That is what Windows does, in a frame's bar and in a shell's band alike. */
 static int g_menu_armed;
+static int g_menu_armed_at;
+static HWND g_menu_armed_top;
 
 int ween_menu_armed(void)
 {
     return g_menu_armed;
 }
 
+/* Where the armed bar shows itself: the band, when the application draws the
+ * bar, and the frame's own strip when it does not. */
+static void armed_mark(HWND top, int index)
+{
+    HWND band = top ? ween_menu_band_of(top) : NULL;
+    if (band) {
+        ween_menu_band_arm(band, index);
+    } else if (top) {
+        top->menu_hot = index;
+        top->dirty = 1;
+        InvalidateRect(top, NULL, FALSE);
+    }
+}
+
+/* Leaving menu mode puts the underlines away again: they came out with Alt
+ * and they go with whatever ends it — Escape, a second Alt, or the drop-down
+ * that was opened being finished with. The focus rectangles are not part of
+ * this; those stay until a mouse click puts them away. */
+static void menu_cues_off(HWND top)
+{
+    HWND band = top ? ween_menu_band_of(top) : NULL;
+    if (!ween_menu_cues)
+        return;
+    ween_menu_cues = 0;
+    if (band)
+        InvalidateRect(band, NULL, FALSE);
+    if (top) {
+        top->dirty = 1;
+        InvalidateRect(top, NULL, FALSE);
+    }
+}
+
 void ween_menu_disarm(void)
 {
+    HWND top = g_menu_armed_top;
+    if (!g_menu_armed)
+        return;
     g_menu_armed = 0;
+    armed_mark(top, -1);
+    g_menu_armed_top = NULL;
+    menu_cues_off(top);
 }
 
 int ween_menu_key(HWND top, unsigned vk, unsigned ch)
@@ -1679,18 +1725,67 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     ween_menu_cues = 1;
     ween_ui_focus_cues = 1;
     if (!ch) { /* Alt alone: arm it and wait, opening nothing */
-        g_menu_armed = !g_menu_armed;
-        if (band)
-            InvalidateRect(band, NULL, FALSE);
+        if (g_menu_armed) {
+            ween_menu_disarm(); /* a second Alt puts it away again */
+            return 1;
+        }
+        g_menu_armed = 1;
+        g_menu_armed_at = 0;
+        g_menu_armed_top = top;
+        armed_mark(top, 0);
         top->dirty = 1;
         return 1;
     }
     g_menu_armed = 0;
+    g_menu_armed_top = NULL;
     cmd = band ? ween_menu_band_track(band, index, 1)
                : ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+    menu_cues_off(top);
     return 1;
+}
+
+/* The keys the armed bar answers before anything else sees them: the arrows
+ * walk it, Down or Enter opens what it is on with that drop-down's first item
+ * picked, Escape puts it away. Returns whether the key was one of them. */
+int ween_menu_armed_key(HWND top, unsigned vk)
+{
+    HWND band;
+    int count;
+    UINT cmd;
+    if (!g_menu_armed || !top || !top->menu)
+        return 0;
+    band = ween_menu_band_of(top);
+    count = GetMenuItemCount(top->menu);
+    if (count <= 0)
+        return 0;
+    switch (vk) {
+    case VK_LEFT:
+    case VK_RIGHT:
+        g_menu_armed_at = (g_menu_armed_at + (vk == VK_RIGHT ? 1 : count - 1)) %
+                          count;
+        armed_mark(top, g_menu_armed_at);
+        return 1;
+    case VK_ESCAPE:
+        ween_menu_disarm();
+        return 1;
+    case VK_DOWN:
+    case VK_RETURN:
+    case VK_SPACE: {
+        int index = g_menu_armed_at;
+        g_menu_armed = 0; /* the session draws the item open from here */
+        g_menu_armed_top = NULL;
+        cmd = band ? ween_menu_band_track(band, index, 1)
+                   : ween_menu_track_bar(top, index, 1);
+        if (cmd)
+            post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+        menu_cues_off(top);
+        return 1;
+    }
+    default:
+        return 0;
+    }
 }
 
 /* An expose that arrives inside a nested loop — a drag, a menu being tracked —
@@ -1946,6 +2041,12 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (wnd->parent)
             return SendMessageA(wnd->parent, WM_CONTEXTMENU, wp, lp);
         return 0;
+    case WM_QUERYUISTATE:
+        /* What is hidden, not what is shown — the flags are named for what
+         * they take away. An application drawing its own labels asks this to
+         * know whether to underline the mnemonics. */
+        return (ween_menu_cues ? 0 : UISF_HIDEACCEL) |
+               (ween_ui_focus_cues ? 0 : UISF_HIDEFOCUS);
     case WM_SETICON: {
         /* One icon, not win32's small-and-large pair: the caption is the only
          * place ween32 draws one, and it wants the small one. */

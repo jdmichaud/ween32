@@ -480,10 +480,13 @@ void ween_menu_draw_bar(HMENU menu, ween_surface *s, int ox, int oy, int width,
         int len;
         ween_color fg = WEEN_BLACK;
         accel_of(it->text, &len);
-        if (i == hot) { /* the open one is drawn selected, as win32 does */
-            ween_surface_fill(s, ox + it->x, oy, it->w, h, WEEN_CAP_LEFT);
-            fg = WEEN_WHITE;
-        }
+        /* The open one is pushed in, not filled: Windows 2000 draws a bar
+         * item the way it draws a button, and the label stays black. The
+         * highlight belongs to the drop-down's items, not to the bar. One
+         * row of the bar is left clear above and below the box. */
+        if (i == hot)
+            ween_classic_edge(s, ox + it->x, oy + 1, it->w, h - 2,
+                              BDR_SUNKENOUTER, BF_RECT, NULL);
         if (it->flags & MF_GRAYED)
             fg = WEEN_SHADOW;
         /* One below centred, which is where the reference puts it. */
@@ -549,7 +552,10 @@ void ween_menu_draw_popup(HMENU menu, ween_surface *s, const ween_strike *f,
             ween_surface_hline(s, sx, mid, w - 2 * sx, WEEN_WHITE);
             continue;
         }
-        if (i == hot && !(it->flags & MF_GRAYED)) {
+        /* The bar goes under a greyed item too — Windows highlights the one
+         * the keyboard is on whether or not it can be chosen — and its label
+         * stays the shadow colour, without the white emboss underneath it. */
+        if (i == hot) {
             ween_surface_fill(s, it->x, it->y, it->w, it->h, WEEN_CAP_LEFT);
             fg = WEEN_WHITE;
         }
@@ -695,8 +701,9 @@ static int level_open(menu_session *s, HMENU menu, int x, int y)
     ween_menu_popup_size(menu, f, &w, &h);
     if (s->owner)
         SendMessageA(s->owner, WM_INITMENUPOPUP, (WPARAM)menu, 0);
-    HWND wnd = CreateWindowExA(0, WEEN_MENU_CLASS, "", WS_POPUP | WS_VISIBLE, x,
-                               y, w, h, NULL, NULL, NULL, NULL);
+    HWND wnd = CreateWindowExA(WS_EX_NOACTIVATE, WEEN_MENU_CLASS, "",
+                               WS_POPUP | WS_VISIBLE, x, y, w, h, NULL, NULL,
+                               NULL, NULL);
     if (!wnd)
         return 0;
     wnd->menu = menu;
@@ -750,7 +757,10 @@ static void level_step(menu_session *s, int depth, int step)
     for (int i = 0; i < n; i++) {
         hot = (hot + step + n) % n;
         ween_menuitem *it = ween_menu_item(l->menu, hot);
-        if (it && !(it->flags & (MF_SEPARATOR | MF_GRAYED)))
+        /* A greyed item is stepped onto like any other — Windows highlights
+         * it and refuses to choose it, rather than hiding it from the
+         * arrows. A separator is not an item at all. */
+        if (it && !(it->flags & MF_SEPARATOR))
             break;
     }
     level_set_hot(s, depth, hot);
@@ -768,7 +778,7 @@ static void level_step(menu_session *s, int depth, int step)
  * Alt arms the lot. One band per process, which is what a shell has. */
 static HWND g_band, g_band_top;
 static RECT g_band_item[16];
-static int g_band_count, g_band_hot = -1;
+static int g_band_count, g_band_hot = -1, g_band_open;
 
 void ween_menu_band_set(HWND top, HWND band, const RECT *items, int count)
 {
@@ -789,6 +799,14 @@ int ween_menu_band_hot(HWND band)
     return (band && band == g_band) ? g_band_hot : -1;
 }
 
+/* Whether the hot item's drop-down is showing. A band draws the two states
+ * differently — a toolbar's button is raised under the pointer and pushed in
+ * once it is pressed — and Alt leaves an item hot with nothing open. */
+int ween_menu_band_open(HWND band)
+{
+    return (band && band == g_band) ? g_band_open : 0;
+}
+
 static void band_set_hot(int index)
 {
     if (g_band_hot == index)
@@ -798,6 +816,14 @@ static void band_set_hot(int index)
         g_band->dirty = 1;
         InvalidateRect(g_band, NULL, FALSE);
     }
+}
+
+/* Alt puts an item under the keyboard without opening it; the arrows move it
+ * along the bar from there. */
+void ween_menu_band_arm(HWND band, int index)
+{
+    if (band && band == g_band)
+        band_set_hot(index);
 }
 
 /* The item under a point in the band's own coordinates, or -1. */
@@ -1088,12 +1114,16 @@ UINT ween_menu_band_track(HWND band, int index, int from_keyboard)
     s.bar_index = -1;
     SendMessageA(g_band_top, WM_INITMENU, (WPARAM)g_band_top->menu, 0);
     ween_menu_layout_bar(g_band_top->menu, ween_gui_font(), 0);
+    g_band_open = 1;
     bar_open(&s, index);
-    if (!s.depth)
+    if (!s.depth) {
+        g_band_open = 0;
         return 0;
+    }
     if (from_keyboard)
         level_step(&s, 0, 1);
     session_run(&s);
+    g_band_open = 0;
     return s.chosen;
 }
 

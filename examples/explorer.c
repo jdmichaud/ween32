@@ -1427,13 +1427,20 @@ static HMENU g_menu;
 static int g_menu_open = -1; /* the item whose drop-down is showing */
 #endif
 
-/* An item's label without the marker that says which letter is its
- * mnemonic: it is not drawn, so it is not measured either. */
+/* An item's label as the menu holds it, marker and all. DrawText takes the
+ * '&' out and underlines what follows, so this is what gets drawn. */
+static void menubar_text(int i, char *out, size_t max)
+{
+    GetMenuStringA(g_menu, (UINT)i, out, (int)max, MF_BYPOSITION);
+}
+
+/* And the same without the marker: it is not drawn, so it is not measured
+ * either. */
 static void menubar_label(int i, char *out, size_t max)
 {
     char raw[64];
     size_t j = 0;
-    GetMenuStringA(g_menu, (UINT)i, raw, (int)sizeof(raw), MF_BYPOSITION);
+    menubar_text(i, raw, sizeof(raw));
     for (size_t k = 0; raw[k] && j < max - 1; k++)
         if (raw[k] != '&')
             out[j++] = raw[k];
@@ -1499,15 +1506,20 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         FillRect(dc, &cr, GetSysColorBrush(COLOR_BTNFACE));
         SelectObject(dc, g_font);
         menubar_measure(dc);
+        /* Whether the underlines are showing is the window's to say, not the
+         * bar's: Alt turns them on for everything at once. */
+        UINT ui = (UINT)SendMessageA(w, WM_QUERYUISTATE, 0, 0);
         for (int i = 0; i < g_mb_n; i++) {
             char label[64];
             RECT r;
 #ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-            int open = i == ween_menu_band_hot(w);
+            int hot = i == ween_menu_band_hot(w);
+            int open = hot && ween_menu_band_open(w);
 #else
             int open = i == g_menu_open;
+            int hot = open;
 #endif
-            menubar_label(i, label, sizeof(label));
+            menubar_text(i, label, sizeof(label));
             /* The label's pen goes half the padding in, rather than being
              * centred in the item: centring would depend on the measure
              * DrawText happens to align with, and this does not. */
@@ -1519,18 +1531,22 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
              * where Windows 2000 puts it. */
             r.bottom = cr.bottom - 2;
             /* An open item is pushed in, not filled: one pixel of sunken
-             * edge, and the label stays black. */
-            if (open) {
+             * edge, and the label stays black. Alt leaves an item hot with
+             * nothing open, and that one stands out instead — the two states
+             * a toolbar's button has. */
+            if (hot) {
                 RECT e;
                 e.left = g_mb_x[i];
                 e.right = g_mb_x[i] + g_mb_w[i];
                 e.top = 1;
                 e.bottom = cr.bottom - 2;
-                DrawEdge(dc, &e, BDR_SUNKENOUTER, BF_RECT);
+                DrawEdge(dc, &e, open ? BDR_SUNKENOUTER : BDR_RAISEDINNER,
+                         BF_RECT);
             }
             SetTextColor(dc, GetSysColor(COLOR_MENUTEXT));
             DrawTextA(dc, label, -1, &r,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE |
+                          ((ui & UISF_HIDEACCEL) ? DT_HIDEPREFIX : 0));
         }
         EndPaint(w, &ps);
         return 0;
