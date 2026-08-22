@@ -213,6 +213,10 @@ typedef struct tagCREATESTRUCTA {
 #define WM_ENABLE 0x000A
 #define WM_SETFONT 0x0030
 #define WM_GETFONT 0x0031
+#define WM_SETICON 0x0080
+#define WM_GETICON 0x007F
+#define ICON_SMALL 0
+#define ICON_BIG 1
 #define WM_NCHITTEST 0x0084
 #define WM_NCPAINT 0x0085
 #define WM_NCMOUSEMOVE 0x00A0

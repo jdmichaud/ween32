@@ -59,6 +59,7 @@ enum {
 #define ICON_UP "34"
 #define ICON_SEARCH "50"
 #define ICON_HISTORY "35"
+#define ICON_APP "46" /* the folder-and-magnifier the caption wears */
 
 /* Image-list indices, in the order they are added. */
 enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
@@ -587,6 +588,8 @@ int main(void)
     wc.lpfnWndProc = explorer_proc;
     wc.lpszClassName = "ween32explorer";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    wc.hIcon = (HICON)LoadImageA(NULL, "assets/icons/" ICON_APP ".ico",
+                                 IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
 #if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
 #endif

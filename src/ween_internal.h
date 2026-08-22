@@ -246,6 +246,7 @@ typedef struct ween_class {
     char *name;
     WNDPROC proc;
     HBRUSH background;
+    HICON icon;  /* drawn in the caption, at the left of the gradient */
     int in_use;
 } ween_class;
 
@@ -284,6 +285,7 @@ struct ween_wnd {
 
     /* top-level only */
     int cursor_shown; /* WEEN_CURSOR_*: what the backend was last told */
+    HICON icon;    /* the caption's, from the class or WM_SETICON */
     HMENU menu;    /* the menu bar, drawn above the client area */
     int menu_hot;  /* the bar item whose drop-down is open, -1 for none */
     struct ween_wnd *next_top; /* the process's top-level windows, newest first */

@@ -237,6 +237,7 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
     c->cursor = wc->hCursor ? (int)(INT_PTR)wc->hCursor - 1 : WEEN_CURSOR_ARROW;
     c->proc = wc->lpfnWndProc;
     c->background = wc->hbrBackground;
+    c->icon = wc->hIcon;
     c->in_use = 1;
     g_classes[g_nclasses++] = c;
     return (ATOM)g_nclasses;
@@ -455,6 +456,7 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     if (!wnd)
         return NULL;
     wnd->cls = cls;
+    wnd->icon = cls->icon;
     wnd->proc = cls->proc;
     wnd->style = style;
     wnd->ex_style = ex_style;
@@ -1779,6 +1781,16 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_SETICON: {
+        /* One icon, not win32's small-and-large pair: the caption is the only
+         * place ween32 draws one, and it wants the small one. */
+        HICON was = wnd->icon;
+        wnd->icon = (HICON)lp;
+        ween_top_level(wnd)->dirty = 1;
+        return (LRESULT)(INT_PTR)was;
+    }
+    case WM_GETICON:
+        return (LRESULT)(INT_PTR)wnd->icon;
     case WM_NEXTDLGCTL: {
         /* wParam is the control to focus when lParam says so, otherwise a
          * direction: 0 forward, non-zero back. win32 handles this in the
@@ -1859,14 +1871,28 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
                              icon_w, buttons_w);
+        /* The gradient already holds its start colour across icon_w; this is
+         * what goes there. A window without one keeps its title hard left,
+         * which is where a window without a system menu wants it anyway. */
+        int title_x = frame + ween_ncm(2);
+        if (wnd->icon && icon_w) {
+            struct ween_dc idc;
+            int side = ween_ncm(16);
+            memset(&idc, 0, sizeof(idc));
+            idc.s = s;
+            idc.clip_w = wnd->w;
+            idc.clip_h = wnd->h;
+            /* centred in the caption, the odd pixel going above it */
+            DrawIconEx(&idc, frame + ween_ncm(2),
+                       frame + (cap - side + 1) / 2, wnd->icon, side, side, 0,
+                       NULL, DI_NORMAL);
+            title_x = frame + ween_ncm(2) + side + ween_ncm(2);
+        }
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
             int ty = frame + (cap - (f->ascent - f->descent)) / 2;
-            /* the title starts two pixels in — after the system-menu icon,
-             * when there is one */
-            int tx = frame + ween_ncm(2);
-            ween_strike_draw(f, s, tx, ty, wnd->text, (int)strlen(wnd->text),
-                             WEEN_CAP_TEXT);
+            ween_strike_draw(f, s, title_x, ty, wnd->text,
+                             (int)strlen(wnd->text), WEEN_CAP_TEXT);
         }
         if (wnd->style & WS_SYSMENU) {
             struct ween_dc dc;

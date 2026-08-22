@@ -224,6 +224,54 @@ int main(void)
         DestroyWindow(w);
     }
 
+    /* A window wears its class's icon in the caption, at the left of the
+     * gradient — which already holds its start colour across exactly that
+     * strip — and moves the title over to make room. WM_SETICON changes it. */
+    {
+        HICON icon = (HICON)LoadImageA(NULL, "/tmp/ween_icon_test.ico",
+                                       IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+        WNDCLASSA wc;
+        memset(&wc, 0, sizeof(wc));
+        wc.lpfnWndProc = host_proc;
+        wc.lpszClassName = "weencapicon";
+        wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+        wc.hIcon = icon;
+        RegisterClassA(&wc);
+        HWND w = CreateWindowExA(0, "weencapicon", "Titled",
+                                 WS_POPUP | WS_CAPTION | WS_SYSMENU |
+                                     WS_VISIBLE,
+                                 0, 0, 240, 80, NULL, NULL, NULL, NULL);
+        ween_flush_paint();
+        const ween_surface *s = ween_headless_surface();
+        int left = 9999, count = 0;
+        for (int y = 0; s && y < 24; y++)
+            for (int x = 0; x < s->w; x++)
+                if ((s->px[y * s->w + x] & 0xffffff) == WEEN_RGBX(0xff, 0, 0)) {
+                    count++;
+                    if (x < left)
+                        left = x;
+                }
+        CHECK(count > 0, "a window draws its class icon in the caption");
+        CHECK(left == WEEN_NC_FRAME + 2,
+              "two pixels in from the frame, where the gradient makes room");
+        CHECK(SendMessageA(w, WM_GETICON, ICON_SMALL, 0) ==
+                  (LRESULT)(INT_PTR)icon,
+              "and answers WM_GETICON with it");
+
+        SendMessageA(w, WM_SETICON, ICON_SMALL, 0);
+        InvalidateRect(w, NULL, TRUE);
+        ween_flush_paint();
+        s = ween_headless_surface();
+        count = 0;
+        for (int y = 0; s && y < 24; y++)
+            for (int x = 0; x < s->w; x++)
+                if ((s->px[y * s->w + x] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
+                    count++;
+        CHECK(count == 0, "and stops drawing one when WM_SETICON takes it away");
+        DestroyWindow(w);
+        DestroyIcon(icon);
+    }
+
     ImageList_Destroy(il);
     DeleteObject(bmp);
 
