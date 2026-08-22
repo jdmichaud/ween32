@@ -41,10 +41,13 @@ win32:
 
 - **A list's rows.** ween32 makes a row `max(icon, text) + 1` — 17 pixels for
   a 16-pixel icon and Tahoma, which is what the machine has, measured off it.
-  Wine's comctl32 makes it 16, so the rows walk apart down the list.
-- **The caption.** With no window manager nothing holds the X focus, and wine
-  paints an inactive caption over a window that reports itself active.
-
+  Wine's comctl32 makes it 16, so the rows walk apart down the list. It cannot
+  be talked into 17: a 16-pixel image list gives 16 and a 17-pixel one gives
+  18, and telling the font to report a taller height gets the rows right at the
+  cost of the caption and the address bar, which are sized from the same
+  number. Both were tried; neither is worth having.
+- **The caption.** A window manager does not help either — wine paints the
+  inactive caption over a window it agrees is active.
 Compare the geometry rather than the picture when you want an answer you can
 act on: paste a block into `layout()` that dumps every control's rectangle,
 compile that one file both ways, and diff the two dumps.
