@@ -249,13 +249,21 @@ WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/shot.bmp ./examples/controls
 ```
 
 `WEEN32_SCRIPT` feeds it input — `d:`/`u:`/`m:` are mouse down/up/move at
-window coordinates, `k:` a virtual-key code, `t:` characters to type, `w:`
-milliseconds of timer time to let pass:
+window coordinates, `D:`/`U:` the right button, `k:` a virtual-key code, `K:`
+the same with Shift held, `t:` characters to type, `w:` milliseconds of timer
+time to let pass:
 
 ```sh
 WEEN32_HEADLESS=1 WEEN32_BMP=/tmp/shot.bmp \
   WEEN32_SCRIPT="d:8,28 u:8,28" ./examples/menu     # opens the File menu
+WEEN32_HEADLESS=1 WEEN32_BMP="/tmp/f%d.bmp" \
+  WEEN32_SCRIPT="k:18 k:39 k:40" ./examples/menu    # Alt, right, down: Edit
+WEEN32_HEADLESS=1 WEEN32_BMP="/tmp/f%d.bmp" \
+  WEEN32_SCRIPT="K:9" ./examples/explorer           # Shift+Tab
 ```
+
+Two down/up pairs with no `w:` between them are a double click, which is how
+a column divider is asked to fit its column.
 
 A path with `%d` in it writes **one file per frame** instead of one per run.
 That is the only way to see a modal window — a message box or a drop-down is
