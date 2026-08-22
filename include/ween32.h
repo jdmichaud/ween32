@@ -361,6 +361,15 @@ BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
 #define TV_FIRST 0x1100
 #define TVM_INSERTITEMA (TV_FIRST + 0)
 #define TVM_SETIMAGELIST (TV_FIRST + 9)
+#define TVM_DELETEITEM (TV_FIRST + 1)
+#define TVM_GETNEXTITEM (TV_FIRST + 10)
+#define TVM_GETITEMA (TV_FIRST + 12)
+/* which item TVM_GETNEXTITEM is being asked for */
+#define TVGN_ROOT 0x0000
+#define TVGN_NEXT 0x0001
+#define TVGN_PARENT 0x0003
+#define TVGN_CHILD 0x0004
+#define TVGN_CARET 0x0009
 #define TVM_EXPAND (TV_FIRST + 2)
 #define TVM_SELECTITEM (TV_FIRST + 11)
 
@@ -393,6 +402,12 @@ typedef struct tagTVINSERTSTRUCTA {
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
 #define LVM_INSERTITEMA (LVM_FIRST + 7)
 #define LVM_SETIMAGELIST (LVM_FIRST + 3)
+#define LVM_DELETEALLITEMS (LVM_FIRST + 9)
+#define LVM_GETITEMCOUNT (LVM_FIRST + 4)
+#define LVM_GETNEXTITEM (LVM_FIRST + 12)
+#define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
+#define LVM_ENSUREVISIBLE (LVM_FIRST + 19)
+#define LVNI_SELECTED 0x0002
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
 
@@ -433,6 +448,20 @@ typedef struct tagLVITEMA {
 #define TVN_SELCHANGEDA (0U - 401U)
 #define TVN_ITEMEXPANDEDA (0U - 406U)
 #define LVN_ITEMCHANGED (0U - 101U)
+#define LVN_COLUMNCLICK (0U - 108U)
+
+/* What a list view sends with LVN_COLUMNCLICK: iSubItem is the column, which
+ * is what an app sorts on. */
+typedef struct tagNMLISTVIEW {
+    NMHDR hdr;
+    int iItem;
+    int iSubItem;
+    UINT uNewState;
+    UINT uOldState;
+    UINT uChanged;
+    POINT ptAction;
+    LPARAM lParam;
+} NMLISTVIEW;
 
 /* scroll-bar notification codes */
 #define SB_LINEUP 0
@@ -557,6 +586,8 @@ typedef struct tagTCITEMA {
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
 #define VK_MENU 0x12 /* Alt */
+#define VK_PRIOR 0x21 /* Page Up */
+#define VK_NEXT 0x22  /* Page Down */
 #define VK_F1 0x70
 #define VK_F10 0x79
 #define VK_SPACE 0x20

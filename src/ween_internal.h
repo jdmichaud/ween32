@@ -204,6 +204,18 @@ typedef struct ween_menuitem {
     int x, y, w, h;
 } ween_menuitem;
 
+/* Where a list view is scrolled to. The control's own state is private to
+ * controls.c; this is the part of it anything outside needs to see. */
+typedef struct {
+    int top;     /* the first row drawn */
+    int sel;     /* 1-based selected row, 0 for none */
+    int count;   /* rows in the list */
+    int visible; /* rows that fit */
+    int max_top; /* the furthest it can scroll */
+} ween_lv_view;
+
+void ween_listview_view(HWND w, ween_lv_view *out);
+
 int ween_menu_bar_height(const struct ween_wnd *w);
 int ween_menu_key(HWND top, unsigned vk, unsigned ch); /* Alt / Alt+letter */
 int ween_menu_count(HMENU menu);

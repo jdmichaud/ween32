@@ -1742,6 +1742,72 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)(UINT_PTR)item;
     }
+    case TVM_DELETEITEM: {
+        /* TVI_ROOT empties the whole tree, which is what a refill needs. */
+        ween_tvitem *it = (ween_tvitem *)lp;
+        t = tree_of(wnd);
+        if (!t)
+            return FALSE;
+        if (!it || it == (ween_tvitem *)TVI_ROOT) {
+            tree_free(t->root);
+            t->root = NULL;
+            t->sel = NULL;
+            t->scroll_row = 0;
+            t->scroll_x = 0;
+        } else {
+            /* unlink it from wherever it hangs, then free it and its children */
+            ween_tvitem **link = it->parent ? &it->parent->child : &t->root;
+            while (*link && *link != it)
+                link = &(*link)->next;
+            if (*link)
+                *link = it->next;
+            it->next = NULL;
+            if (t->sel == it)
+                t->sel = NULL;
+            tree_free(it);
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case TVM_GETNEXTITEM: {
+        /* The three an app actually walks with: the root, a child, the one
+         * that is selected. */
+        ween_tvitem *it = (ween_tvitem *)lp;
+        t = tree_of(wnd);
+        if (!t)
+            return 0;
+        switch (wp) {
+        case TVGN_ROOT:
+            return (LRESULT)(UINT_PTR)t->root;
+        case TVGN_CARET:
+            return (LRESULT)(UINT_PTR)t->sel;
+        case TVGN_CHILD:
+            return (LRESULT)(UINT_PTR)(it ? it->child : t->root);
+        case TVGN_NEXT:
+            return (LRESULT)(UINT_PTR)(it ? it->next : NULL);
+        case TVGN_PARENT:
+            return (LRESULT)(UINT_PTR)(it ? it->parent : NULL);
+        default:
+            return 0;
+        }
+    }
+    case TVM_GETITEMA: {
+        /* An app that walks the tree needs the text back out of it. */
+        TVITEMA *item = (TVITEMA *)lp;
+        ween_tvitem *it = item ? (ween_tvitem *)item->hItem : NULL;
+        if (!it)
+            return FALSE;
+        if ((item->mask & TVIF_TEXT) && item->pszText && item->cchTextMax > 0) {
+            int n = (int)strlen(it->text ? it->text : "");
+            if (n > item->cchTextMax - 1)
+                n = item->cchTextMax - 1;
+            memcpy(item->pszText, it->text ? it->text : "", (size_t)n);
+            item->pszText[n] = 0;
+        }
+        if (item->mask & TVIF_IMAGE)
+            item->iImage = it->image;
+        return TRUE;
+    }
     case TVM_SETIMAGELIST:
         if ((t = tree_of(wnd))) {
             HIMAGELIST was = t->images;
@@ -1786,6 +1852,8 @@ typedef struct {
     int width[4], ncol;
     ween_lvrow *row;
     int nrow, caprow, sel;
+    int top;      /* the first row drawn: a file list has to scroll */
+    int pressed;  /* the header column being held down, -1 for none */
 } ween_list;
 
 static void list_ctl_free(void *p);
@@ -1795,6 +1863,8 @@ static ween_list *list_of(HWND w)
     if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_list));
         w->ctl_free = list_ctl_free;
+        if (w->ctl)
+            ((ween_list *)w->ctl)->pressed = -1;
     }
     return w->ctl;
 }
@@ -1812,6 +1882,34 @@ static void list_ctl_free(void *p)
     free(l);
 }
 
+/* How many rows fit under the header, and how far down the list can go. */
+static int lv_visible(HWND wnd)
+{
+    RECT cr;
+    GetClientRect(wnd, &cr);
+    int rows = (cr.bottom - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
+    return rows > 0 ? rows : 1;
+}
+
+static int lv_max_top(HWND wnd, const ween_list *l)
+{
+    int over = l->nrow - lv_visible(wnd);
+    return over > 0 ? over : 0;
+}
+
+static void lv_scroll_to(HWND wnd, ween_list *l, int top)
+{
+    int max = lv_max_top(wnd, l);
+    if (top > max)
+        top = max;
+    if (top < 0)
+        top = 0;
+    if (top == l->top)
+        return;
+    l->top = top;
+    InvalidateRect(wnd, NULL, FALSE);
+}
+
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_list *l = list_of(wnd);
@@ -1827,13 +1925,14 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     x = 0;
     for (int c = 0; c < l->ncol; c++) {
+        int down = c == l->pressed;
         ween_classic_edge(&top->surface, ox + x, oy, l->width[c],
-                          WEEN_LV_HEADER_H, EDGE_RAISED,
+                          WEEN_LV_HEADER_H, down ? EDGE_SUNKEN : EDGE_RAISED,
                           BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
         if (f && l->col[c])
-            ween_strike_draw(f, &top->surface, ox + x + 8,
-                             oy + (WEEN_LV_HEADER_H - th) / 2, l->col[c],
-                             (int)strlen(l->col[c]), WEEN_BLACK);
+            ween_strike_draw(f, &top->surface, ox + x + 8 + (down ? 1 : 0),
+                             oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
+                             l->col[c], (int)strlen(l->col[c]), WEEN_BLACK);
         x += l->width[c];
     }
 
@@ -1841,8 +1940,17 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (l->images)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
 
-    for (int i = 0; i < l->nrow; i++) {
-        int y = oy + WEEN_LV_HEADER_H + i * WEEN_LV_ITEM_H;
+    int visible = lv_visible(wnd);
+    if (l->nrow > visible) { /* a file list nearly always has more than fits */
+        RECT cr;
+        int sb = ween_scroll_metric();
+        GetClientRect(wnd, &cr);
+        ween_draw_scrollbar(&top->surface, ox + cr.right - sb, oy, sb,
+                            cr.bottom, 1, 1, l->top, visible, 0,
+                            lv_max_top(wnd, l));
+    }
+    for (int i = l->top; i < l->nrow && i < l->top + visible; i++) {
+        int y = oy + WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
         x = 0;
@@ -1881,6 +1989,19 @@ static char *dup_str(const char *src)
     return copy;
 }
 
+void ween_listview_view(HWND w, ween_lv_view *out)
+{
+    ween_list *l = w ? list_of(w) : NULL;
+    memset(out, 0, sizeof(*out));
+    if (!l)
+        return;
+    out->top = l->top;
+    out->sel = l->sel;
+    out->count = l->nrow;
+    out->visible = lv_visible(w);
+    out->max_top = lv_max_top(w, l);
+}
+
 static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_list *l;
@@ -1892,10 +2013,95 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_MOUSEWHEEL: {
+        l = list_of(wnd);
+        if (l) /* three rows a notch, as every list does */
+            lv_scroll_to(wnd, l,
+                         l->top - 3 * (GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA));
+        return 0;
+    }
+    case WM_KEYDOWN:
+        l = list_of(wnd);
+        if (!l)
+            return 0;
+        switch (wp) {
+        case VK_DOWN:
+            if (l->sel < l->nrow)
+                l->sel++;
+            break;
+        case VK_UP:
+            if (l->sel > 1)
+                l->sel--;
+            break;
+        case VK_HOME:
+            l->sel = l->nrow ? 1 : 0;
+            break;
+        case VK_END:
+            l->sel = l->nrow;
+            break;
+        case VK_NEXT:
+            l->sel += lv_visible(wnd);
+            if (l->sel > l->nrow)
+                l->sel = l->nrow;
+            break;
+        case VK_PRIOR:
+            l->sel -= lv_visible(wnd);
+            if (l->sel < 1)
+                l->sel = l->nrow ? 1 : 0;
+            break;
+        default:
+            return DefWindowProcA(wnd, msg, wp, lp);
+        }
+        /* keep the selection in view, which is the whole point of moving it */
+        if (l->sel) {
+            if (l->sel - 1 < l->top)
+                lv_scroll_to(wnd, l, l->sel - 1);
+            else if (l->sel - 1 >= l->top + lv_visible(wnd))
+                lv_scroll_to(wnd, l, l->sel - lv_visible(wnd));
+        }
+        InvalidateRect(wnd, NULL, FALSE);
+        notify_parent(wnd, LVN_ITEMCHANGED);
+        return 0;
+
     case WM_LBUTTONDOWN: {
-        int i = (GET_Y_LPARAM(lp) - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
+        int i;
+        RECT cr;
         l = list_of(wnd);
         SetFocus(wnd);
+        GetClientRect(wnd, &cr);
+        if (!l)
+            return 0;
+        /* the scroll bar down the right, when there is one */
+        if (l->nrow > lv_visible(wnd) &&
+            GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
+            int grab;
+            ween_sbstate st = { l->top, 0, lv_max_top(wnd, l),
+                                lv_visible(wnd), 1 };
+            int pos = sb_click(GET_Y_LPARAM(lp), cr.bottom, &st, &grab);
+            if (grab >= 0) {
+                SetCapture(wnd);
+                wnd->drag_offset = grab;
+            }
+            lv_scroll_to(wnd, l, pos);
+            return 0;
+        }
+        /* a press on the header: it goes down, and the app hears about it on
+         * the release, which is how a column is sorted */
+        if (GET_Y_LPARAM(lp) < WEEN_LV_HEADER_H) {
+            int x = 0;
+            for (int c = 0; c < l->ncol; c++) {
+                if (GET_X_LPARAM(lp) >= x &&
+                    GET_X_LPARAM(lp) < x + l->width[c]) {
+                    l->pressed = c;
+                    SetCapture(wnd);
+                    InvalidateRect(wnd, NULL, FALSE);
+                    break;
+                }
+                x += l->width[c];
+            }
+            return 0;
+        }
+        i = (GET_Y_LPARAM(lp) - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
         if (l && GET_Y_LPARAM(lp) >= WEEN_LV_HEADER_H && i >= 0 && i < l->nrow) {
             l->sel = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
@@ -1903,6 +2109,41 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_MOUSEMOVE:
+        l = list_of(wnd);
+        if (l && GetCapture() == wnd && l->pressed < 0) {
+            RECT cr;
+            ween_sbstate st = { l->top, 0, lv_max_top(wnd, l), lv_visible(wnd),
+                                1 };
+            GetClientRect(wnd, &cr);
+            lv_scroll_to(wnd, l,
+                         sb_drag(GET_Y_LPARAM(lp), cr.bottom, &st,
+                                 wnd->drag_offset));
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        l = list_of(wnd);
+        if (l && GetCapture() == wnd) {
+            ReleaseCapture();
+            if (l->pressed >= 0) {
+                /* the column was clicked: the app sorts and says so by
+                 * refilling the list */
+                NMLISTVIEW nm;
+                int col = l->pressed;
+                l->pressed = -1;
+                InvalidateRect(wnd, NULL, FALSE);
+                memset(&nm, 0, sizeof(nm));
+                nm.hdr.hwndFrom = wnd;
+                nm.hdr.idFrom = (UINT_PTR)wnd->id;
+                nm.hdr.code = LVN_COLUMNCLICK;
+                nm.iItem = -1;
+                nm.iSubItem = col;
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id,
+                                 (LPARAM)&nm);
+            }
+        }
+        return 0;
     case LVM_INSERTCOLUMNA: {
         const LVCOLUMNA *col = (const LVCOLUMNA *)lp;
         int i = (int)wp;
@@ -1962,6 +2203,46 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->sel = (int)wp + 1;
         return TRUE;
     }
+    case LVM_DELETEALLITEMS:
+        /* Every navigation empties the list, so this is not optional. */
+        l = list_of(wnd);
+        if (l) {
+            for (int i = 0; i < l->nrow; i++)
+                for (int c = 0; c < 4; c++) {
+                    free(l->row[i].text[c]);
+                    l->row[i].text[c] = NULL;
+                }
+            l->nrow = 0;
+            l->sel = 0;
+            l->top = 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return TRUE;
+    case LVM_GETITEMCOUNT:
+        l = list_of(wnd);
+        return l ? l->nrow : 0;
+    case LVM_GETNEXTITEM:
+        /* only the one an app actually asks for: the selected row */
+        l = list_of(wnd);
+        if (!l || !(lp & LVNI_SELECTED))
+            return -1;
+        return l->sel ? l->sel - 1 : -1;
+    case LVM_SETCOLUMNWIDTH:
+        l = list_of(wnd);
+        if (!l || (int)wp < 0 || (int)wp >= l->ncol)
+            return FALSE;
+        l->width[(int)wp] = (int)(short)LOWORD(lp);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    case LVM_ENSUREVISIBLE:
+        l = list_of(wnd);
+        if (l && (int)wp >= 0 && (int)wp < l->nrow) {
+            if ((int)wp < l->top)
+                lv_scroll_to(wnd, l, (int)wp);
+            else if ((int)wp >= l->top + lv_visible(wnd))
+                lv_scroll_to(wnd, l, (int)wp - lv_visible(wnd) + 1);
+        }
+        return TRUE;
     case WM_DESTROY:
         if (wnd->ctl) {
             list_ctl_free(wnd->ctl);
