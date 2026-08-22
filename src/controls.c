@@ -1544,6 +1544,28 @@ static void dotted_h(ween_surface *s, int y, int x0, int x1, ween_color c)
 }
 
 /* Draw one level of the tree; returns the row after the last one drawn. */
+/* Where an item's button goes, measured from the tree's own origin. The
+ * picture and the hit test both come through here: worked out twice they
+ * drift apart, and then the box on the screen does not answer the mouse. */
+static int tv_button_col(int depth, int at_root)
+{
+    return (depth + at_root) * WEEN_TV_INDENT - WEEN_TV_INDENT + 4;
+}
+
+static int tree_button_x(const struct ween_wnd *wnd, int depth, int scroll_x)
+{
+    return tv_button_col(depth, (wnd->style & TVS_LINESATROOT) != 0) - scroll_x;
+}
+
+/* and whether it has one at all: a root item is bare unless the style
+ * carries the lines out to it */
+static int tree_has_button(const struct ween_wnd *wnd, const ween_tvitem *it,
+                           int depth)
+{
+    int at_root = (wnd->style & TVS_LINESATROOT) != 0;
+    return (it->child || it->cchildren) && (depth > 0 || at_root);
+}
+
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                      int ox, int oy, int depth, int row, int lines, int at_root,
                      const ween_tvitem *sel, HIMAGELIST images)
@@ -1560,7 +1582,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
          * starts hard against the left edge, which is where the shell's
          * Desktop is. The button goes in the column before the picture. */
         int col = ox + (depth + (at_root ? 1 : 0)) * WEEN_TV_INDENT;
-        int bx = col - WEEN_TV_INDENT + 4;
+        int bx = ox + tv_button_col(depth, at_root ? 1 : 0);
         int cx = bx + WEEN_TV_BUTTON / 2;
         int cy = y + WEEN_TV_ITEM_H / 2;
         int tx = col;
@@ -1862,9 +1884,9 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!hit)
             return 0;
         {   /* the button toggles, anywhere else selects */
-            int bx = 5 + depth * WEEN_TV_INDENT, x = GET_X_LPARAM(lp);
-            if ((hit->child || hit->cchildren) &&
-                (depth > 0 || (wnd->style & TVS_LINESATROOT)) && x >= bx &&
+            int bx = tree_button_x(wnd, depth, t->scroll_x);
+            int x = GET_X_LPARAM(lp);
+            if (tree_has_button(wnd, hit, depth) && x >= bx &&
                 x < bx + WEEN_TV_BUTTON) {
                 tree_expand(wnd, hit, !hit->expanded);
             } else {
