@@ -490,6 +490,9 @@ typedef struct tagNMTREEVIEWA {
     TVITEMA itemOld, itemNew;
     POINT ptDrag;
 } NMTREEVIEWA;
+/* Sent by any common control that a double click landed on. A shell opens
+ * what was double-clicked on this. */
+#define NM_DBLCLK (0U - 3U)
 #define LVN_ITEMCHANGED (0U - 101U)
 #define LVN_COLUMNCLICK (0U - 108U)
 

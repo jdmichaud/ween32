@@ -186,6 +186,14 @@ static int g_split_x = 203; /* the tree pane's width, measured off the shot */
 static int g_dragging;
 static char g_path[1024] = "/";
 
+/* The directory the list is showing, kept rather than re-read: sorting it is
+ * a matter of ordering what is already here, and opening a row means knowing
+ * which entry that row was. */
+static fs_entry *g_entry;
+static int g_entries;
+static int g_sort_col;  /* the column the list is ordered by */
+static int g_sort_down; /* and whether that order is reversed */
+
 /* ---- geometry ------------------------------------------------------------ */
 
 #define PANE_HEAD_H 20  /* the "Folders" bar above the tree */
@@ -257,6 +265,44 @@ static const char *type_of(const fs_entry *e)
     return "File";
 }
 
+/* Case-insensitive, which is how a shell orders names. */
+static int name_cmp(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++) {
+        int ca = *a >= 'A' && *a <= 'Z' ? *a + 32 : *a;
+        int cb = *b >= 'A' && *b <= 'Z' ? *b + 32 : *b;
+        if (ca != cb)
+            return ca < cb ? -1 : 1;
+    }
+    return *a ? 1 : (*b ? -1 : 0);
+}
+
+/* Folders before files whatever the column, which is what the shell does,
+ * and then by the column that was clicked. */
+static int entry_cmp(const void *pa, const void *pb)
+{
+    const fs_entry *a = pa, *b = pb;
+    int r = 0;
+    if (a->is_dir != b->is_dir)
+        return a->is_dir ? -1 : 1;
+    switch (g_sort_col) {
+    case 1: /* size */
+        r = a->size < b->size ? -1 : (a->size > b->size ? 1 : 0);
+        break;
+    case 2: /* type */
+        r = name_cmp(type_of(a), type_of(b));
+        break;
+    case 3: /* modified, which is a string in a form that does not sort */
+        r = name_cmp(a->modified, b->modified);
+        break;
+    default:
+        break;
+    }
+    if (r == 0)
+        r = name_cmp(a->name, b->name);
+    return g_sort_down ? -r : r;
+}
+
 static void set_cell(HWND list, int row, int col, const char *text)
 {
     LVITEMA it;
@@ -267,48 +313,96 @@ static void set_cell(HWND list, int row, int col, const char *text)
     SendMessageA(list, LVM_SETITEMTEXTA, (WPARAM)row, (LPARAM)&it);
 }
 
+/* What the status bar says about the whole directory, which is what it says
+ * whenever nothing in it is picked out. */
+static void status_for_directory(void)
+{
+    unsigned long bytes = 0;
+    char line[256];
+    for (int i = 0; i < g_entries; i++)
+        if (!g_entry[i].is_dir)
+            bytes += g_entry[i].size;
+    snprintf(line, sizeof(line), "%d object(s)", g_entries);
+    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
+    snprintf(line, sizeof(line), "%lu bytes", bytes);
+    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
+}
+
+/* And what it says about one of them. */
+static void status_for_selection(int row)
+{
+    char line[256];
+    if (row < 0 || row >= g_entries) {
+        status_for_directory();
+        return;
+    }
+    snprintf(line, sizeof(line), "Type: %s", type_of(&g_entry[row]));
+    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
+    if (g_entry[row].is_dir)
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)"");
+    else {
+        snprintf(line, sizeof(line), "%lu bytes", g_entry[row].size);
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
+    }
+}
+
+/* Put what was read into the list, in whatever order the columns are in. */
+static void fill_list(void)
+{
+    SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
+    if (g_entries > 1)
+        qsort(g_entry, (size_t)g_entries, sizeof(*g_entry), entry_cmp);
+    for (int row = 0; row < g_entries; row++) {
+        const fs_entry *e = &g_entry[row];
+        LVITEMA it;
+        char size[32];
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT | LVIF_IMAGE;
+        it.iItem = row;
+        it.pszText = (char *)e->name;
+        it.iImage = e->is_dir ? IMG_FOLDER : IMG_FILE;
+        SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        if (e->is_dir) {
+            set_cell(g_list, row, 1, "");
+        } else {
+            snprintf(size, sizeof(size), "%lu KB", (e->size + 1023) / 1024);
+            set_cell(g_list, row, 1, size);
+        }
+        set_cell(g_list, row, 2, type_of(e));
+        set_cell(g_list, row, 3, e->modified);
+    }
+    status_for_directory();
+}
+
 /* Fill the list from a directory, and say in the status bar what is in it. */
 static void show_directory(const char *path)
 {
     fs_dir d;
     fs_entry e;
-    int row = 0;
-    unsigned long bytes = 0;
-    char line[256];
+    int cap = 0;
 
     SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
+    g_entries = 0;
     if (!fs_open(&d, path)) {
         SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM) "Access denied");
+        SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM) "");
         return;
     }
     while (fs_next(&d, &e)) {
-        LVITEMA it;
-        char size[32];
         if (e.name[0] == '.') /* the shell hides these, and so do we */
             continue;
-        memset(&it, 0, sizeof(it));
-        it.mask = LVIF_TEXT | LVIF_IMAGE;
-        it.iItem = row;
-        it.pszText = e.name;
-        it.iImage = e.is_dir ? IMG_FOLDER : IMG_FILE;
-        SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
-        if (e.is_dir) {
-            set_cell(g_list, row, 1, "");
-        } else {
-            snprintf(size, sizeof(size), "%lu KB", (e.size + 1023) / 1024);
-            set_cell(g_list, row, 1, size);
-            bytes += e.size;
+        if (g_entries == cap) {
+            int grown = cap ? cap * 2 : 64;
+            fs_entry *bigger = realloc(g_entry, (size_t)grown * sizeof(*bigger));
+            if (!bigger)
+                break;
+            g_entry = bigger;
+            cap = grown;
         }
-        set_cell(g_list, row, 2, type_of(&e));
-        set_cell(g_list, row, 3, e.modified);
-        row++;
+        g_entry[g_entries++] = e;
     }
     fs_close(&d);
-
-    snprintf(line, sizeof(line), "%d object(s)", row);
-    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)line);
-    snprintf(line, sizeof(line), "%lu bytes", bytes);
-    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)line);
+    fill_list();
     SendMessageA(g_status, SB_SETTEXTA, 2, (LPARAM) "My Computer");
 
     strncpy(g_path, path, sizeof(g_path) - 1);
@@ -810,6 +904,26 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             char path[1024];
             if (sel) {
                 path_of_item(sel, path, sizeof(path));
+                show_directory(path);
+            }
+        } else if (nm->code == LVN_COLUMNCLICK) {
+            /* clicking the column already sorted by turns it round */
+            int col = ((const NMLISTVIEW *)lp)->iSubItem;
+            g_sort_down = col == g_sort_col ? !g_sort_down : 0;
+            g_sort_col = col;
+            fill_list();
+        } else if (nm->code == LVN_ITEMCHANGED) {
+            int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                        LVNI_SELECTED);
+            status_for_selection(sel);
+        } else if (nm->code == NM_DBLCLK) {
+            /* opening a folder is what a double click does in a shell */
+            int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                        LVNI_SELECTED);
+            if (sel >= 0 && sel < g_entries && g_entry[sel].is_dir) {
+                char path[1400];
+                snprintf(path, sizeof(path), "%s%s%s", g_path,
+                         strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
                 show_directory(path);
             }
         } else if (nm->code == TVN_ITEMEXPANDINGA) {

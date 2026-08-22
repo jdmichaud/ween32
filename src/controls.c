@@ -1255,6 +1255,16 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case CB_ADDSTRING:
         return items_add(wnd, (const char *)lp);
+    case CB_RESETCONTENT:
+        /* Emptying it takes the selection with it, so the field goes blank
+         * rather than keeping the item that was there. An app that refills a
+         * combo — an address bar, say — otherwise piles new entries behind
+         * the first one and goes on showing that one for ever. */
+        ween_controls_free(wnd);
+        if (g_dropped == wnd)
+            g_dropped = NULL;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case CB_SETCURSEL:
         it = items_of(wnd);
         if (it)
@@ -2320,6 +2330,26 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_LBUTTONDBLCLK: {
+        /* The first click of the pair already selected the row; this says
+         * the app should act on it, which for a shell means opening it. */
+        ween_lv_layout g;
+        int my = GET_Y_LPARAM(lp), i;
+        l = list_of(wnd);
+        if (!l)
+            return 0;
+        g = lv_layout(wnd, l);
+        if ((g.vbar && GET_X_LPARAM(lp) >= g.view_w) ||
+            (g.hbar && my >= g.view_h) || my < WEEN_LV_HEADER_H)
+            return 0; /* the bars and the header are not items */
+        i = (my - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
+        if (i >= 0 && i < l->nrow) {
+            l->sel = i + 1;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, NM_DBLCLK);
+        }
+        return 0;
+    }
     case WM_SETCURSOR:
         /* a resize arrow over a divider, an ordinary one everywhere else */
         l = list_of(wnd);
@@ -2975,9 +3005,13 @@ void ween_register_controls(void)
     wc.lpfnWndProc = treeview_proc;
     wc.lpszClassName = WC_TREEVIEWA;
     RegisterClassA(&wc);
+    /* A list view acts on a double click — it is how a shell opens what you
+     * are pointing at — so it asks for one. */
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = listview_proc;
     wc.lpszClassName = WC_LISTVIEWA;
     RegisterClassA(&wc);
+    wc.style = 0;
     wc.lpfnWndProc = trackbar_proc;
     wc.lpszClassName = TRACKBAR_CLASSA;
     RegisterClassA(&wc);
@@ -3137,8 +3171,16 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_SUNKEN,
                               BF_RECT, NULL);
         } else if (tb->hot == i && enabled) {
-            ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_RAISED,
+            /* A drop-down button comes up as two: the body and the arrow half
+             * each get their own raised edge, meeting in the middle. Drawn as
+             * one rect instead, the border runs down through the arrow. */
+            int aw = (b->style & TBSTYLE_DROPDOWN) ? ween_ncm(WEEN_TB_DROP_W)
+                                                   : 0;
+            ween_classic_edge(&top->surface, bx, by, b->w - aw, h, EDGE_RAISED,
                               BF_RECT, NULL);
+            if (aw)
+                ween_classic_edge(&top->surface, bx + b->w - aw, by, aw, h,
+                                  EDGE_RAISED, BF_RECT, NULL);
         }
 
         int shift = held ? 1 : 0;
