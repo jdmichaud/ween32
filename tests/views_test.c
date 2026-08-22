@@ -352,6 +352,51 @@ int main(void)
 
     DestroyWindow(w);
 
+    /* A name too long for its column is cut short with an ellipsis, not run
+     * on over the column beside it. A list view of files is full of names
+     * longer than the Name column, and every one of them used to write
+     * straight through the size and the type. Its own window, so nothing
+     * else is drawing in the pixels being counted. */
+    {
+        HWND lw = CreateWindowExA(0, "weenviews", "narrow",
+                                  WS_POPUP | WS_VISIBLE, 0, 0, 300, 120, NULL,
+                                  NULL, NULL, NULL);
+        HWND narrow = CreateWindowExA(0, WC_LISTVIEWA, "",
+                                      WS_CHILD | WS_VISIBLE, 0, 0, 280, 100, lw,
+                                      (HMENU)(UINT_PTR)7, NULL, NULL);
+        LVCOLUMNA col;
+        LVITEMA it;
+        const ween_surface *s;
+        int beyond = 0, within = 0;
+
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.pszText = (char *)"Name";
+        col.cx = 60;
+        SendMessageA(narrow, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT;
+        it.pszText = (char *)"a name far longer than sixty pixels of Tahoma";
+        SendMessageA(narrow, LVM_INSERTITEMA, 0, (LPARAM)&it);
+
+        InvalidateRect(lw, NULL, TRUE);
+        ween_flush_paint();
+        s = &lw->surface; /* this window's own, not whichever presented last */
+        /* The row sits under the header — seventeen pixels of it — and is
+         * fourteen tall. The column ends sixty pixels in. */
+        for (int y = 19; s && y < 31; y++)
+            for (int x = 0; x < s->w; x++)
+                if ((s->px[(size_t)y * s->w + x] & 0xffffff) == WEEN_BLACK) {
+                    if (x >= 60)
+                        beyond++;
+                    else
+                        within++;
+                }
+        CHECK(within > 0, "a long name is drawn");
+        CHECK(beyond == 0, "and stops at its column rather than running on");
+        DestroyWindow(lw);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

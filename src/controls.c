@@ -1900,6 +1900,7 @@ typedef struct {
     int sizing;   /* the divider being dragged, -1 for none */
     int size_x0;  /* where the drag started, and the width it started at */
     int size_w0;
+    int scroll_x; /* how far the columns are scrolled left, in pixels */
 } ween_list;
 
 /* How near a header divider counts as being on it. Windows uses about this,
@@ -1936,12 +1937,46 @@ static void list_ctl_free(void *p)
 }
 
 /* How many rows fit under the header, and how far down the list can go. */
+/* How wide the columns come to, which is what there is to scroll sideways. */
+static int lv_content_w(const ween_list *l)
+{
+    int w = 0;
+    for (int c = 0; l && c < l->ncol; c++)
+        w += l->width[c];
+    return w;
+}
+
+/* Which bars the view needs and what is left for the rows once they are
+ * taken. Each bar takes a strip off the view, and taking one can bring the
+ * other on — a list that just fits until its own scroll bar appears. */
+typedef struct {
+    int hbar, vbar;     /* whether each is shown */
+    int view_w, view_h; /* what is left for the header and rows */
+    int visible;        /* rows that fit in view_h */
+} ween_lv_layout;
+
+static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
+{
+    ween_lv_layout g;
+    RECT cr;
+    int sb = ween_scroll_metric(), content = lv_content_w(l);
+    int rows_h = (l ? l->nrow : 0) * WEEN_LV_ITEM_H + WEEN_LV_HEADER_H;
+
+    GetClientRect(wnd, &cr);
+    g.hbar = content > cr.right;
+    g.vbar = rows_h > cr.bottom - (g.hbar ? sb : 0);
+    g.hbar = content > cr.right - (g.vbar ? sb : 0);
+    g.view_w = cr.right - (g.vbar ? sb : 0);
+    g.view_h = cr.bottom - (g.hbar ? sb : 0);
+    g.visible = (g.view_h - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
+    if (g.visible < 1)
+        g.visible = 1;
+    return g;
+}
+
 static int lv_visible(HWND wnd)
 {
-    RECT cr;
-    GetClientRect(wnd, &cr);
-    int rows = (cr.bottom - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H;
-    return rows > 0 ? rows : 1;
+    return lv_layout(wnd, list_of(wnd)).visible;
 }
 
 static int lv_max_top(HWND wnd, const ween_list *l)
@@ -1994,46 +2029,87 @@ static int lv_divider_at(const ween_list *l, int x, int y)
     return -1;
 }
 
+/* As much of `text` as fits in `avail` pixels, with an ellipsis on the end
+ * when it had to be cut — win32's DT_END_ELLIPSIS, which is what a list view
+ * does to a name too long for its column. Without it a long name simply runs
+ * on and writes over whatever the next column had to say. */
+static const char *fit_text(const ween_strike *f, const char *text, int avail,
+                            char *buf, size_t bufsz, int *len)
+{
+    int n = (int)strlen(text), dots;
+    *len = n;
+    if (!f || avail <= 0 || ween_strike_text_width(f, text, n) <= avail)
+        return text;
+    dots = ween_strike_text_width(f, "...", 3);
+    while (n > 0 && ween_strike_text_width(f, text, n) + dots > avail)
+        n--;
+    if (n > (int)bufsz - 4)
+        n = (int)bufsz - 4;
+    if (n < 0)
+        n = 0;
+    memcpy(buf, text, (size_t)n);
+    memcpy(buf + n, "...", 4);
+    *len = n + 3;
+    return buf;
+}
+
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_list *l = list_of(wnd);
     struct ween_wnd *top = ween_top_level(wnd);
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-    RECT r = ps->rcPaint;
-    int ox, oy, th = f ? f->ascent - f->descent : 13, x;
+    RECT r = ps->rcPaint, clip;
+    int ox, oy, th = f ? f->ascent - f->descent : 13, x, sx;
+    int icon_w = 0, icon_h = 0;
+    ween_lv_layout g;
+    char buf[260];
 
     ween_client_origin(wnd, &ox, &oy);
     FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
     if (!l)
         return;
 
-    x = 0;
-    for (int c = 0; c < l->ncol; c++) {
-        int down = c == l->pressed;
-        ween_classic_edge(&top->surface, ox + x, oy, l->width[c],
-                          WEEN_LV_HEADER_H, down ? EDGE_SUNKEN : EDGE_RAISED,
-                          BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
-        if (f && l->col[c])
-            ween_strike_draw(f, &top->surface, ox + x + 8 + (down ? 1 : 0),
-                             oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
-                             l->col[c], (int)strlen(l->col[c]), WEEN_BLACK);
-        x += l->width[c];
-    }
-
-    int icon_w = 0, icon_h = 0;
+    g = lv_layout(wnd, l);
+    if (!g.hbar)
+        l->scroll_x = 0;
+    else if (l->scroll_x > lv_content_w(l) - g.view_w)
+        l->scroll_x = lv_content_w(l) - g.view_w;
+    if (l->scroll_x < 0)
+        l->scroll_x = 0;
+    sx = l->scroll_x;
     if (l->images)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
 
-    int visible = lv_visible(wnd);
-    if (l->nrow > visible) { /* a file list nearly always has more than fits */
-        RECT cr;
-        int sb = ween_scroll_metric();
-        GetClientRect(wnd, &cr);
-        ween_sbstate st = lv_sbstate(wnd, l);
-        ween_draw_scrollbar(&top->surface, ox + cr.right - sb, oy, sb,
-                            cr.bottom, 1, 1, st.pos, st.page, st.min, st.max);
+    /* Everything that scrolls is drawn through a clip the width and height of
+     * what is left once the bars have taken their strips, so a wide column or
+     * a long name stops at the edge instead of running over them. */
+    ween_surface_get_clip(&top->surface, &clip);
+    ween_surface_clip(&top->surface, clip.left, clip.top,
+                      (ox + g.view_w < clip.right ? ox + g.view_w : clip.right) -
+                          clip.left,
+                      (oy + g.view_h < clip.bottom ? oy + g.view_h
+                                                   : clip.bottom) -
+                          clip.top);
+
+    x = 0;
+    for (int c = 0; c < l->ncol; c++) {
+        int down = c == l->pressed;
+        int cx = ox + x - sx;
+        ween_classic_edge(&top->surface, cx, oy, l->width[c], WEEN_LV_HEADER_H,
+                          down ? EDGE_SUNKEN : EDGE_RAISED,
+                          BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+        if (f && l->col[c]) {
+            int len;
+            const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
+                                     sizeof(buf), &len);
+            ween_strike_draw(f, &top->surface, cx + 8 + (down ? 1 : 0),
+                             oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
+                             t, len, WEEN_BLACK);
+        }
+        x += l->width[c];
     }
-    for (int i = l->top; i < l->nrow && i < l->top + visible; i++) {
+
+    for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
         int y = oy + WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
@@ -2043,25 +2119,48 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * the focus rectangle drawn over it */
             int tw = ween_strike_text_extent(f, l->row[i].text[0],
                                              (int)strlen(l->row[i].text[0]));
-            ween_surface_fill(&top->surface, ox + 2 + indent, y, tw + 10,
+            if (tw > l->width[0] - indent - 12)
+                tw = l->width[0] - indent - 12;
+            ween_surface_fill(&top->surface, ox - sx + 2 + indent, y, tw + 10,
                               WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
-            ween_surface_focus_rect(&top->surface, ox + 2 + indent, y, tw + 10,
-                                    WEEN_LV_ITEM_H);
+            ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
+                                    tw + 10, WEEN_LV_ITEM_H);
         }
         if (indent)
             ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
-                                ox + 2, y + (WEEN_LV_ITEM_H - icon_h) / 2);
+                                ox - sx + 2, y + (WEEN_LV_ITEM_H - icon_h) / 2);
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
-            if (f && l->row[i].text[c])
-                ween_strike_draw(f, &top->surface,
-                                 ox + x + (c ? 5 : 7) + (c ? 0 : indent), y + 1,
-                                 l->row[i].text[c],
-                                 (int)strlen(l->row[i].text[c]),
-                                 selected && !c ? WEEN_WHITE : WEEN_BLACK);
+            int lead = (c ? 5 : 7) + (c ? 0 : indent);
+            if (f && l->row[i].text[c]) {
+                int len;
+                const char *t = fit_text(f, l->row[i].text[c],
+                                         l->width[c] - lead - 3, buf,
+                                         sizeof(buf), &len);
+                ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 1, t,
+                                 len, selected && !c ? WEEN_WHITE : WEEN_BLACK);
+            }
             x += l->width[c];
         }
     }
+
+    ween_surface_clip(&top->surface, clip.left, clip.top,
+                      clip.right - clip.left, clip.bottom - clip.top);
+
+    if (g.vbar) {
+        ween_sbstate st = lv_sbstate(wnd, l);
+        ween_draw_scrollbar(&top->surface, ox + g.view_w, oy,
+                            ween_scroll_metric(), g.view_h, 1, 1, st.pos,
+                            st.page, st.min, st.max);
+    }
+    if (g.hbar)
+        ween_draw_scrollbar(&top->surface, ox, oy + g.view_h, g.view_w,
+                            ween_scroll_metric(), 0, 1, l->scroll_x, g.view_w,
+                            0, lv_content_w(l) - 1);
+    if (g.hbar && g.vbar) /* the dead square where they meet */
+        ween_surface_fill(&top->surface, ox + g.view_w, oy + g.view_h,
+                          ween_scroll_metric(), ween_scroll_metric(),
+                          WEEN_FACE);
 }
 
 static char *dup_str(const char *src)
@@ -2148,33 +2247,51 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
 
     case WM_LBUTTONDOWN: {
-        int i;
-        RECT cr;
+        int i, mx = GET_X_LPARAM(lp), my = GET_Y_LPARAM(lp);
+        ween_lv_layout g;
         l = list_of(wnd);
         SetFocus(wnd);
-        GetClientRect(wnd, &cr);
         if (!l)
             return 0;
-        /* the scroll bar down the right, when there is one */
-        if (l->nrow > lv_visible(wnd) &&
-            GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
+        g = lv_layout(wnd, l);
+        /* the bar down the right, when there is one */
+        if (g.vbar && mx >= g.view_w) {
             int grab;
             ween_sbstate st = lv_sbstate(wnd, l);
-            int pos = sb_click(GET_Y_LPARAM(lp), cr.bottom, &st, &grab);
+            int pos = sb_click(my, g.view_h, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
                 wnd->drag_offset = grab;
+                wnd->drag_vertical = 1;
             }
             lv_scroll_to(wnd, l, pos);
             return 0;
         }
+        /* and the one along the bottom, which scrolls the columns */
+        if (g.hbar && my >= g.view_h) {
+            int grab;
+            ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1, g.view_w,
+                                WEEN_LV_ITEM_H };
+            int pos = sb_click(mx, g.view_w, &st, &grab);
+            if (grab >= 0) {
+                SetCapture(wnd);
+                wnd->drag_offset = grab;
+                wnd->drag_vertical = 0;
+            }
+            l->scroll_x = sb_clamp(pos, &st);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
+        /* everything below scrolls with the columns, so it is asked about in
+         * the coordinates the columns are laid out in */
+        mx += l->scroll_x;
         /* a press on a header divider drags the column's width instead of
          * pressing the column, which is what a divider is for */
-        if (GET_Y_LPARAM(lp) < WEEN_LV_HEADER_H) {
-            int d = lv_divider_at(l, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        if (my < WEEN_LV_HEADER_H) {
+            int d = lv_divider_at(l, mx, my);
             if (d >= 0) {
                 l->sizing = d;
-                l->size_x0 = GET_X_LPARAM(lp);
+                l->size_x0 = mx;
                 l->size_w0 = l->width[d];
                 SetCapture(wnd);
                 return 0;
@@ -2182,11 +2299,10 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         /* a press on the header: it goes down, and the app hears about it on
          * the release, which is how a column is sorted */
-        if (GET_Y_LPARAM(lp) < WEEN_LV_HEADER_H) {
+        if (my < WEEN_LV_HEADER_H) {
             int x = 0;
             for (int c = 0; c < l->ncol; c++) {
-                if (GET_X_LPARAM(lp) >= x &&
-                    GET_X_LPARAM(lp) < x + l->width[c]) {
+                if (mx >= x && mx < x + l->width[c]) {
                     l->pressed = c;
                     SetCapture(wnd);
                     InvalidateRect(wnd, NULL, FALSE);
@@ -2196,8 +2312,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
-        i = (GET_Y_LPARAM(lp) - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
-        if (l && GET_Y_LPARAM(lp) >= WEEN_LV_HEADER_H && i >= 0 && i < l->nrow) {
+        i = (my - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
+        if (my >= WEEN_LV_HEADER_H && i >= 0 && i < l->nrow) {
             l->sel = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
@@ -2216,7 +2332,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_MOUSEMOVE:
         l = list_of(wnd);
         if (l && l->sizing >= 0 && GetCapture() == wnd) {
-            int w = l->size_w0 + GET_X_LPARAM(lp) - l->size_x0;
+            int w = l->size_w0 + GET_X_LPARAM(lp) + l->scroll_x - l->size_x0;
             if (w < WEEN_LV_DIVIDER * 2) /* never smaller than its divider */
                 w = WEEN_LV_DIVIDER * 2;
             if (w != l->width[l->sizing]) {
@@ -2226,12 +2342,22 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (l && GetCapture() == wnd && l->pressed < 0) {
-            RECT cr;
-            ween_sbstate st = lv_sbstate(wnd, l);
-            GetClientRect(wnd, &cr);
-            lv_scroll_to(wnd, l,
-                         sb_drag(GET_Y_LPARAM(lp), cr.bottom, &st,
-                                 wnd->drag_offset));
+            ween_lv_layout g = lv_layout(wnd, l);
+            if (wnd->drag_vertical) {
+                ween_sbstate st = lv_sbstate(wnd, l);
+                lv_scroll_to(wnd, l, sb_drag(GET_Y_LPARAM(lp), g.view_h, &st,
+                                             wnd->drag_offset));
+            } else if (g.hbar) {
+                ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1,
+                                    g.view_w, WEEN_LV_ITEM_H };
+                int pos = sb_drag(GET_X_LPARAM(lp), g.view_w, &st,
+                                  wnd->drag_offset);
+                pos = sb_clamp(pos, &st);
+                if (pos != l->scroll_x) {
+                    l->scroll_x = pos;
+                    InvalidateRect(wnd, NULL, FALSE);
+                }
+            }
         }
         return 0;
     case WM_LBUTTONUP:
