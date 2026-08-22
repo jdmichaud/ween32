@@ -1423,7 +1423,9 @@ static void build_context_menus(void)
 #define MENUBAR_BRAND 38 /* the box at the right the shell animates in */
 
 static HMENU g_menu;
+#ifdef _WIN32
 static int g_menu_open = -1; /* the item whose drop-down is showing */
+#endif
 
 /* An item's label without the marker that says which letter is its
  * mnemonic: it is not drawn, so it is not measured either. */
@@ -1458,6 +1460,25 @@ static void menubar_measure(HDC dc)
         g_mb_w[i] = sz.cx + MENUBAR_PAD;
         x += g_mb_w[i];
     }
+#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
+    /* Hand the layout over: ween32 tracks the bar from here on — a press
+     * opens a drop-down, the pointer switches between them, the arrows walk
+     * them and Alt arms the lot. On win32 a menu band is a toolbar in a
+     * rebar and comctl32 does all that; the code below this is what an
+     * application would write there. */
+    {
+        RECT items[16];
+        RECT cr;
+        GetClientRect(g_menubar, &cr);
+        for (int i = 0; i < g_mb_n && i < 16; i++) {
+            items[i].left = g_mb_x[i];
+            items[i].right = g_mb_x[i] + g_mb_w[i];
+            items[i].top = 0;
+            items[i].bottom = cr.bottom;
+        }
+        ween_menu_band_set(g_main, g_menubar, items, g_mb_n);
+    }
+#endif
 }
 
 static int menubar_hit(int x)
@@ -1481,7 +1502,11 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         for (int i = 0; i < g_mb_n; i++) {
             char label[64];
             RECT r;
+#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
+            int open = i == ween_menu_band_hot(w);
+#else
             int open = i == g_menu_open;
+#endif
             menubar_label(i, label, sizeof(label));
             /* The label's pen goes half the padding in, rather than being
              * centred in the item: centring would depend on the measure
@@ -1512,21 +1537,31 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_LBUTTONDOWN: {
         int i = menubar_hit(GET_X_LPARAM(lp));
-        RECT cr;
-        POINT pt;
         if (i < 0)
             return 0;
-        GetClientRect(w, &cr);
-        g_menu_open = i;
-        InvalidateRect(w, NULL, FALSE);
-        UpdateWindow(w);
-        pt.x = g_mb_x[i];
-        pt.y = cr.bottom;
-        ClientToScreen(w, &pt);
-        TrackPopupMenu(GetSubMenu(g_menu, i), TPM_LEFTALIGN, pt.x, pt.y, 0,
-                       g_main, NULL);
-        g_menu_open = -1;
-        InvalidateRect(w, NULL, FALSE);
+#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
+        {
+            UINT cmd = ween_menu_band_track(w, i, 0);
+            if (cmd)
+                SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+        }
+#else
+        {
+            RECT cr;
+            POINT pt;
+            GetClientRect(w, &cr);
+            g_menu_open = i;
+            InvalidateRect(w, NULL, FALSE);
+            UpdateWindow(w);
+            pt.x = g_mb_x[i];
+            pt.y = cr.bottom;
+            ClientToScreen(w, &pt);
+            TrackPopupMenu(GetSubMenu(g_menu, i), TPM_LEFTALIGN, pt.x, pt.y, 0,
+                           g_main, NULL);
+            g_menu_open = -1;
+            InvalidateRect(w, NULL, FALSE);
+        }
+#endif
         return 0;
     }
     }
@@ -1713,7 +1748,14 @@ static void build_menu(HWND w)
      * goes in the first band of the same rebar as the toolbar, which is why
      * the screenshot has a gripper to the left of File. See menubar_proc. */
     g_menu = bar;
+#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
+    /* The frame is told about the menu even though it does not draw it: that
+     * is what lets Alt reach it. ween_menu_band_set, in menubar_measure,
+     * says where it really is, and the frame keeps none of its height. */
+    SetMenu(w, bar);
+#else
     (void)w;
+#endif
 }
 #endif
 
@@ -2030,9 +2072,17 @@ static void build_bands(HWND w)
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
 #endif
 
+    /* registered before anything is laid out, so the frame never keeps a
+     * strip for a bar it is not going to draw */
     g_menubar = CreateWindowA("explorermenu", "", WS_CHILD | WS_VISIBLE, 0, 0,
                               100, 22, g_rebar, (HMENU)(UINT_PTR)ID_MENUBAR,
                               NULL, NULL);
+#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
+    {
+        RECT none = { 0, 0, 0, 0 };
+        ween_menu_band_set(g_main, g_menubar, &none, 0);
+    }
+#endif
     g_brand = CreateWindowA("explorerbrand", "", WS_CHILD | WS_VISIBLE, 0, 2,
                             BRAND_W, BRAND_H, g_rebar,
                             (HMENU)(UINT_PTR)ID_BRAND, NULL, NULL);

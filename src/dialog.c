@@ -285,6 +285,18 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
         if (ween_menu_key(top, (unsigned)msg->wParam, 0))
             return TRUE;
     }
+    /* With the bar armed — Alt pressed and waiting — a letter on its own
+     * opens the drop-down it marks, and Escape puts the underlines away. */
+    if (!alt && ween_menu_armed()) {
+        unsigned ch2 = (unsigned)(msg->lParam >> 16) & 0xff;
+        unsigned key2 = ch2 ? ch2 : (unsigned)msg->wParam;
+        if (msg->wParam == VK_ESCAPE) {
+            ween_menu_disarm();
+            return TRUE;
+        }
+        if (ween_menu_key(top, 0, key2))
+            return TRUE;
+    }
     if (alt) {
         unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
         unsigned key = ch ? ch : (unsigned)msg->wParam;

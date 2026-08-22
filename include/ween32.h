@@ -1068,6 +1068,18 @@ BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
                     HWND owner, const RECT *unused);
 
+/* ---- a menu bar the application draws itself ----------------------------
+ *
+ * Not win32: there a menu band is a toolbar in a rebar and comctl32 does
+ * this. ween32 offers it directly — the application says where the band is
+ * and where its items are, draws them itself, and ween32 tracks them: a
+ * press opens a drop-down, the pointer switches between them while one is
+ * open, the arrows walk them, Alt arms the bar and a letter opens one.
+ */
+void ween_menu_band_set(HWND top, HWND band, const RECT *items, int count);
+int ween_menu_band_hot(HWND band);
+UINT ween_menu_band_track(HWND band, int index, int from_keyboard);
+
 /* ---- system metrics ----------------------------------------------------- */
 #define SM_CXSCREEN 0
 #define SM_CYSCREEN 1

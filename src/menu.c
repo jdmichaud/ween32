@@ -663,6 +663,7 @@ typedef struct {
     int has_replay;
     HWND owner;    /* who hears WM_COMMAND */
     HWND bar_wnd;  /* the window whose bar is open, NULL for TrackPopupMenu */
+    HWND band;     /* and the window it is drawn in, when not the frame */
     HMENU bar;
     int bar_index;
     menu_level level[WEEN_MENU_MAX_DEPTH];
@@ -760,12 +761,67 @@ static void level_step(menu_session *s, int depth, int step)
  * anywhere else on the owner puts the menu away, and treating the whole window
  * as "the bar" swallowed those presses instead — so the menu never closed and
  * nothing on the window, the close box included, could be reached again. */
+/* A menu bar the application draws itself, in a window of its own — the
+ * shell keeps its in a rebar band. It tells ween32 where the band is and
+ * where the items are, and ween32 does the rest: pressing one opens its
+ * drop-down, the pointer switches between them, the arrows walk them, and
+ * Alt arms the lot. One band per process, which is what a shell has. */
+static HWND g_band, g_band_top;
+static RECT g_band_item[16];
+static int g_band_count, g_band_hot = -1;
+
+void ween_menu_band_set(HWND top, HWND band, const RECT *items, int count)
+{
+    g_band_top = top;
+    g_band = band;
+    g_band_count = count < 16 ? count : 16;
+    for (int i = 0; i < g_band_count; i++)
+        g_band_item[i] = items[i];
+}
+
+HWND ween_menu_band_of(HWND top)
+{
+    return (top && top == g_band_top) ? g_band : NULL;
+}
+
+int ween_menu_band_hot(HWND band)
+{
+    return (band && band == g_band) ? g_band_hot : -1;
+}
+
+static void band_set_hot(int index)
+{
+    if (g_band_hot == index)
+        return;
+    g_band_hot = index;
+    if (g_band) {
+        g_band->dirty = 1;
+        InvalidateRect(g_band, NULL, FALSE);
+    }
+}
+
+/* The item under a point in the band's own coordinates, or -1. */
+static int band_hit_point(int x, int y)
+{
+    for (int i = 0; i < g_band_count; i++)
+        if (x >= g_band_item[i].left && x < g_band_item[i].right &&
+            y >= g_band_item[i].top && y < g_band_item[i].bottom)
+            return i;
+    return -1;
+}
+
 static int bar_hit(const menu_session *s, const ween_event *ev, int *index)
 {
     int frame, bar_y, bar_h;
     *index = -1;
     if (!s->bar_wnd || ev->win != s->bar_wnd->backend_win)
         return 0;
+    if (s->band) { /* the items are the application's, in its own window */
+        int ox, oy;
+        ween_client_origin(s->band, &ox, &oy);
+        *index = band_hit_point(ev->x - ox, ev->y - oy);
+        return *index >= 0;
+    }
     frame = ween_frame_width(s->bar_wnd);
     bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
     bar_h = ween_ncm(WEEN_NC_MENU);
@@ -802,6 +858,16 @@ static void bar_open(menu_session *s, int index)
         return;
     level_close_to(s, 0);
     s->bar_index = index;
+    if (s->band) {
+        /* under the item, in the window the application drew it in */
+        int bx, by, wx, wy;
+        band_set_hot(index);
+        ween_client_origin(s->band, &bx, &by);
+        ween_window_origin(s->bar_wnd, &wx, &wy);
+        level_open(s, it->popup, wx + bx + g_band_item[index].left,
+                   wy + by + g_band_item[index].bottom);
+        return;
+    }
     s->bar_wnd->menu_hot = index;
     s->bar_wnd->dirty = 1;
     frame = ween_frame_width(s->bar_wnd);
@@ -888,14 +954,13 @@ static void session_run(menu_session *s)
             else if (on_bar && bar_index >= 0)
                 bar_open(s, bar_index);
             else {
-                s->done = 1; /* anywhere else puts the whole menu away */
-                /* and the right button is handed back rather than swallowed:
-                 * on a file it picks that file and opens its menu, which is
-                 * what a right click on a second file does on the machine */
-                if (ev.button == 3) {
-                    s->replay = ev;
-                    s->has_replay = 1;
-                }
+                /* Anywhere else puts the whole menu away, and the press is
+                 * handed back rather than swallowed: on the machine a click
+                 * on a toolbar button with a menu open both closes the menu
+                 * and presses the button. */
+                s->done = 1;
+                s->replay = ev;
+                s->has_replay = 1;
             }
             break;
 
@@ -979,6 +1044,8 @@ static void session_run(menu_session *s)
     }
 
     level_close_to(s, 0);
+    if (s->band)
+        band_set_hot(-1);
     if (s->bar_wnd) {
         s->bar_wnd->menu_hot = -1;
         s->bar_wnd->dirty = 1;
@@ -1000,6 +1067,32 @@ UINT ween_menu_track(HMENU menu, HWND owner, int screen_x, int screen_y)
     s.bar_index = -1;
     if (!level_open(&s, menu, screen_x, screen_y))
         return 0;
+    session_run(&s);
+    return s.chosen;
+}
+
+/* The same session for a bar the application has drawn in a window of its
+ * own: everything below works off the item rectangles it gave us. */
+UINT ween_menu_band_track(HWND band, int index, int from_keyboard)
+{
+    menu_session s;
+    if (!band || band != g_band || !g_band_top || !g_band_top->menu ||
+        !ween_active_backend)
+        return 0;
+    ensure_menu_class();
+    memset(&s, 0, sizeof(s));
+    s.owner = g_band_top;
+    s.bar_wnd = g_band_top;
+    s.band = band;
+    s.bar = g_band_top->menu;
+    s.bar_index = -1;
+    SendMessageA(g_band_top, WM_INITMENU, (WPARAM)g_band_top->menu, 0);
+    ween_menu_layout_bar(g_band_top->menu, ween_gui_font(), 0);
+    bar_open(&s, index);
+    if (!s.depth)
+        return 0;
+    if (from_keyboard)
+        level_step(&s, 0, 1);
     session_run(&s);
     return s.chosen;
 }

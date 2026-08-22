@@ -260,6 +260,10 @@ int ween_frame_width(const struct ween_wnd *w)
 /* The strip the menu bar occupies, 0 when the window has no menu. */
 int ween_menu_bar_height(const struct ween_wnd *w)
 {
+    /* A window whose bar is drawn in a band of its own keeps none of the
+     * frame for it: the shell's menu is inside the rebar, not above it. */
+    if (w && ween_menu_band_of((HWND)w))
+        return 0;
     return w->menu ? ween_ncm(WEEN_NC_MENU) : 0;
 }
 
@@ -1631,11 +1635,28 @@ int ween_ui_focus_cues = 1;
 
 /* Alt, or Alt+letter, opens the bar from the keyboard. Returns whether the
  * key was one the menu wanted. */
+/* Alt on its own arms the bar rather than opening it: the underlines come
+ * out and the bar waits for a letter, which is what Windows does. */
+static int g_menu_armed;
+
+int ween_menu_armed(void)
+{
+    return g_menu_armed;
+}
+
+void ween_menu_disarm(void)
+{
+    g_menu_armed = 0;
+}
+
 int ween_menu_key(HWND top, unsigned vk, unsigned ch)
 {
     int index = 0;
+    UINT cmd;
+    HWND band;
     if (!top || !top->menu)
         return 0;
+    band = ween_menu_band_of(top);
     ween_menu_layout_bar(top->menu, ween_gui_font(),
                          top->w - 2 * ween_frame_width(top));
     if (ch) {
@@ -1649,7 +1670,16 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
      * the focus rectangles with them */
     ween_menu_cues = 1;
     ween_ui_focus_cues = 1;
-    UINT cmd = ween_menu_track_bar(top, index, 1);
+    if (!ch) { /* Alt alone: arm it and wait, opening nothing */
+        g_menu_armed = !g_menu_armed;
+        if (band)
+            InvalidateRect(band, NULL, FALSE);
+        top->dirty = 1;
+        return 1;
+    }
+    g_menu_armed = 0;
+    cmd = band ? ween_menu_band_track(band, index, 1)
+               : ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
     return 1;
@@ -1968,7 +1998,8 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (b)
                 return HTBOTTOM;
         }
-        if (wnd->menu && y >= frame + ween_ncm(WEEN_NC_CAPTION) &&
+        if (wnd->menu && !ween_menu_band_of(wnd) &&
+            y >= frame + ween_ncm(WEEN_NC_CAPTION) &&
             y < frame + ween_ncm(WEEN_NC_CAPTION) + ween_ncm(WEEN_NC_MENU) &&
             x >= frame && x < wnd->w - frame)
             return HTMENU;
@@ -2068,7 +2099,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                                                   : 0));
             }
         }
-        if (wnd->menu) { /* the bar sits between the caption and the client */
+        if (wnd->menu && !ween_menu_band_of(wnd)) { /* between caption and client */
             const ween_strike *mf = ween_gui_font();
             int bar_w = wnd->w - 2 * frame;
             ween_menu_layout_bar(wnd->menu, mf, bar_w);

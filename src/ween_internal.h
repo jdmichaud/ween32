@@ -471,6 +471,11 @@ void ween_mark_exposed(const ween_event *ev);
  * was not its own. It is dispatched by the message loop, not on the spot. */
 void ween_replay_event(const ween_event *ev);
 
+/* Alt has been pressed and the bar is waiting for a letter. */
+int ween_menu_armed(void);
+void ween_menu_disarm(void);
+HWND ween_menu_band_of(HWND top);
+
 extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
 const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */
 const ween_backend *ween_backend_headless(void);
