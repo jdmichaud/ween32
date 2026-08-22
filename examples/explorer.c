@@ -77,7 +77,11 @@ enum {
 enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
        IMG_BACK, IMG_FORWARD, IMG_UP, IMG_SEARCH, IMG_FOLDERS, IMG_HISTORY,
        IMG_MOVETO, IMG_COPYTO, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_GO,
-       IMG_COUNT };
+       /* the shell's own, for the fixture: a file browser has no use for
+        * them, but the machine's tree is full of them */
+       IMG_SHELL_DESKTOP, IMG_SHELL_MYDOCS, IMG_SHELL_COMPUTER,
+       IMG_SHELL_DISK, IMG_SHELL_CPANEL, IMG_SHELL_NETWORK, IMG_SHELL_BIN,
+       IMG_SHELL_IE, IMG_COUNT };
 
 /* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
  * They were never icons — one bitmap strip held the lot — so there is nothing
@@ -748,17 +752,17 @@ static const struct {
     int image;
     int children; /* 0 none, 1 a box that opens it, 2 already open */
 } g_fix_tree[] = {
-    { 0, "Desktop", IMG_COMPUTER, 2 },
-    { 1, "My Documents", IMG_FOLDER, 1 },
-    { 1, "My Computer", IMG_COMPUTER, 2 },
-    { 2, "Local Disk (C:)", IMG_DRIVE, 2 },
+    { 0, "Desktop", IMG_SHELL_DESKTOP, 2 },
+    { 1, "My Documents", IMG_SHELL_MYDOCS, 1 },
+    { 1, "My Computer", IMG_SHELL_COMPUTER, 2 },
+    { 2, "Local Disk (C:)", IMG_SHELL_DISK, 2 },
     { 3, "Documents and Settings", IMG_FOLDER, 1 },
     { 3, "Program Files", IMG_FOLDER, 1 },
     { 3, "WINNT", IMG_FOLDER, 1 },
-    { 2, "Control Panel", IMG_FOLDER, 1 },
-    { 1, "My Network Places", IMG_FOLDER, 1 },
-    { 1, "Recycle Bin", IMG_FOLDER, 0 },
-    { 1, "Internet Explorer", IMG_FOLDER, 0 },
+    { 2, "Control Panel", IMG_SHELL_CPANEL, 1 },
+    { 1, "My Network Places", IMG_SHELL_NETWORK, 1 },
+    { 1, "Recycle Bin", IMG_SHELL_BIN, 0 },
+    { 1, "Internet Explorer", IMG_SHELL_IE, 0 },
 };
 
 static const struct {
@@ -1653,6 +1657,28 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
     }
     for (int i = 0; i < (int)(sizeof(GLYPHS) / sizeof(*GLYPHS)); i++)
         add_glyph(il, &glyphs[i]);
+    /* The shell's namespace icons, which only the fixture shows. Blanks keep
+     * the indices the same when it is off, since a button names its image by
+     * number and everything after a hole would answer to the wrong one. */
+    {
+        static const char *shell[] = { "35", "21",  "16", "9",
+                                       "137", "18", "32", "512" };
+        for (int i = 0; i < (int)(sizeof(shell) / sizeof(*shell)); i++) {
+            char path[600];
+            HICON icon = NULL;
+            if (g_fixture) {
+                snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), shell[i]);
+                icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
+                                         LR_LOADFROMFILE);
+            }
+            if (icon) {
+                ImageList_AddIcon(il, icon);
+                DestroyIcon(icon);
+            } else {
+                add_blank(il);
+            }
+        }
+    }
     return il;
 }
 

@@ -211,13 +211,23 @@ static HICON load_ico(const char *path, int cx, int cy)
         fclose(f);
         return NULL;
     }
-    /* the entry nearest the size asked for; 0 means "whatever is first" */
-    int best = 0, best_d = 1 << 20;
+    /* The entry nearest the size asked for, and of those the one with the
+     * most colours in it — which is what win32 picks and is not the same as
+     * the first of that size: a shell icon file often carries the sixteen
+     * colour image ahead of the two hundred and fifty six colour one, and
+     * taking the first gives a flat, wrong-coloured icon. */
+    int best = 0, best_d = 1 << 20, best_bpp = -1;
     for (int i = 0; i < count; i++) {
         int w = ent[i * 16] ? ent[i * 16] : 256;
         int d = cx > 0 ? (w > cx ? w - cx : cx - w) : 0;
-        if (d < best_d) {
+        int bpp = ent[i * 16 + 6] | (ent[i * 16 + 7] << 8);
+        if (!bpp) { /* older files leave it out and count the colours instead */
+            int colours = ent[i * 16 + 2];
+            bpp = colours == 0 ? 8 : colours <= 2 ? 1 : colours <= 16 ? 4 : 8;
+        }
+        if (d < best_d || (d == best_d && bpp > best_bpp)) {
             best_d = d;
+            best_bpp = bpp;
             best = i;
         }
     }
