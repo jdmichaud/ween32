@@ -61,51 +61,44 @@ enum {
 #define ICON_FILE "1"
 #define ICON_COMPUTER "16"
 #define ICON_DRIVE "9"
-#define ICON_UP "34"
-#define ICON_MOVETO "137"
-#define ICON_COPYTO "138"
-#define ICON_SEARCH "50"
-#define ICON_HISTORY "35"
 #define ICON_APP "46" /* the folder-and-magnifier the caption wears */
 
-/* Image-list indices, in the order they are added. */
+/* Image-list indices, in the order they are added: what the shell keeps as
+ * icons first, then the toolbar's own images, which were never icons at all
+ * — they came out of one bitmap strip — and so are drawn here. */
 enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
-       IMG_UP, IMG_SEARCH, IMG_HISTORY, IMG_MOVETO, IMG_COPYTO,
-       /* the drawn ones, added after everything read from disk */
-       IMG_BACK, IMG_FORWARD, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_COUNT };
+       IMG_BACK, IMG_FORWARD, IMG_UP, IMG_SEARCH, IMG_FOLDERS, IMG_HISTORY,
+       IMG_MOVETO, IMG_COPYTO, IMG_DELETE, IMG_UNDO, IMG_VIEWS, IMG_COUNT };
 
-/* Some of a toolbar's glyphs were never icons — they came out of a bitmap
- * strip — so they are drawn here instead, a pixel at a time. '.' is the
- * colour the image list masks out and each digit indexes the glyph's own
- * palette: greys for most of them, and blues for the one the Back button
- * wears while the pointer is on it. */
+/* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
+ * They were never icons — one bitmap strip held the lot — so there is nothing
+ * to load them from, and each carries the palette it was drawn with and the
+ * corner it sits in within its sixteen-pixel box. '.' is masked out; the
+ * other characters index the palette. */
 typedef struct {
-    int w, h;
+    int w, h;                 /* the art */
+    int ox, oy;               /* where it sits in the 16x16 image */
     const char *const *rows;
     const COLORREF *palette;
     int ncolours;
 } glyph;
 
-/* Each of these carries the palette it was drawn with rather than a shared
- * ramp: rounding the greys of an embossed arrow to the nearest of seven puts
- * every shade of it a step out. */
 #define BACK_N 5
 static const COLORREF BACK_PAL[BACK_N] = {
     RGB(0, 0, 0), RGB(134, 134, 134), RGB(221, 221, 221),
     RGB(248, 248, 248), RGB(192, 192, 192),
 };
 static const char *const GLYPH_BACK[] = {
-    ".....0.......",
-    "....10.......",
-    "...130.......",
-    "..13201111110",
-    ".132222222210",
-    ".014411111110",
-    "..01100000000",
-    "...010.......",
-    "....00.......",
-    ".....0.......",
-    ".............",
+    "....0.......",
+    "...10.......",
+    "..130.......",
+    ".13201111110",
+    "132222222210",
+    "014411111110",
+    ".01100000000",
+    "..010.......",
+    "...00.......",
+    "....0.......",
 };
 
 #define FORWARD_N 2
@@ -124,6 +117,149 @@ static const char *const GLYPH_FORWARD[] = {
     ".......0011..",
     ".......011...",
     "........1....",
+};
+
+#define UP_N 8
+static const COLORREF UP_PAL[UP_N] = {
+    RGB(255, 255, 255), RGB(134, 134, 134), RGB(4, 4, 4),
+    RGB(204, 204, 204), RGB(221, 221, 221), RGB(178, 178, 178),
+    RGB(77, 77, 77), RGB(227, 227, 227),
+};
+static const char *const GLYPH_UP[] = {
+    "..11111........",
+    ".1007352.......",
+    "111111111111112",
+    "100000000000002",
+    "100006000434332",
+    "100066604443352",
+    "100666664433552",
+    "100006444335352",
+    "100006433355512",
+    "100046666665512",
+    "100444335355112",
+    "104443355511112",
+    "222222222222222",
+};
+
+#define SEARCH_N 14
+static const COLORREF SEARCH_PAL[SEARCH_N] = {
+    RGB(134, 134, 134), RGB(0, 0, 0), RGB(95, 95, 95),
+    RGB(192, 192, 192), RGB(178, 178, 178), RGB(77, 77, 77),
+    RGB(221, 221, 221), RGB(204, 204, 204), RGB(255, 255, 255),
+    RGB(234, 234, 234), RGB(248, 248, 248), RGB(102, 102, 102),
+    RGB(119, 119, 119), RGB(128, 128, 128),
+};
+static const char *const GLYPH_SEARCH[] = {
+    ".....00000......",
+    "...00a674520....",
+    "..0a6345b4421...",
+    ".0a755b3404021..",
+    ".0045334040421..",
+    "033b33455550021.",
+    "033334507701d21.",
+    "000345068860121.",
+    "099245788663121.",
+    "099725786663121.",
+    ".0774506663011..",
+    ".0044010330121..",
+    "..0002311117021.",
+    "...11222221c7021",
+    ".....11111..c701",
+    ".............11.",
+};
+
+#define FOLDERS_N 6
+static const COLORREF FOLDERS_PAL[FOLDERS_N] = {
+    RGB(255, 255, 255), RGB(134, 134, 134), RGB(4, 4, 4),
+    RGB(221, 221, 221), RGB(178, 178, 178), RGB(204, 204, 204),
+};
+static const char *const GLYPH_FOLDERS[] = {
+    ".1112..........",
+    "1000111111.....",
+    "10000000002....",
+    "10000335542....",
+    "10003355442....",
+    "10033111242....",
+    "10331000111111.",
+    "103310000000002",
+    "222210000335442",
+    "....10003355412",
+    "....10035554412",
+    "....10355444112",
+    "....10414141112",
+    "....22222222222",
+};
+
+#define HISTORY_N 12
+static const COLORREF HISTORY_PAL[HISTORY_N] = {
+    RGB(0, 0, 0), RGB(248, 248, 248), RGB(134, 134, 134),
+    RGB(215, 215, 215), RGB(150, 150, 150), RGB(95, 95, 95),
+    RGB(77, 77, 77), RGB(119, 119, 119), RGB(192, 192, 192),
+    RGB(234, 234, 234), RGB(255, 255, 255), RGB(128, 128, 128),
+};
+static const char *const GLYPH_HISTORY[] = {
+    ".............2..",
+    ".....222222.2a2.",
+    "...223151132a60.",
+    "..231115192a600.",
+    ".235111192a6000.",
+    ".21151192a60000.",
+    "23111192a6005550",
+    "2111119860577770",
+    "2551193344444000",
+    "2311933333444450",
+    "2b89433388804470",
+    ".27633868884060.",
+    ".23778864446650.",
+    "..033775566770..",
+    "...0034444400...",
+    ".....000000.....",
+};
+
+#define MOVETO_N 2
+static const COLORREF MOVETO_PAL[MOVETO_N] = {
+    RGB(128, 128, 128), RGB(255, 255, 255),
+};
+static const char *const GLYPH_MOVETO[] = {
+    "000000..........",
+    "0111100...000...",
+    "01...010...110..",
+    "01...0000..00000",
+    "01..000001..0001",
+    "01..000001...011",
+    "01.0000001....1.",
+    "01000111000000..",
+    "010001...111110.",
+    "000001.000000001",
+    "0000010000000001",
+    ".111010000000001",
+    "....010000000001",
+    "....010000000001",
+    "....000000000001",
+    ".....11111111111",
+};
+
+#define COPYTO_N 2
+static const COLORREF COPYTO_PAL[COPYTO_N] = {
+    RGB(128, 128, 128), RGB(255, 255, 255),
+};
+static const char *const GLYPH_COPYTO[] = {
+    "0000000.........",
+    "00000001..000...",
+    "000000000..110..",
+    "0001111001.00000",
+    "0001...001..0001",
+    "0001...001...011",
+    "0001..0001....1.",
+    "0001.00001......",
+    "000100000000....",
+    ".1000000111000..",
+    "..0000001...110.",
+    "...111101.000001",
+    ".......010000001",
+    ".......010000001",
+    ".......000000001",
+    "........11111111",
 };
 
 #define DELETE_N 5
@@ -154,18 +290,16 @@ static const COLORREF UNDO_PAL[UNDO_N] = {
     RGB(192, 192, 192),
 };
 static const char *const GLYPH_UNDO[] = {
-    "........11111...",
-    "......11544520..",
-    ".1...1423000320.",
-    ".10.14300...0630",
-    ".140430......120",
-    ".14420.......120",
-    ".15220.......120",
-    ".133330.....1230",
-    ".0000000....120.",
-    "............000.",
-    "................",
-    "................",
+    ".......11111...",
+    ".....11544520..",
+    "1...1423000320.",
+    "10.14300...0630",
+    "140430......120",
+    "14420.......120",
+    "15220.......120",
+    "133330.....1230",
+    "0000000....120.",
+    "...........000.",
 };
 
 #define VIEWS_N 7
@@ -191,51 +325,87 @@ static const char *const GLYPH_VIEWS[] = {
     "1111111111111111",
 };
 
-/* The Back arrow again, in the colours it takes under the pointer — the
- * blues off the hover screenshot. */
+#define FOLDERS_HOT_N 7
+static const COLORREF FOLDERS_HOT_PAL[FOLDERS_HOT_N] = {
+    RGB(255, 255, 153), RGB(255, 204, 0), RGB(102, 102, 0),
+    RGB(4, 4, 4), RGB(204, 153, 0), RGB(255, 255, 255),
+    RGB(204, 204, 153),
+};
+static const char *const GLYPH_FOLDERS_HOT[] = {
+    ".2222..........",
+    "2000622222.....",
+    "20000000003....",
+    "20151011143....",
+    "20510111443....",
+    "20101222243....",
+    "20012000622222.",
+    "201120000000003",
+    "333320151011143",
+    "....20510111143",
+    "....20101111443",
+    "....20011114143",
+    "....20111141443",
+    "....33333333333",
+};
+
+/* The Back arrow again, in the colours it wears under the pointer: a
+ * toolbar had two sets of images and swapped to the second for whichever
+ * button the pointer was on. */
 #define BACK_HOT_N 5
 static const COLORREF BACK_HOT_PAL[BACK_HOT_N] = {
     RGB(0, 0, 0), RGB(51, 153, 255), RGB(153, 255, 255),
     RGB(51, 102, 255), RGB(51, 204, 255),
 };
-
 static const char *const GLYPH_BACK_HOT[] = {
-    ".....0.......",
-    "....30.......",
-    "...320.......",
-    "..32203333330",
-    ".322222222210",
-    ".014111111110",
-    "..01100000000",
-    "...010.......",
-    "....00.......",
-    ".....0.......",
-    ".............",
+    "....0.......",
+    "...30.......",
+    "..320.......",
+    ".32203333330",
+    "322222222210",
+    "014111111110",
+    ".01100000000",
+    "..010.......",
+    "...00.......",
+    "....0.......",
 };
 
-/* indexed by IMG_BACK.. — the order add_glyph is called in */
+/* Indexed by IMG_BACK.. — the order add_glyph is called in. */
 static const glyph GLYPHS[] = {
-    { 13, 11, GLYPH_BACK, BACK_PAL, BACK_N },
-    { 13, 11, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
-    { 13, 13, GLYPH_DELETE, DELETE_PAL, DELETE_N },
-    { 16, 12, GLYPH_UNDO, UNDO_PAL, UNDO_N },
-    { 16, 14, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
+    { 12, 10, 2, 3, GLYPH_BACK, BACK_PAL, BACK_N },
+    { 13, 11, 0, 3, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
+    { 15, 13, 0, 2, GLYPH_UP, UP_PAL, UP_N },
+    { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
+    { 15, 14, 0, 1, GLYPH_FOLDERS, FOLDERS_PAL, FOLDERS_N },
+    { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
+    { 16, 16, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
+    { 16, 16, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
+    { 13, 13, 0, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
+    { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
+    { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
 };
 
-/* The same set again for the hot list, differing only where a glyph has a
+/* The same set for the hot list, differing only where a glyph has a
  * hot drawing of its own. */
 static const glyph GLYPHS_HOT[] = {
-    { 13, 11, GLYPH_BACK_HOT, BACK_HOT_PAL, BACK_HOT_N },
-    { 13, 11, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
-    { 13, 13, GLYPH_DELETE, DELETE_PAL, DELETE_N },
-    { 16, 12, GLYPH_UNDO, UNDO_PAL, UNDO_N },
-    { 16, 14, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
+    { 12, 10, 2, 3, GLYPH_BACK_HOT, BACK_HOT_PAL, BACK_HOT_N },
+    { 13, 11, 0, 3, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
+    { 15, 13, 0, 2, GLYPH_UP, UP_PAL, UP_N },
+    { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
+    { 15, 14, 0, 1, GLYPH_FOLDERS_HOT, FOLDERS_HOT_PAL, FOLDERS_HOT_N },
+    { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
+    { 16, 16, 0, 0, GLYPH_MOVETO, MOVETO_PAL, MOVETO_N },
+    { 16, 16, 0, 0, GLYPH_COPYTO, COPYTO_PAL, COPYTO_N },
+    { 13, 13, 0, 2, GLYPH_DELETE, DELETE_PAL, DELETE_N },
+    { 15, 10, 0, 3, GLYPH_UNDO, UNDO_PAL, UNDO_N },
+    { 16, 14, 0, 1, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
 };
 
 static COLORREF glyph_colour(const glyph *g, char c)
 {
-    int i = c - '0';
-    if (c < '0' || c > '9' || i >= g->ncolours)
+    static const char set[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const char *at = strchr(set, c);
+    int i = at && c ? (int)(at - set) : -1;
+    if (i < 0 || i >= g->ncolours)
         return RGB(255, 0, 255); /* masked out */
     return g->palette[i];
 }
@@ -897,7 +1067,7 @@ static void add_glyph(HIMAGELIST il, const glyph *g)
 {
     unsigned char bits[16 * 16 * 4];
     HBITMAP bmp;
-    int ox = (16 - g->w) / 2, oy = (16 - g->h) / 2;
+    int ox = g->ox, oy = g->oy;
 
     for (int i = 0; i < 16 * 16; i++) {
         bits[i * 4 + 0] = 0xff; /* B,G,R as every win32 DIB is */
@@ -945,9 +1115,7 @@ static void add_blank(HIMAGELIST il)
 static HIMAGELIST build_images(const glyph *glyphs, int *missing)
 {
     static const char *names[] = {
-        ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE,   ICON_COMPUTER,
-        ICON_DRIVE,  ICON_UP,          ICON_SEARCH, ICON_HISTORY,
-        ICON_MOVETO, ICON_COPYTO
+        ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE, ICON_COMPUTER, ICON_DRIVE
     };
     HIMAGELIST il = ImageList_Create(16, 16, ILC_MASK, IMG_COUNT, 4);
 
@@ -1027,7 +1195,7 @@ static void build_bands(HWND w)
     b[n].fsStyle = TBSTYLE_BUTTON;
     b[n].iString = (INT_PTR) "Search";
     n++;
-    b[n].iBitmap = IMG_FOLDER_OPEN;
+    b[n].iBitmap = IMG_FOLDERS;
     b[n].idCommand = IDM_FOLDERS;
     b[n].fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;
     b[n].fsStyle = TBSTYLE_CHECK;

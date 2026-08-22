@@ -3145,7 +3145,7 @@ void ween_register_controls(void)
 #define WEEN_TB_ICON_X 6
 #define WEEN_TB_TEXT_X 24
 #define WEEN_TB_PAD_RIGHT 7
-#define WEEN_TB_SEP_W 8
+#define WEEN_TB_SEP_W 7
 #define WEEN_TB_DROP_W 11 /* the arrow half a drop-down button reserves */
 #define WEEN_TB_DROP_HOT_W 13 /* and the part of it that comes up when hot */
 #define WEEN_TB_DROP_ARROW_W 5 /* and the mark drawn in it */
@@ -3262,20 +3262,24 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int held = tb->pressed == i && tb->hot == i;
 
         if (b->style & TBSTYLE_SEP) {
-            /* an etched line down the middle of its gap */
-            int sx = bx + b->w / 2;
+            /* an etched line four pixels in, which is not the middle of the
+             * seven it takes: there are three to its left and two to its
+             * right */
+            int sx = bx + 4;
             ween_surface_vline(&top->surface, sx, by + 2, h - 4, WEEN_SHADOW);
             ween_surface_vline(&top->surface, sx + 1, by + 2, h - 4, WEEN_WHITE);
             continue;
         }
 
         if (checked || held) {
-            /* the dither is what says "on"; the edge says which way */
+            /* the dither is what says "on"; the edge says which way. Like the
+             * hot edge it starts a pixel in, so two buttons side by side
+             * share the boundary rather than doubling it. */
             if (checked && !held)
-                ween_classic_scroll_track(&top->surface, bx + 1, by + 1,
-                                          b->w - 2, h - 2);
-            ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_SUNKEN,
-                              BF_RECT, NULL);
+                ween_classic_check_dither(&top->surface, bx + 3, by + 2,
+                                          b->w - 5, h - 3);
+            ween_classic_edge(&top->surface, bx + 1, by, b->w - 1, h,
+                              BDR_SUNKENOUTER, BF_RECT, NULL);
         } else if (tb->hot == i && enabled) {
             /* A hot button in a flat toolbar wears one pixel of edge, not the
              * two a raised border has: white along the top and left, shadow
@@ -3297,18 +3301,24 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                   BDR_RAISEDINNER, BF_RECT, NULL);
         }
 
-        int shift = held ? 1 : 0;
+        /* A button that is on moves its content in by one, the same as one
+         * being held down does. */
+        int shift = (held || checked) ? 1 : 0;
         {   /* the hot set, for the one the pointer is on */
-            HIMAGELIST from = (tb->hot == i && enabled && tb->hot_images)
+            /* The second set is for the button under the pointer and for
+             * one that is on: Windows 2000 drew these grey and swapped to
+             * the coloured ones for both. */
+            HIMAGELIST from = ((tb->hot == i || checked) && enabled &&
+                               tb->hot_images)
                                   ? tb->hot_images
                                   : tb->images;
-            /* Four pixels down from the top of the button, and the label a
+            /* Three pixels down from the top of the button, and the label a
              * pixel above the middle: neither is centred, and both are where
-             * the Windows 2000 screenshot puts them. */
+             * Windows 2000 puts them. */
             if (from && b->image >= 0)
                 ween_imagelist_draw(from, b->image, &top->surface,
                                     bx + ween_ncm(WEEN_TB_ICON_X) + shift,
-                                    by + (h - 16) / 2 + 1 + shift);
+                                    by + (h - 16) / 2 + shift);
         }
         if (f && b->text)
             ween_strike_draw(f, &top->surface,

@@ -392,6 +392,18 @@ void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h)
                                ((px + py) & 1) ? WEEN_FACE : WEEN_WHITE);
 }
 
+/* The same weave the other way up. A toolbar button that is on is dithered
+ * like a scroll bar's track but on the opposite parity, so the two cannot
+ * share one routine: which pixels are white is fixed by where they are on
+ * the surface, not by where the patch starts. */
+void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h)
+{
+    for (int py = y; py < y + h; py++)
+        for (int px = x; px < x + w; px++)
+            ween_surface_pixel(s, px, py,
+                               ((px + py) & 1) ? WEEN_WHITE : WEEN_FACE);
+}
+
 /* A polygon drawn the way GDI does with a pen and brush of one colour: the
  * interior plus the outline, which is a pixel wider than the fill alone. */
 static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)

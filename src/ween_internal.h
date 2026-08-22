@@ -75,6 +75,7 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
 /* Scroll-bar parts: the dithered track, and one arrow button (dir: 0 up,
  * 1 down, 2 left, 3 right). */
+void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_sizegrip(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
