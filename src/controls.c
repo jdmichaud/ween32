@@ -3318,9 +3318,13 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* Three pixels down from the top of the button, and the label a
              * pixel above the middle: neither is centred, and both are where
              * Windows 2000 puts them. */
+            /* A button with no label carries its image a pixel further
+             * left than one with, though both reserve the same inset when
+             * their width is worked out. Measured, like the rest of this. */
             if (from && b->image >= 0)
                 ween_imagelist_draw(from, b->image, &top->surface,
-                                    bx + ween_ncm(WEEN_TB_ICON_X) + shift,
+                                    bx + ween_ncm(WEEN_TB_ICON_X) +
+                                        (b->text ? 0 : -1) + shift,
                                     by + (h - 16) / 2 + shift);
         }
         if (f && b->text)
