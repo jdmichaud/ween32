@@ -418,10 +418,15 @@ static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
  * button, just the mark. */
 /* The small triangle beside a drop-down toolbar button: four wide, pointing
  * down, which is the shape the classic shell used. */
-void ween_classic_menu_arrow_down(ween_surface *s, int x, int y, ween_color c)
+/* A solid triangle pointing down: `w` wide at the top, narrowing by two each
+ * row, so an odd width comes to a point. Widths differ by where it is drawn —
+ * a toolbar's drop-down mark is five wide, which is what the Windows 2000
+ * screenshot has beside "Back". Draw a seven there and its last column falls
+ * under the button's own border. */
+void ween_classic_arrow_down(ween_surface *s, int x, int y, int w, ween_color c)
 {
-    for (int i = 0; i < 3; i++)
-        ween_surface_hline(s, x + i, y + i, 7 - 2 * i, c);
+    for (int i = 0; w - 2 * i > 0; i++)
+        ween_surface_hline(s, x + i, y + i, w - 2 * i, c);
 }
 
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h,

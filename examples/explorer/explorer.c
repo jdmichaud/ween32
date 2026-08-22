@@ -14,6 +14,7 @@
 
 #ifdef _WIN32
 #include <commctrl.h>
+#include <windowsx.h> /* GET_X_LPARAM, which win32 keeps in its own header */
 #define HAVE(feature) 1
 #else
 #define HAVE(feature) WEEN32_HAS_##feature

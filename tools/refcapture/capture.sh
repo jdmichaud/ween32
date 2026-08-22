@@ -23,7 +23,7 @@ SRC=${1:-controls.c}
 OUT=${2:-reference.png}
 EXE=$(basename "$SRC" .c).exe
 
-DESK_W=700 DESK_H=520   # wine virtual desktop
+DESK_W=${DESK_W:-700} DESK_H=${DESK_H:-520}   # wine virtual desktop
 
 if [ ! -d "$WINEPREFIX" ]; then
   echo "creating an isolated wine prefix in $WINEPREFIX"
@@ -97,6 +97,25 @@ int main(int c, char **v) { (void)c;
 EOF
   "$here/xclick" "$id" "${CLICK_AT%,*}" "${CLICK_AT#*,}"
   sleep 2   # let the drop-down open and paint
+fi
+
+# A hot toolbar button exists only while the pointer is over it, so the shot
+# has to be taken with the pointer parked there — a move with no click.
+if [ -n "$HOVER_AT" ]; then
+  cc -O1 -o "$here/xmove" -x c - -lX11 -l:libXtst.so.6 <<'EOF'
+#include <X11/Xlib.h>
+#include <stdlib.h>
+extern int XTestFakeMotionEvent(Display *, int, int, int, unsigned long);
+int main(int c, char **v) { (void)c;
+  Display *d = XOpenDisplay(NULL); if (!d) return 1;
+  Window w = (Window)strtoul(v[1], 0, 0);
+  int x = atoi(v[2]), y = atoi(v[3]), rx, ry; Window kid;
+  XTranslateCoordinates(d, w, DefaultRootWindow(d), x, y, &rx, &ry, &kid);
+  XTestFakeMotionEvent(d, DefaultScreen(d), rx, ry, 0);
+  XFlush(d); XCloseDisplay(d); return 0; }
+EOF
+  "$here/xmove" "$id" "${HOVER_AT%,*}" "${HOVER_AT#*,}"
+  sleep 2   # let the hot state paint
 fi
 
 # Only wine's own desktop window is ever read — never the root window.

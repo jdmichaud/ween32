@@ -2840,6 +2840,7 @@ void ween_register_controls(void)
 #define WEEN_TB_PAD_RIGHT 7
 #define WEEN_TB_SEP_W 8
 #define WEEN_TB_DROP_W 11 /* the arrow half of a drop-down button */
+#define WEEN_TB_DROP_ARROW_W 5 /* and the mark drawn in it */
 
 typedef struct {
     int id;
@@ -2985,9 +2986,9 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         if (b->style & TBSTYLE_DROPDOWN) {
             /* the arrow half, with a line marking it off from the body */
             int ax = bx + b->w - ween_ncm(WEEN_TB_DROP_W);
-            ween_classic_menu_arrow_down(&top->surface, ax + 3,
-                                         by + h / 2 - 1,
-                                         enabled ? WEEN_BLACK : WEEN_SHADOW);
+            ween_classic_arrow_down(&top->surface, ax + 2, by + h / 2 - 1,
+                                    WEEN_TB_DROP_ARROW_W,
+                                    enabled ? WEEN_BLACK : WEEN_SHADOW);
         }
     }
 }
