@@ -75,112 +75,173 @@ enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
 
 /* Some of a toolbar's glyphs were never icons — they came out of a bitmap
  * strip — so they are drawn here instead, a pixel at a time. '.' is the
- * colour the image list masks out and the digits index a grey ramp, which is
- * all these need: an arrow lit from the top left, and the greys a button
- * with nothing to act on wears. */
+ * colour the image list masks out and each digit indexes the glyph's own
+ * palette: greys for most of them, and blues for the one the Back button
+ * wears while the pointer is on it. */
 typedef struct {
     int w, h;
     const char *const *rows;
+    const COLORREF *palette;
+    int ncolours;
 } glyph;
 
+/* Each of these carries the palette it was drawn with rather than a shared
+ * ramp: rounding the greys of an embossed arrow to the nearest of seven puts
+ * every shade of it a step out. */
+#define BACK_N 5
+static const COLORREF BACK_PAL[BACK_N] = {
+    RGB(0, 0, 0), RGB(134, 134, 134), RGB(221, 221, 221),
+    RGB(248, 248, 248), RGB(192, 192, 192),
+};
 static const char *const GLYPH_BACK[] = {
     ".....0.......",
-    "....20.......",
-    "...260.......",
-    "..26502222220",
-    ".265555555520",
-    ".024422222220",
-    "..02200000000",
-    "...020.......",
+    "....10.......",
+    "...130.......",
+    "..13201111110",
+    ".132222222210",
+    ".014411111110",
+    "..01100000000",
+    "...010.......",
     "....00.......",
     ".....0.......",
     ".............",
 };
 
+#define FORWARD_N 2
+static const COLORREF FORWARD_PAL[FORWARD_N] = {
+    RGB(128, 128, 128), RGB(255, 255, 255),
+};
 static const char *const GLYPH_FORWARD[] = {
-    ".......2.....",
-    ".......22....",
-    ".......222...",
-    "22222222222..",
-    "222222222222.",
-    "2222222222226",
-    "2222222222266",
-    ".66666622266.",
-    ".......2266..",
-    ".......266...",
-    "........6....",
+    ".......0.....",
+    ".......00....",
+    ".......000...",
+    "00000000000..",
+    "000000000000.",
+    "0000000000001",
+    "0000000000011",
+    ".11111100011.",
+    ".......0011..",
+    ".......011...",
+    "........1....",
 };
 
+#define DELETE_N 5
+static const COLORREF DELETE_PAL[DELETE_N] = {
+    RGB(134, 134, 134), RGB(4, 4, 4), RGB(204, 204, 204),
+    RGB(77, 77, 77), RGB(255, 255, 255),
+};
 static const char *const GLYPH_DELETE[] = {
-    "222.........1",
-    "2640......20.",
-    ".2240....20..",
-    "...240..20...",
-    "....22020....",
-    ".....220.....",
-    "....22020....",
-    "...220..20...",
-    "..240....20..",
-    ".240......2..",
-    "2620.......1.",
-    "220..........",
-    ".0..........1",
+    "000.........3",
+    "0421......01.",
+    ".0021....01..",
+    "...021..01...",
+    "....00101....",
+    ".....001.....",
+    "....00101....",
+    "...001..01...",
+    "..021....01..",
+    ".021......0..",
+    "0401.......3.",
+    "001..........",
+    ".1..........3",
 };
 
+#define UNDO_N 7
+static const COLORREF UNDO_PAL[UNDO_N] = {
+    RGB(4, 4, 4), RGB(134, 134, 134), RGB(204, 204, 204),
+    RGB(178, 178, 178), RGB(255, 255, 255), RGB(227, 227, 227),
+    RGB(192, 192, 192),
+};
 static const char *const GLYPH_UNDO[] = {
-    "........22222...",
-    "......22566540..",
-    ".2...2644000440.",
-    ".20.26400...0440",
-    ".260640......240",
-    ".26640.......240",
-    ".25440.......240",
-    ".244440.....2440",
-    ".0000000....240.",
+    "........11111...",
+    "......11544520..",
+    ".1...1423000320.",
+    ".10.14300...0630",
+    ".140430......120",
+    ".14420.......120",
+    ".15220.......120",
+    ".133330.....1230",
+    ".0000000....120.",
     "............000.",
     "................",
     "................",
 };
 
+#define VIEWS_N 7
+static const COLORREF VIEWS_PAL[VIEWS_N] = {
+    RGB(255, 255, 255), RGB(4, 4, 4), RGB(134, 134, 134),
+    RGB(204, 204, 204), RGB(160, 160, 164), RGB(95, 95, 95),
+    RGB(221, 221, 221),
+};
 static const char *const GLYPH_VIEWS[] = {
-    "2222222222222220",
-    "2533333333333330",
-    "2111111111111110",
-    "2666666666666640",
-    "2630600663060040",
-    "2600666660066640",
-    "2666666666666640",
-    "2630600663060040",
-    "2600666660066640",
-    "2666666666666640",
-    "2630600663060040",
-    "2600666660066640",
-    "2444444444444440",
-    "0000000000000000",
+    "2222222222222221",
+    "2644444444444441",
+    "2555555555555551",
+    "2000000000000031",
+    "2041011004101131",
+    "2011000001100031",
+    "2000000000000031",
+    "2041011004101131",
+    "2011000001100031",
+    "2000000000000031",
+    "2041011004101131",
+    "2011000001100031",
+    "2333333333333331",
+    "1111111111111111",
+};
+
+/* The Back arrow again, in the colours it takes under the pointer — the
+ * blues off the hover screenshot. */
+#define BACK_HOT_N 5
+static const COLORREF BACK_HOT_PAL[BACK_HOT_N] = {
+    RGB(0, 0, 0), RGB(51, 153, 255), RGB(153, 255, 255),
+    RGB(51, 102, 255), RGB(51, 204, 255),
+};
+
+static const char *const GLYPH_BACK_HOT[] = {
+    ".....0.......",
+    "....30.......",
+    "...320.......",
+    "..32203333330",
+    ".322222222210",
+    ".014111111110",
+    "..01100000000",
+    "...010.......",
+    "....00.......",
+    ".....0.......",
+    ".............",
 };
 
 /* indexed by IMG_BACK.. — the order add_glyph is called in */
 static const glyph GLYPHS[] = {
-    { 13, 11, GLYPH_BACK },
-    { 13, 11, GLYPH_FORWARD },
-    { 13, 13, GLYPH_DELETE },
-    { 16, 12, GLYPH_UNDO },
-    { 16, 14, GLYPH_VIEWS },
+    { 13, 11, GLYPH_BACK, BACK_PAL, BACK_N },
+    { 13, 11, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
+    { 13, 13, GLYPH_DELETE, DELETE_PAL, DELETE_N },
+    { 16, 12, GLYPH_UNDO, UNDO_PAL, UNDO_N },
+    { 16, 14, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
 };
 
-static COLORREF glyph_colour(char c)
+/* The same set again for the hot list, differing only where a glyph has a
+ * hot drawing of its own. */
+static const glyph GLYPHS_HOT[] = {
+    { 13, 11, GLYPH_BACK_HOT, BACK_HOT_PAL, BACK_HOT_N },
+    { 13, 11, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
+    { 13, 13, GLYPH_DELETE, DELETE_PAL, DELETE_N },
+    { 16, 12, GLYPH_UNDO, UNDO_PAL, UNDO_N },
+    { 16, 14, GLYPH_VIEWS, VIEWS_PAL, VIEWS_N },
+};
+
+static COLORREF glyph_colour(const glyph *g, char c)
 {
-    static const int ramp[] = { 0, 64, 128, 160, 192, 224, 255 };
-    int i;
-    if (c < '0' || c > '6')
+    int i = c - '0';
+    if (c < '0' || c > '9' || i >= g->ncolours)
         return RGB(255, 0, 255); /* masked out */
-    i = c - '0';
-    return RGB(ramp[i], ramp[i], ramp[i]);
+    return g->palette[i];
 }
 
 static HWND g_main, g_tree, g_list, g_toolbar, g_rebar, g_address, g_status;
 static HWND g_split, g_panehead;
-static HIMAGELIST g_images;
+static HIMAGELIST g_images, g_hot_images;
 static HFONT g_font;
 static int g_split_x = 203; /* the tree pane's width, measured off the shot */
 static int g_dragging;
@@ -663,7 +724,7 @@ static const char *asset_dir(void)
 #if HAVE(IMAGELIST)
 /* The art, centred in a 16x16 bitmap and handed over with its background
  * named as the transparent colour — which is all ImageList_AddMasked wants. */
-static void add_glyph(const glyph *g)
+static void add_glyph(HIMAGELIST il, const glyph *g)
 {
     unsigned char bits[16 * 16 * 4];
     HBITMAP bmp;
@@ -677,7 +738,7 @@ static void add_glyph(const glyph *g)
     }
     for (int y = 0; y < g->h; y++) {
         for (int x = 0; x < g->w; x++) {
-            COLORREF c = glyph_colour(g->rows[y][x]);
+            COLORREF c = glyph_colour(g, g->rows[y][x]);
             unsigned char *p = bits + (((size_t)(y + oy) * 16) + x + ox) * 4;
             p[0] = (unsigned char)(c >> 16);
             p[1] = (unsigned char)(c >> 8);
@@ -685,7 +746,7 @@ static void add_glyph(const glyph *g)
         }
     }
     bmp = CreateBitmap(16, 16, 1, 32, bits);
-    ImageList_AddMasked(g_images, bmp, RGB(255, 0, 255));
+    ImageList_AddMasked(il, bmp, RGB(255, 0, 255));
     DeleteObject(bmp);
 }
 
@@ -693,7 +754,7 @@ static void add_glyph(const glyph *g)
  * icon that will not load has to leave a hole rather than close the gap: skip
  * it and every image after it answers to the wrong name — the tree draws
  * arrows for its folders and a toolbar button wears its neighbour's icon. */
-static void add_blank(void)
+static void add_blank(HIMAGELIST il)
 {
     unsigned char bits[16 * 16 * 4];
     HBITMAP bmp;
@@ -704,20 +765,23 @@ static void add_blank(void)
         bits[i * 4 + 3] = 0;
     }
     bmp = CreateBitmap(16, 16, 1, 32, bits);
-    ImageList_AddMasked(g_images, bmp, RGB(255, 0, 255));
+    ImageList_AddMasked(il, bmp, RGB(255, 0, 255));
     DeleteObject(bmp);
 }
 
-static void load_icons(void)
+/* One image list. Two are built: the ordinary one, and the one a toolbar
+ * shows for the button under the pointer, which is the same set except where
+ * a glyph has a hot drawing of its own. Both have to be the same length and
+ * in the same order, because a button names its image by index. */
+static HIMAGELIST build_images(const glyph *glyphs, int *missing)
 {
     static const char *names[] = {
         ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE,   ICON_COMPUTER,
         ICON_DRIVE,  ICON_UP,          ICON_SEARCH, ICON_HISTORY,
         ICON_MOVETO, ICON_COPYTO
     };
-    int missing = 0;
+    HIMAGELIST il = ImageList_Create(16, 16, ILC_MASK, IMG_COUNT, 4);
 
-    g_images = ImageList_Create(16, 16, ILC_MASK, IMG_COUNT, 4);
     for (int i = 0; i < (int)(sizeof(names) / sizeof(*names)); i++) {
         char path[600];
         HICON icon;
@@ -725,20 +789,28 @@ static void load_icons(void)
         icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
                                  LR_LOADFROMFILE);
         if (icon) {
-            ImageList_AddIcon(g_images, icon);
+            ImageList_AddIcon(il, icon);
             DestroyIcon(icon);
         } else {
-            add_blank();
-            missing++;
+            add_blank(il);
+            (*missing)++;
         }
     }
     for (int i = 0; i < (int)(sizeof(GLYPHS) / sizeof(*GLYPHS)); i++)
-        add_glyph(&GLYPHS[i]);
+        add_glyph(il, &glyphs[i]);
+    return il;
+}
+
+static void load_icons(void)
+{
+    int missing = 0;
+    g_images = build_images(GLYPHS, &missing);
+    g_hot_images = build_images(GLYPHS_HOT, &missing);
     if (missing)
         fprintf(stderr,
                 "explorer: %d of the icons are missing — looked in \"%s\". "
                 "Set WEEN32_ASSETS to the assets/icons directory.\n",
-                missing, asset_dir()[0] ? asset_dir() : "assets/icons");
+                missing / 2, asset_dir()[0] ? asset_dir() : "assets/icons");
 }
 #endif
 
@@ -759,6 +831,7 @@ static void build_bands(HWND w)
                                 (HMENU)(UINT_PTR)ID_TOOLBAR, NULL, NULL);
     SendMessageA(g_toolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
     SendMessageA(g_toolbar, TB_SETIMAGELIST, 0, (LPARAM)g_images);
+    SendMessageA(g_toolbar, TB_SETHOTIMAGELIST, 0, (LPARAM)g_hot_images);
 
     memset(b, 0, sizeof(b));
     b[n].iBitmap = IMG_BACK;

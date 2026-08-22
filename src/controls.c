@@ -3050,7 +3050,8 @@ void ween_register_controls(void)
 #define WEEN_TB_TEXT_X 24
 #define WEEN_TB_PAD_RIGHT 7
 #define WEEN_TB_SEP_W 8
-#define WEEN_TB_DROP_W 11 /* the arrow half of a drop-down button */
+#define WEEN_TB_DROP_W 11 /* the arrow half a drop-down button reserves */
+#define WEEN_TB_DROP_HOT_W 13 /* and the part of it that comes up when hot */
 #define WEEN_TB_DROP_ARROW_W 5 /* and the mark drawn in it */
 
 typedef struct {
@@ -3064,6 +3065,7 @@ typedef struct {
 
 typedef struct {
     HIMAGELIST images;
+    HIMAGELIST hot_images; /* the set used for the button under the pointer */
     ween_tbbutton *btn;
     int count, cap;
     int hot;     /* the button under the pointer, -1 for none */
@@ -3179,27 +3181,43 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_SUNKEN,
                               BF_RECT, NULL);
         } else if (tb->hot == i && enabled) {
-            /* A drop-down button comes up as two: the body and the arrow half
-             * each get their own raised edge, meeting in the middle. Drawn as
-             * one rect instead, the border runs down through the arrow. */
-            int aw = (b->style & TBSTYLE_DROPDOWN) ? ween_ncm(WEEN_TB_DROP_W)
-                                                   : 0;
-            ween_classic_edge(&top->surface, bx, by, b->w - aw, h, EDGE_RAISED,
-                              BF_RECT, NULL);
+            /* A hot button in a flat toolbar wears one pixel of edge, not the
+             * two a raised border has: white along the top and left, shadow
+             * along the bottom and right. And it starts a pixel in from the
+             * button, so that two of them side by side share the boundary
+             * rather than doubling it.
+             *
+             * A drop-down button comes up as two of these, the body and the
+             * arrow half, meeting in the middle. Drawn as one rect instead,
+             * the border runs down through the arrow itself. */
+            int hx = bx + 1, hw = b->w - 1;
+            int aw = (b->style & TBSTYLE_DROPDOWN)
+                         ? ween_ncm(WEEN_TB_DROP_HOT_W)
+                         : 0;
+            ween_classic_edge(&top->surface, hx, by, hw - aw, h,
+                              BDR_RAISEDINNER, BF_RECT, NULL);
             if (aw)
-                ween_classic_edge(&top->surface, bx + b->w - aw, by, aw, h,
-                                  EDGE_RAISED, BF_RECT, NULL);
+                ween_classic_edge(&top->surface, hx + hw - aw, by, aw, h,
+                                  BDR_RAISEDINNER, BF_RECT, NULL);
         }
 
         int shift = held ? 1 : 0;
-        if (tb->images && b->image >= 0)
-            ween_imagelist_draw(tb->images, b->image, &top->surface,
-                                bx + ween_ncm(WEEN_TB_ICON_X) + shift,
-                                by + (h - 16) / 2 + shift);
+        {   /* the hot set, for the one the pointer is on */
+            HIMAGELIST from = (tb->hot == i && enabled && tb->hot_images)
+                                  ? tb->hot_images
+                                  : tb->images;
+            /* Four pixels down from the top of the button, and the label a
+             * pixel above the middle: neither is centred, and both are where
+             * the Windows 2000 screenshot puts them. */
+            if (from && b->image >= 0)
+                ween_imagelist_draw(from, b->image, &top->surface,
+                                    bx + ween_ncm(WEEN_TB_ICON_X) + shift,
+                                    by + (h - 16) / 2 + 1 + shift);
+        }
         if (f && b->text)
             ween_strike_draw(f, &top->surface,
                              bx + ween_ncm(WEEN_TB_TEXT_X) + shift,
-                             by + (h - th) / 2 + shift, b->text,
+                             by + (h - th) / 2 - 1 + shift, b->text,
                              (int)strlen(b->text),
                              enabled ? WEEN_BLACK : WEEN_SHADOW);
         if (b->style & TBSTYLE_DROPDOWN) {
@@ -3233,6 +3251,12 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case TB_BUTTONSTRUCTSIZE:
         return 0; /* nothing here depends on the app's struct size */
+    case TB_SETHOTIMAGELIST:
+        tb = toolbar_of(wnd);
+        if (tb)
+            tb->hot_images = (HIMAGELIST)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case TB_SETIMAGELIST:
         tb = toolbar_of(wnd);
         if (tb) {

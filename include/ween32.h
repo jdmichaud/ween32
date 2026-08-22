@@ -813,6 +813,10 @@ typedef struct {
 #define TB_ADDBUTTONSA (WM_USER + 20)
 #define TB_BUTTONSTRUCTSIZE (WM_USER + 30)
 #define TB_SETIMAGELIST (WM_USER + 48)
+/* The second set of images, used for whichever button the pointer is on.
+ * Windows 2000 drew a toolbar's arrows grey and swapped to coloured ones
+ * under the pointer, which is how the Back arrow comes to be blue. */
+#define TB_SETHOTIMAGELIST (WM_USER + 52)
 #define TB_GETITEMRECT (WM_USER + 29)
 #define TB_BUTTONCOUNT (WM_USER + 24)
 #define TB_AUTOSIZE (WM_USER + 33)
