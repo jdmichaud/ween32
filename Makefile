@@ -6,7 +6,9 @@
 
 CC      ?= cc
 CFLAGS  ?= -O2
-CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Iinclude
+# -Wundef: a feature gate that names a flag nobody defines is a feature
+# silently switched off, which is how the explorer lost its cursors.
+CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Wundef -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o \

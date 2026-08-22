@@ -4293,6 +4293,15 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_rebar *rb;
     switch (msg) {
+    case WM_COMMAND:
+    case WM_NOTIFY:
+        /* A rebar is a place to put controls, not something that answers for
+         * them: what its bands say goes on to the window that owns the rebar.
+         * Without this a toolbar in a band is dead — its buttons send their
+         * command to their parent, which is the rebar, and it stops there. */
+        if (wnd->parent)
+            return SendMessageA(wnd->parent, msg, wp, lp);
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);

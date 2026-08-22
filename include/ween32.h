@@ -1005,6 +1005,9 @@ typedef struct {
 #define WEEN32_HAS_ACCELERATORS 1
 #define WEEN32_HAS_IMAGELIST 1
 #define WEEN32_HAS_CLIPBOARD 1
+/* A class cursor, SetCursor and WM_SETCURSOR — what a splitter needs to show
+ * the shape that says it can be dragged. */
+#define WEEN32_HAS_CURSORS 1
 
 /* ---- USER32 -------------------------------------------------------------- */
 

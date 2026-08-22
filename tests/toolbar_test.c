@@ -227,6 +227,34 @@ int main(void)
         CHECK(ar.top > tbr.top, "the second band sits below the first");
         CHECK(tbr.left > 0 && ar.left > tbr.left,
               "both are inset past the gripper, and the labelled one further");
+
+        /* A control created as the rebar's own child, the way a shell makes
+         * them: what it sends goes to its parent, which is the rebar, and the
+         * rebar has to pass it on or every button in the band is dead. */
+        {
+            HWND inner = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                         WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT,
+                                         0, 0, 100, 22, rebar, NULL, NULL,
+                                         NULL);
+            TBBUTTON b;
+            RECT r;
+            SendMessageA(inner, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            memset(&b, 0, sizeof(b));
+            b.iBitmap = -1;
+            b.idCommand = ID_BACK;
+            b.fsState = TBSTATE_ENABLED;
+            b.fsStyle = TBSTYLE_BUTTON;
+            SendMessageA(inner, TB_ADDBUTTONSA, 1, (LPARAM)&b);
+            SendMessageA(inner, TB_GETITEMRECT, 0, (LPARAM)&r);
+            g_command = 0;
+            SendMessageA(inner, WM_LBUTTONDOWN, 0,
+                         MAKELPARAM((r.left + r.right) / 2, 10));
+            SendMessageA(inner, WM_LBUTTONUP, 0,
+                         MAKELPARAM((r.left + r.right) / 2, 10));
+            CHECK(g_command == ID_BACK,
+                  "a rebar passes on what a control inside it sends");
+            DestroyWindow(inner);
+        }
         DestroyWindow(rebar);
     }
 
