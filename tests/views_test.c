@@ -454,6 +454,51 @@ int main(void)
         DestroyWindow(cw);
     }
 
+    /* The same control told about images and indents — a ComboBoxEx, which
+     * is what a shell's address bar is: a path shown as the tree it walks
+     * down, each level a step further in and wearing its own icon. */
+    {
+        HWND cw = CreateWindowExA(0, "weenviews", "cbex", WS_POPUP | WS_VISIBLE,
+                                  0, 0, 220, 160, NULL, NULL, NULL, NULL);
+        HWND cb = CreateWindowExA(0, WC_COMBOBOXEXA, "",
+                                  WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 10,
+                                  10, 150, 100, cw, (HMENU)(UINT_PTR)9, NULL,
+                                  NULL);
+        COMBOBOXEXITEMA ci;
+        HIMAGELIST il2 = ImageList_Create(16, 16, ILC_MASK, 2, 2);
+        int was_h = cb->h;
+
+        SendMessageA(cb, CBEM_SETIMAGELIST, 0, (LPARAM)il2);
+        CHECK(cb->h > was_h,
+              "an image list makes the rows tall enough for the images");
+
+        memset(&ci, 0, sizeof(ci));
+        ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_INDENT;
+        ci.iItem = -1;
+        ci.pszText = (char *)"root";
+        ci.iImage = 0;
+        ci.iIndent = 0;
+        CHECK(SendMessageA(cb, CBEM_INSERTITEMA, 0, (LPARAM)&ci) == 0,
+              "an item goes in with an image and an indent");
+        ci.pszText = (char *)"under it";
+        ci.iIndent = 1;
+        CHECK(SendMessageA(cb, CBEM_INSERTITEMA, 0, (LPARAM)&ci) == 1,
+              "and another a step further in");
+        CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 2,
+              "it counts them like any combo box");
+
+        /* Emptying it is what an address bar does on every folder, and the
+         * image list has to survive that — it belongs to the control, not to
+         * the items that were in it. */
+        SendMessageA(cb, CB_RESETCONTENT, 0, 0);
+        CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 0, "and can be emptied");
+        CHECK(SendMessageA(cb, CBEM_INSERTITEMA, 0, (LPARAM)&ci) == 0 &&
+                  cb->h > was_h,
+              "with the image list still on it afterwards");
+        DestroyWindow(cw);
+        ImageList_Destroy(il2);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

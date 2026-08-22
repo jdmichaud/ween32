@@ -351,6 +351,27 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define CB_GETLBTEXT 0x0148
 #define CB_INSERTSTRING 0x014A
 #define CB_RESETCONTENT 0x014B
+
+/* ComboBoxEx: a combo box whose items carry an image and an indent. It is
+ * what a shell's address bar is — a path shown as the tree it walks down. */
+#define WC_COMBOBOXEXA "ComboBoxEx32"
+#define CBEM_INSERTITEMA (WM_USER + 1)
+#define CBEM_SETIMAGELIST (WM_USER + 2)
+#define CBEIF_TEXT 0x0001
+#define CBEIF_IMAGE 0x0002
+#define CBEIF_SELECTEDIMAGE 0x0004
+#define CBEIF_INDENT 0x0010
+typedef struct tagCOMBOBOXEXITEMA {
+    UINT mask;
+    INT_PTR iItem;
+    LPSTR pszText;
+    int cchTextMax;
+    int iImage;
+    int iSelectedImage;
+    int iOverlay;
+    int iIndent;
+    LPARAM lParam;
+} COMBOBOXEXITEMA;
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
 #define EN_CHANGE 0x0300

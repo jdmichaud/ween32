@@ -783,6 +783,9 @@ static void items_free(void *p); /* defined with ween_controls_free */
 typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
+    int *image;  /* ComboBoxEx: the image each item names, -1 for none */
+    int *indent; /* ComboBoxEx: how many steps in it is drawn */
+    HIMAGELIST images; /* ComboBoxEx: where those images come from */
     int count, cap, cursel, top;
     int track;  /* combo box: the item the pointer is over, -1 for none */
     int opened; /* combo box: this press is the one that opened the list */
@@ -809,11 +812,17 @@ static int items_add(HWND w, const char *text)
     if (it->count == it->cap) {
         int cap = it->cap ? it->cap * 2 : 8;
         char **p = realloc(it->item, (size_t)cap * sizeof(*p));
-        if (!p)
+        int *img = realloc(it->image, (size_t)cap * sizeof(*img));
+        int *ind = realloc(it->indent, (size_t)cap * sizeof(*ind));
+        if (!p || !img || !ind)
             return -1;
         it->item = p;
+        it->image = img;
+        it->indent = ind;
         it->cap = cap;
     }
+    it->image[it->count] = -1;
+    it->indent[it->count] = 0;
     {   /* strdup is not C99 */
         const char *src = text ? text : "";
         size_t n = strlen(src) + 1;
@@ -837,6 +846,8 @@ static void items_free(void *p)
         free(it->item[i]);
     free(it->item);
     free(it->edge);
+    free(it->image);
+    free(it->indent);
     free(it);
 }
 
@@ -851,10 +862,20 @@ void ween_controls_free(HWND w)
     w->ctl = NULL;
 }
 
+/* A ComboBoxEx draws sixteen-pixel images, so its rows are sixteen tall
+ * whatever the font would have asked for. */
+#define WEEN_CBEX_IMAGE 16
+#define WEEN_CBEX_INDENT 10 /* how far in each step of an item's indent is */
+#define WEEN_CBEX_GAP 5     /* between the image and the label */
+
 static int item_height(HWND w)
 {
     const ween_strike *f = w->font ? w->font : ween_gui_font();
-    return f ? f->ascent - f->descent : 13;
+    const ween_items *it = w->ctl;
+    int h = f ? f->ascent - f->descent : 13;
+    if (it && it->images && h < WEEN_CBEX_IMAGE)
+        h = WEEN_CBEX_IMAGE;
+    return h;
 }
 
 /* One row of a list: the selection bar, then the text. */
@@ -1070,8 +1091,17 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     ween_classic_scroll_arrow(&top->surface, ox + r.right - btn, oy, btn,
                               r.bottom - r.top, 1, 0, 0);
     if (it && it->cursel >= 0 && it->cursel < it->count) {
+        int tx = 2;
+        /* the field shows the item's image but not its indent: it is what
+         * you are looking at, not where it sits in the tree */
+        if (it->images && it->image[it->cursel] >= 0) {
+            ween_imagelist_draw(it->images, it->image[it->cursel],
+                                &top->surface, ox + 2,
+                                oy + (r.bottom - r.top - WEEN_CBEX_IMAGE) / 2);
+            tx = 2 + WEEN_CBEX_IMAGE + WEEN_CBEX_GAP;
+        }
         SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-        TextOutA(dc, 2, 2, it->item[it->cursel], -1);
+        TextOutA(dc, tx, 2, it->item[it->cursel], -1);
     }
 }
 
@@ -1119,13 +1149,33 @@ void ween_popup_paint(void)
     for (int i = 0; it && i < it->count; i++) {
         int iy = y + 1 + i * ih;
         int selected = i == (it->track >= 0 ? it->track : it->cursel);
+        int tx = x + 2, th = f ? f->ascent - f->descent : ih;
         if (iy + ih > y + h - 1)
             break;
-        if (selected)
-            ween_surface_fill(&top->surface, x + 1, iy, w - 2, ih, WEEN_CAP_LEFT);
+        if (it->images) {
+            /* image and indent: each step of the indent moves it in, and the
+             * label follows the image. The bar behind a chosen item is the
+             * width of its label, as a tree's is — not the whole row. */
+            int ix = x + 4 + it->indent[i] * WEEN_CBEX_INDENT;
+            if (it->image[i] >= 0)
+                ween_imagelist_draw(it->images, it->image[i], &top->surface, ix,
+                                    iy + (ih - WEEN_CBEX_IMAGE) / 2);
+            tx = ix + WEEN_CBEX_IMAGE + WEEN_CBEX_GAP;
+        }
+        if (selected) {
+            int bar = w - 2 - (tx - x - 1), by = iy + (ih - th) / 2, bh = th;
+            if (it->images && f) {
+                bar = ween_strike_text_width(f, it->item[i],
+                                             (int)strlen(it->item[i])) + 3;
+                by = iy + 1; /* nearly the whole row, as the shot has it */
+                bh = ih - 1;
+            }
+            ween_surface_fill(&top->surface, tx - 1, by, bar, bh,
+                              WEEN_CAP_LEFT);
+        }
         if (f)
-            ween_strike_draw(f, &top->surface, x + 2, iy, it->item[i],
-                             (int)strlen(it->item[i]),
+            ween_strike_draw(f, &top->surface, tx, iy + (ih - th) / 2,
+                             it->item[i], (int)strlen(it->item[i]),
                              selected ? WEEN_WHITE : WEEN_BLACK);
     }
 }
@@ -1261,12 +1311,48 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case CB_ADDSTRING:
         return items_add(wnd, (const char *)lp);
+    case CBEM_SETIMAGELIST: {
+        HIMAGELIST was;
+        it = items_of(wnd);
+        if (!it)
+            return 0;
+        was = it->images;
+        it->images = (HIMAGELIST)lp;
+        /* the rows grow to fit the images, and so does the closed control */
+        wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return (LRESULT)(INT_PTR)was;
+    }
+    case CBEM_INSERTITEMA: {
+        const COMBOBOXEXITEMA *ci = (const COMBOBOXEXITEMA *)lp;
+        int at;
+        if (!ci)
+            return -1;
+        at = items_add(wnd, (ci->mask & CBEIF_TEXT) ? ci->pszText : "");
+        if (at < 0)
+            return -1;
+        it = items_of(wnd);
+        if (ci->mask & CBEIF_IMAGE)
+            it->image[at] = ci->iImage;
+        if (ci->mask & CBEIF_INDENT)
+            it->indent[at] = ci->iIndent;
+        InvalidateRect(wnd, NULL, FALSE);
+        return at;
+    }
     case CB_RESETCONTENT:
         /* Emptying it takes the selection with it, so the field goes blank
          * rather than keeping the item that was there. An app that refills a
          * combo — an address bar, say — otherwise piles new entries behind
          * the first one and goes on showing that one for ever. */
-        ween_controls_free(wnd);
+        {   /* the items go; the image list is the control's, and stays */
+            HIMAGELIST keep = wnd->ctl ? ((ween_items *)wnd->ctl)->images : NULL;
+            ween_controls_free(wnd);
+            if (keep) {
+                it = items_of(wnd);
+                if (it)
+                    it->images = keep;
+            }
+        }
         if (g_dropped == wnd)
             g_dropped = NULL;
         InvalidateRect(wnd, NULL, FALSE);
@@ -3000,6 +3086,10 @@ void ween_register_controls(void)
     RegisterClassA(&wc);
     wc.lpfnWndProc = combo_proc;
     wc.lpszClassName = "COMBOBOX";
+    RegisterClassA(&wc);
+    /* The same control, told about images and indents. win32 makes this one
+     * host the other; here it is the one class answering to both names. */
+    wc.lpszClassName = WC_COMBOBOXEXA;
     RegisterClassA(&wc);
     wc.lpfnWndProc = progress_proc;
     wc.lpszClassName = PROGRESS_CLASSA;

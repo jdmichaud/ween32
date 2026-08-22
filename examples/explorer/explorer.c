@@ -374,6 +374,44 @@ static void set_cell(HWND list, int row, int col, const char *text)
     SendMessageA(list, LVM_SETITEMTEXTA, (WPARAM)row, (LPARAM)&it);
 }
 
+/* The address bar: the path opened out, one item per level, each indented a
+ * step further than the one above and wearing the icon for what it is. The
+ * one you are in is the one selected. */
+static void fill_address(const char *path)
+{
+    COMBOBOXEXITEMA ci;
+    const char *p = path;
+    int level = 0;
+
+    SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
+    memset(&ci, 0, sizeof(ci));
+    ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_INDENT;
+    ci.iItem = -1;
+    ci.pszText = (char *)"/";
+    ci.iImage = IMG_COMPUTER;
+    ci.iIndent = 0;
+    SendMessageA(g_address, CBEM_INSERTITEMA, 0, (LPARAM)&ci);
+
+    while (*p) {
+        char name[260];
+        size_t n = 0;
+        while (*p == '/')
+            p++;
+        while (p[n] && p[n] != '/' && n < sizeof(name) - 1)
+            n++;
+        if (!n)
+            break;
+        memcpy(name, p, n);
+        name[n] = 0;
+        p += n;
+        ci.pszText = name;
+        ci.iImage = IMG_FOLDER;
+        ci.iIndent = ++level;
+        SendMessageA(g_address, CBEM_INSERTITEMA, 0, (LPARAM)&ci);
+    }
+    SendMessageA(g_address, CB_SETCURSEL, (WPARAM)level, 0);
+}
+
 /* What the status bar says about the whole directory, which is what it says
  * whenever nothing in it is picked out. */
 static void status_for_directory(void)
@@ -469,11 +507,11 @@ static void show_directory(const char *path)
     strncpy(g_path, path, sizeof(g_path) - 1);
     g_path[sizeof(g_path) - 1] = 0;
 
-    /* the address bar shows where you are, and the caption the folder's own
-     * name — which is what the shell puts there */
-    SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
-    SendMessageA(g_address, CB_ADDSTRING, 0, (LPARAM)path);
-    SendMessageA(g_address, CB_SETCURSEL, 0, 0);
+    /* The address bar shows the way down to where you are, a step in for
+     * each level — which is what the shell's does, only walking its own
+     * namespace rather than the file system. The caption gets the folder's
+     * own name, which is also what the shell puts there. */
+    fill_address(path);
     {
         const char *leaf = strrchr(path, '/');
         SetWindowTextA(g_main, leaf && leaf[1] ? leaf + 1 : path);
@@ -903,10 +941,13 @@ static void build_bands(HWND w)
     n++;
     SendMessageA(g_toolbar, TB_ADDBUTTONSA, n, (LPARAM)b);
 
-    g_address = CreateWindowExA(WS_EX_CLIENTEDGE, "COMBOBOX", "",
+    g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
                                 WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0,
                                 300, 21, g_rebar, (HMENU)(UINT_PTR)ID_ADDRESS,
                                 NULL, NULL);
+#if HAVE(IMAGELIST)
+    SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
+#endif
 
     memset(&bi, 0, sizeof(bi));
     bi.cbSize = sizeof(bi);
