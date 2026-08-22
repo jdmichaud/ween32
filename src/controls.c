@@ -3145,8 +3145,12 @@ void ween_register_controls(void)
 #define WEEN_TB_ICON_X 6
 #define WEEN_TB_TEXT_X 24
 #define WEEN_TB_PAD_RIGHT 7
-#define WEEN_TB_SEP_W 7
-#define WEEN_TB_DROP_W 11 /* the arrow half a drop-down button reserves */
+#define WEEN_TB_PAD_DROP 5 /* when an arrow half follows the label */
+#define WEEN_TB_SEP_W 6
+/* The arrow half a drop-down button reserves: thirteen after a label,
+ * twelve after an image on its own. Measured on both. */
+#define WEEN_TB_DROP_W 13
+#define WEEN_TB_DROP_W_ICON 12
 #define WEEN_TB_DROP_HOT_W 13 /* and the part of it that comes up when hot */
 #define WEEN_TB_DROP_ARROW_W 5 /* and the mark drawn in it */
 
@@ -3208,11 +3212,16 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
                                : 0;
             /* A button with nothing but an image is not symmetric: the
              * image keeps its left inset and only two pixels follow it. */
+            int drop = (b->style & TBSTYLE_DROPDOWN) != 0;
+            /* A label is followed by seven pixels, or by four when an arrow
+             * half comes after it and takes the rest. */
             b->w = text ? ween_ncm(WEEN_TB_TEXT_X) + text +
-                              ween_ncm(WEEN_TB_PAD_RIGHT)
+                              ween_ncm(drop ? WEEN_TB_PAD_DROP
+                                            : WEEN_TB_PAD_RIGHT)
                         : ween_ncm(WEEN_TB_ICON_X) + 16 + ween_ncm(2);
-            if (b->style & TBSTYLE_DROPDOWN)
-                b->w += ween_ncm(WEEN_TB_DROP_W);
+            if (drop)
+                b->w += ween_ncm(text ? WEEN_TB_DROP_W
+                                      : WEEN_TB_DROP_W_ICON);
         }
         x += b->w;
     }
@@ -3262,10 +3271,9 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int held = tb->pressed == i && tb->hot == i;
 
         if (b->style & TBSTYLE_SEP) {
-            /* an etched line four pixels in, which is not the middle of the
-             * seven it takes: there are three to its left and two to its
-             * right */
-            int sx = bx + 4;
+            /* an etched line three pixels in, which is the middle of the
+             * six it takes */
+            int sx = bx + 3;
             ween_surface_vline(&top->surface, sx, by + 2, h - 4, WEEN_SHADOW);
             ween_surface_vline(&top->surface, sx + 1, by + 2, h - 4, WEEN_WHITE);
             continue;
@@ -3295,7 +3303,8 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * the border runs down through the arrow itself. */
             int hx = bx + 1, hw = b->w - 1;
             int aw = (b->style & TBSTYLE_DROPDOWN)
-                         ? ween_ncm(WEEN_TB_DROP_HOT_W)
+                         ? ween_ncm(b->text ? WEEN_TB_DROP_W
+                                            : WEEN_TB_DROP_W_ICON)
                          : 0;
             ween_classic_edge(&top->surface, hx, by, hw - aw, h,
                               BDR_RAISEDINNER, BF_RECT, NULL);
@@ -3335,8 +3344,9 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                              enabled ? WEEN_BLACK : WEEN_SHADOW);
         if (b->style & TBSTYLE_DROPDOWN) {
             /* the arrow half, with a line marking it off from the body */
-            int ax = bx + b->w - ween_ncm(WEEN_TB_DROP_W);
-            ween_classic_arrow_down(&top->surface, ax + 2, by + h / 2 - 1,
+            int ax = bx + b->w - ween_ncm(b->text ? WEEN_TB_DROP_W
+                                                  : WEEN_TB_DROP_W_ICON);
+            ween_classic_arrow_down(&top->surface, ax + 4, by + h / 2 - 1,
                                     WEEN_TB_DROP_ARROW_W,
                                     enabled ? WEEN_BLACK : WEEN_SHADOW);
         }

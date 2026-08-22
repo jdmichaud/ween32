@@ -401,7 +401,7 @@ static const char *const GLYPH_BACK_HOT[] = {
 static const glyph GLYPHS[] = {
     { 12, 10, 2, 3, GLYPH_BACK, BACK_PAL, BACK_N },
     { 13, 11, 1, 3, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
-    { 15, 13, 1, 2, GLYPH_UP, UP_PAL, UP_N },
+    { 15, 13, 0, 2, GLYPH_UP, UP_PAL, UP_N },
     { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
     { 15, 14, 0, 1, GLYPH_FOLDERS, FOLDERS_PAL, FOLDERS_N },
     { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
@@ -418,7 +418,7 @@ static const glyph GLYPHS[] = {
 static const glyph GLYPHS_HOT[] = {
     { 12, 10, 2, 3, GLYPH_BACK_HOT, BACK_HOT_PAL, BACK_HOT_N },
     { 13, 11, 1, 3, GLYPH_FORWARD, FORWARD_PAL, FORWARD_N },
-    { 15, 13, 1, 2, GLYPH_UP, UP_PAL, UP_N },
+    { 15, 13, 0, 2, GLYPH_UP, UP_PAL, UP_N },
     { 16, 16, 0, 0, GLYPH_SEARCH, SEARCH_PAL, SEARCH_N },
     { 15, 14, 0, 1, GLYPH_FOLDERS_HOT, FOLDERS_HOT_PAL, FOLDERS_HOT_N },
     { 16, 16, 0, 0, GLYPH_HISTORY, HISTORY_PAL, HISTORY_N },
