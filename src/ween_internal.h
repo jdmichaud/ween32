@@ -356,6 +356,15 @@ int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
 void ween_register_controls(void);
+/* A toolbar in menu mode, for the menu tracker: which bar has a drop-down up,
+ * which of its buttons that is, whether the keyboard opened it, what is under
+ * a point, and which button an arrow key walks to. */
+HWND ween_toolbar_menu_bar(void);
+int ween_toolbar_menu_item(void);
+int ween_toolbar_menu_keyed(void);
+void ween_toolbar_menu_switch(int index);
+int ween_toolbar_menu_hit(HWND bar, int x, int y);
+int ween_toolbar_menu_step(HWND bar, int from, int dir);
 /* A control showing a drop-down paints it after everything else and gets
  * first refusal on the mouse: this is how a combo box's list escapes its
  * own client area without a second top-level window. */
@@ -475,8 +484,6 @@ void ween_replay_event(const ween_event *ev);
 int ween_menu_armed(void);
 void ween_menu_disarm(void);
 int ween_menu_armed_key(HWND top, unsigned vk);
-HWND ween_menu_band_of(HWND top);
-void ween_menu_band_arm(HWND band, int index);
 
 extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
 const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */

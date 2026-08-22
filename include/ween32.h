@@ -984,6 +984,8 @@ typedef struct tagTBBUTTONINFOA {
  * them otherwise — a menu in a rebar band spaces its titles by sixteen —
  * says so. */
 #define TB_SETBUTTONSIZE (WM_USER + 31)
+/* How far in the first button starts. */
+#define TB_SETINDENT (WM_USER + 47)
 #define TB_SETPADDING (WM_USER + 87)
 #define TB_GETPADDING (WM_USER + 86)
 /* Which button the keyboard is on, and the letters that reach one: a menu in
@@ -1187,22 +1189,6 @@ BOOL CheckMenuRadioItem(HMENU menu, UINT first, UINT last, UINT check,
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
                     HWND owner, const RECT *unused);
-
-/* ---- a menu bar the application draws itself ----------------------------
- *
- * Not win32: there a menu band is a toolbar in a rebar and comctl32 does
- * this. ween32 offers it directly — the application says where the band is
- * and where its items are, draws them itself, and ween32 tracks them: a
- * press opens a drop-down, the pointer switches between them while one is
- * open, the arrows walk them, Alt arms the bar and a letter opens one.
- */
-void ween_menu_band_set(HWND top, HWND band, const RECT *items, int count);
-/* Which item the pointer or the keyboard is on, -1 for none, and whether its
- * drop-down is showing: a band draws the two apart, raised for the one and
- * pushed in for the other, as a toolbar does. */
-int ween_menu_band_hot(HWND band);
-int ween_menu_band_open(HWND band);
-UINT ween_menu_band_track(HWND band, int index, int from_keyboard);
 
 /* ---- system metrics ----------------------------------------------------- */
 #define SM_CXSCREEN 0

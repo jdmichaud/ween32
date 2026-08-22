@@ -282,7 +282,10 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
      * the menu that key while Alt is down. */
     HWND top = ween_top_level(dlg);
     if (msg->wParam == VK_MENU || msg->wParam == VK_F10) {
-        if (ween_menu_key(top, (unsigned)msg->wParam, 0))
+        /* Through the window, not straight to the menu: WM_SYSCOMMAND with
+         * SC_KEYMENU is how win32 asks, and an application whose menu is a
+         * band of its own answers it rather than the frame. */
+        if (SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, 0) == 0)
             return TRUE;
     }
     /* With the bar armed — Alt pressed and waiting — the arrows walk it,
@@ -299,7 +302,7 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     if (alt) {
         unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
         unsigned key = ch ? ch : (unsigned)msg->wParam;
-        if (ween_menu_key(top, 0, key))
+        if (SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, (LPARAM)key) == 0)
             return TRUE;
         HWND target = ween_mnemonic_target(dlg, key);
         if (target) {

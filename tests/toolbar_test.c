@@ -27,6 +27,10 @@ enum { ID_BACK = 1, ID_UP, ID_FOLDERS, ID_DEAD, ID_VIEWS };
 
 static HWND g_tb;
 static int g_command, g_dropdown = -1;
+/* the menu-mode bar under test, and how many times each of its titles was
+ * asked to drop down */
+static HWND g_menu_bar;
+static int g_dropped[2];
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -38,6 +42,14 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (nm->code == TBN_DROPDOWN)
             g_dropdown = ((const NMTOOLBAR *)lp)->iItem;
+        if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_menu_bar) {
+            /* stand in for the menu this would put up: the first title's
+             * "menu" is left for the second, as sliding along the bar does */
+            int i = ((const NMTOOLBAR *)lp)->iItem == ID_BACK ? 0 : 1;
+            g_dropped[i]++;
+            if (i == 0)
+                ween_toolbar_menu_switch(1);
+        }
         return 0;
     }
     if (msg == WM_DESTROY) {
@@ -223,6 +235,21 @@ int main(void)
         SendMessageA(bar, TB_SETHOTITEM, 1, 0);
         CHECK(SendMessageA(bar, TB_GETHOTITEM, 0, 0) == 1,
               "the keyboard can put a title under itself");
+
+        /* Menu mode: a title opens on the press, not the release, and while
+         * its menu is up the tracker can ask for the next one — which the bar
+         * opens as soon as the first has closed. The application sees one
+         * TBN_DROPDOWN per title and answers each the same way. */
+        g_menu_bar = bar;
+        g_dropped[0] = g_dropped[1] = 0;
+        g_dropdown = -1;
+        SendMessageA(bar, WM_LBUTTONDOWN, 0, MAKELPARAM(r.left + 4, 10));
+        CHECK(g_dropped[0] == 1 && g_dropped[1] == 1,
+              "a title opens on the press, and the bar goes on to the one the "
+              "tracker asks for");
+        CHECK(SendMessageA(bar, TB_GETHOTITEM, 0, 0) == 1,
+              "which is the one left under the keyboard");
+        g_menu_bar = NULL;
         DestroyWindow(bar);
     }
 

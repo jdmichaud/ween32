@@ -257,13 +257,11 @@ int ween_frame_width(const struct ween_wnd *w)
                                                : WEEN_NC_FRAME);
 }
 
-/* The strip the menu bar occupies, 0 when the window has no menu. */
+/* The strip the menu bar occupies, 0 when the window has no menu. A window
+ * whose menu goes in a band of its own — a shell's is inside the rebar —
+ * hangs none off the frame, so there is nothing to except here. */
 int ween_menu_bar_height(const struct ween_wnd *w)
 {
-    /* A window whose bar is drawn in a band of its own keeps none of the
-     * frame for it: the shell's menu is inside the rebar, not above it. */
-    if (w && ween_menu_band_of((HWND)w))
-        return 0;
     return w->menu ? ween_ncm(WEEN_NC_MENU) : 0;
 }
 
@@ -1691,14 +1689,10 @@ int ween_menu_armed(void)
     return g_menu_armed;
 }
 
-/* Where the armed bar shows itself: the band, when the application draws the
- * bar, and the frame's own strip when it does not. */
+/* Where the armed bar shows itself: the frame's own strip. */
 static void armed_mark(HWND top, int index)
 {
-    HWND band = top ? ween_menu_band_of(top) : NULL;
-    if (band) {
-        ween_menu_band_arm(band, index);
-    } else if (top) {
+    if (top) {
         top->menu_hot = index;
         top->dirty = 1;
         InvalidateRect(top, NULL, FALSE);
@@ -1711,12 +1705,9 @@ static void armed_mark(HWND top, int index)
  * this; those stay until a mouse click puts them away. */
 static void menu_cues_off(HWND top)
 {
-    HWND band = top ? ween_menu_band_of(top) : NULL;
     if (!ween_menu_cues)
         return;
     ween_menu_cues = 0;
-    if (band)
-        InvalidateRect(band, NULL, FALSE);
     if (top) {
         top->dirty = 1;
         InvalidateRect(top, NULL, FALSE);
@@ -1738,10 +1729,8 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
 {
     int index = 0;
     UINT cmd;
-    HWND band;
     if (!top || !top->menu)
         return 0;
-    band = ween_menu_band_of(top);
     ween_menu_layout_bar(top->menu, ween_gui_font(),
                          top->w - 2 * ween_frame_width(top));
     if (ch) {
@@ -1769,8 +1758,7 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     }
     g_menu_armed = 0;
     g_menu_armed_top = NULL;
-    cmd = band ? ween_menu_band_track(band, index, 1)
-               : ween_menu_track_bar(top, index, 1);
+    cmd = ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
     menu_cues_off(top);
@@ -1782,12 +1770,10 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
  * picked, Escape puts it away. Returns whether the key was one of them. */
 int ween_menu_armed_key(HWND top, unsigned vk)
 {
-    HWND band;
     int count;
     UINT cmd;
     if (!g_menu_armed || !top || !top->menu)
         return 0;
-    band = ween_menu_band_of(top);
     count = GetMenuItemCount(top->menu);
     if (count <= 0)
         return 0;
@@ -1807,8 +1793,7 @@ int ween_menu_armed_key(HWND top, unsigned vk)
         int index = g_menu_armed_at;
         g_menu_armed = 0; /* the session draws the item open from here */
         g_menu_armed_top = NULL;
-        cmd = band ? ween_menu_band_track(band, index, 1)
-                   : ween_menu_track_bar(top, index, 1);
+        cmd = ween_menu_track_bar(top, index, 1);
         if (cmd)
             post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
         menu_cues_off(top);
@@ -2072,6 +2057,22 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (wnd->parent)
             return SendMessageA(wnd->parent, WM_CONTEXTMENU, wp, lp);
         return 0;
+    case WM_CHANGEUISTATE: {
+        /* An application saying the cues should show or stop showing. Windows
+         * keeps this per window and passes it down the tree; ween32 keeps one
+         * for the process, which is as much as one keyboard can mean. */
+        UINT action = LOWORD(wp), flags = HIWORD(wp);
+        int show = action == UIS_CLEAR; /* the flags name what is hidden */
+        if (action == UIS_INITIALIZE)
+            return 0;
+        if (flags & UISF_HIDEACCEL)
+            ween_menu_cues = show;
+        if (flags & UISF_HIDEFOCUS)
+            ween_ui_focus_cues = show;
+        ween_top_level(wnd)->dirty = 1;
+        InvalidateRect(ween_top_level(wnd), NULL, FALSE);
+        return 0;
+    }
     case WM_QUERYUISTATE:
         /* What is hidden, not what is shown — the flags are named for what
          * they take away. An application drawing its own labels asks this to
@@ -2138,7 +2139,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (b)
                 return HTBOTTOM;
         }
-        if (wnd->menu && !ween_menu_band_of(wnd) &&
+        if (wnd->menu &&
             y >= frame + ween_ncm(WEEN_NC_CAPTION) &&
             y < frame + ween_ncm(WEEN_NC_CAPTION) + ween_ncm(WEEN_NC_MENU) &&
             x >= frame && x < wnd->w - frame)
@@ -2239,7 +2240,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                                                   : 0));
             }
         }
-        if (wnd->menu && !ween_menu_band_of(wnd)) { /* between caption and client */
+        if (wnd->menu) { /* between caption and client */
             const ween_strike *mf = ween_gui_font();
             int bar_w = wnd->w - 2 * frame;
             ween_menu_layout_bar(wnd->menu, mf, bar_w);
@@ -2251,6 +2252,16 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_SYSCOMMAND:
         switch (wp & 0xfff0) {
+        case SC_KEYMENU:
+            /* Alt, F10, or Alt and a letter: the keyboard is asking for the
+             * menu. An application whose menu is not the frame's — a shell
+             * keeps its in a rebar band — answers this itself and puts its
+             * own bar under the keyboard; what is left here is the frame's
+             * own menu bar. */
+            /* zero means it was used, as a window proc says of anything it
+             * has handled: the caller falls back to a control's own mnemonic
+             * only when the menus wanted none of it */
+            return ween_menu_key(wnd, lp ? 0 : VK_MENU, (unsigned)lp) ? 0 : 1;
         case SC_MAXIMIZE: {
             /* Fill the screen, remembering where to go back to. There is no
              * work area to ask about, so the screen metrics are the extent. */

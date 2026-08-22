@@ -3847,6 +3847,7 @@ typedef struct {
     int drop;    /* the held button's arrow half, not its body */
     DWORD ex;    /* TBSTYLE_EX_*: whether a drop-down shows its arrow half */
     int pad_x;   /* what surrounds a label, when the app has said, else 0 */
+    int indent;  /* how far in the first button starts */
     int btn_h;   /* how tall a button is, when the app has said, else 0 */
     int keyed;   /* the hot item was put there by the keyboard, not the mouse */
     HWND unfocus; /* what had the focus when the keyboard reached this bar */
@@ -3923,7 +3924,7 @@ static int tb_drop_w(const ween_toolbar *tb, const ween_tbbutton *b)
 static void toolbar_layout(HWND wnd, ween_toolbar *tb)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-    int x = 0;
+    int x = ween_ncm(tb->indent);
     for (int i = 0; i < tb->count; i++) {
         ween_tbbutton *b = &tb->btn[i];
         b->x = x;
@@ -4124,6 +4125,107 @@ static void toolbar_set_hot(HWND wnd, ween_toolbar *tb, int hot)
     InvalidateRect(wnd, NULL, FALSE);
 }
 
+/* ---- menu mode ------------------------------------------------------------
+ *
+ * A toolbar whose drop-down buttons wear no arrow is a menu bar: the whole
+ * button is the drop-down, it opens on the press rather than the release, and
+ * while one is open the pointer moving onto another title -- or the arrows
+ * walking to it -- closes that one and opens this. The menu tracker asks
+ * these, which is how it knows what to switch to; the application only sees
+ * TBN_DROPDOWN, once per title, and answers it with TrackPopupMenu.
+ */
+static HWND g_tb_menu;       /* the bar whose drop-down is up, or NULL */
+static int g_tb_menu_item;   /* which of its buttons */
+static int g_tb_menu_switch; /* the one to open when this one returns */
+static int g_tb_menu_keyed;  /* it was opened by the keyboard */
+
+HWND ween_toolbar_menu_bar(void)
+{
+    return g_tb_menu;
+}
+
+int ween_toolbar_menu_item(void)
+{
+    return g_tb_menu_item;
+}
+
+int ween_toolbar_menu_keyed(void)
+{
+    return g_tb_menu_keyed;
+}
+
+void ween_toolbar_menu_switch(int index)
+{
+    g_tb_menu_switch = index;
+}
+
+/* Which drop-down button is at a point in the bar's own coordinates. */
+int ween_toolbar_menu_hit(HWND bar, int x, int y)
+{
+    ween_toolbar *tb = bar ? toolbar_of(bar) : NULL;
+    int i;
+    if (!tb)
+        return -1;
+    toolbar_layout(bar, tb);
+    i = toolbar_hit(bar, tb, x, y, NULL);
+    if (i < 0 || !(tb->btn[i].style & TBSTYLE_DROPDOWN) ||
+        !(tb->btn[i].state & TBSTATE_ENABLED))
+        return -1;
+    return i;
+}
+
+/* The next drop-down button along, wrapping — what an arrow key walks. */
+int ween_toolbar_menu_step(HWND bar, int from, int dir)
+{
+    ween_toolbar *tb = bar ? toolbar_of(bar) : NULL;
+    int at = from;
+    if (!tb || tb->count <= 0)
+        return -1;
+    for (int n = 0; n < tb->count; n++) {
+        at = (at + dir + tb->count) % tb->count;
+        if ((tb->btn[at].style & TBSTYLE_DROPDOWN) &&
+            (tb->btn[at].state & TBSTATE_ENABLED))
+            return at;
+    }
+    return -1;
+}
+
+static void toolbar_notify_dropdown(HWND wnd, ween_toolbar *tb, int i)
+{
+    NMTOOLBAR nm;
+    memset(&nm, 0, sizeof(nm));
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = (UINT_PTR)wnd->id;
+    nm.hdr.code = TBN_DROPDOWN;
+    nm.iItem = tb->btn[i].id;
+    if (wnd->parent)
+        SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
+/* Open a title's drop-down and keep opening whichever the tracker moves to,
+ * which is what makes the pointer slide from one to the next. */
+static void toolbar_dropdown(HWND wnd, ween_toolbar *tb, int i, int keyed)
+{
+    while (i >= 0 && i < tb->count) {
+        tb->pressed = i;
+        tb->hot = i;
+        tb->drop = 0;
+        InvalidateRect(wnd, NULL, FALSE);
+        ween_flush_paint(); /* pushed in before the menu covers it */
+        g_tb_menu = wnd;
+        g_tb_menu_item = i;
+        g_tb_menu_switch = -1;
+        g_tb_menu_keyed = keyed;
+        toolbar_notify_dropdown(wnd, tb, i);
+        g_tb_menu = NULL;
+        g_tb_menu_keyed = 0;
+        i = g_tb_menu_switch;
+        keyed = 0;
+    }
+    tb->pressed = -1;
+    InvalidateRect(wnd, NULL, FALSE);
+}
+
 static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_toolbar *tb;
@@ -4186,6 +4288,13 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case TB_GETPADDING:
         tb = toolbar_of(wnd);
         return tb ? MAKELPARAM(tb->pad_x, 0) : 0;
+    case TB_SETINDENT:
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return FALSE;
+        tb->indent = (int)wp;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
     case TB_SETBUTTONSIZE:
         tb = toolbar_of(wnd);
         if (!tb)
@@ -4341,9 +4450,78 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_MOUSELEAVE:
         tb = toolbar_of(wnd);
-        if (tb)
+        if (tb && !tb->keyed)
             toolbar_set_hot(wnd, tb, -1);
         return 0;
+
+    case WM_SETFOCUS:
+        /* what had the keyboard before this bar took it, so Escape can put it
+         * back where it was */
+        tb = toolbar_of(wnd);
+        if (tb)
+            tb->unfocus = (HWND)wp;
+        return 0;
+    case WM_KILLFOCUS:
+        tb = toolbar_of(wnd);
+        if (tb && tb->keyed) { /* the bar is no longer being walked */
+            tb->keyed = 0;
+            toolbar_set_hot(wnd, tb, -1);
+        }
+        return 0;
+    case WM_KEYDOWN: {
+        /* A bar with the keyboard on it is walked: the arrows move along it,
+         * Down or Enter opens the title they are on, a letter opens the one
+         * it marks, and Escape gives the keyboard back. This is what a menu
+         * bar does, and a toolbar is where win32 keeps it. */
+        unsigned ch = (unsigned)(lp >> 16) & 0xff;
+        int at, to;
+        tb = toolbar_of(wnd);
+        if (!tb || tb->count <= 0)
+            return 0;
+        at = tb->hot >= 0 ? tb->hot : 0;
+        switch (wp) {
+        case VK_LEFT:
+        case VK_RIGHT:
+            to = ween_toolbar_menu_step(wnd, at, wp == VK_RIGHT ? 1 : -1);
+            if (to >= 0) {
+                tb->keyed = 1;
+                toolbar_set_hot(wnd, tb, to);
+            }
+            return 0;
+        case VK_DOWN:
+        case VK_RETURN:
+        case VK_SPACE:
+            if (tb->hot >= 0 && (tb->btn[at].style & TBSTYLE_DROPDOWN))
+                toolbar_dropdown(wnd, tb, at, 1);
+            else if (tb->hot >= 0 && wnd->parent)
+                SendMessageA(wnd->parent, WM_COMMAND,
+                             MAKEWPARAM((WORD)tb->btn[at].id, 0), (LPARAM)wnd);
+            return 0;
+        case VK_ESCAPE:
+        case VK_MENU:
+        case VK_F10:
+            /* Escape leaves the bar, and so does a second Alt: the underlines
+             * go with it and the keyboard goes back where it came from. */
+            tb->keyed = 0;
+            toolbar_set_hot(wnd, tb, -1);
+            SendMessageA(wnd, WM_CHANGEUISTATE,
+                         MAKEWPARAM(UIS_SET, UISF_HIDEACCEL), 0);
+            if (tb->unfocus)
+                SetFocus(tb->unfocus);
+            return 0;
+        default:
+            break;
+        }
+        if (ch) {
+            int hit = -1;
+            if (SendMessageA(wnd, TB_MAPACCELERATORA, ch, (LPARAM)&hit) &&
+                hit >= 0) {
+                tb->keyed = 1;
+                toolbar_dropdown(wnd, tb, hit, 1);
+            }
+        }
+        return 0;
+    }
 
     case WM_LBUTTONDOWN: {
         int arrow = 0, i;
@@ -4354,6 +4532,14 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         i = toolbar_hit(wnd, tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &arrow);
         if (i < 0 || !(tb->btn[i].state & TBSTATE_ENABLED))
             return 0;
+        if ((tb->btn[i].style & TBSTYLE_DROPDOWN) &&
+            !(tb->ex & TBSTYLE_EX_DRAWDDARROWS)) {
+            /* a menu title: the whole button is the drop-down, and it opens
+             * on the press, not on the release */
+            SetFocus(wnd);
+            toolbar_dropdown(wnd, tb, i, 0);
+            return 0;
+        }
         tb->pressed = i;
         tb->hot = i;
         tb->drop = arrow;
@@ -4375,15 +4561,7 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (arrow) {
             /* the arrow asks the app for a menu rather than doing the
              * button's job */
-            NMTOOLBAR nm;
-            memset(&nm, 0, sizeof(nm));
-            nm.hdr.hwndFrom = wnd;
-            nm.hdr.idFrom = (UINT_PTR)wnd->id;
-            nm.hdr.code = TBN_DROPDOWN;
-            nm.iItem = tb->btn[i].id;
-            if (wnd->parent)
-                SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id,
-                             (LPARAM)&nm);
+            toolbar_notify_dropdown(wnd, tb, i);
             return 0;
         }
         if (tb->btn[i].style & TBSTYLE_CHECK)

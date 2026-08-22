@@ -52,7 +52,10 @@ enum {
     IDM_CTX_PROPERTIES,
     IDM_CTX_REFRESH,
     IDM_CLOSE,
-    IDM_ABOUT
+    IDM_ABOUT,
+    /* one per title of the menu bar, since a toolbar's buttons are known by
+     * their command and these are the buttons the bar is made of */
+    IDM_MENU_FIRST = 300
 };
 
 /* the icons the shell shows, by their number in assets/icons */
@@ -1448,182 +1451,56 @@ static void build_context_menus(void)
 
 /* ---- the menu bar, as a band of the rebar ---------------------------------
  *
- * A window menu belongs to the frame and cannot live inside a client area, so
- * a menu shown in a rebar has to be drawn by the application: the band's
- * child measures the labels, draws them, and hands each drop-down to
- * TrackPopupMenu when its item is pressed. That is what it takes on either
- * side of the build — it is not a ween32 thing.
+ * On the machine the menu in a rebar is a toolbar: one drop-down button per
+ * title, no arrow beside it, and the shell answers TBN_DROPDOWN with
+ * TrackPopupMenu. That is all this is. Everything a menu bar does beyond a
+ * toolbar's own — sliding from one drop-down to the next, Alt putting a title
+ * under the keyboard, the underlines that come out with it — belongs to the
+ * library and happens without this file saying anything.
  */
-#define MENUBAR_PAD 16  /* around each label, as Windows 2000 spaces them */
-#define MENUBAR_LEAD 1  /* and the band leads in by one before the first */
+#define MENUBAR_PAD 16   /* what surrounds a title, as Windows 2000 spaces them */
+#define MENUBAR_LEAD 1   /* and the band leads in by one before the first */
+#define MENUBAR_H 19     /* a title is a row shorter than the band it is in */
+#define MENUBAR_MAX 16   /* titles a bar is built with */
 #define MENUBAR_BRAND 38 /* the box at the right the shell animates in */
 
 static HMENU g_menu;
-#ifdef _WIN32
-static int g_menu_open = -1; /* the item whose drop-down is showing */
-#endif
 
-/* An item's label as the menu holds it, marker and all. DrawText takes the
- * '&' out and underlines what follows, so this is what gets drawn. */
-static void menubar_text(int i, char *out, size_t max)
+/* One button per top-level menu, labelled as the menu is — marker and all,
+ * because the toolbar underlines the letter it marks when the cues show. */
+static void build_menubar(void)
 {
-    GetMenuStringA(g_menu, (UINT)i, out, (int)max, MF_BYPOSITION);
+    static char label[MENUBAR_MAX][64];
+    TBBUTTON b[MENUBAR_MAX];
+    int n = GetMenuItemCount(g_menu);
+    if (n > MENUBAR_MAX)
+        n = MENUBAR_MAX;
+    memset(b, 0, sizeof(b));
+    for (int i = 0; i < n; i++) {
+        GetMenuStringA(g_menu, (UINT)i, label[i], (int)sizeof(label[i]),
+                       MF_BYPOSITION);
+        b[i].iBitmap = -1; /* a title carries no image */
+        b[i].idCommand = IDM_MENU_FIRST + i;
+        b[i].fsState = TBSTATE_ENABLED;
+        b[i].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+        b[i].iString = (INT_PTR)label[i];
+    }
+    SendMessageA(g_menubar, TB_ADDBUTTONSA, (WPARAM)n, (LPARAM)b);
 }
 
-/* And the same without the marker: it is not drawn, so it is not measured
- * either. */
-static void menubar_label(int i, char *out, size_t max)
+/* A title was pressed, or reached by the keyboard: put its menu under it. */
+static void menubar_drop(int index)
 {
-    char raw[64];
-    size_t j = 0;
-    menubar_text(i, raw, sizeof(raw));
-    for (size_t k = 0; raw[k] && j < max - 1; k++)
-        if (raw[k] != '&')
-            out[j++] = raw[k];
-    out[j] = 0;
-}
-
-/* Where each item sits, measured once. A press has to know this too, and
- * measuring text wants a device context, so the widths are kept from the
- * paint that found them rather than asked for again. */
-#define MENUBAR_MAX 16 /* what the band can hold, and what it is told about */
-static int g_mb_x[MENUBAR_MAX], g_mb_w[MENUBAR_MAX], g_mb_n;
-
-static void menubar_measure(HDC dc)
-{
-    int x = MENUBAR_LEAD;
-    g_mb_n = GetMenuItemCount(g_menu);
-    if (g_mb_n > (int)(sizeof(g_mb_x) / sizeof(*g_mb_x)))
-        g_mb_n = (int)(sizeof(g_mb_x) / sizeof(*g_mb_x));
-    for (int i = 0; i < g_mb_n; i++) {
-        char label[64];
-        SIZE sz;
-        menubar_label(i, label, sizeof(label));
-        GetTextExtentPoint32A(dc, label, -1, &sz);
-        g_mb_x[i] = x;
-        g_mb_w[i] = sz.cx + MENUBAR_PAD;
-        x += g_mb_w[i];
-    }
-#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-    /* Hand the layout over: ween32 tracks the bar from here on — a press
-     * opens a drop-down, the pointer switches between them, the arrows walk
-     * them and Alt arms the lot. On win32 a menu band is a toolbar in a
-     * rebar and comctl32 does all that; the code below this is what an
-     * application would write there. */
-    {
-        RECT items[MENUBAR_MAX];
-        RECT cr;
-        GetClientRect(g_menubar, &cr);
-        for (int i = 0; i < g_mb_n; i++) {
-            items[i].left = g_mb_x[i];
-            items[i].right = g_mb_x[i] + g_mb_w[i];
-            items[i].top = 0;
-            items[i].bottom = cr.bottom;
-        }
-        ween_menu_band_set(g_main, g_menubar, items, g_mb_n);
-    }
-#endif
-}
-
-static int menubar_hit(int x)
-{
-    for (int i = 0; i < g_mb_n; i++)
-        if (x >= g_mb_x[i] && x < g_mb_x[i] + g_mb_w[i])
-            return i;
-    return -1;
-}
-
-static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
-{
-    switch (msg) {
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC dc = BeginPaint(w, &ps);
-        /* The band is laid out in its own client rectangle, not in whatever
-         * part of it is being repainted: a partial repaint — which is what
-         * arrives when a drop-down closes over it — would otherwise put every
-         * label somewhere else. */
-        RECT cr, fill = ps.rcPaint;
-        GetClientRect(w, &cr);
-        FillRect(dc, &fill, GetSysColorBrush(COLOR_BTNFACE));
-        SelectObject(dc, g_font);
-        menubar_measure(dc);
-        /* Whether the underlines are showing is the window's to say, not the
-         * bar's: Alt turns them on for everything at once. */
-        UINT ui = (UINT)SendMessageA(w, WM_QUERYUISTATE, 0, 0);
-        for (int i = 0; i < g_mb_n; i++) {
-            char label[64];
-            RECT r;
-#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-            int hot = i == ween_menu_band_hot(w);
-            int open = hot && ween_menu_band_open(w);
-#else
-            int open = i == g_menu_open;
-            int hot = open;
-#endif
-            menubar_text(i, label, sizeof(label));
-            /* The label's pen goes half the padding in, rather than being
-             * centred in the item: centring would depend on the measure
-             * DrawText happens to align with, and this does not. */
-            r.left = g_mb_x[i] + MENUBAR_PAD / 2;
-            r.top = 0;
-            r.right = g_mb_x[i] + g_mb_w[i];
-            /* Centred in the band less the two rows the pushed edge would
-             * take underneath, which is a row higher than dead centre and is
-             * where Windows 2000 puts it. */
-            r.bottom = cr.bottom - 2;
-            /* An open item is pushed in, not filled: one pixel of sunken
-             * edge, and the label stays black. Alt leaves an item hot with
-             * nothing open, and that one stands out instead — the two states
-             * a toolbar's button has. */
-            if (hot) {
-                RECT e;
-                e.left = g_mb_x[i];
-                e.right = g_mb_x[i] + g_mb_w[i];
-                e.top = 1;
-                e.bottom = cr.bottom - 2;
-                DrawEdge(dc, &e, open ? BDR_SUNKENOUTER : BDR_RAISEDINNER,
-                         BF_RECT);
-            }
-            SetTextColor(dc, GetSysColor(COLOR_MENUTEXT));
-            DrawTextA(dc, label, -1, &r,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE |
-                          ((ui & UISF_HIDEACCEL) ? DT_HIDEPREFIX : 0));
-        }
-        EndPaint(w, &ps);
-        return 0;
-    }
-    case WM_LBUTTONDOWN: {
-        int i = menubar_hit(GET_X_LPARAM(lp));
-        if (i < 0)
-            return 0;
-#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-        {
-            UINT cmd = ween_menu_band_track(w, i, 0);
-            if (cmd)
-                SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
-        }
-#else
-        {
-            RECT cr;
-            POINT pt;
-            GetClientRect(w, &cr);
-            g_menu_open = i;
-            InvalidateRect(w, NULL, FALSE);
-            UpdateWindow(w);
-            pt.x = g_mb_x[i];
-            pt.y = cr.bottom;
-            ClientToScreen(w, &pt);
-            TrackPopupMenu(GetSubMenu(g_menu, i), TPM_LEFTALIGN, pt.x, pt.y, 0,
-                           g_main, NULL);
-            g_menu_open = -1;
-            InvalidateRect(w, NULL, FALSE);
-        }
-#endif
-        return 0;
-    }
-    }
-    return DefWindowProcA(w, msg, wp, lp);
+    RECT r;
+    POINT pt;
+    if (index < 0 || index >= GetMenuItemCount(g_menu))
+        return;
+    SendMessageA(g_menubar, TB_GETITEMRECT, (WPARAM)index, (LPARAM)&r);
+    pt.x = r.left;
+    pt.y = r.bottom;
+    ClientToScreen(g_menubar, &pt);
+    TrackPopupMenu(GetSubMenu(g_menu, index), TPM_LEFTALIGN, pt.x, pt.y, 0,
+                   g_main, NULL);
 }
 
 /* ---- the brand -----------------------------------------------------------
@@ -1907,16 +1784,10 @@ static void build_menu(HWND w)
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)help, "&Help");
     /* Not SetMenu: the shell does not hang its menu off the window frame. It
      * goes in the first band of the same rebar as the toolbar, which is why
-     * the screenshot has a gripper to the left of File. See menubar_proc. */
+     * the screenshot has a gripper to the left of File. The bar itself is
+     * built in build_bands, out of this menu's titles. */
     g_menu = bar;
-#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-    /* The frame is told about the menu even though it does not draw it: that
-     * is what lets Alt reach it. ween_menu_band_set, in menubar_measure,
-     * says where it really is, and the frame keeps none of its height. */
-    SetMenu(w, bar);
-#else
     (void)w;
-#endif
 }
 
 /* Where the icons are.
@@ -2235,17 +2106,20 @@ static void build_bands(HWND w)
     }
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
 
-    /* registered before anything is laid out, so the frame never keeps a
-     * strip for a bar it is not going to draw */
-    g_menubar = CreateWindowA("explorermenu", "", WS_CHILD | WS_VISIBLE, 0, 0,
-                              100, 22, g_rebar, (HMENU)(UINT_PTR)ID_MENUBAR,
-                              NULL, NULL);
-#ifndef _WIN32 /* ween32 has a menu band; on win32 comctl32 does this */
-    {
-        RECT none = { 0, 0, 0, 0 };
-        ween_menu_band_set(g_main, g_menubar, &none, 0);
-    }
-#endif
+    /* The menu bar: a flat toolbar of drop-down buttons, one per title, with
+     * no arrow beside them — which is what makes the whole button the
+     * drop-down. Sixteen pixels surround a title and it stands a row shorter
+     * than the band, both as Windows 2000 has them. */
+    g_menubar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
+                                    TBSTYLE_LIST,
+                                0, 0, 100, 22, g_rebar,
+                                (HMENU)(UINT_PTR)ID_MENUBAR, NULL, NULL);
+    SendMessageA(g_menubar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    SendMessageA(g_menubar, TB_SETPADDING, 0, MAKELPARAM(MENUBAR_PAD, 0));
+    SendMessageA(g_menubar, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, MENUBAR_H));
+    SendMessageA(g_menubar, TB_SETINDENT, MENUBAR_LEAD, 0);
+    build_menubar();
     g_brand = CreateWindowA("explorerbrand", "", WS_CHILD | WS_VISIBLE, 0, 2,
                             BRAND_W, BRAND_H, g_rebar,
                             (HMENU)(UINT_PTR)ID_BRAND, NULL, NULL);
@@ -2506,6 +2380,11 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                          strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
                 show_directory(path);
             }
+        } else if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_menubar) {
+            /* A title of the menu bar was pressed, or the keyboard opened it.
+             * The bar keeps the button pushed in and slides to the next one
+             * by itself; all this has to do is put the menu under it. */
+            menubar_drop(((const NMTOOLBAR *)lp)->iItem - IDM_MENU_FIRST);
         } else if (nm->code == TVN_ITEMEXPANDINGA) {
             /* read the level being opened, so it is there to be drawn */
             const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
@@ -2517,6 +2396,27 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+
+    case WM_SYSCOMMAND:
+        if ((wp & 0xfff0) == SC_KEYMENU) {
+            /* Alt, F10 or Alt and a letter. This window's menu is not the
+             * frame's, so the frame cannot answer for it: the bar takes the
+             * keyboard, the cues come out, and the title the letter marks —
+             * or the first one — goes under it. */
+            int hit = 0;
+            if (lp && !SendMessageA(g_menubar, TB_MAPACCELERATORA, (WPARAM)lp,
+                                    (LPARAM)&hit))
+                return 1; /* no title marks it: let a control have the letter */
+            SendMessageA(g_menubar, WM_CHANGEUISTATE,
+                         MAKEWPARAM(UIS_CLEAR, UISF_HIDEACCEL | UISF_HIDEFOCUS),
+                         0);
+            SetFocus(g_menubar);
+            SendMessageA(g_menubar, TB_SETHOTITEM, (WPARAM)hit, 0);
+            if (lp) /* asked for by name, so it opens */
+                SendMessageA(g_menubar, WM_KEYDOWN, VK_DOWN, 0);
+            return 0;
+        }
+        break;
 
     case WM_COMMAND:
         switch (LOWORD(wp)) {
@@ -2656,12 +2556,6 @@ int main(int argc, char **argv)
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));
-    wc.lpfnWndProc = menubar_proc;
-    wc.lpszClassName = "explorermenu";
-    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-    RegisterClassA(&wc);
-
-    memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = panehead_proc;
     wc.lpszClassName = "explorerpane";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
@@ -2686,7 +2580,11 @@ int main(int argc, char **argv)
 
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
-        if (IsDialogMessageA(w, &msg))
+        /* The dialog manager's keys — Tab between the panes, Escape, the
+         * arrows within a group — are not wanted while the menu bar has the
+         * keyboard: there they belong to the bar, which walks its titles with
+         * them and leaves on Escape. */
+        if (GetFocus() != g_menubar && IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
