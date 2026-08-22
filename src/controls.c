@@ -2058,6 +2058,9 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * A header of raised buttons over rows of text, one column per header item. */
 
 #define WEEN_LV_HEADER_H 17
+/* The two rows of window a list keeps between its header and its first item.
+ * Windows leaves them; without them every row sits two pixels high. */
+#define WEEN_LV_ROW_TOP 2
 
 typedef struct {
     char *text[4];
@@ -2154,7 +2157,7 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     RECT cr;
     int sb = ween_scroll_metric(), content = lv_content_w(l);
     int ih = lv_item_h(wnd, l);
-    int rows_h = (l ? l->nrow : 0) * ih + WEEN_LV_HEADER_H;
+    int rows_h = (l ? l->nrow : 0) * ih + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP;
 
     GetClientRect(wnd, &cr);
     g.hbar = content > cr.right;
@@ -2162,7 +2165,7 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     g.hbar = content > cr.right - (g.vbar ? sb : 0);
     g.view_w = cr.right - (g.vbar ? sb : 0);
     g.view_h = cr.bottom - (g.hbar ? sb : 0);
-    g.visible = (g.view_h - WEEN_LV_HEADER_H) / ih;
+    g.visible = (g.view_h - WEEN_LV_HEADER_H - WEEN_LV_ROW_TOP) / ih;
     if (g.visible < 1)
         g.visible = 1;
     return g;
@@ -2234,9 +2237,20 @@ static int lv_label_w(HWND wnd, const ween_list *l, int row, int indent)
         return 0;
     tw = ween_strike_text_extent(f, l->row[row].text[0],
                                  (int)strlen(l->row[row].text[0]));
-    if (tw > l->width[0] - indent - 12)
-        tw = l->width[0] - indent - 12;
-    return tw + 10;
+    if (tw > l->width[0] - indent - 8)
+        tw = l->width[0] - indent - 8;
+    /* Two before the text and four after, which is the box the machine
+     * highlights: "WINNT" picked comes to forty-two pixels of blue. A list
+     * with no images has no icon column to start after and keeps the wider
+     * box, which is what wine's classic list draws. */
+    return tw + (indent ? 6 : 10);
+}
+
+/* Where a row's label box starts: at the icon's right edge when there is one,
+ * two in when there is not. */
+static int lv_label_x(int indent)
+{
+    return indent ? indent : 2;
 }
 
 /* Which row a point picks, and what part of it. A report-view row is only its
@@ -2253,7 +2267,8 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
     if (y < WEEN_LV_HEADER_H || (g.vbar && x >= g.view_w) ||
         (g.hbar && y >= g.view_h))
         return -1;
-    row = (y - WEEN_LV_HEADER_H) / lv_item_h(wnd, l) + l->top;
+    row = (y - WEEN_LV_HEADER_H - WEEN_LV_ROW_TOP) / lv_item_h(wnd, l) +
+          l->top;
     if (row < 0 || row >= l->nrow)
         return -1;
     if (l->images)
@@ -2267,7 +2282,8 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
             *flags = LVHT_ONITEMICON;
         return row;
     }
-    if (x >= 2 + indent && x < 2 + indent + lv_label_w(wnd, l, row, indent)) {
+    if (x >= lv_label_x(indent) &&
+        x < lv_label_x(indent) + lv_label_w(wnd, l, row, indent)) {
         if (flags)
             *flags = LVHT_ONITEMLABEL;
         return row;
@@ -2349,7 +2365,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int len;
             const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
                                      sizeof(buf), &len);
-            ween_strike_draw(f, &top->surface, cx + 8 + (down ? 1 : 0),
+            ween_strike_draw(f, &top->surface, cx + 6 + (down ? 1 : 0),
                              oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
                              t, len, WEEN_BLACK);
         }
@@ -2357,7 +2373,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
-        int y = oy + WEEN_LV_HEADER_H + (i - l->top) * ih;
+        int y = oy + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + (i - l->top) * ih;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
         /* The caret is drawn on the row the arrows would move from, selected
          * or not — but only once the keyboard has been used, which is the same
@@ -2368,12 +2384,11 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
+            int lx = ox - sx + lv_label_x(indent);
             if (selected)
-                ween_surface_fill(&top->surface, ox - sx + 2 + indent, y, lw,
-                                  ih, WEEN_CAP_LEFT);
+                ween_surface_fill(&top->surface, lx, y, lw, ih, WEEN_CAP_LEFT);
             if (caret)
-                ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
-                                        lw, ih);
+                ween_surface_focus_rect(&top->surface, lx, y, lw, ih);
         }
         if (indent) {
             /* a picked row's picture goes blue with it, half way to the
@@ -2388,13 +2403,17 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
-            int lead = (c ? 5 : 7) + (c ? 0 : indent);
+            /* the name sits two past its box, which starts where the icon
+             * ends; the other cells sit closer to their own column */
+            int lead = c ? 5 : (indent ? indent + 2 : 7);
             if (f && l->row[i].text[c]) {
                 int len;
                 const char *t = fit_text(f, l->row[i].text[c],
                                          l->width[c] - lead - 3, buf,
                                          sizeof(buf), &len);
-                ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 1, t,
+                /* two below the row's top, not one: the same lopsided
+                 * centring the rest of the shell's text has */
+                ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 2, t,
                                  len, selected && !c ? WEEN_WHITE : WEEN_BLACK);
             }
             x += l->width[c];
@@ -2622,7 +2641,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!out || !l || i < 0 || i >= l->nrow)
             return FALSE;
         code = (int)out->left; /* win32 passes the code in on left */
-        out->top = WEEN_LV_HEADER_H + (i - l->top) * lv_item_h(wnd, l);
+        out->top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP +
+                   (i - l->top) * lv_item_h(wnd, l);
         out->bottom = out->top + lv_item_h(wnd, l);
         if (code == LVIR_BOUNDS) {
             out->left = -l->scroll_x;
@@ -2636,7 +2656,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 out->left = 2 - l->scroll_x;
                 out->right = out->left + icon_w;
             } else { /* the label, and the selection is the same box */
-                out->left = 2 + indent - l->scroll_x;
+                out->left = lv_label_x(indent) - l->scroll_x;
                 out->right = out->left + lv_label_w(wnd, l, i, indent);
             }
         }
@@ -3215,10 +3235,17 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
                           part.right - part.left, part.bottom - part.top,
                           BDR_SUNKENOUTER, BF_RECT, NULL);
-        part.left += 4; /* the text inset a status bar uses */
+        /* Two in and one above the middle, which is where the machine puts
+         * it — the same lopsided centring a menu item and a pane's bar have.
+         */
+        {
+            const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+            int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+            part.left += 2;
+            part.top += (part.bottom - part.top - cell) / 2 - 1;
+        }
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
-        DrawTextA(dc, it->item[i], -1, &part,
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        DrawTextA(dc, it->item[i], -1, &part, DT_LEFT | DT_SINGLELINE);
         left = right + 2; /* the gap between parts */
     }
     if (grip) /* drawn over the last part, in the corner */

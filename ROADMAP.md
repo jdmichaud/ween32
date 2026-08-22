@@ -347,6 +347,15 @@ no lines at the root — so the machine is followed and about 1270 pixels of
 `reference.png`, all of them in the tree's band, are now a deliberate
 difference.
 
+The list view is the third. Against the machine, a report row is as tall as
+the tallest thing in it and one more — seventeen with small icons, fourteen
+with none — there are two rows of white between the header and the first item,
+the header's text sits six pixels in, a row's label box begins where its icon
+ends with the text two past that, and the text is two below the row's top.
+Wine's classic list has no gap under its header and its header text eight in.
+As with the tree the two configurations do not overlap, so the machine is
+followed.
+
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting
 the guess. A photograph of the real thing settles it.

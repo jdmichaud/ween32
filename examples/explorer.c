@@ -81,7 +81,7 @@ enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
         * them, but the machine's tree is full of them */
        IMG_SHELL_DESKTOP, IMG_SHELL_MYDOCS, IMG_SHELL_COMPUTER,
        IMG_SHELL_DISK, IMG_SHELL_CPANEL, IMG_SHELL_NETWORK, IMG_SHELL_BIN,
-       IMG_SHELL_IE, IMG_COUNT };
+       IMG_SHELL_IE, IMG_SHELL_CFG, IMG_COUNT };
 
 /* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
  * They were never icons — one bitmap strip held the lot — so there is nothing
@@ -480,7 +480,7 @@ static int g_sort_down; /* and whether that order is reversed */
 
 #define PANE_HEAD_H 20  /* the "Folders" bar above the tree */
 #define PANE_INSET 2    /* the pane frame's edge to what is inside it */
-#define SPLIT_W 2
+#define SPLIT_W 4
 #define STATUS_H 20
 
 static int rebar_height(void)
@@ -547,11 +547,15 @@ static void layout(HWND w)
             MoveWindow(g_tree, in_x, in_y + PANE_HEAD_H + 1, in_w,
                        fr.bottom - PANE_INSET - (in_y + PANE_HEAD_H + 1), TRUE);
     }
+    /* The strip between the panes is what is left between the tree's frame
+     * and the list's edge — four pixels of face on the machine, with the
+     * list starting one past where the splitter is taken to be. */
     if (g_split)
-        MoveWindow(g_split, left_w, top, SPLIT_W, bottom - top, TRUE);
-    if (g_list)
-        MoveWindow(g_list, left_w + SPLIT_W, top,
-                   cr.right - left_w - SPLIT_W, bottom - top, TRUE);
+        MoveWindow(g_split, left_w - 3, top + 3, SPLIT_W, bottom - top - 3,
+                   TRUE);
+    if (g_list) /* three below the rebar, like the tree's frame beside it */
+        MoveWindow(g_list, left_w + 1, top + 3, cr.right - left_w - 1,
+                   bottom - top - 3, TRUE);
     if (g_status) {
         /* The two right-hand parts keep a fixed width and the first takes
          * whatever is left, so the counts stay put as the window widens. */
@@ -709,14 +713,17 @@ static const struct {
     const char *name;
     const char *size;
     const char *type;
+    const char *modified;
     int is_dir;
+    int image; /* -1 for the folder or the plain file icon */
 } g_fix_list[] = {
-    { "Documents and Settings", "", "File Folder", 1 },
-    { "Program Files", "", "File Folder", 1 },
-    { "WINNT", "", "File Folder", 1 },
-    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", 0 },
-    { "boot", "1 KB", "Configuration Settings", 0 },
-    { "CONFIG.SYS", "0 KB", "System file", 0 },
+    { "Documents and Settings", "", "File Folder", "7/8/2017 6:26 PM", 1, -1 },
+    { "Program Files", "", "File Folder", "7/8/2017 6:27 PM", 1, -1 },
+    { "WINNT", "", "File Folder", "7/8/2017 6:26 PM", 1, -1 },
+    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", "7/8/2017 6:33 PM", 0, -1 },
+    { "boot", "1 KB", "Configuration Settings", "7/22/2017 7:37 PM", 0,
+      IMG_SHELL_CFG },
+    { "CONFIG.SYS", "0 KB", "System file", "7/8/2017 6:33 PM", 0, -1 },
 };
 
 static void status_for_directory(void)
@@ -820,11 +827,13 @@ static void fill_fixture_list(void)
         it.mask = LVIF_TEXT | LVIF_IMAGE;
         it.iItem = row;
         it.pszText = (char *)g_fix_list[row].name;
-        it.iImage = g_fix_list[row].is_dir ? IMG_FOLDER : IMG_FILE;
+        it.iImage = g_fix_list[row].image >= 0
+                        ? g_fix_list[row].image
+                        : (g_fix_list[row].is_dir ? IMG_FOLDER : IMG_FILE);
         SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
         set_cell(g_list, row, 1, g_fix_list[row].size);
         set_cell(g_list, row, 2, g_fix_list[row].type);
-        set_cell(g_list, row, 3, "");
+        set_cell(g_list, row, 3, g_fix_list[row].modified);
     }
     focus_first_row();
     SendMessageA(g_status, SB_SETTEXTA, 0,
@@ -1725,7 +1734,7 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
      * number and everything after a hole would answer to the wrong one. */
     {
         static const char *shell[] = { "35", "21",  "16", "9",
-                                       "137", "18", "32", "512" };
+                                       "137", "18", "32", "512", "151" };
         for (int i = 0; i < (int)(sizeof(shell) / sizeof(*shell)); i++) {
             char path[600];
             HICON icon = NULL;
@@ -1919,7 +1928,8 @@ static void build_views(HWND w)
         const char *title;
         int width;
     } columns[] = {
-        { "Name", 119 }, { "Size", 75 }, { "Type", 120 }, { "Modified", 120 }
+        /* the machine's, off its header's dividers */
+        { "Name", 120 }, { "Size", 96 }, { "Type", 120 }, { "Modified", 108 }
     };
 
     g_panehead = CreateWindowA("explorerpane", "", WS_CHILD | WS_VISIBLE, 0, 0,

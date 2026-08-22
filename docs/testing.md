@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 3923 / 298596 — 1.3%
+tools/refcapture/pxdiff.py                  # expect 5746 / 298596 — 1.9%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -78,10 +78,12 @@ items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
 
-About 1270 of the controls sampler's 1.3% is the tree view, and is deliberate
-in the same way: its indent, the column its buttons sit in and the pixel of
-white above its first row are measured against a Windows 2000 shell tree.
-See the ROADMAP for what was measured.
+About 3100 of the controls sampler's 1.9% is the tree and the list view, and
+is deliberate in the same way. The tree's indent, the column its buttons sit
+in and the pixel of white above its first row are measured against a Windows
+2000 shell tree; the list's two rows of white between its header and its first
+item, and its header's text sitting six in rather than eight, against the same
+machine's list. See the ROADMAP for what was measured.
 
 ### The explorer beside the machine
 
