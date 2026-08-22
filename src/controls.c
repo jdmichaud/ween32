@@ -1566,9 +1566,14 @@ static int tree_has_button(const struct ween_wnd *wnd, const ween_tvitem *it,
     return (it->child || it->cchildren) && (depth > 0 || at_root);
 }
 
+/* sel_state says how the selected item is drawn: 2 when the tree has the
+ * focus — the highlight and white text — 1 when it has not but the style says
+ * to show the selection anyway, which is the grey box a list keeps, and 0
+ * when it shows nothing at all. A shell's tree is the last of those: click
+ * away from it and the item it had stops being marked. */
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                      int ox, int oy, int depth, int row, int lines, int at_root,
-                     const ween_tvitem *sel, HIMAGELIST images)
+                     const ween_tvitem *sel, int sel_state, HIMAGELIST images)
 {
     int th = f ? f->ascent - f->descent : 13;
     int icon_w = 0, icon_h = 0;
@@ -1615,7 +1620,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
              * different one — an open folder, which is what a shell does. */
             int img = (it == sel && it->sel_image >= 0) ? it->sel_image
                                                         : it->image;
-            if (it == sel)
+            if (it == sel && sel_state == 2)
                 ween_imagelist_draw_blend(images, img, s, tx,
                                           y + (WEEN_TV_ITEM_H - icon_h) / 2,
                                           WEEN_CAP_LEFT);
@@ -1626,19 +1631,25 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         }
         if (f && it->text) {
             int ty = y + (WEEN_TV_ITEM_H - th) / 2;
-            int selected = it == sel;
+            int selected = it == sel && sel_state;
             if (selected) {
                 int tw = ween_strike_text_width(f, it->text,
                                                 (int)strlen(it->text));
-                ween_surface_fill(s, tx - 1, ty, tw + 3, th, WEEN_CAP_LEFT);
+                ween_surface_fill(s, tx - 1, ty, tw + 3, th,
+                                  sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
+                /* and the caret over it, once the keyboard has been used —
+                 * the same rule that brings out a menu's underlines */
+                if (sel_state == 2 && ween_ui_focus_cues)
+                    ween_surface_focus_rect(s, tx - 1, ty, tw + 3, th);
             }
             ween_strike_draw(f, s, tx, ty, it->text, (int)strlen(it->text),
-                             selected ? WEEN_WHITE : WEEN_BLACK);
+                             sel_state == 2 && selected ? WEEN_WHITE
+                                                        : WEEN_BLACK);
         }
         row++;
         if (it->expanded && it->child)
             row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines,
-                            at_root, sel, images);
+                            at_root, sel, sel_state, images);
         /* Down to the next sibling — past this item's children, when it has
          * any open. Drawn after them so the run is one length rather than
          * one per row, and so an item with a subtree under it still has the
@@ -1809,7 +1820,11 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     tree_draw(&top->surface, f, t->root, ox - t->scroll_x,
               oy - t->scroll_row * WEEN_TV_ITEM_H, 0, 0,
               (wnd->style & TVS_HASLINES) != 0,
-              (wnd->style & TVS_LINESATROOT) != 0, t->sel, t->images);
+              (wnd->style & TVS_LINESATROOT) != 0, t->sel,
+              ween_focus_get() == wnd  ? 2
+              : (wnd->style & TVS_SHOWSELALWAYS) ? 1
+                                                 : 0,
+              t->images);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -2502,13 +2517,21 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         x += l->width[c];
     }
 
+    /* A view that has lost the focus keeps its selection, in grey rather than
+     * in the highlight, when the style says to show it always — and drops it
+     * altogether when the style does not. The caret goes with the focus in
+     * either case: an unfocused list has no caret to move. */
+    int focused = ween_focus_get() == wnd;
+    int sel_state = focused                            ? 2
+                    : (wnd->style & LVS_SHOWSELALWAYS) ? 1
+                                                       : 0;
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
         int y = oy + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + (i - l->top) * ih;
-        int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
+        int selected = i == l->sel - 1 && sel_state; /* sel is 1-based */
         /* The caret is drawn on the row the arrows would move from, selected
          * or not — but only once the keyboard has been used, which is the same
          * rule that keeps a menu's underlines hidden until then. */
-        int caret = ween_ui_focus_cues && i == l->focus - 1;
+        int caret = ween_ui_focus_cues && focused && i == l->focus - 1;
         int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
         x = 0;
         if ((selected || caret) && f && l->row[i].text[0]) {
@@ -2516,7 +2539,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int lw = lv_label_w(wnd, l, i, indent);
             int lx = ox - sx + lv_label_x(indent);
             if (selected)
-                ween_surface_fill(&top->surface, lx, y, lw, ih, WEEN_CAP_LEFT);
+                ween_surface_fill(&top->surface, lx, y, lw, ih,
+                                  sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
                 ween_surface_focus_rect(&top->surface, lx, y, lw, ih);
         }
@@ -2526,7 +2550,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* A picked row's picture goes blue with it; a cut one — which is
              * how the shell shows a hidden file — goes half way into the
              * window's own colour instead. */
-            if (selected || l->row[i].cut)
+            if ((selected && sel_state == 2) || l->row[i].cut)
                 ween_imagelist_draw_blend(
                     l->images, l->row[i].image, &top->surface, ox - sx + 2,
                     y + (ih - icon_h) / 2,
@@ -2550,7 +2574,9 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 /* two below the row's top, not one: the same lopsided
                  * centring the rest of the shell's text has */
                 ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 2, t,
-                                 len, selected && !c ? WEEN_WHITE : WEEN_BLACK);
+                                 len,
+                                 selected && sel_state == 2 && !c ? WEEN_WHITE
+                                                                  : WEEN_BLACK);
             }
             x += l->width[c];
         }

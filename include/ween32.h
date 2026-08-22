@@ -321,6 +321,7 @@ HCURSOR SetCursor(HCURSOR cursor);
 /* extended styles: the two field borders */
 #define WS_EX_DLGMODALFRAME 0x00000001L
 #define WS_EX_CLIENTEDGE 0x00000200L
+#define WS_EX_CONTROLPARENT 0x00010000L
 #define WS_EX_STATICEDGE 0x00020000L
 
 /* EDIT styles */
@@ -1003,6 +1004,7 @@ BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);
 int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
+HWND GetFocus(void);
 BOOL EnableWindow(HWND wnd, BOOL enable);
 BOOL IsWindowEnabled(HWND wnd);
 BOOL CheckDlgButton(HWND dlg, int id, UINT check);

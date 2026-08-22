@@ -733,38 +733,39 @@ HWND ween_focus_get(void)
 
 /* Walk the child list in creation order to the next/previous WS_TABSTOP window
  * after `cur`, wrapping around — the dialog manager's Tab navigation. */
-/* The next control a Tab reaches, wrapping. Disabled controls are skipped, as
- * win32 skips them; the list is walked rather than collected, so there is no
- * limit on how many controls a window may have. */
-static int is_tabstop(const struct ween_wnd *c)
+/* The tab stops under a window, in the order Tab visits them. A container
+ * that is not itself a stop but marks itself WS_EX_CONTROLPARENT is walked
+ * into rather than over: that is how a control inside a rebar band, or
+ * inside any other grouping window, gets into the ring. Without it Tab only
+ * ever sees a window's own children, and a shell's address bar — which sits
+ * two windows down — is unreachable. */
+static void tab_collect(struct ween_wnd *parent, HWND *out, int *n, int max)
 {
-    return c->visible && (c->style & WS_TABSTOP) && !(c->style & WS_DISABLED);
+    for (struct ween_wnd *c = parent->first_child; c; c = c->next_sibling) {
+        if (!c->visible || (c->style & WS_DISABLED)) /* as win32 skips them */
+            continue;
+        if (c->style & WS_TABSTOP) {
+            if (*n < max)
+                out[(*n)++] = c;
+        } else if (c->ex_style & WS_EX_CONTROLPARENT) {
+            tab_collect(c, out, n, max);
+        }
+    }
 }
 
 HWND ween_tab_next(HWND dlg, HWND cur, int forward)
 {
-    HWND first = NULL, last = NULL, before = NULL, after = NULL;
-    int seen = 0;
-    for (struct ween_wnd *c = dlg->first_child; c; c = c->next_sibling) {
-        if (c == cur) {
-            seen = 1;
-            continue;
-        }
-        if (!is_tabstop(c))
-            continue;
-        if (!first)
-            first = c;
-        last = c;
-        if (!seen)
-            before = c; /* the last tab stop before cur */
-        else if (!after)
-            after = c; /* the first one after it */
-    }
-    if (!first)
+    HWND stop[64];
+    int n = 0, at = -1;
+    tab_collect(dlg, stop, &n, (int)(sizeof(stop) / sizeof(*stop)));
+    if (!n)
         return NULL;
-    if (!cur || !seen)
-        return forward ? first : last;
-    return forward ? (after ? after : first) : (before ? before : last);
+    for (int i = 0; i < n; i++)
+        if (stop[i] == cur)
+            at = i;
+    if (at < 0) /* the focus is nowhere in the ring: start at either end */
+        return forward ? stop[0] : stop[n - 1];
+    return stop[(at + (forward ? 1 : n - 1)) % n];
 }
 
 /* The character a label marks with '&', lowercased, or 0 if it marks none. */
@@ -895,6 +896,13 @@ BOOL CheckRadioButton(HWND dlg, int first, int last, int check)
             SendMessageA(c, BM_SETCHECK,
                          (int)c->id == check ? BST_CHECKED : BST_UNCHECKED, 0);
     return TRUE;
+}
+
+/* Which window has the keyboard. A control drawing itself needs this: a
+ * selection is one colour with the focus and another without it. */
+HWND GetFocus(void)
+{
+    return g_focus;
 }
 
 HWND SetFocus(HWND wnd)

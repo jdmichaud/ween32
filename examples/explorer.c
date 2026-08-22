@@ -1646,7 +1646,9 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         /* The close box at its right is a bare glyph, not a button: eight by
          * seven, two pixels thick, seven in from the bar's right edge and six
          * down. Windows only draws a frame round it once the pointer is over
-         * it — a caption button here reads far heavier than the machine. */
+         * it, or the keyboard has reached it — a caption button here reads far
+         * heavier than the machine. The frame, when it comes, is the glyph
+         * inflated six across and five down, raised by one. */
         {
             RECT cr;
             HBRUSH ink = CreateSolidBrush(GetSysColor(COLOR_BTNTEXT));
@@ -1654,6 +1656,14 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             GetClientRect(w, &cr);
             bx = cr.right - 15;
             by = 6;
+            if (GetFocus() == w) {
+                RECT b;
+                b.left = bx - 6;
+                b.top = by - 5;
+                b.right = bx + 8 + 6;
+                b.bottom = by + 7 + 5;
+                DrawEdge(dc, &b, BDR_RAISEDINNER, BF_RECT);
+            }
             for (int k = 0; k < 7; k++) {
                 int d = k <= 3 ? k : 6 - k;
                 x.left = bx + d;
@@ -1679,6 +1689,11 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if (x >= cr.right - 15 && x < cr.right - 15 + 8 && y >= 6 && y < 13)
             SendMessageA(GetParent(w), WM_COMMAND,
                          MAKEWPARAM(IDM_FOLDERS, 0), 0);
+        return 0;
+    }
+    if (msg == WM_KEYDOWN && (wp == VK_SPACE || wp == VK_RETURN)) {
+        /* reached by Tab, it is pressed by the keyboard like any button */
+        SendMessageA(GetParent(w), WM_COMMAND, MAKEWPARAM(IDM_FOLDERS, 0), 0);
         return 0;
     }
     return DefWindowProcA(w, msg, wp, lp);
@@ -2032,9 +2047,12 @@ static void build_bands(HWND w)
     REBARBANDINFOA bi;
     int n = 0;
 
-    g_rebar = CreateWindowExA(0, REBARCLASSNAMEA, "", WS_CHILD | WS_VISIBLE, 0,
-                              0, 100, 50, w, (HMENU)(UINT_PTR)ID_REBAR, NULL,
-                              NULL);
+    /* CONTROLPARENT on the two windows between the frame and the address
+     * bar: Tab walks into a container that wears it rather than over it,
+     * which is how the address bar joins the ring the panes are in. */
+    g_rebar = CreateWindowExA(WS_EX_CONTROLPARENT, REBARCLASSNAMEA, "",
+                              WS_CHILD | WS_VISIBLE, 0, 0, 100, 50, w,
+                              (HMENU)(UINT_PTR)ID_REBAR, NULL, NULL);
     g_toolbar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                                 WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
                                     TBSTYLE_LIST,
@@ -2125,9 +2143,9 @@ static void build_bands(HWND w)
         SendMessageA(g_toolbar, TB_SETBUTTONINFOA, IDM_VIEWS, (LPARAM)&bi);
     }
 
-    g_addrband = CreateWindowA("exploreraddr", "", WS_CHILD | WS_VISIBLE, 0, 0,
-                               300, 22, g_rebar, (HMENU)(UINT_PTR)ID_ADDRBAND,
-                               NULL, NULL);
+    g_addrband = CreateWindowExA(WS_EX_CONTROLPARENT, "exploreraddr", "",
+                                 WS_CHILD | WS_VISIBLE, 0, 0, 300, 22, g_rebar,
+                                 (HMENU)(UINT_PTR)ID_ADDRBAND, NULL, NULL);
     g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                                     CBS_DROPDOWNLIST, 0, 0,
@@ -2204,9 +2222,11 @@ static void build_views(HWND w)
         { "Modified", 120, LVCFMT_LEFT }
     };
 
-    g_panehead = CreateWindowA("explorerpane", "", WS_CHILD | WS_VISIBLE, 0, 0,
-                               10, 10, w, (HMENU)(UINT_PTR)ID_PANEHEAD, NULL,
-                               NULL);
+    /* A tab stop for the cross in it, which the machine's ring holds between
+     * the address bar and the tree. */
+    g_panehead = CreateWindowA("explorerpane", "",
+                               WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10,
+                               w, (HMENU)(UINT_PTR)ID_PANEHEAD, NULL, NULL);
     /* LINESATROOT is what carries the lines and the boxes out to the top
      * level; without it the root sits bare, which is not what the shot has. */
     /* No edge of its own: the pane frame drawn round the "Folders" bar and
@@ -2226,7 +2246,7 @@ static void build_views(HWND w)
      * which is how the machine moves between them. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT |
-                                 LVS_SINGLESEL,
+                                 LVS_SINGLESEL | LVS_SHOWSELALWAYS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 

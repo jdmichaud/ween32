@@ -247,7 +247,10 @@ int main(void)
         CHECK(red == 16, "the icon was painted into the tree view");
 
         /* Selecting it swaps in the other image, which is how a shell shows
-         * an open folder for the one you are looking at. */
+         * an open folder for the one you are looking at. The tree is given
+         * the focus first: a tree that has not got it draws no highlight, so
+         * there would be nothing for the picture to be blended into. */
+        SetFocus(tv);
         SendMessageA(tv, TVM_SELECTITEM, TVGN_CARET, (LPARAM)item);
         InvalidateRect(w, NULL, TRUE);
         ween_flush_paint();
