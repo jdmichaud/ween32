@@ -679,6 +679,8 @@ typedef struct tagTCITEMA {
 
 #define COLOR_ACTIVECAPTION 2
 #define COLOR_WINDOW 5
+#define COLOR_MENU 4
+#define COLOR_MENUTEXT 7
 #define COLOR_WINDOWTEXT 8
 #define COLOR_CAPTIONTEXT 9
 #define COLOR_BTNFACE 15
@@ -951,6 +953,7 @@ BOOL KillTimer(HWND wnd, UINT_PTR id);
 #define MF_DISABLED 0x0002
 #define MF_CHECKED 0x0008
 #define MF_POPUP 0x0010
+#define MF_BYPOSITION 0x0400
 #define MF_SEPARATOR 0x0800
 #define MF_DEFAULT 0x1000 /* drawn bold: the one a double click would pick */
 
@@ -965,6 +968,10 @@ BOOL AppendMenuA(HMENU menu, UINT flags, UINT_PTR id, LPCSTR text);
 BOOL SetMenu(HWND wnd, HMENU menu);
 HMENU GetMenu(HWND wnd);
 HMENU GetSubMenu(HMENU menu, int pos);
+int GetMenuItemCount(HMENU menu);
+/* MF_BYPOSITION only: an application walking a menu bar to draw it itself —
+ * which is what hosting one in a rebar band comes to — asks by position. */
+int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags);
 DWORD CheckMenuItem(HMENU menu, UINT id, UINT check);
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
@@ -983,6 +990,8 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
 #define SM_CYMENUCHECK 72
 int GetSystemMetrics(int index);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);
+BOOL ClientToScreen(HWND wnd, POINT *pt);
+BOOL ScreenToClient(HWND wnd, POINT *pt);
 
 /* ---- the clipboard -------------------------------------------------------
  *

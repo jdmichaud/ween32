@@ -316,6 +316,47 @@ BOOL GetWindowRect(HWND wnd, LPRECT rect)
     return TRUE;
 }
 
+/* Client coordinates to the desktop and back.
+ *
+ * Anything positioned in desktop coordinates goes through here — a menu
+ * tracked with TrackPopupMenu is the usual reason, and an application hosting
+ * its own menu bar has no other way to say where the drop-down belongs. The
+ * top-level's own origin comes from the window system rather than from where
+ * it asked to be, because a window manager may have put it somewhere else.
+ */
+BOOL ClientToScreen(HWND wnd, POINT *pt)
+{
+    struct ween_wnd *top;
+    int ox, oy, wx = 0, wy = 0;
+    if (!wnd || !pt)
+        return FALSE;
+    top = ween_top_level(wnd);
+    /* where this window's client area is inside its top-level */
+    for (const struct ween_wnd *w = wnd; w && w->parent; w = w->parent) {
+        int cox, coy;
+        own_client_origin(w->parent, &cox, &coy);
+        wx += w->x + cox;
+        wy += w->y + coy;
+    }
+    { int cox, coy; own_client_origin(wnd, &cox, &coy); wx += cox; wy += coy; }
+    ween_window_origin(top, &ox, &oy);
+    pt->x += wx + ox;
+    pt->y += wy + oy;
+    return TRUE;
+}
+
+BOOL ScreenToClient(HWND wnd, POINT *pt)
+{
+    POINT zero;
+    zero.x = 0;
+    zero.y = 0;
+    if (!ClientToScreen(wnd, &zero))
+        return FALSE;
+    pt->x -= zero.x;
+    pt->y -= zero.y;
+    return TRUE;
+}
+
 int GetSystemMetrics(int index)
 {
     switch (index) {

@@ -37,6 +37,7 @@ enum {
     ID_STATUS,
     ID_SPLIT,
     ID_PANEHEAD,
+    ID_MENUBAR,
 
     /* toolbar and menu commands */
     IDM_BACK = 200,
@@ -240,6 +241,7 @@ static COLORREF glyph_colour(const glyph *g, char c)
 }
 
 static HWND g_main, g_tree, g_list, g_toolbar, g_rebar, g_address, g_status;
+static HWND g_menubar;
 static HWND g_split, g_panehead;
 static HIMAGELIST g_images, g_hot_images;
 static HFONT g_font;
@@ -607,6 +609,128 @@ static void fill_children(HTREEITEM parent, const char *path)
     fs_close(&d);
 }
 
+/* ---- the menu bar, as a band of the rebar ---------------------------------
+ *
+ * A window menu belongs to the frame and cannot live inside a client area, so
+ * a menu shown in a rebar has to be drawn by the application: the band's
+ * child measures the labels, draws them, and hands each drop-down to
+ * TrackPopupMenu when its item is pressed. That is what it takes on either
+ * side of the build — it is not a ween32 thing.
+ */
+#define MENUBAR_PAD 16  /* around each label, as Windows 2000 spaces them */
+#define MENUBAR_LEAD 1  /* and the band leads in by one before the first */
+
+static HMENU g_menu;
+static int g_menu_open = -1; /* the item whose drop-down is showing */
+
+/* An item's label without the marker that says which letter is its
+ * mnemonic: it is not drawn, so it is not measured either. */
+static void menubar_label(int i, char *out, size_t max)
+{
+    char raw[64];
+    size_t j = 0;
+    GetMenuStringA(g_menu, (UINT)i, raw, (int)sizeof(raw), MF_BYPOSITION);
+    for (size_t k = 0; raw[k] && j < max - 1; k++)
+        if (raw[k] != '&')
+            out[j++] = raw[k];
+    out[j] = 0;
+}
+
+/* Where each item sits, measured once. A press has to know this too, and
+ * measuring text wants a device context, so the widths are kept from the
+ * paint that found them rather than asked for again. */
+static int g_mb_x[12], g_mb_w[12], g_mb_n;
+
+static void menubar_measure(HDC dc)
+{
+    int x = MENUBAR_LEAD;
+    g_mb_n = GetMenuItemCount(g_menu);
+    if (g_mb_n > (int)(sizeof(g_mb_x) / sizeof(*g_mb_x)))
+        g_mb_n = (int)(sizeof(g_mb_x) / sizeof(*g_mb_x));
+    for (int i = 0; i < g_mb_n; i++) {
+        char label[64];
+        SIZE sz;
+        menubar_label(i, label, sizeof(label));
+        GetTextExtentPoint32A(dc, label, -1, &sz);
+        g_mb_x[i] = x;
+        g_mb_w[i] = sz.cx + MENUBAR_PAD;
+        x += g_mb_w[i];
+    }
+}
+
+static int menubar_hit(int x)
+{
+    for (int i = 0; i < g_mb_n; i++)
+        if (x >= g_mb_x[i] && x < g_mb_x[i] + g_mb_w[i])
+            return i;
+    return -1;
+}
+
+static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(w, &ps);
+        RECT cr = ps.rcPaint;
+        FillRect(dc, &cr, GetSysColorBrush(COLOR_BTNFACE));
+        SelectObject(dc, g_font);
+        menubar_measure(dc);
+        for (int i = 0; i < g_mb_n; i++) {
+            char label[64];
+            RECT r;
+            int open = i == g_menu_open;
+            menubar_label(i, label, sizeof(label));
+            /* The label's pen goes half the padding in, rather than being
+             * centred in the item: centring would depend on the measure
+             * DrawText happens to align with, and this does not. */
+            r.left = g_mb_x[i] + MENUBAR_PAD / 2;
+            r.top = 0;
+            r.right = g_mb_x[i] + g_mb_w[i];
+            /* Centred in the band less the two rows the pushed edge would
+             * take underneath, which is a row higher than dead centre and is
+             * where Windows 2000 puts it. */
+            r.bottom = cr.bottom - 2;
+            /* An open item is pushed in, not filled: one pixel of sunken
+             * edge, and the label stays black. */
+            if (open) {
+                RECT e;
+                e.left = g_mb_x[i];
+                e.right = g_mb_x[i] + g_mb_w[i];
+                e.top = 1;
+                e.bottom = cr.bottom - 2;
+                DrawEdge(dc, &e, BDR_SUNKENOUTER, BF_RECT);
+            }
+            SetTextColor(dc, GetSysColor(COLOR_MENUTEXT));
+            DrawTextA(dc, label, -1, &r,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+        EndPaint(w, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        int i = menubar_hit(GET_X_LPARAM(lp));
+        RECT cr;
+        POINT pt;
+        if (i < 0)
+            return 0;
+        GetClientRect(w, &cr);
+        g_menu_open = i;
+        InvalidateRect(w, NULL, FALSE);
+        UpdateWindow(w);
+        pt.x = g_mb_x[i];
+        pt.y = cr.bottom;
+        ClientToScreen(w, &pt);
+        TrackPopupMenu(GetSubMenu(g_menu, i), TPM_LEFTALIGN, pt.x, pt.y, 0,
+                       g_main, NULL);
+        g_menu_open = -1;
+        InvalidateRect(w, NULL, FALSE);
+        return 0;
+    }
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
 /* ---- the pane header and the splitter ------------------------------------- */
 
 static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -692,7 +816,11 @@ static void build_menu(HWND w)
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)favorites, "F&avorites");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)tools, "&Tools");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)help, "&Help");
-    SetMenu(w, bar);
+    /* Not SetMenu: the shell does not hang its menu off the window frame. It
+     * goes in the first band of the same rebar as the toolbar, which is why
+     * the screenshot has a gripper to the left of File. See menubar_proc. */
+    g_menu = bar;
+    (void)w;
 }
 #endif
 
@@ -952,8 +1080,17 @@ static void build_bands(HWND w)
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
 #endif
 
+    g_menubar = CreateWindowA("explorermenu", "", WS_CHILD | WS_VISIBLE, 0, 0,
+                              100, 22, g_rebar, (HMENU)(UINT_PTR)ID_MENUBAR,
+                              NULL, NULL);
+
     memset(&bi, 0, sizeof(bi));
     bi.cbSize = sizeof(bi);
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE;
+    bi.hwndChild = g_menubar;
+    bi.cyMinChild = 22;
+    SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
+
     bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE;
     bi.hwndChild = g_toolbar;
     bi.cyMinChild = 22;
@@ -1150,6 +1287,12 @@ int main(int argc, char **argv)
 #if HAVE(CURSORS)
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
 #endif
+    RegisterClassA(&wc);
+
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = menubar_proc;
+    wc.lpszClassName = "explorermenu";
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));

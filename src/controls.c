@@ -3638,8 +3638,11 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int by = oy + b->y;
         int inner = b->h - ween_ncm(WEEN_RB_EDGE_H);
         if (i) { /* the rebar's own top edge is the first band's */
-            ween_surface_hline(&top->surface, ox, by, r.right, WEEN_SHADOW);
-            ween_surface_hline(&top->surface, ox, by + 1, r.right, WEEN_WHITE);
+            int e = ween_ncm(WEEN_RB_EDGE_H);
+            ween_surface_hline(&top->surface, ox + e, by, r.right - 2 * e,
+                               WEEN_SHADOW);
+            ween_surface_hline(&top->surface, ox + e, by + 1, r.right - 2 * e,
+                               WEEN_WHITE);
         }
         by += ween_ncm(WEEN_RB_EDGE_H);
 

@@ -132,6 +132,30 @@ ween_menuitem *ween_menu_item(HMENU menu, int i)
     return &menu->item[i];
 }
 
+int GetMenuItemCount(HMENU menu)
+{
+    return ween_menu_count(menu);
+}
+
+int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags)
+{
+    ween_menuitem *it;
+    int n;
+    if (!(flags & MF_BYPOSITION))
+        return 0; /* by command id is not answered here */
+    it = ween_menu_item(menu, (int)item);
+    if (!it || !it->text)
+        return 0;
+    n = (int)strlen(it->text);
+    if (!out || max <= 0)
+        return n; /* win32 answers the length when asked for no buffer */
+    if (n > max - 1)
+        n = max - 1;
+    memcpy(out, it->text, (size_t)n);
+    out[n] = 0;
+    return n;
+}
+
 HMENU GetSubMenu(HMENU menu, int pos)
 {
     ween_menuitem *it = ween_menu_item(menu, pos);

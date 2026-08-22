@@ -40,9 +40,11 @@ static ween_color sys_color_px(int index)
         return WEEN_WINDOWBG;
     case COLOR_WINDOWTEXT:
     case COLOR_BTNTEXT:
+    case COLOR_MENUTEXT:
         return WEEN_BLACK;
     case COLOR_BTNFACE:
     case COLOR_3DLIGHT:
+    case COLOR_MENU:
         return WEEN_FACE;
     case COLOR_BTNSHADOW:
     case COLOR_GRAYTEXT:
@@ -355,8 +357,7 @@ BOOL GetTextExtentPoint32A(HDC dc, LPCSTR text, int len, SIZE *size)
         return FALSE;
     if (len < 0)
         len = (int)strlen(text);
-    /* what GDI reports, which is not what the strike draws */
-    size->cx = ween_strike_text_extent(f, text, len);
+    size->cx = ween_strike_text_width(f, text, len);
     size->cy = f->cell_h ? f->cell_h : f->ascent - f->descent;
     return TRUE;
 }
