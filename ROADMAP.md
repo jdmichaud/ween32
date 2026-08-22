@@ -388,21 +388,21 @@ Measured against the machine, band by band:
 | the rebar's own edge | **0** |
 | menu band | **0**, outside the animation the shell plays at its right |
 | address band | **0**, outside what is written in the combo box |
-| toolbar band | **21** |
+| toolbar band | **3** |
 
-The twenty-one are three things:
+The three are two things, both of them a single pixel that has nowhere to
+live rather than a rule not yet found:
 
-- **eighteen** on the Views button's arrow. Every other button's width falls
-  out of the rules above; this one comes to thirty-one where they give
-  thirty-six, and the only reading that fits is that its image is
-  twenty-three wide — the grid and the arrow in one — rather than sixteen
-  with an arrow half beside it. An image list has one cell size for all its
-  images, so the example cannot hold a twenty-three wide one among sixteens.
-- **two** on Move To and Copy To, the seventeenth column of each. Their
-  images are the dead ones out of the shell's strip, which are the live ones
-  embossed and so a pixel wider than the cell they are taken from.
+- **two** on Move To and Copy To, the seventeenth column of each. The dead
+  images are not the live ones embossed — embossing a silhouette loses the
+  detail the real ones keep, so the shell's strip carries both — and the
+  dead ones are a pixel wider than the cell the live ones fill. An image
+  list has one cell size, and the rest of the bar wants sixteen. Giving the
+  toolbar a seventeen-wide list of its own was tried and put every image in
+  the bar out; it is not worth the second list for two pixels.
 - **one** where the brand box's edge reaches a pixel into the rule beneath
-  the menu band.
+  the menu band. The band's child ends where the rule begins, so there is
+  nothing there to draw it with.
 
 ### The explorer, against its screenshot
 
