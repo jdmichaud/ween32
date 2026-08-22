@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **196 `ok` lines and no `FAIL`**, ending with each suite reporting
+Expect **207 `ok` lines and no `FAIL`**, ending with each suite reporting
 `all passed`. The count only goes up — if it has dropped, a test file stopped
 being built rather than a test starting to pass.
 
@@ -26,6 +26,11 @@ make clean && make X11=0
 ```
 
 Both should be silent apart from the usual test output.
+
+One trap worth knowing: `make -B` rebuilds the library and the examples but
+**not** the tests. After changing library code, either `make clean` or name the
+test — `make tests/geometry_test` — or you will be running the old binary
+against the new library and drawing conclusions from it.
 
 ## 2. Fidelity against Wine
 
@@ -82,6 +87,19 @@ The ASCII map prints the reference beside ours with one character per colour,
 so a one-pixel shift is visible. What the standing difference consists of is
 tabulated in ROADMAP.md — if your total matches those totals, nothing has
 moved.
+
+### Window geometry, without a window system
+
+The headless backend is a fake window system, not just a hole where one should
+be: `ween_headless_set_window_size()` makes it hand every window a size of its
+choosing, the way a tiling window manager does, and injected pointer
+coordinates come back through the same mapping the X11 backend uses.
+
+That is what `tests/geometry_test` is for. The class of bug it covers — what is
+drawn and what is clicked disagreeing — is invisible to every other test,
+because everywhere else the window and the buffer are the same size. If you
+change anything about `ween_letterbox`, check that test still bites by
+breaking it on purpose.
 
 ## 3. By hand, on screen
 

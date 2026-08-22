@@ -239,21 +239,12 @@ typedef struct x11_win_s {
     XImage *img;
     XAtom wm_delete;
     int pos_x, pos_y;
-    /* Three sizes, and they are three different things.
-     *
-     *   w, h              what the app asked for, in renderer pixels. Only
-     *                     the size hints want this: it goes stale the moment
-     *                     a window manager resizes the window, because the
-     *                     core resizes the surface without telling us.
-     *   win_w, win_h      what the window manager actually gave us, in device
-     *                     pixels. A tiling one hands back its tile whatever
-     *                     the window asked for.
-     *   present_w/h       the buffer last handed to XPutImage. This is the
-     *                     one the pointer is offset against, because it is
-     *                     the one on the screen. */
+    /* What the app asked for, in renderer pixels. Only the size hints want
+     * this: it goes stale the moment a window manager resizes the window,
+     * because the core resizes the surface without telling us. Anything to do
+     * with where things are on screen goes through the letterbox instead. */
     int w, h;
-    int win_w, win_h;
-    int present_w, present_h;
+    ween_letterbox box;
     int zoom;    /* integer HiDPI magnification */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
     struct x11_win_s *next;
@@ -372,8 +363,7 @@ static void *x11_open(int x, int y, int w, int h, const char *title,
     xw->pos_y = py;
     xw->w = w;
     xw->h = h;
-    xw->win_w = ww;
-    xw->win_h = wh;
+    ween_letterbox_window(&xw->box, ww, wh);
     xw->zoom = zoom;
     xw->next = g_list;
     g_list = xw;
@@ -399,30 +389,29 @@ static void x11_present(void *win, const ween_surface *s)
         xw->img->bytes_per_line = out->w * 4;
     }
     xw->img->data = (char *)out->px;
-    /* what the pointer is being offset against, from here on */
-    xw->present_w = out->w;
-    xw->present_h = out->h;
+    /* what the pointer will be offset against, from here on */
+    ween_letterbox_shown(&xw->box, out->w, out->h);
 
     /* A window manager that will not respect a fixed size hands back a window
      * bigger than the one the app asked for. Stretching the app to fill it
      * would mean laying out a fixed dialog at a size it was never written for,
      * so centre it instead and letterbox what is left over. */
-    int ox = xw->win_w > out->w ? (xw->win_w - out->w) / 2 : 0;
-    int oy = xw->win_h > out->h ? (xw->win_h - out->h) / 2 : 0;
+    int ox, oy;
+    ween_letterbox_origin(&xw->box, &ox, &oy);
     if (ox > 0 || oy > 0) {
         XSetForeground(xw->dpy, xw->gc, 0x00404040);
         if (oy > 0) { /* above and below */
             XFillRectangle(xw->dpy, xw->win, xw->gc, 0, 0,
-                           (unsigned)xw->win_w, (unsigned)oy);
+                           (unsigned)xw->box.win_w, (unsigned)oy);
             XFillRectangle(xw->dpy, xw->win, xw->gc, 0, oy + out->h,
-                           (unsigned)xw->win_w,
-                           (unsigned)(xw->win_h - oy - out->h));
+                           (unsigned)xw->box.win_w,
+                           (unsigned)(xw->box.win_h - oy - out->h));
         }
         if (ox > 0) { /* left and right */
             XFillRectangle(xw->dpy, xw->win, xw->gc, 0, oy, (unsigned)ox,
                            (unsigned)out->h);
             XFillRectangle(xw->dpy, xw->win, xw->gc, ox + out->w, oy,
-                           (unsigned)(xw->win_w - ox - out->w),
+                           (unsigned)(xw->box.win_w - ox - out->w),
                            (unsigned)out->h);
         }
     }
@@ -508,22 +497,6 @@ static unsigned keysym_to_vk(unsigned long ks)
 
 /* The argument is only a hint about which connection to wait on: the event
  * that comes back names its own window, and every window shares the queue. */
-/* Where the surface sits inside the window, when the two differ.
- *
- * This has to be taken from the buffer that was last *presented*, not from
- * the size the window was opened at. When a window manager resizes a window,
- * the core resizes the surface to match and never tells the backend — so the
- * opened size goes stale, and an offset computed from it sends every click
- * hundreds of pixels away from where it looks like it landed. The window then
- * draws perfectly and responds to nothing, which is exactly how it looked. */
-static void surface_origin(const x11_win *xw, int *ox, int *oy)
-{
-    int sw = xw->present_w ? xw->present_w : xw->w * xw->zoom;
-    int sh = xw->present_h ? xw->present_h : xw->h * xw->zoom;
-    *ox = xw->win_w > sw ? (xw->win_w - sw) / 2 : 0;
-    *oy = xw->win_h > sh ? (xw->win_h - sh) / 2 : 0;
-}
-
 static ween_event x11_next_event(void *win, int timeout_ms)
 {
     ween_event out;
@@ -547,7 +520,6 @@ static ween_event x11_next_event(void *win, int timeout_ms)
         }
         XEvent ev;
         XNextEvent(g_dpy, &ev);
-        int sx = 0, sy = 0;
         x11_win *xw = find_window(ev.xany.window);
         if (!xw) /* a window closed while its events were still in flight */
             continue;
@@ -577,8 +549,8 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             /* Always report it, even when the size has not changed: a window
              * manager that refuses a resize answers with the geometry it is
              * keeping, and that is how the surface learns to go back. */
-            xw->win_w = ev.xconfigure.width;
-            xw->win_h = ev.xconfigure.height;
+            ween_letterbox_window(&xw->box, ev.xconfigure.width,
+                                  ev.xconfigure.height);
             out.kind = WEEN_EV_RESIZE;
             out.x = ev.xconfigure.width / xw->zoom;
             out.y = ev.xconfigure.height / xw->zoom;
@@ -591,26 +563,26 @@ static ween_event x11_next_event(void *win, int timeout_ms)
                     continue;
                 out.kind = WEEN_EV_WHEEL;
                 out.button = b->button == 4 ? 1 : -1;
-                surface_origin(xw, &sx, &sy);
-                out.x = (b->x - sx) / xw->zoom;
-                out.y = (b->y - sy) / xw->zoom;
+                out.x = b->x;
+                out.y = b->y;
+                ween_letterbox_to_surface(&xw->box, xw->zoom, &out.x, &out.y);
                 return out;
             }
             out.kind = ev.type == X_ButtonPress ? WEEN_EV_MOUSE_DOWN
                                                 : WEEN_EV_MOUSE_UP;
-            surface_origin(xw, &sx, &sy);
             /* window px -> renderer px, past whatever letterbox is in front */
-            out.x = (b->x - sx) / xw->zoom;
-            out.y = (b->y - sy) / xw->zoom;
+            out.x = b->x;
+            out.y = b->y;
+            ween_letterbox_to_surface(&xw->box, xw->zoom, &out.x, &out.y);
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             out.button = (int)b->button;
             return out;
         case X_MotionNotify:
             out.kind = WEEN_EV_MOUSE_MOVE;
-            surface_origin(xw, &sx, &sy);
-            out.x = (b->x - sx) / xw->zoom;
-            out.y = (b->y - sy) / xw->zoom;
+            out.x = b->x;
+            out.y = b->y;
+            ween_letterbox_to_surface(&xw->box, xw->zoom, &out.x, &out.y);
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             return out;

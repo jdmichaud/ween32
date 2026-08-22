@@ -76,6 +76,9 @@ tests/clip_test: tests/clip_test.c libween32.a
 tests/image_test: tests/image_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/image_test.c libween32.a $(LIBS)
 
+tests/geometry_test: tests/geometry_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/geometry_test.c libween32.a $(LIBS)
+
 test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
       tests/resize_test tests/multiwin_test tests/timer_test \
       tests/keys_test tests/menu_test \
@@ -92,6 +95,7 @@ test: tests/render_test tests/api_test tests/dlg_test tests/input_test \
 	./tests/modal_test
 	./tests/clip_test
 	./tests/image_test
+	./tests/geometry_test
 
 clean:
 	rm -f $(OBJS) libween32.a examples/dialog examples/calc examples/controls examples/menu \

@@ -209,3 +209,42 @@ int ween_surface_write_bmp(const ween_surface *s, const char *path)
     free(out);
     return n == total;
 }
+
+/* ---- the letterbox --------------------------------------------------------
+ *
+ * See ween_internal.h. The whole of it is four small functions, and the point
+ * of them being here is that every backend uses these rather than its own
+ * arithmetic — a click and the pixel under it are then answering to the same
+ * numbers by construction.
+ */
+
+void ween_letterbox_window(ween_letterbox *lb, int w, int h)
+{
+    lb->win_w = w;
+    lb->win_h = h;
+}
+
+void ween_letterbox_shown(ween_letterbox *lb, int w, int h)
+{
+    lb->shown_w = w;
+    lb->shown_h = h;
+}
+
+void ween_letterbox_origin(const ween_letterbox *lb, int *ox, int *oy)
+{
+    /* Nothing has been presented yet: there is no offset to speak of. */
+    int sw = lb->shown_w, sh = lb->shown_h;
+    *ox = (sw > 0 && lb->win_w > sw) ? (lb->win_w - sw) / 2 : 0;
+    *oy = (sh > 0 && lb->win_h > sh) ? (lb->win_h - sh) / 2 : 0;
+}
+
+void ween_letterbox_to_surface(const ween_letterbox *lb, int zoom, int *x,
+                               int *y)
+{
+    int ox, oy;
+    ween_letterbox_origin(lb, &ox, &oy);
+    if (zoom < 1)
+        zoom = 1;
+    *x = (*x - ox) / zoom;
+    *y = (*y - oy) / zoom;
+}

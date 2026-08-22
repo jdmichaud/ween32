@@ -160,6 +160,31 @@ struct ween_dc {
     struct ween_gdiobj initial_font;
 };
 
+/* ---- the letterbox --------------------------------------------------------
+ *
+ * A window and the buffer shown in it need not be the same size. A window
+ * manager can impose a size the window never asked for — a tiling one always
+ * does — and a window that has declared itself fixed keeps drawing at its own
+ * size regardless. What is drawn is then centred in what the window system
+ * gave us, and the pointer has to come back through exactly that offset, or a
+ * click lands somewhere other than where it looks like it landed.
+ *
+ * Both halves live here rather than in a backend so that they cannot drift
+ * apart, which is precisely what went wrong when they were separate: drawing
+ * used the buffer's size and the pointer used a size that had gone stale. */
+typedef struct {
+    int win_w, win_h;     /* what the window system gave us, in device pixels */
+    int shown_w, shown_h; /* the buffer last presented into it */
+} ween_letterbox;
+
+void ween_letterbox_window(ween_letterbox *lb, int w, int h);
+void ween_letterbox_shown(ween_letterbox *lb, int w, int h);
+void ween_letterbox_origin(const ween_letterbox *lb, int *ox, int *oy);
+/* Window coordinates to surface coordinates, through the offset and the zoom.
+ * The inverse of where ween_letterbox_origin says the buffer was drawn. */
+void ween_letterbox_to_surface(const ween_letterbox *lb, int zoom, int *x,
+                               int *y);
+
 /* ---- image lists ---------------------------------------------------------- */
 
 int ween_imagelist_reserve(HIMAGELIST il, int count);
@@ -375,6 +400,9 @@ const ween_backend *ween_backend_headless(void);
 
 /* headless test hooks */
 void ween_headless_inject(ween_event ev);
+/* Make the fake window system impose a size, as a tiling window manager does;
+ * 0 goes back to giving each window the size it asked for. */
+void ween_headless_set_window_size(int w, int h);
 void ween_headless_set_bmp_path(const char *path); /* written on present */
 const ween_surface *ween_headless_surface(void);   /* last presented */
 

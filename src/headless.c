@@ -88,7 +88,36 @@ static void inject_script(const char *script)
 /* A handle per window, so the two can be told apart the way the X11 backend's
  * can. Injected events carry no window: they go to the active one, which is
  * the newest — a script drives one window at a time. Each handle is allocated
- * so a closed window's address is never handed to the next one. */
+ * so a closed window's address is never handed to the next one.
+ *
+ * A handle carries a letterbox, which is what makes this a fake window system
+ * rather than a hole where one should be: a test can say the window manager
+ * made the window a different size from the buffer being drawn into it, and
+ * injected pointer coordinates then come back through the same mapping the
+ * X11 backend uses. Without that, no test could reach the class of bug where
+ * what is drawn and what is clicked disagree. */
+
+#define MAX_WINDOWS 8
+
+typedef struct {
+    ween_letterbox box;
+    int open;
+} hl_win;
+
+static hl_win g_wins[MAX_WINDOWS];
+static int g_win_w, g_win_h; /* what the "window manager" is imposing, if any */
+
+/* Tell the fake window system to hand every window this size, whatever size
+ * the app asked for — which is what a tiling window manager does. Zero puts
+ * it back to giving the app what it asked for. */
+void ween_headless_set_window_size(int w, int h)
+{
+    g_win_w = w;
+    g_win_h = h;
+    for (int i = 0; i < MAX_WINDOWS; i++)
+        if (g_wins[i].open)
+            ween_letterbox_window(&g_wins[i].box, w, h);
+}
 
 static void *hl_open(int x, int y, int w, int h, const char *title,
                      unsigned flags)
@@ -110,12 +139,23 @@ static void *hl_open(int x, int y, int w, int h, const char *title,
         scripted = 1;
         inject_script(script);
     }
-    return calloc(1, sizeof(int));
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (g_wins[i].open)
+            continue;
+        memset(&g_wins[i], 0, sizeof(g_wins[i]));
+        g_wins[i].open = 1;
+        ween_letterbox_window(&g_wins[i].box, g_win_w ? g_win_w : w * ween_zoom(),
+                              g_win_h ? g_win_h : h * ween_zoom());
+        return &g_wins[i];
+    }
+    return NULL;
 }
 
 static void hl_present(void *win, const ween_surface *s)
 {
-    (void)win;
+    if (win) /* what the pointer will be offset against, as on a real display */
+        ween_letterbox_shown(&((hl_win *)win)->box, s->w * ween_zoom(),
+                             s->h * ween_zoom());
     g_last = *s; /* the surface outlives the pump in tests */
     if (!g_bmp_path[0])
         return;
@@ -166,7 +206,6 @@ static void hl_move_by(void *win, int dx, int dy)
 
 static ween_event hl_next_event(void *win, int timeout_ms)
 {
-    (void)win;
     (void)timeout_ms; /* nothing arrives on its own here: time is scripted */
     ween_event ev;
     if (g_ev_head == g_ev_tail) {
@@ -176,12 +215,23 @@ static ween_event hl_next_event(void *win, int timeout_ms)
     }
     ev = g_events[g_ev_head];
     g_ev_head = (g_ev_head + 1) % MAX_INJECT;
+    /* Injected pointer coordinates are window coordinates, as a real one's
+     * are, and come back through the same mapping — through the letterbox of
+     * the window the event names, which is not always the one the pump
+     * happened to be waiting on. */
+    if (ev.kind == WEEN_EV_MOUSE_DOWN || ev.kind == WEEN_EV_MOUSE_UP ||
+        ev.kind == WEEN_EV_MOUSE_MOVE || ev.kind == WEEN_EV_WHEEL) {
+        hl_win *w = ev.win ? (hl_win *)ev.win : (hl_win *)win;
+        if (w)
+            ween_letterbox_to_surface(&w->box, ween_zoom(), &ev.x, &ev.y);
+    }
     return ev;
 }
 
 static void hl_close(void *win)
 {
-    free(win);
+    if (win)
+        ((hl_win *)win)->open = 0;
 }
 
 const ween_backend *ween_backend_headless(void)
