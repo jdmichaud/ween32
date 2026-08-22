@@ -135,6 +135,35 @@ int main(void)
               "End selects the last and scrolls to it");
     }
 
+    /* The bar down the right, driven by clicking it rather than by the wheel.
+     * The wheel goes through the clamp and always lands somewhere sane; the
+     * bar goes through win32's arithmetic, where nMax is the last row and a
+     * page is taken off it once. Hand that a range with the page already
+     * taken off and it comes off twice — on a view tall enough to show more
+     * than half its rows the range goes negative and the bar will not move at
+     * all, which is what resizing an explorer smaller used to produce. */
+    {
+        ween_lv_view st;
+        RECT cr;
+        int sb = ween_scroll_metric(), x, y;
+
+        MoveWindow(g_list, 10, 10, 240, 320, TRUE);
+        SendMessageA(g_list, WM_KEYDOWN, VK_HOME, 0);
+        GetClientRect(g_list, &cr);
+        x = cr.right - sb / 2;
+        y = cr.bottom - sb - 1; /* the track, just above the down arrow */
+        for (int i = 0; i < 100; i++) {
+            SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+        }
+        ween_listview_view(g_list, &st);
+        CHECK(st.max_top > 0 && st.visible * 2 > 40,
+              "a view showing more than half its rows still has some to go");
+        CHECK(st.top == st.max_top,
+              "and paging down its bar reaches the last screenful");
+        MoveWindow(g_list, 10, 10, 240, 160, TRUE);
+    }
+
     /* Clicking a column header: the app hears which one, so it can sort. */
     SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(150, 4)); /* "Size" */
     SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(150, 4));

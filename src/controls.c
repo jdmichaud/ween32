@@ -1907,6 +1907,23 @@ static int lv_max_top(HWND wnd, const ween_list *l)
     return over > 0 ? over : 0;
 }
 
+/* The bar down the right, in the terms win32 states a scroll bar in: nMax is
+ * the last item, not the last item you can scroll to. The two differ by a
+ * page, and everything downstream — the thumb's size, the range a drag works
+ * in — is derived from nMax - nPage + 1. Hand it the scrollable range instead
+ * and it subtracts a page twice: the thumb comes out a page too long and, on
+ * a short list, the range collapses to nothing and the bar will not move. */
+static ween_sbstate lv_sbstate(HWND wnd, const ween_list *l)
+{
+    ween_sbstate st;
+    st.pos = l->top;
+    st.min = 0;
+    st.max = l->nrow - 1;
+    st.page = lv_visible(wnd);
+    st.line = 1;
+    return st;
+}
+
 static void lv_scroll_to(HWND wnd, ween_list *l, int top)
 {
     int max = lv_max_top(wnd, l);
@@ -1969,9 +1986,9 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         RECT cr;
         int sb = ween_scroll_metric();
         GetClientRect(wnd, &cr);
+        ween_sbstate st = lv_sbstate(wnd, l);
         ween_draw_scrollbar(&top->surface, ox + cr.right - sb, oy, sb,
-                            cr.bottom, 1, 1, l->top, visible, 0,
-                            lv_max_top(wnd, l));
+                            cr.bottom, 1, 1, st.pos, st.page, st.min, st.max);
     }
     for (int i = l->top; i < l->nrow && i < l->top + visible; i++) {
         int y = oy + WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
@@ -2099,8 +2116,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (l->nrow > lv_visible(wnd) &&
             GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
             int grab;
-            ween_sbstate st = { l->top, 0, lv_max_top(wnd, l),
-                                lv_visible(wnd), 1 };
+            ween_sbstate st = lv_sbstate(wnd, l);
             int pos = sb_click(GET_Y_LPARAM(lp), cr.bottom, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
@@ -2168,8 +2184,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (l && GetCapture() == wnd && l->pressed < 0) {
             RECT cr;
-            ween_sbstate st = { l->top, 0, lv_max_top(wnd, l), lv_visible(wnd),
-                                1 };
+            ween_sbstate st = lv_sbstate(wnd, l);
             GetClientRect(wnd, &cr);
             lv_scroll_to(wnd, l,
                          sb_drag(GET_Y_LPARAM(lp), cr.bottom, &st,
