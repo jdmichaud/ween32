@@ -3036,10 +3036,12 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return -1;
         l->col[i] = dup_str(col->pszText);
         l->width[i] = (col->mask & LVCF_WIDTH) ? col->cx : 50;
-        l->fmt[i] = (col->mask & LVCF_FMT)
-                        ? (col->fmt &
-                           (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN))
-                        : 0;
+        l->fmt[i] = (col->mask & LVCF_FMT) ? (col->fmt & LVCFMT_RIGHT) : 0;
+        /* a heading with a name says so in its format, which is what a header
+         * item means by HDF_STRING — and what an application must put back
+         * when it changes the format for the sort arrow */
+        if (col->mask & LVCF_TEXT)
+            l->fmt[i] |= HDF_STRING;
         if (i >= l->ncol)
             l->ncol = i + 1;
         InvalidateRect(wnd, NULL, FALSE);
@@ -3696,9 +3698,8 @@ static LRESULT header_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case HDM_SETITEMA:
         if (!l || !hd || i < 0 || i >= l->ncol)
             return FALSE;
-        if (hd->mask & HDI_FORMAT)
-            l->fmt[i] = hd->fmt &
-                        (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN);
+        if (hd->mask & HDI_FORMAT) /* HDF_STRING and the rest ride along */
+            l->fmt[i] = hd->fmt;
         if (hd->mask & HDI_WIDTH)
             l->width[i] = hd->cxy;
         InvalidateRect(list, NULL, FALSE);
@@ -3914,7 +3915,8 @@ static int tb_button_y(HWND wnd, const ween_toolbar *tb)
  * button the drop-down. */
 static int tb_drop_w(const ween_toolbar *tb, const ween_tbbutton *b)
 {
-    if (!(b->style & TBSTYLE_DROPDOWN) || !(tb->ex & TBSTYLE_EX_DRAWDDARROWS))
+    if (!(b->style & TBSTYLE_DROPDOWN) || (b->style & BTNS_WHOLEDROPDOWN) ||
+        !(tb->ex & TBSTYLE_EX_DRAWDDARROWS))
         return 0;
     return ween_ncm(b->text ? WEEN_TB_DROP_W : WEEN_TB_DROP_W_ICON);
 }
@@ -4288,6 +4290,12 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case TB_GETPADDING:
         tb = toolbar_of(wnd);
         return tb ? MAKELPARAM(tb->pad_x, 0) : 0;
+    case TB_SETBITMAPSIZE:
+        /* ween32 takes an image's size from the image list, so this only has
+         * to be accepted: what it is for is telling a bar that has no images
+         * not to reserve room for them, and a bar with no image list here
+         * reserves none anyway. */
+        return TRUE;
     case TB_SETINDENT:
         tb = toolbar_of(wnd);
         if (!tb)
@@ -4533,7 +4541,8 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (i < 0 || !(tb->btn[i].state & TBSTATE_ENABLED))
             return 0;
         if ((tb->btn[i].style & TBSTYLE_DROPDOWN) &&
-            !(tb->ex & TBSTYLE_EX_DRAWDDARROWS)) {
+            ((tb->btn[i].style & BTNS_WHOLEDROPDOWN) ||
+             !(tb->ex & TBSTYLE_EX_DRAWDDARROWS))) {
             /* a menu title: the whole button is the drop-down, and it opens
              * on the press, not on the release */
             SetFocus(wnd);
@@ -4606,10 +4615,12 @@ typedef struct {
     HWND child;
     char *text;
     UINT style;
+    int cx;     /* the width the band asked for, 0 for none */
     int min_h;  /* what the band asked for, or the child's height when it went
                  * in — never re-read from the child, because the layout
                  * resizes the child and the two would chase each other down */
-    int y, h;   /* filled in by the layout */
+    int x, w;   /* filled in by the layout */
+    int y, h;
 } ween_rbband;
 
 typedef struct {
@@ -4636,40 +4647,63 @@ static ween_rebar *rebar_of(HWND w)
 }
 
 /* Stack the bands and put each child where its band says. */
+/* Bands share a row until one asks to start a new one — RBBS_BREAK, which is
+ * what a shell sets on each of its bars to get the stack it shows. Without it
+ * they sit side by side, which is the arrangement a rebar is named for and
+ * which ween32 used to ignore: every band went on a row of its own, so an
+ * application that never asked for the break looked right here and came out
+ * with all its bars on one row on Windows. */
 static void rebar_layout(HWND wnd, ween_rebar *rb)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     RECT cr;
-    int y = 0;
+    int y = 0, i = 0;
     GetClientRect(wnd, &cr);
-    for (int i = 0; i < rb->count; i++) {
-        ween_rbband *b = &rb->band[i];
-        RECT chr;
-        int content = ween_ncm(WEEN_RB_CONTENT_X);
-        (void)chr;
-        b->y = y;
-        b->h = ween_ncm(WEEN_RB_EDGE_H) + b->min_h;
-        if (b->text && f)
-            content = ween_ncm(WEEN_RB_LABEL_X) +
-                      ween_strike_text_width(f, b->text,
-                                             (int)strlen(b->text)) +
-                      ween_ncm(WEEN_RB_LABEL_GAP);
-        if (b->child)
-            MoveWindow(b->child, content, y + ween_ncm(WEEN_RB_EDGE_H),
-                       cr.right - content - ween_ncm(WEEN_RB_EDGE_H),
-                       b->h - ween_ncm(WEEN_RB_EDGE_H), TRUE);
-        y += b->h;
+    while (i < rb->count) {
+        int row_h = 0, n = 0, x = 0, share;
+        /* how many bands this row holds, and how tall it is */
+        for (int j = i; j < rb->count; j++) {
+            if (j > i && (rb->band[j].style & RBBS_BREAK))
+                break;
+            if (rb->band[j].min_h > row_h)
+                row_h = rb->band[j].min_h;
+            n++;
+        }
+        share = n > 1 ? cr.right / n : cr.right;
+        for (int j = i; j < i + n; j++) {
+            ween_rbband *b = &rb->band[j];
+            int content = ween_ncm(WEEN_RB_CONTENT_X);
+            b->y = y;
+            b->h = ween_ncm(WEEN_RB_EDGE_H) + row_h;
+            b->x = x;
+            /* the last on the row takes whatever is left of the width */
+            b->w = (j == i + n - 1) ? cr.right - x : (b->cx ? b->cx : share);
+            x += b->w;
+            if (b->text && f)
+                content = ween_ncm(WEEN_RB_LABEL_X) +
+                          ween_strike_text_width(f, b->text,
+                                                 (int)strlen(b->text)) +
+                          ween_ncm(WEEN_RB_LABEL_GAP);
+            if (b->child)
+                MoveWindow(b->child, b->x + content,
+                           y + ween_ncm(WEEN_RB_EDGE_H),
+                           b->w - content - ween_ncm(WEEN_RB_EDGE_H),
+                           b->h - ween_ncm(WEEN_RB_EDGE_H), TRUE);
+        }
+        y += ween_ncm(WEEN_RB_EDGE_H) + row_h;
+        i += n;
     }
 }
 
 static int rebar_height(HWND wnd, ween_rebar *rb)
 {
-    /* Each band carries the edge above it; the one under the last is the
+    /* Each row carries the edge above it; the one under the last is the
      * bottom of the control, so it is counted here rather than by a band. */
     int h = ween_ncm(WEEN_RB_EDGE_H);
     rebar_layout(wnd, rb);
     for (int i = 0; i < rb->count; i++)
-        h += rb->band[i].h;
+        if (i == 0 || (rb->band[i].style & RBBS_BREAK))
+            h += rb->band[i].h;
     return h;
 }
 
@@ -4766,6 +4800,8 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             b->text = dup_str(info->lpText);
         /* the height the band keeps: what it asked for, else what the child
          * was when it went in, else a toolbar's worth */
+        if (info->fMask & RBBIM_SIZE)
+            b->cx = (int)info->cx;
         b->min_h = (info->fMask & RBBIM_CHILDSIZE) ? (int)info->cyMinChild : 0;
         if (!b->min_h && b->child) {
             RECT chr;

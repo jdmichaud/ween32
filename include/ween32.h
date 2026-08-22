@@ -525,6 +525,10 @@ typedef struct tagTVHITTESTINFO {
 #define HDI_BITMAP 0x0010
 #define HDI_IMAGE 0x0020
 #define HDI_ORDER 0x0080
+/* A heading draws its text only when its format says it has one: taking the
+ * format apart and putting it back without this is how a column comes to
+ * have no name. */
+#define HDF_STRING 0x4000
 #define HDF_LEFT 0x0000
 #define HDF_RIGHT 0x0001
 #define HDF_CENTER 0x0002
@@ -936,6 +940,18 @@ typedef struct tagTCITEMA {
 #define TBSTYLE_SEP 0x0001
 #define TBSTYLE_CHECK 0x0002
 #define TBSTYLE_DROPDOWN 0x0008
+/* The same styles by their later names, and the one that says the whole
+ * button is the drop-down rather than an arrow half beside it — which is what
+ * a menu title is. */
+#define BTNS_BUTTON 0x0000
+#define BTNS_SEP 0x0001
+#define BTNS_CHECK 0x0002
+#define BTNS_GROUP 0x0004
+#define BTNS_DROPDOWN 0x0008
+#define BTNS_AUTOSIZE 0x0010
+#define BTNS_NOPREFIX 0x0020
+#define BTNS_SHOWTEXT 0x0040
+#define BTNS_WHOLEDROPDOWN 0x0080
 #define TBSTYLE_FLAT 0x0800
 #define TBSTYLE_LIST 0x1000 /* the text beside the icon, not under it */
 
@@ -986,6 +1002,9 @@ typedef struct tagTBBUTTONINFOA {
 #define TB_SETBUTTONSIZE (WM_USER + 31)
 /* How far in the first button starts. */
 #define TB_SETINDENT (WM_USER + 47)
+/* How big the images are. A bar with none says so — zero by zero — or a
+ * button with no image still reserves room for one. */
+#define TB_SETBITMAPSIZE (WM_USER + 32)
 #define TB_SETPADDING (WM_USER + 87)
 #define TB_GETPADDING (WM_USER + 86)
 /* Which button the keyboard is on, and the letters that reach one: a menu in
@@ -1032,6 +1051,24 @@ typedef struct {
 #define RBBIM_CHILDSIZE 0x00000020
 #define RBBIM_SIZE 0x00000040
 
+/* Where a control bar puts itself. A toolbar, a status bar and a rebar are
+ * all "control bars": left alone they align themselves to the top of their
+ * parent and take its whole width, which is what CCS_TOP means and is the
+ * default. A toolbar inside a rebar band must say otherwise, or it climbs
+ * out of the band and sits over whatever is at the top. */
+#define CCS_TOP 0x00000001L
+#define CCS_NOMOVEY 0x00000002L
+#define CCS_BOTTOM 0x00000003L
+#define CCS_NORESIZE 0x00000004L
+#define CCS_NOPARENTALIGN 0x00000008L
+#define CCS_ADJUSTABLE 0x00000020L
+#define CCS_NODIVIDER 0x00000040L
+#define CCS_VERT 0x00000080L
+
+/* A band that starts a row of its own rather than sitting beside the one
+ * before it. A shell sets this on each of its bars, which is why they stack. */
+#define RBBS_BREAK 0x00000001
+#define RBBS_FIXEDSIZE 0x00000002
 #define RBBS_GRIPPERALWAYS 0x00000080
 #define RBBS_NOGRIPPER 0x00000100
 

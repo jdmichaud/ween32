@@ -285,7 +285,8 @@ int main(void)
         CHECK(SendMessageA(rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi),
               "a band holding the toolbar went in");
 
-        bi.fMask = RBBIM_CHILD | RBBIM_TEXT | RBBIM_CHILDSIZE;
+        bi.fMask = RBBIM_CHILD | RBBIM_TEXT | RBBIM_CHILDSIZE | RBBIM_STYLE;
+        bi.fStyle = RBBS_BREAK; /* a row of its own, as a shell's bars have */
         bi.hwndChild = addr;
         bi.lpText = (char *)"Address";
         CHECK(SendMessageA(rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi),
@@ -306,6 +307,28 @@ int main(void)
         CHECK(ar.top > tbr.top, "the second band sits below the first");
         CHECK(tbr.left > 0 && ar.left > tbr.left,
               "both are inset past the gripper, and the labelled one further");
+
+        /* A band that does not ask to break shares the row with the one
+         * before it — which is what a rebar is named for, and what an
+         * application that never asks for the break gets on Windows. */
+        {
+            HWND side = CreateWindowA("BUTTON", "beside", WS_CHILD | WS_VISIBLE,
+                                      0, 0, 60, 22, rebar, NULL, NULL, NULL);
+            RECT sr, ar2;
+            int was = (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0);
+            bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
+            bi.fStyle = 0;
+            bi.hwndChild = side;
+            bi.cyMinChild = 22;
+            SendMessageA(rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
+            CHECK((int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0) == was,
+                  "a band that does not break adds no height");
+            GetWindowRect(addr, &ar2);
+            GetWindowRect(side, &sr);
+            CHECK(sr.top == ar2.top && sr.left > ar2.left,
+                  "it sits beside the band before it, on the same row");
+            DestroyWindow(side);
+        }
 
         /* A control created as the rebar's own child, the way a shell makes
          * them: what it sends goes to its parent, which is the rebar, and the

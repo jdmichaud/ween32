@@ -810,9 +810,14 @@ static void mark_sorted_column(void)
         return;
     for (int c = 0; c < 4; c++) {
         HDITEMA hd;
+        /* Read, change, write: the format carries more than the alignment —
+         * whether the heading has a name to draw, for one — and setting it
+         * from nothing takes the rest of it away. */
         memset(&hd, 0, sizeof(hd));
         hd.mask = HDI_FORMAT;
-        hd.fmt = (c == 1) ? HDF_RIGHT : HDF_LEFT;
+        if (!SendMessageA(head, HDM_GETITEMA, (WPARAM)c, (LPARAM)&hd))
+            continue;
+        hd.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
         if (c == g_sort_col)
             hd.fmt |= g_sort_down ? HDF_SORTDOWN : HDF_SORTUP;
         SendMessageA(head, HDM_SETITEMA, (WPARAM)c, (LPARAM)&hd);
@@ -1482,7 +1487,9 @@ static void build_menubar(void)
         b[i].iBitmap = -1; /* a title carries no image */
         b[i].idCommand = IDM_MENU_FIRST + i;
         b[i].fsState = TBSTATE_ENABLED;
-        b[i].fsStyle = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+        /* The whole button is the drop-down: a menu title has no arrow half
+         * beside it, and it opens on the press. */
+        b[i].fsStyle = BTNS_DROPDOWN | BTNS_WHOLEDROPDOWN | BTNS_AUTOSIZE;
         b[i].iString = (INT_PTR)label[i];
     }
     SendMessageA(g_menubar, TB_ADDBUTTONSA, (WPARAM)n, (LPARAM)b);
@@ -1571,6 +1578,7 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc = BeginPaint(w, &ps);
         RECT r = ps.rcPaint, x;
         FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+        SelectObject(dc, g_font); /* the shell's face, not the DC's default */
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         /* Six in and three down, not centred: the machine leaves three above
          * the text and five below in a bar of twenty. */
@@ -1984,11 +1992,16 @@ static void build_bands(HWND w)
     g_rebar = CreateWindowExA(WS_EX_CONTROLPARENT, REBARCLASSNAMEA, "",
                               WS_CHILD | WS_VISIBLE, 0, 0, 100, 50, w,
                               (HMENU)(UINT_PTR)ID_REBAR, NULL, NULL);
+    /* A toolbar left alone puts itself at the top of its parent and takes the
+     * whole width — it is a control bar, and that is what one does. Inside a
+     * rebar band the band says where it goes, so this one must not. */
     g_toolbar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                                 WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
-                                    TBSTYLE_LIST,
+                                    TBSTYLE_LIST | CCS_NORESIZE |
+                                    CCS_NODIVIDER | CCS_NOPARENTALIGN,
                                 0, 0, 100, 22, g_rebar,
                                 (HMENU)(UINT_PTR)ID_TOOLBAR, NULL, NULL);
+    SendMessageA(g_toolbar, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageA(g_toolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
     /* Back, Forward and Views wear the arrow that says they drop down, which
      * a toolbar draws only when asked: without this the whole button is the
@@ -2088,9 +2101,11 @@ static void build_bands(HWND w)
                                 300, 21, g_addrband,
                                 (HMENU)(UINT_PTR)ID_ADDRESS, NULL, NULL);
     g_go = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
-                           WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST,
+                           WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST |
+                               CCS_NORESIZE | CCS_NODIVIDER | CCS_NOPARENTALIGN,
                            0, 0, GO_W, 22, g_addrband,
                            (HMENU)(UINT_PTR)ID_GO, NULL, NULL);
+    SendMessageA(g_go, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageA(g_go, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
     SendMessageA(g_go, TB_SETIMAGELIST, 0, (LPARAM)g_images);
     SendMessageA(g_go, TB_SETHOTIMAGELIST, 0, (LPARAM)g_hot_images);
@@ -2112,10 +2127,15 @@ static void build_bands(HWND w)
      * than the band, both as Windows 2000 has them. */
     g_menubar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                                 WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
-                                    TBSTYLE_LIST,
+                                    TBSTYLE_LIST | CCS_NORESIZE |
+                                    CCS_NODIVIDER | CCS_NOPARENTALIGN,
                                 0, 0, 100, 22, g_rebar,
                                 (HMENU)(UINT_PTR)ID_MENUBAR, NULL, NULL);
+    SendMessageA(g_menubar, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageA(g_menubar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    /* No images on this one: said in so many words, or a title reserves the
+     * room a picture would have taken and the bar comes out twice as wide. */
+    SendMessageA(g_menubar, TB_SETBITMAPSIZE, 0, MAKELPARAM(0, 0));
     SendMessageA(g_menubar, TB_SETPADDING, 0, MAKELPARAM(MENUBAR_PAD, 0));
     SendMessageA(g_menubar, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, MENUBAR_H));
     SendMessageA(g_menubar, TB_SETINDENT, MENUBAR_LEAD, 0);
@@ -2124,19 +2144,24 @@ static void build_bands(HWND w)
                             BRAND_W, BRAND_H, g_rebar,
                             (HMENU)(UINT_PTR)ID_BRAND, NULL, NULL);
 
+    /* Three bands, each on a row of its own: bands share a row unless one
+     * asks to break, and the shell's three bars are stacked. */
     memset(&bi, 0, sizeof(bi));
     bi.cbSize = sizeof(bi);
-    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE;
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
+    bi.fStyle = RBBS_BREAK;
     bi.hwndChild = g_menubar;
     bi.cyMinChild = 22;
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
 
-    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE;
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
+    bi.fStyle = RBBS_BREAK;
     bi.hwndChild = g_toolbar;
     bi.cyMinChild = 22;
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
 
-    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_TEXT;
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE | RBBIM_TEXT;
+    bi.fStyle = RBBS_BREAK;
     bi.hwndChild = g_addrband;
     bi.cyMinChild = 22;
     bi.lpText = (char *)"Address";
@@ -2188,6 +2213,10 @@ static void build_views(HWND w)
 
     SendMessageA(g_tree, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)g_images);
     SendMessageA(g_list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
+    /* Both panes draw in the shell's face, which is the window's, not
+     * whatever the control would have picked for itself. */
+    SendMessageA(g_tree, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageA(g_list, WM_SETFONT, (WPARAM)g_font, TRUE);
 
     for (int i = 0; i < 4; i++) {
         LVCOLUMNA col;
@@ -2202,6 +2231,10 @@ static void build_views(HWND w)
     g_status = CreateWindowA(STATUSCLASSNAMEA, "",
                              WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 10,
                              10, w, (HMENU)(UINT_PTR)ID_STATUS, NULL, NULL);
+    SendMessageA(g_status, WM_SETFONT, (WPARAM)g_font, TRUE);
+    SendMessageA(g_rebar, WM_SETFONT, (WPARAM)g_font, TRUE);
+    if (g_address)
+        SendMessageA(g_address, WM_SETFONT, (WPARAM)g_font, TRUE);
 }
 
 static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -2223,6 +2256,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
          * arrow key moves through the files without clicking first. */
         if (g_list)
             SetFocus(g_list);
+        /* Laid out before anything is put in it: the status bar's parts have
+         * to exist before text can go in them, and the first WM_SIZE is
+         * after this. */
+        layout(w);
         if (g_fixture) {
             fill_fixture_tree();
         } else {
@@ -2568,7 +2605,14 @@ int main(int argc, char **argv)
     wc.hCursor = LoadCursorA(NULL, IDC_SIZEWE);
     RegisterClassA(&wc);
 
-    g_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    /* The face the shell draws in: Tahoma at eight points, which is the icon
+     * title font of a Windows 2000. DEFAULT_GUI_FONT is not it — on the
+     * machine that is MS Sans Serif — so it is asked for by name, and every
+     * control is told to use it the way an application does. */
+    g_font = CreateFontA(-11, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0,
+                         0, DEFAULT_QUALITY, 0, "Tahoma");
+    if (!g_font)
+        g_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
     HWND w = CreateWindowExA(0, "ween32explorer", "All Users",
                              WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |

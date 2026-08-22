@@ -2073,6 +2073,20 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(ween_top_level(wnd), NULL, FALSE);
         return 0;
     }
+    case WM_SETFONT:
+        /* The font a control draws with. An application makes one and hands
+         * it to everything it creates, which is how a window comes to be in
+         * one face rather than whatever each control thought of. */
+        if (wp) {
+            const ween_gdiobj *o = (const ween_gdiobj *)wp;
+            if (o->kind == WEEN_OBJ_FONT && o->font)
+                wnd->font = o->font;
+        } else {
+            wnd->font = ween_gui_font();
+        }
+        if (LOWORD(lp))
+            InvalidateRect(wnd, NULL, TRUE);
+        return 0;
     case WM_QUERYUISTATE:
         /* What is hidden, not what is shown — the flags are named for what
          * they take away. An application drawing its own labels asks this to

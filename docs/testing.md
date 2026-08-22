@@ -140,6 +140,34 @@ The tree pane is window-relative x 4..203, y 100..519. Everything in it
 matches but the icons, and every icon difference but the picked one is the
 quantisation.
 
+### The same source, built as win32
+
+`examples/explorer.c` compiles against the real win32 headers, and it is worth
+*running* what that produces: everywhere ween32 is more permissive than
+comctl32, the application leans on ween32 without knowing it and the win32
+build comes out wrong. Every one of these was found that way — bands that had
+never asked to break, toolbars that had never said where they go, a heading
+that lost its name when the sort arrow was set, status-bar text put in parts
+that did not exist yet, a menu title that was not a whole-button drop-down.
+
+```sh
+Xvfb :99 -screen 0 1024x768x24 &          # no window manager needed
+export DISPLAY=:99 WINEPREFIX=${XDG_CACHE_HOME:-$HOME/.cache}/ween32-refcapture
+zig cc -target x86_64-windows-gnu -std=c99 -Iinclude examples/explorer.c \
+    -luser32 -lgdi32 -lcomctl32 -o examples/ween-explorer.exe
+WEEN32_EXPLORER_FIXTURE=1 wine explorer /desktop=ween32test,760x600 \
+    'Z:\path\to\ween32\examples\ween-explorer.exe' &
+xwininfo -root -tree | grep "Local Disk"   # the window id, to grab or click
+```
+
+The fixture works on both sides, so the two windows hold the same content and
+can be put side by side. What will not match, and is not ours: wine's Tahoma
+is a substitute and is wider than the real one — "Documents and Settings"
+comes to 128 pixels there and 116 here — so every row and column drifts; wine's
+comctl32 has its own toolbar padding and list row height; and with no window
+manager the window never activates, so wine draws the caption inactive. The
+machine, not wine, is the yardstick for how it should look.
+
 **Wine is not the reference for drop-downs.** It renders a menu's border as a
 flat grey line and a separator as a single line; Windows draws a raised edge
 and an etched pair. Everywhere else in ween32 wine agrees with Windows, and is
