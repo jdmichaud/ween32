@@ -2362,6 +2362,52 @@ static int lv_divider_at(const ween_list *l, int x, int y)
     return -1;
 }
 
+/* What a cell needs before its text: the first column's is the icon and the
+ * two pixels its label box starts before the text, the rest sit six in. This
+ * is the measure a column is sized by, not the pen the text is drawn with —
+ * the pen is two further along in the first column. */
+static int lv_cell_lead(int col, int icon_w)
+{
+    if (col)
+        return 6;
+    return icon_w ? icon_w + 2 : 7;
+}
+
+/* What LVSCW_AUTOSIZE comes to: the widest cell in the column, what comes
+ * before it, and six after. Double-clicking a divider asks for this, which is
+ * how a shell's column comes to fit the longest name in it. Measured against
+ * the machine, whose C: window gives 140 for Name, 33 for Size and 104 for
+ * Modified — the numbers this reproduces. */
+#define WEEN_LV_AUTOSIZE_TRAIL 6
+static int lv_autosize_width(HWND wnd, const ween_list *l, int col,
+                             int use_header)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int icon_w = 0, icon_h = 0, best = 0;
+    if (!f || col < 0 || col >= l->ncol)
+        return 0;
+    if (col == 0 && l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    /* The drawn width, not the measured one: a column is sized to the pixels
+     * the text puts on the screen, and the extent rounds every character up. */
+    for (int i = 0; i < l->nrow; i++) {
+        const char *t = l->row[i].text[col];
+        int w = t ? ween_strike_text_width(f, t, (int)strlen(t)) : 0;
+        if (w > best)
+            best = w;
+    }
+    if (use_header && l->col[col]) {
+        /* USEHEADER counts the heading as one more thing that has to fit */
+        int w = ween_strike_text_width(f, l->col[col],
+                                       (int)strlen(l->col[col]));
+        if (w + 12 - lv_cell_lead(col, icon_w) > best)
+            best = w + 12 - lv_cell_lead(col, icon_w);
+    }
+    if (!best)
+        return 0;
+    return lv_cell_lead(col, icon_w) + best + WEEN_LV_AUTOSIZE_TRAIL;
+}
+
 /* The width of a row's label box: the text, clamped to what the name column
  * leaves, with five pixels each side. The same number the painting uses, so
  * what can be clicked is exactly what is drawn highlighted. */
@@ -2785,9 +2831,19 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!l)
             return 0;
         g = lv_layout(wnd, l);
+        if (my < WEEN_LV_HEADER_H) {
+            /* A divider double-clicked sizes the column to the left of it to
+             * fit what is in it — the header's own gesture, which comctl32
+             * turns into an autosize on the view. */
+            int d = lv_divider_at(l, GET_X_LPARAM(lp) + l->scroll_x, my);
+            if (d >= 0)
+                SendMessageA(wnd, LVM_SETCOLUMNWIDTH, (WPARAM)d,
+                             MAKELPARAM(LVSCW_AUTOSIZE, 0));
+            return 0;
+        }
         if ((g.vbar && GET_X_LPARAM(lp) >= g.view_w) ||
-            (g.hbar && my >= g.view_h) || my < WEEN_LV_HEADER_H)
-            return 0; /* the bars and the header are not items */
+            (g.hbar && my >= g.view_h))
+            return 0; /* the bars are not items */
         i = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, NULL);
         if (i >= 0) {
             l->sel = l->focus = i + 1;
@@ -3050,13 +3106,28 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
     }
-    case LVM_SETCOLUMNWIDTH:
+    case LVM_GETCOLUMNWIDTH:
+        l = list_of(wnd);
+        if (!l || (int)wp < 0 || (int)wp >= l->ncol)
+            return 0;
+        return l->width[(int)wp];
+    case LVM_SETCOLUMNWIDTH: {
+        int cx;
         l = list_of(wnd);
         if (!l || (int)wp < 0 || (int)wp >= l->ncol)
             return FALSE;
-        l->width[(int)wp] = (int)(short)LOWORD(lp);
+        cx = (int)(short)LOWORD(lp);
+        if (cx == LVSCW_AUTOSIZE || cx == LVSCW_AUTOSIZE_USEHEADER) {
+            int fit = lv_autosize_width(wnd, l, (int)wp,
+                                        cx == LVSCW_AUTOSIZE_USEHEADER);
+            if (!fit)
+                return TRUE; /* nothing in it to fit to */
+            cx = fit;
+        }
+        l->width[(int)wp] = cx;
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
+    }
     case LVM_ENSUREVISIBLE:
         l = list_of(wnd);
         if (l && (int)wp >= 0 && (int)wp < l->nrow) {

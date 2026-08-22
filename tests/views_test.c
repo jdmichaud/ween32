@@ -316,6 +316,21 @@ int main(void)
         CHECK(g_column_clicked == -1,
               "a column set to a width can then be dragged from it");
 
+        /* A divider double-clicked fits the column to what is in it, which
+         * is what LVSCW_AUTOSIZE asks for by hand. Every row here is
+         * "fileNN.txt", so the fit is well under the width they are given. */
+        SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0, MAKELPARAM(200, 0));
+        SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0,
+                     MAKELPARAM(LVSCW_AUTOSIZE, 0));
+        int fit = (int)SendMessageA(g_list, LVM_GETCOLUMNWIDTH, 0, 0);
+        CHECK(fit > 20 && fit < 120, "a column can be sized to fit its items");
+        SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0, MAKELPARAM(200, 0));
+        SendMessageA(g_list, WM_LBUTTONDBLCLK, 0, MAKELPARAM(200, 4));
+        CHECK((int)SendMessageA(g_list, LVM_GETCOLUMNWIDTH, 0, 0) == fit,
+              "and double-clicking its divider asks for the same fit");
+        /* back to a width whose dividers are nowhere near what follows */
+        SendMessageA(g_list, LVM_SETCOLUMNWIDTH, 0, MAKELPARAM(120, 0));
+
         /* a press away from any divider is a sort, as before */
         SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(60, 4));
         SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(60, 4));

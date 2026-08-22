@@ -514,7 +514,12 @@ typedef struct tagTVHITTESTINFO {
 #define LVM_GETITEMCOUNT (LVM_FIRST + 4)
 #define LVM_GETNEXTITEM (LVM_FIRST + 12)
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
+#define LVM_GETCOLUMNWIDTH (LVM_FIRST + 29)
 #define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
+/* Widths a column can be asked for instead of a number: fit what is in it,
+ * or fit that and the heading too. */
+#define LVSCW_AUTOSIZE (-1)
+#define LVSCW_AUTOSIZE_USEHEADER (-2)
 #define LVM_ENSUREVISIBLE (LVM_FIRST + 19)
 #define LVNI_SELECTED 0x0002
 #define LVNI_FOCUSED 0x0001
