@@ -37,6 +37,7 @@ typedef int32_t LONG;
 typedef uint32_t UINT;
 typedef intptr_t LONG_PTR;
 typedef uintptr_t UINT_PTR;
+typedef UINT_PTR DWORD_PTR;
 typedef UINT_PTR WPARAM;
 typedef LONG_PTR LPARAM;
 typedef LONG_PTR LRESULT;
@@ -746,6 +747,60 @@ typedef struct tagTCITEMA {
 #define WEEN32_HAS_TREEVIEW 1
 #define WEEN32_HAS_LISTVIEW 1
 #define WEEN32_HAS_TRACKBAR 1
+/* ---- toolbar --------------------------------------------------------------
+ *
+ * A row of flat buttons: no edge until the pointer is over one, a raised edge
+ * when it is, and a sunken edge over a dithered background when one is held or
+ * checked. That is the Windows 2000 shell's toolbar, and the metrics here are
+ * measured off one — twenty-two tall, the icon six pixels in, the text
+ * twenty-four.
+ *
+ * A button is a TBBUTTON: an image index, a command id, a state and a style.
+ * iString may be a pointer to the button's text, which is what comctl32 5
+ * allows and what an app writing its own toolbar actually does. */
+#define TOOLBARCLASSNAMEA "ToolbarWindow32"
+
+#define TBSTYLE_BUTTON 0x0000
+#define TBSTYLE_SEP 0x0001
+#define TBSTYLE_CHECK 0x0002
+#define TBSTYLE_DROPDOWN 0x0008
+#define TBSTYLE_FLAT 0x0800
+#define TBSTYLE_LIST 0x1000 /* the text beside the icon, not under it */
+
+#define TBSTATE_CHECKED 0x01
+#define TBSTATE_PRESSED 0x02
+#define TBSTATE_ENABLED 0x04
+#define TBSTATE_HIDDEN 0x08
+
+typedef struct {
+    int iBitmap;
+    int idCommand;
+    BYTE fsState;
+    BYTE fsStyle;
+    BYTE bReserved[2];
+    DWORD_PTR dwData;
+    INT_PTR iString;
+} TBBUTTON, *LPTBBUTTON;
+
+#define TB_ENABLEBUTTON (WM_USER + 1)
+#define TB_CHECKBUTTON (WM_USER + 2)
+#define TB_ISBUTTONCHECKED (WM_USER + 12)
+#define TB_ISBUTTONENABLED (WM_USER + 9)
+#define TB_ADDBUTTONSA (WM_USER + 20)
+#define TB_BUTTONSTRUCTSIZE (WM_USER + 30)
+#define TB_SETIMAGELIST (WM_USER + 48)
+#define TB_GETITEMRECT (WM_USER + 29)
+#define TB_BUTTONCOUNT (WM_USER + 24)
+#define TB_AUTOSIZE (WM_USER + 33)
+
+/* The arrow beside a drop-down button was pressed: show the menu. */
+#define TBN_DROPDOWN (0U - 710U)
+typedef struct {
+    NMHDR hdr;
+    int iItem;
+} NMTOOLBAR;
+
+#define WEEN32_HAS_TOOLBAR 1
 #define WEEN32_HAS_MENU 1
 #define WEEN32_HAS_MESSAGEBOX 1
 #define WEEN32_HAS_DIALOGBOX 1

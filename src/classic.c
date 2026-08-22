@@ -416,6 +416,14 @@ static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)
 /* The triangle at the right of an item that opens a submenu. Windows draws a
  * small solid one pointing the way the cascade will open — no bevel, no
  * button, just the mark. */
+/* The small triangle beside a drop-down toolbar button: four wide, pointing
+ * down, which is the shape the classic shell used. */
+void ween_classic_menu_arrow_down(ween_surface *s, int x, int y, ween_color c)
+{
+    for (int i = 0; i < 3; i++)
+        ween_surface_hline(s, x + i, y + i, 7 - 2 * i, c);
+}
+
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h,
                              ween_color c)
 {

@@ -2694,6 +2694,8 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 /* ---- registration --------------------------------------------------------- */
 
+static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
+
 void ween_register_controls(void)
 {
     WNDCLASSA wc;
@@ -2734,5 +2736,367 @@ void ween_register_controls(void)
     wc.lpfnWndProc = trackbar_proc;
     wc.lpszClassName = TRACKBAR_CLASSA;
     RegisterClassA(&wc);
+    wc.lpfnWndProc = toolbar_proc;
+    wc.lpszClassName = TOOLBARCLASSNAMEA;
+    RegisterClassA(&wc);
+
 }
 
+
+/* ---- the toolbar ----------------------------------------------------------
+ *
+ * A row of flat buttons. Flat means no edge at rest: the button only shows one
+ * when the pointer is over it (raised) or it is held or checked (sunken, over
+ * a dither of white and face). That dither is the same one a scroll-bar track
+ * is made of, and it is what says "this is on" without a colour.
+ *
+ * The metrics are measured off a Windows 2000 shell toolbar: the band is
+ * twenty-two tall, an icon sits six pixels in and vertically centred, and the
+ * text starts twenty-four in — six, then the sixteen-pixel icon, then two.
+ */
+
+#define WEEN_TB_HEIGHT 22
+#define WEEN_TB_ICON_X 6
+#define WEEN_TB_TEXT_X 24
+#define WEEN_TB_PAD_RIGHT 6
+#define WEEN_TB_SEP_W 8
+#define WEEN_TB_DROP_W 11 /* the arrow half of a drop-down button */
+
+typedef struct {
+    int id;
+    int image;
+    char *text;
+    UINT style;
+    UINT state;
+    int x, w; /* filled in by the layout */
+} ween_tbbutton;
+
+typedef struct {
+    HIMAGELIST images;
+    ween_tbbutton *btn;
+    int count, cap;
+    int hot;     /* the button under the pointer, -1 for none */
+    int pressed; /* the button being held, -1 for none */
+    int drop;    /* the held button's arrow half, not its body */
+} ween_toolbar;
+
+static void toolbar_free(void *p)
+{
+    ween_toolbar *tb = p;
+    for (int i = 0; i < tb->count; i++)
+        free(tb->btn[i].text);
+    free(tb->btn);
+    free(tb);
+}
+
+static ween_toolbar *toolbar_of(HWND w)
+{
+    if (!w->ctl) {
+        w->ctl = calloc(1, sizeof(ween_toolbar));
+        w->ctl_free = toolbar_free;
+        if (w->ctl) {
+            ((ween_toolbar *)w->ctl)->hot = -1;
+            ((ween_toolbar *)w->ctl)->pressed = -1;
+        }
+    }
+    return w->ctl;
+}
+
+/* Lay the row out left to right; each button keeps its own rectangle so the
+ * drawing and the hit-testing cannot disagree. */
+static void toolbar_layout(HWND wnd, ween_toolbar *tb)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int x = 0;
+    for (int i = 0; i < tb->count; i++) {
+        ween_tbbutton *b = &tb->btn[i];
+        b->x = x;
+        if (b->style & TBSTYLE_SEP) {
+            b->w = ween_ncm(WEEN_TB_SEP_W);
+        } else {
+            int text = b->text ? ween_strike_text_width(f, b->text,
+                                                        (int)strlen(b->text))
+                               : 0;
+            b->w = text ? ween_ncm(WEEN_TB_TEXT_X) + text +
+                              ween_ncm(WEEN_TB_PAD_RIGHT)
+                        : ween_ncm(WEEN_TB_ICON_X) * 2 + 16;
+            if (b->style & TBSTYLE_DROPDOWN)
+                b->w += ween_ncm(WEEN_TB_DROP_W);
+        }
+        x += b->w;
+    }
+}
+
+static int toolbar_hit(ween_toolbar *tb, int x, int y, int *on_arrow)
+{
+    if (on_arrow)
+        *on_arrow = 0;
+    if (y < 0 || y >= ween_ncm(WEEN_TB_HEIGHT))
+        return -1;
+    for (int i = 0; i < tb->count; i++) {
+        ween_tbbutton *b = &tb->btn[i];
+        if (b->style & TBSTYLE_SEP)
+            continue;
+        if (x < b->x || x >= b->x + b->w)
+            continue;
+        if ((b->style & TBSTYLE_DROPDOWN) && on_arrow &&
+            x >= b->x + b->w - ween_ncm(WEEN_TB_DROP_W))
+            *on_arrow = 1;
+        return i;
+    }
+    return -1;
+}
+
+static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
+{
+    ween_toolbar *tb = toolbar_of(wnd);
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int th = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    int h = ween_ncm(WEEN_TB_HEIGHT);
+    RECT r = ps->rcPaint;
+    int ox, oy;
+
+    ween_client_origin(wnd, &ox, &oy);
+    FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+    if (!tb)
+        return;
+    toolbar_layout(wnd, tb);
+
+    for (int i = 0; i < tb->count; i++) {
+        ween_tbbutton *b = &tb->btn[i];
+        int bx = ox + b->x, by = oy;
+        int enabled = (b->state & TBSTATE_ENABLED) != 0;
+        int checked = (b->state & TBSTATE_CHECKED) != 0;
+        int held = tb->pressed == i && tb->hot == i;
+
+        if (b->style & TBSTYLE_SEP) {
+            /* an etched line down the middle of its gap */
+            int sx = bx + b->w / 2;
+            ween_surface_vline(&top->surface, sx, by + 2, h - 4, WEEN_SHADOW);
+            ween_surface_vline(&top->surface, sx + 1, by + 2, h - 4, WEEN_WHITE);
+            continue;
+        }
+
+        if (checked || held) {
+            /* the dither is what says "on"; the edge says which way */
+            if (checked && !held)
+                ween_classic_scroll_track(&top->surface, bx + 1, by + 1,
+                                          b->w - 2, h - 2);
+            ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_SUNKEN,
+                              BF_RECT, NULL);
+        } else if (tb->hot == i && enabled) {
+            ween_classic_edge(&top->surface, bx, by, b->w, h, EDGE_RAISED,
+                              BF_RECT, NULL);
+        }
+
+        int shift = held ? 1 : 0;
+        if (tb->images && b->image >= 0)
+            ween_imagelist_draw(tb->images, b->image, &top->surface,
+                                bx + ween_ncm(WEEN_TB_ICON_X) + shift,
+                                by + (h - 16) / 2 + shift);
+        if (f && b->text)
+            ween_strike_draw(f, &top->surface,
+                             bx + ween_ncm(WEEN_TB_TEXT_X) + shift,
+                             by + (h - th) / 2 + shift, b->text,
+                             (int)strlen(b->text),
+                             enabled ? WEEN_BLACK : WEEN_SHADOW);
+        if (b->style & TBSTYLE_DROPDOWN) {
+            /* the arrow half, with a line marking it off from the body */
+            int ax = bx + b->w - ween_ncm(WEEN_TB_DROP_W);
+            ween_classic_menu_arrow_down(&top->surface, ax + 3,
+                                         by + h / 2 - 1,
+                                         enabled ? WEEN_BLACK : WEEN_SHADOW);
+        }
+    }
+}
+
+static void toolbar_set_hot(HWND wnd, ween_toolbar *tb, int hot)
+{
+    if (tb->hot == hot)
+        return;
+    tb->hot = hot;
+    InvalidateRect(wnd, NULL, FALSE);
+}
+
+static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_toolbar *tb;
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        toolbar_paint(wnd, dc, &ps);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TB_BUTTONSTRUCTSIZE:
+        return 0; /* nothing here depends on the app's struct size */
+    case TB_SETIMAGELIST:
+        tb = toolbar_of(wnd);
+        if (tb) {
+            HIMAGELIST was = tb->images;
+            tb->images = (HIMAGELIST)lp;
+            InvalidateRect(wnd, NULL, FALSE);
+            return (LRESULT)(UINT_PTR)was;
+        }
+        return 0;
+    case TB_ADDBUTTONSA: {
+        const TBBUTTON *src = (const TBBUTTON *)lp;
+        int n = (int)wp;
+        tb = toolbar_of(wnd);
+        if (!tb || !src || n <= 0)
+            return FALSE;
+        if (tb->count + n > tb->cap) {
+            int cap = tb->cap ? tb->cap : 8;
+            while (cap < tb->count + n)
+                cap *= 2;
+            ween_tbbutton *grown = realloc(tb->btn, (size_t)cap * sizeof *grown);
+            if (!grown)
+                return FALSE;
+            tb->btn = grown;
+            tb->cap = cap;
+        }
+        for (int i = 0; i < n; i++) {
+            ween_tbbutton *b = &tb->btn[tb->count + i];
+            memset(b, 0, sizeof(*b));
+            b->id = src[i].idCommand;
+            b->image = src[i].iBitmap;
+            b->style = src[i].fsStyle;
+            b->state = src[i].fsState;
+            b->text = src[i].iString ? dup_str((const char *)src[i].iString)
+                                     : NULL;
+        }
+        tb->count += n;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case TB_BUTTONCOUNT:
+        tb = toolbar_of(wnd);
+        return tb ? tb->count : 0;
+    case TB_CHECKBUTTON:
+    case TB_ENABLEBUTTON: {
+        UINT bit = msg == TB_CHECKBUTTON ? TBSTATE_CHECKED : TBSTATE_ENABLED;
+        tb = toolbar_of(wnd);
+        for (int i = 0; tb && i < tb->count; i++) {
+            if (tb->btn[i].id != (int)wp)
+                continue;
+            if (LOWORD(lp))
+                tb->btn[i].state |= bit;
+            else
+                tb->btn[i].state &= ~bit;
+            InvalidateRect(wnd, NULL, FALSE);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    case TB_ISBUTTONCHECKED:
+    case TB_ISBUTTONENABLED: {
+        UINT bit = msg == TB_ISBUTTONCHECKED ? TBSTATE_CHECKED : TBSTATE_ENABLED;
+        tb = toolbar_of(wnd);
+        for (int i = 0; tb && i < tb->count; i++)
+            if (tb->btn[i].id == (int)wp)
+                return (tb->btn[i].state & bit) != 0;
+        return FALSE;
+    }
+    case TB_GETITEMRECT: {
+        RECT *out = (RECT *)lp;
+        tb = toolbar_of(wnd);
+        if (!tb || !out || (int)wp < 0 || (int)wp >= tb->count)
+            return FALSE;
+        toolbar_layout(wnd, tb);
+        out->left = tb->btn[(int)wp].x;
+        out->top = 0;
+        out->right = out->left + tb->btn[(int)wp].w;
+        out->bottom = ween_ncm(WEEN_TB_HEIGHT);
+        return TRUE;
+    }
+    case TB_AUTOSIZE:
+        tb = toolbar_of(wnd);
+        if (tb) {
+            toolbar_layout(wnd, tb);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+
+    case WM_MOUSEMOVE: {
+        TRACKMOUSEEVENT tme;
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return 0;
+        toolbar_layout(wnd, tb);
+        toolbar_set_hot(wnd, tb,
+                        toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp),
+                                    NULL));
+        /* ask to hear when the pointer goes, so the hot button can let go */
+        memset(&tme, 0, sizeof(tme));
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = wnd;
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        tb = toolbar_of(wnd);
+        if (tb)
+            toolbar_set_hot(wnd, tb, -1);
+        return 0;
+
+    case WM_LBUTTONDOWN: {
+        int arrow = 0, i;
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return 0;
+        toolbar_layout(wnd, tb);
+        i = toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &arrow);
+        if (i < 0 || !(tb->btn[i].state & TBSTATE_ENABLED))
+            return 0;
+        tb->pressed = i;
+        tb->hot = i;
+        tb->drop = arrow;
+        SetCapture(wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case WM_LBUTTONUP: {
+        tb = toolbar_of(wnd);
+        if (!tb || tb->pressed < 0)
+            return 0;
+        ReleaseCapture();
+        int i = tb->pressed, arrow = tb->drop;
+        int still = toolbar_hit(tb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), NULL);
+        tb->pressed = -1;
+        InvalidateRect(wnd, NULL, FALSE);
+        if (still != i)
+            return 0;
+        if (arrow) {
+            /* the arrow asks the app for a menu rather than doing the
+             * button's job */
+            NMTOOLBAR nm;
+            memset(&nm, 0, sizeof(nm));
+            nm.hdr.hwndFrom = wnd;
+            nm.hdr.idFrom = (UINT_PTR)wnd->id;
+            nm.hdr.code = TBN_DROPDOWN;
+            nm.iItem = tb->btn[i].id;
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id,
+                             (LPARAM)&nm);
+            return 0;
+        }
+        if (tb->btn[i].style & TBSTYLE_CHECK)
+            tb->btn[i].state ^= TBSTATE_CHECKED;
+        if (wnd->parent)
+            SendMessageA(wnd->parent, WM_COMMAND,
+                         MAKEWPARAM((WORD)tb->btn[i].id, 0), (LPARAM)wnd);
+        return 0;
+    }
+    case WM_DESTROY:
+        if (wnd->ctl) {
+            toolbar_free(wnd->ctl);
+            wnd->ctl = NULL;
+        }
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
