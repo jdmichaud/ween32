@@ -3552,7 +3552,8 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 #define WEEN_RB_GRIPPER_INSET 2 /* and from the top and bottom of its band */
 #define WEEN_RB_CONTENT_X 10
 #define WEEN_RB_EDGE_H 2 /* the etched line above each band, and around all */
-#define WEEN_RB_LABEL_GAP 6
+#define WEEN_RB_LABEL_X 11  /* a band's label, a pixel past its content */
+#define WEEN_RB_LABEL_GAP 4 /* and what follows it starts four past that */
 
 typedef struct {
     HWND child;
@@ -3602,9 +3603,10 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
         b->y = y;
         b->h = ween_ncm(WEEN_RB_EDGE_H) + b->min_h;
         if (b->text && f)
-            content += ween_strike_text_width(f, b->text,
-                                              (int)strlen(b->text)) +
-                       ween_ncm(WEEN_RB_LABEL_GAP);
+            content = ween_ncm(WEEN_RB_LABEL_X) +
+                      ween_strike_text_width(f, b->text,
+                                             (int)strlen(b->text)) +
+                      ween_ncm(WEEN_RB_LABEL_GAP);
         if (b->child)
             MoveWindow(b->child, content, y + ween_ncm(WEEN_RB_EDGE_H),
                        cr.right - content - ween_ncm(WEEN_RB_EDGE_H),
@@ -3668,8 +3670,8 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                               inner - 2 * gi, BDR_RAISEDINNER, BF_RECT, NULL);
         }
         if (b->text && f)
-            ween_strike_draw(f, &top->surface, ox + ween_ncm(WEEN_RB_CONTENT_X),
-                             by + (inner - th) / 2, b->text,
+            ween_strike_draw(f, &top->surface, ox + ween_ncm(WEEN_RB_LABEL_X),
+                             by + (inner - th) / 2 - 1, b->text,
                              (int)strlen(b->text), WEEN_BLACK);
     }
 }
