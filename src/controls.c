@@ -2105,6 +2105,25 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return (LRESULT)(INT_PTR)hit;
     }
+    case WM_LBUTTONDBLCLK: {
+        /* The first click of the pair picked the item; the second opens it,
+         * which for a tree means the branch under it — the same thing its
+         * button does. The application hears about it as well, as it does
+         * from a list. */
+        TVHITTESTINFO hi;
+        t = tree_of(wnd);
+        memset(&hi, 0, sizeof(hi));
+        hi.pt.x = GET_X_LPARAM(lp);
+        hi.pt.y = GET_Y_LPARAM(lp);
+        if (t && SendMessageA(wnd, TVM_HITTEST, 0, (LPARAM)&hi) && hi.hItem) {
+            ween_tvitem *it = (ween_tvitem *)hi.hItem;
+            if (!(hi.flags & TVHT_ONITEMBUTTON) && (it->child || it->cchildren))
+                tree_expand(wnd, it, !it->expanded);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        notify_parent(wnd, NM_DBLCLK);
+        return 0;
+    }
     case WM_RBUTTONDOWN: {
         /* A press of the right button picks the item under it, the way the
          * shell does, so the menu that follows is about that item. */
@@ -3663,6 +3682,8 @@ void ween_register_controls(void)
     wc.lpfnWndProc = tab_proc;
     wc.lpszClassName = WC_TABCONTROLA;
     RegisterClassA(&wc);
+    /* A tree acts on a double click too: it opens the branch under it. */
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = treeview_proc;
     wc.lpszClassName = WC_TREEVIEWA;
     RegisterClassA(&wc);

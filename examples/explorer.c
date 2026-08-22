@@ -1450,7 +1450,8 @@ static void menubar_label(int i, char *out, size_t max)
 /* Where each item sits, measured once. A press has to know this too, and
  * measuring text wants a device context, so the widths are kept from the
  * paint that found them rather than asked for again. */
-static int g_mb_x[12], g_mb_w[12], g_mb_n;
+#define MENUBAR_MAX 16 /* what the band can hold, and what it is told about */
+static int g_mb_x[MENUBAR_MAX], g_mb_w[MENUBAR_MAX], g_mb_n;
 
 static void menubar_measure(HDC dc)
 {
@@ -1474,10 +1475,10 @@ static void menubar_measure(HDC dc)
      * rebar and comctl32 does all that; the code below this is what an
      * application would write there. */
     {
-        RECT items[16];
+        RECT items[MENUBAR_MAX];
         RECT cr;
         GetClientRect(g_menubar, &cr);
-        for (int i = 0; i < g_mb_n && i < 16; i++) {
+        for (int i = 0; i < g_mb_n; i++) {
             items[i].left = g_mb_x[i];
             items[i].right = g_mb_x[i] + g_mb_w[i];
             items[i].top = 0;
@@ -1502,8 +1503,13 @@ static LRESULT CALLBACK menubar_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(w, &ps);
-        RECT cr = ps.rcPaint;
-        FillRect(dc, &cr, GetSysColorBrush(COLOR_BTNFACE));
+        /* The band is laid out in its own client rectangle, not in whatever
+         * part of it is being repainted: a partial repaint — which is what
+         * arrives when a drop-down closes over it — would otherwise put every
+         * label somewhere else. */
+        RECT cr, fill = ps.rcPaint;
+        GetClientRect(w, &cr);
+        FillRect(dc, &fill, GetSysColorBrush(COLOR_BTNFACE));
         SelectObject(dc, g_font);
         menubar_measure(dc);
         /* Whether the underlines are showing is the window's to say, not the
@@ -2449,8 +2455,11 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 g_crossing = 0;
             }
             status_for_selection(sel);
-        } else if (nm->code == NM_DBLCLK) {
-            /* opening a folder is what a double click does in a shell */
+        } else if (nm->code == NM_DBLCLK && nm->hwndFrom == g_list) {
+            /* opening a folder is what a double click does in a shell — in
+             * the list. The tree answers its own double click by opening the
+             * branch, and NM_DBLCLK carries no control in its code, so the
+             * one that sent it has to be asked for. */
             int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
                                         LVNI_SELECTED);
             if (sel >= 0 && sel < g_entries && g_entry[sel].is_dir) {
@@ -2493,13 +2502,18 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 SetFocus(g_list);
             return 0;
         case IDM_UP: {
-            char *slash = strrchr(g_path, '/');
-            if (slash && slash != g_path) {
+            /* through a copy: show_directory writes the path it is given back
+             * into g_path, and a string may not be copied over itself */
+            char up[sizeof(g_path)];
+            char *slash;
+            strncpy(up, g_path, sizeof(up) - 1);
+            up[sizeof(up) - 1] = 0;
+            slash = strrchr(up, '/');
+            if (slash && slash != up)
                 *slash = 0;
-                show_directory(g_path);
-            } else {
-                show_directory("/");
-            }
+            else
+                strcpy(up, "/");
+            show_directory(up);
             return 0;
         }
         case IDM_CTX_EXPLORE:
