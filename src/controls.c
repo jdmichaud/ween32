@@ -2944,6 +2944,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (l && item && (item->state & LVIS_SELECTED) &&
             ween_focus_get() == wnd)
             l->sel = l->focus = (int)wp + 1;
+        else if (l && item && (item->stateMask & LVIS_SELECTED) &&
+                 !(item->state & LVIS_SELECTED) && l->sel) {
+            l->sel = 0; /* asked to clear it, which is how a shell drops one */
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         if (l && item && (item->state & LVIS_FOCUSED))
             l->focus = (int)wp + 1;
         if (l && item && (item->stateMask & LVIS_CUT) && (int)wp >= 0 &&

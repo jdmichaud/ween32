@@ -465,6 +465,8 @@ static HWND g_split, g_panehead;
 static HIMAGELIST g_images, g_hot_images;
 static HFONT g_font;
 static int g_split_x = 203; /* the tree pane's width, measured off the shot */
+static int g_folders = 1;   /* whether the tree pane is shown at all */
+static int g_crossing;      /* one pane clearing the other's selection */
 static int g_dragging;
 static char g_path[1024] = "/";
 
@@ -536,7 +538,16 @@ static void layout(HWND w)
      * the tree inside it and a rule between them. The frame is drawn by this
      * window — see WM_PAINT — and what goes in it is inset two pixels from
      * its edge, which is where the machine has all of it. */
-    {
+    if (g_panehead)
+        ShowWindow(g_panehead, g_folders ? SW_SHOW : SW_HIDE);
+    if (g_tree)
+        ShowWindow(g_tree, g_folders ? SW_SHOW : SW_HIDE);
+    if (g_split)
+        ShowWindow(g_split, g_folders ? SW_SHOW : SW_HIDE);
+    if (!g_folders) { /* the list has the whole width to itself */
+        if (g_list)
+            MoveWindow(g_list, 0, top + 3, cr.right, bottom - top - 3, TRUE);
+    } else {
         RECT fr;
         int in_x, in_w, in_y;
         pane_frame(&cr, &fr);
@@ -548,16 +559,16 @@ static void layout(HWND w)
         if (g_tree) /* the rule between them takes the row after the bar */
             MoveWindow(g_tree, in_x, in_y + PANE_HEAD_H + 1, in_w,
                        fr.bottom - PANE_INSET - (in_y + PANE_HEAD_H + 1), TRUE);
+        if (g_split)
+            MoveWindow(g_split, left_w - 3, top + 3, SPLIT_W,
+                       bottom - top - 3, TRUE);
+        if (g_list)
+            MoveWindow(g_list, left_w + 1, top + 3, cr.right - left_w - 1,
+                       bottom - top - 3, TRUE);
     }
     /* The strip between the panes is what is left between the tree's frame
      * and the list's edge — four pixels of face on the machine, with the
      * list starting one past where the splitter is taken to be. */
-    if (g_split)
-        MoveWindow(g_split, left_w - 3, top + 3, SPLIT_W, bottom - top - 3,
-                   TRUE);
-    if (g_list) /* three below the rebar, like the tree's frame beside it */
-        MoveWindow(g_list, left_w + 1, top + 3, cr.right - left_w - 1,
-                   bottom - top - 3, TRUE);
     if (g_status) {
         /* The two right-hand parts keep a fixed width and the first takes
          * whatever is left, so the counts stay put as the window widens. */
@@ -1624,6 +1635,17 @@ static LRESULT CALLBACK panehead_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(w, &ps);
         return 0;
     }
+    if (msg == WM_LBUTTONDOWN) {
+        /* the cross closes the pane, which is the same thing the Folders
+         * button does */
+        RECT cr;
+        int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+        GetClientRect(w, &cr);
+        if (x >= cr.right - 15 && x < cr.right - 15 + 8 && y >= 6 && y < 13)
+            SendMessageA(GetParent(w), WM_COMMAND,
+                         MAKEWPARAM(IDM_FOLDERS, 0), 0);
+        return 0;
+    }
     return DefWindowProcA(w, msg, wp, lp);
 }
 
@@ -1983,7 +2005,8 @@ static void build_bands(HWND w)
                                300, 22, g_rebar, (HMENU)(UINT_PTR)ID_ADDRBAND,
                                NULL, NULL);
     g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
-                                WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 0, 0,
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                                    CBS_DROPDOWNLIST, 0, 0,
                                 300, 21, g_addrband,
                                 (HMENU)(UINT_PTR)ID_ADDRESS, NULL, NULL);
     g_go = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
@@ -2059,16 +2082,19 @@ static void build_views(HWND w)
      * root either: the shell's tree gives Desktop neither a line nor a box,
      * and everything under it both. */
     g_tree = CreateWindowExA(0, WC_TREEVIEWA, "",
-                             WS_CHILD | WS_VISIBLE | TVS_HASLINES |
-                                 TVS_HASBUTTONS,
+                             WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                                 TVS_HASLINES | TVS_HASBUTTONS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_TREE, NULL,
                              NULL);
     g_split = CreateWindowA("explorersplit", "", WS_CHILD | WS_VISIBLE, 0, 0,
                             10, 10, w, (HMENU)(UINT_PTR)ID_SPLIT, NULL, NULL);
     /* REPORT is the view with the columns in it. A list view left to itself
      * comes up as icons, which is not what a details pane is. */
+    /* Both panes are tab stops, and so is the address bar: Tab walks them,
+     * which is how the machine moves between them. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
-                             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
+                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT |
+                                 LVS_SINGLESEL,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 
@@ -2113,6 +2139,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if (g_status)
             SendMessageA(g_status, SB_SETICON, 2,
                          (LPARAM)glyph_icon(&g_shell_computer));
+        /* The list has the keyboard when a folder opens, which is why an
+         * arrow key moves through the files without clicking first. */
+        if (g_list)
+            SetFocus(g_list);
         if (g_fixture) {
             fill_fixture_tree();
         } else {
@@ -2136,6 +2166,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         GetClientRect(w, &cr);
         FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
         pane_frame(&cr, &fr);
+        if (!g_folders) { /* nothing to put a frame round */
+            EndPaint(w, &ps);
+            return 0;
+        }
         r = fr;
         DrawEdge(dc, &r, EDGE_ETCHED, BF_RECT);
         r.left = fr.left + PANE_INSET;
@@ -2208,6 +2242,18 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             HTREEITEM sel = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM,
                                                     TVGN_CARET, 0);
             char path[1024];
+            /* One selection between the two panes: picking a folder on the
+             * left drops whatever was picked on the right, and the other way
+             * about. The machine keeps only one of them lit. */
+            if (!g_crossing) {
+                LVITEMA st;
+                g_crossing = 1;
+                memset(&st, 0, sizeof(st));
+                st.mask = LVIF_STATE;
+                st.stateMask = LVIS_SELECTED;
+                SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+                g_crossing = 0;
+            }
             if (sel) {
                 path_of_item(sel, path, sizeof(path));
                 show_directory(path);
@@ -2222,6 +2268,11 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         } else if (nm->code == LVN_ITEMCHANGED) {
             int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
                                         LVNI_SELECTED);
+            if (sel >= 0 && !g_crossing) { /* see TVN_SELCHANGED above */
+                g_crossing = 1;
+                SendMessageA(g_tree, TVM_SELECTITEM, TVGN_CARET, 0);
+                g_crossing = 0;
+            }
             status_for_selection(sel);
         } else if (nm->code == NM_DBLCLK) {
             /* opening a folder is what a double click does in a shell */
@@ -2249,6 +2300,21 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         switch (LOWORD(wp)) {
         case IDM_CLOSE:
             DestroyWindow(w);
+            return 0;
+        case IDM_FOLDERS:
+            /* the toolbar's Folders button, View > Folders and the cross in
+             * the pane's own bar all come here, as they all do on the machine */
+            g_folders = !g_folders;
+            if (g_toolbar)
+                SendMessageA(g_toolbar, TB_CHECKBUTTON, IDM_FOLDERS,
+                             MAKELPARAM(g_folders, 0));
+            if (g_menu)
+                CheckMenuItem(GetSubMenu(g_menu, 2), IDM_FOLDERS,
+                              g_folders ? MF_CHECKED : MF_UNCHECKED);
+            layout(w);
+            InvalidateRect(w, NULL, TRUE);
+            if (!g_folders && g_list)
+                SetFocus(g_list);
             return 0;
         case IDM_UP: {
             char *slash = strrchr(g_path, '/');
