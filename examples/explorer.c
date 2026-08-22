@@ -788,6 +788,22 @@ static void focus_first_row(void)
     SendMessageA(g_list, LVM_SETITEMSTATE, 0, (LPARAM)&it);
 }
 
+/* The arrow in the heading of the column the view is ordered by, and none in
+ * the others. It is the column's format the list view passes to its header,
+ * which is how a win32 application asks for one. */
+static void mark_sorted_column(void)
+{
+    for (int c = 0; c < 4; c++) {
+        LVCOLUMNA col;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_FMT;
+        col.fmt = (c == 1) ? LVCFMT_RIGHT : LVCFMT_LEFT;
+        if (c == g_sort_col)
+            col.fmt |= g_sort_down ? HDF_SORTDOWN : HDF_SORTUP;
+        SendMessageA(g_list, LVM_SETCOLUMNA, (WPARAM)c, (LPARAM)&col);
+    }
+}
+
 /* Put what was read into the list, in whatever order the columns are in. */
 static void fill_list(void)
 {
@@ -814,6 +830,7 @@ static void fill_list(void)
         set_cell(g_list, row, 3, e->modified);
     }
     focus_first_row();
+    mark_sorted_column();
     status_for_directory();
 }
 
@@ -837,6 +854,7 @@ static void fill_fixture_list(void)
         set_cell(g_list, row, 3, g_fix_list[row].modified);
     }
     focus_first_row();
+    mark_sorted_column();
     SendMessageA(g_status, SB_SETTEXTA, 0,
                  (LPARAM) "6 object(s) (Disk free space: 499 MB)");
     SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM) "203 bytes");
@@ -2012,7 +2030,7 @@ static void build_views(HWND w)
         { "Name", 120, LVCFMT_LEFT },
         { "Size", 96, LVCFMT_RIGHT },
         { "Type", 120, LVCFMT_LEFT },
-        { "Modified", 108, LVCFMT_LEFT }
+        { "Modified", 120, LVCFMT_LEFT }
     };
 
     g_panehead = CreateWindowA("explorerpane", "", WS_CHILD | WS_VISIBLE, 0, 0,
@@ -2183,6 +2201,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             int col = ((const NMLISTVIEW *)lp)->iSubItem;
             g_sort_down = col == g_sort_col ? !g_sort_down : 0;
             g_sort_col = col;
+            mark_sorted_column();
             fill_list();
         } else if (nm->code == LVN_ITEMCHANGED) {
             int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,

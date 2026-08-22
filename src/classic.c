@@ -289,6 +289,27 @@ static void fill_ellipse(ween_surface *s, int x, int y, int w, int h, int half,
 /* The bare tick a menu puts beside a checked item — Wine's six-point mark,
  * with no box around it. A menu is not a check box; drawing the frame too was
  * the difference between "checked" and a control sitting in the gutter. */
+/* The arrow a column header wears when the view is sorted by it: eight by
+ * seven, an engraved triangle — shadow down its left, white down its right
+ * and along the edge it points away from. Pointing down is the same shape
+ * with its rows the other way up, which is what the machine draws. */
+void ween_classic_sort_arrow(ween_surface *s, int x, int y, int up)
+{
+    static const unsigned char dark[7] = { 0x08, 0x0c, 0x04, 0x06,
+                                           0x02, 0x03, 0x00 };
+    static const unsigned char lit[7] = { 0x10, 0x30, 0x20, 0x60,
+                                          0x40, 0xc0, 0xff };
+    for (int r = 0; r < 7; r++) {
+        int row = up ? r : 6 - r;
+        for (int i = 0; i < 8; i++) {
+            if (dark[row] & (1u << i))
+                ween_surface_pixel(s, x + i, y + r, WEEN_SHADOW);
+            if (lit[row] & (1u << i))
+                ween_surface_pixel(s, x + i, y + r, WEEN_WHITE);
+        }
+    }
+}
+
 /* The tick a menu puts beside an item that is on: seven by seven, taken a
  * pixel at a time off a Windows 2000 column menu. A check box's mark is a
  * different glyph and a different size, which is why this one is its own. */

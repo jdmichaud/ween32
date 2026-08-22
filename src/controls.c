@@ -2367,12 +2367,17 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
                                      sizeof(buf), &len);
             int tx = cx + 6;
-            if (l->fmt[c] == LVCFMT_RIGHT) /* the heading follows its cells */
+            if (l->fmt[c] & LVCFMT_RIGHT) /* the heading follows its cells */
                 tx = cx + l->width[c] - 6 - ween_strike_text_width(f, t, len);
             ween_strike_draw(f, &top->surface, tx + (down ? 1 : 0),
                              oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
                              t, len, WEEN_BLACK);
-            (void)0;
+            /* and the sort arrow ten past the end of it */
+            if (l->fmt[c] & (HDF_SORTUP | HDF_SORTDOWN))
+                ween_classic_sort_arrow(
+                    &top->surface,
+                    tx + ween_strike_text_width(f, t, len) + 9 + (down ? 1 : 0),
+                    oy + 5 + (down ? 1 : 0), (l->fmt[c] & HDF_SORTUP) != 0);
         }
         x += l->width[c];
     }
@@ -2416,7 +2421,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 const char *t = fit_text(f, l->row[i].text[c],
                                          l->width[c] - lead - 3, buf,
                                          sizeof(buf), &len);
-                if (l->fmt[c] == LVCFMT_RIGHT) /* six short of its own edge */
+                if (l->fmt[c] & LVCFMT_RIGHT) /* six short of its own edge */
                     lead = l->width[c] - 6 - ween_strike_text_width(f, t, len);
                 /* two below the row's top, not one: the same lopsided
                  * centring the rest of the shell's text has */
@@ -2784,7 +2789,10 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return -1;
         l->col[i] = dup_str(col->pszText);
         l->width[i] = (col->mask & LVCF_WIDTH) ? col->cx : 50;
-        l->fmt[i] = (col->mask & LVCF_FMT) ? (col->fmt & LVCFMT_RIGHT) : 0;
+        l->fmt[i] = (col->mask & LVCF_FMT)
+                        ? (col->fmt &
+                           (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN))
+                        : 0;
         if (i >= l->ncol)
             l->ncol = i + 1;
         InvalidateRect(wnd, NULL, FALSE);
@@ -2868,6 +2876,20 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (lp & LVNI_FOCUSED)
             return l->focus ? l->focus - 1 : -1;
         return -1;
+    case LVM_SETCOLUMNA: {
+        const LVCOLUMNA *col = (const LVCOLUMNA *)lp;
+        int i = (int)wp;
+        l = list_of(wnd);
+        if (!l || !col || i < 0 || i >= l->ncol)
+            return FALSE;
+        if (col->mask & LVCF_FMT)
+            l->fmt[i] = col->fmt &
+                        (LVCFMT_RIGHT | HDF_SORTUP | HDF_SORTDOWN);
+        if (col->mask & LVCF_WIDTH)
+            l->width[i] = col->cx;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
     case LVM_SETCOLUMNWIDTH:
         l = list_of(wnd);
         if (!l || (int)wp < 0 || (int)wp >= l->ncol)

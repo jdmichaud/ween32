@@ -81,6 +81,7 @@ void ween_classic_sizegrip(ween_surface *s, int x1, int y1);
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_classic_menu_bullet(ween_surface *s, int x, int y, ween_color c);
 void ween_classic_menu_check(ween_surface *s, int x, int y, ween_color c);
+void ween_classic_sort_arrow(ween_surface *s, int x, int y, int up);
 void ween_classic_arrow_down(ween_surface *s, int x, int y, int w,
                              ween_color c);
 void ween_classic_checkmark(ween_surface *s, int x, int y, int w, int h,

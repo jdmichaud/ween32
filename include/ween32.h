@@ -477,6 +477,11 @@ typedef struct tagTVHITTESTINFO {
  * a file's size on the right of its column and everything else on the left. */
 #define LVCFMT_LEFT 0x0000
 #define LVCFMT_RIGHT 0x0001
+/* A column's heading can carry the arrow that says the view is sorted by it.
+ * These belong to the header control, and a list view passes its columns'
+ * format through to it, which is how an application asks for one. */
+#define HDF_SORTDOWN 0x0200
+#define HDF_SORTUP 0x0400
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
@@ -485,6 +490,7 @@ typedef struct tagTVHITTESTINFO {
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
 #define LVM_GETITEMCOUNT (LVM_FIRST + 4)
 #define LVM_GETNEXTITEM (LVM_FIRST + 12)
+#define LVM_SETCOLUMNA (LVM_FIRST + 26)
 #define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
 #define LVM_ENSUREVISIBLE (LVM_FIRST + 19)
 #define LVNI_SELECTED 0x0002
