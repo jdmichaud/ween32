@@ -417,6 +417,30 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     if ((format & DT_VCENTER) && (format & DT_SINGLELINE))
         y = rect->top + ((rect->bottom - rect->top) - th) / 2;
 
+    /* win32 clips to the rectangle unless told not to, and a caller that
+     * hands over a rectangle usually means it: a status bar's part, a list
+     * view's cell. Without this a long string runs straight through whatever
+     * is beside it. */
+    RECT saved;
+    ween_surface_get_clip(dc->s, &saved);
+    if (!(format & DT_NOCLIP)) {
+        RECT c;
+        c.left = dc->org_x + rect->left;
+        c.top = dc->org_y + rect->top;
+        c.right = dc->org_x + rect->right;
+        c.bottom = dc->org_y + rect->bottom;
+        if (c.left < saved.left)
+            c.left = saved.left;
+        if (c.top < saved.top)
+            c.top = saved.top;
+        if (c.right > saved.right)
+            c.right = saved.right;
+        if (c.bottom > saved.bottom)
+            c.bottom = saved.bottom;
+        ween_surface_clip(dc->s, c.left, c.top, c.right - c.left,
+                          c.bottom - c.top);
+    }
+
     ween_strike_draw(f, dc->s, dc->org_x + x, dc->org_y + y, text, len,
                      cr_to_px(dc->text_color));
     if (underline >= 0 && underline < len) {
@@ -428,6 +452,8 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
         ween_surface_hline(dc->s, dc->org_x + x + x0, dc->org_y + y + th,
                            x1 - x0, cr_to_px(dc->text_color));
     }
+    ween_surface_clip(dc->s, saved.left, saved.top, saved.right - saved.left,
+                      saved.bottom - saved.top);
     return th;
 }
 

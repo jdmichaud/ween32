@@ -58,6 +58,50 @@ static void test_classic_dialog(void)
     ween_surface_free(&s);
 }
 
+/* DrawText stays inside the rectangle it was given. A status bar hands it one
+ * part of itself and expects a long string to stop at the divider rather than
+ * run on through the part beside it; so does a list view with a cell. */
+static void test_drawtext_clips(void)
+{
+    ween_surface s;
+    struct ween_dc dc;
+    RECT r;
+    const char *long_text = "a string far longer than forty pixels";
+    int outside;
+
+    ween_surface_init(&s, 200, 24);
+    memset(&dc, 0, sizeof(dc));
+    dc.s = &s;
+    dc.clip_w = s.w;
+    dc.clip_h = s.h;
+    dc.text_color = RGB(0, 0, 0);
+    r.left = 4;
+    r.top = 4;
+    r.right = 40;
+    r.bottom = 20;
+
+    ween_surface_clear(&s, WEEN_WHITE);
+    DrawTextA(&dc, long_text, -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+    outside = 0;
+    for (int y = 0; y < s.h; y++)
+        for (int x = r.right; x < s.w; x++)
+            if ((s.px[(size_t)y * s.w + x] & 0xffffff) != WEEN_WHITE)
+                outside++;
+    CHECK(outside == 0, "DrawText draws nothing past its rectangle");
+
+    ween_surface_clear(&s, WEEN_WHITE);
+    DrawTextA(&dc, long_text, -1, &r,
+              DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOCLIP);
+    outside = 0;
+    for (int y = 0; y < s.h; y++)
+        for (int x = r.right; x < s.w; x++)
+            if ((s.px[(size_t)y * s.w + x] & 0xffffff) != WEEN_WHITE)
+                outside++;
+    CHECK(outside > 0, "and runs on past it when told DT_NOCLIP");
+
+    ween_surface_free(&s);
+}
+
 static void test_text(void)
 {
     ween_surface s;
@@ -138,6 +182,7 @@ int main(void)
     setenv("WEEN32_DPI", "96", 1);
 
     test_classic_dialog();
+    test_drawtext_clips();
     test_text();
     test_marlett();
     test_dialog_units();

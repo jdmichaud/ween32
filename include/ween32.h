@@ -706,6 +706,7 @@ typedef struct tagTCITEMA {
 #define DT_RIGHT 0x00000002
 #define DT_VCENTER 0x00000004
 #define DT_SINGLELINE 0x00000020
+#define DT_NOCLIP 0x00000100
 #define DT_NOPREFIX 0x00000800
 
 /* ---- GDI misc ------------------------------------------------------------ */
