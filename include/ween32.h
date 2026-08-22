@@ -241,6 +241,11 @@ typedef struct tagCREATESTRUCTA {
 #define WM_LBUTTONDOWN 0x0201
 #define WM_LBUTTONUP 0x0202
 #define WM_LBUTTONDBLCLK 0x0203
+/* A window is only sent double-click messages if its class asked for them.
+ * Without this the second of two quick clicks arrives as another plain
+ * WM_LBUTTONDOWN, which is what a control that does not care about double
+ * clicks wants — and what keeps rapid clicking from losing every other one. */
+#define CS_DBLCLKS 0x0008
 #define WM_MOUSEWHEEL 0x020A
 #define WM_MOUSELEAVE 0x02A3
 

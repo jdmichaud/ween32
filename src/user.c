@@ -151,12 +151,13 @@ static const ween_class *find_class(LPCSTR name)
     return NULL;
 }
 
-static void register_builtin(const char *name, WNDPROC proc)
+static void register_builtin(const char *name, WNDPROC proc, UINT style)
 {
     if (find_class(name))
         return;
     WNDCLASSA wc;
     memset(&wc, 0, sizeof(wc));
+    wc.style = style;
     wc.lpfnWndProc = proc;
     wc.lpszClassName = name;
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
@@ -165,8 +166,11 @@ static void register_builtin(const char *name, WNDPROC proc)
 
 static void ensure_builtins(void)
 {
-    register_builtin("BUTTON", button_proc);
-    register_builtin("STATIC", static_proc);
+    /* BUTTON takes double clicks because win32's does — and treats one as
+     * another press, so clicking fast never loses a click. STATIC does not
+     * care, so it is left to receive ordinary presses. */
+    register_builtin("BUTTON", button_proc, CS_DBLCLKS);
+    register_builtin("STATIC", static_proc, 0);
     ween_register_controls();
 }
 
@@ -1483,14 +1487,19 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
          * triple. */
         {
             static unsigned long last_ms;
-            static int last_x, last_y;
+            static int last_x, last_y, have_last;
             static struct ween_wnd *last_top;
             unsigned long now = now_ms();
             int near = ev->x - last_x <= 4 && last_x - ev->x <= 4 &&
                        ev->y - last_y <= 4 && last_y - ev->y <= 4;
-            g_dblclk = last_top == top && near &&
+            g_dblclk = have_last && last_top == top && near &&
                        now - last_ms <= WEEN_DOUBLE_CLICK_MS;
-            last_ms = g_dblclk ? 0 : now; /* a pair is a pair, not a run */
+            /* A pair is a pair, not a run: the click that completes one does
+             * not start the next. Tracked with a flag rather than a sentinel
+             * time, because under the headless clock zero is a real time and
+             * every click would pair with the one before it. */
+            have_last = !g_dblclk;
+            last_ms = now;
             last_x = ev->x;
             last_y = ev->y;
             last_top = top;
@@ -1954,6 +1963,11 @@ static void button_click(HWND wnd)
 static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_LBUTTONDBLCLK:
+        /* win32's BUTTON falls through to its press handling for all but the
+         * owner-draw and radio styles, so clicking fast keeps working. */
+        msg = WM_LBUTTONDOWN;
+        return button_proc(wnd, msg, wp, lp);
     case BM_CLICK: /* the keyboard's way in, and what a mnemonic sends */
         if (!(wnd->style & WS_DISABLED)) {
             button_click(wnd);

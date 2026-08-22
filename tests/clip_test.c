@@ -22,11 +22,17 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-static HWND g_edit;
-static int g_changes;
+static HWND g_edit, g_host;
+static int g_changes, g_button_clicks;
+
+enum { ID_FAST = 700 };
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+    if (msg == WM_COMMAND && LOWORD(wp) == ID_FAST) {
+        g_button_clicks++;
+        return 0;
+    }
     if (msg == WM_COMMAND && HIWORD(wp) == EN_CHANGE) {
         g_changes++;
         return 0;
@@ -134,6 +140,39 @@ int main(void)
         CHECK(strcmp(text_of(ro), "keep me") == 0,
               "but WM_CUT leaves its text alone");
         DestroyWindow(ro);
+    }
+
+    /* Clicking quickly must not lose clicks. A window is only sent double
+     * clicks if its class asked for them, and a control that did — the EDIT
+     * here — treats one as a click too. This was the bug: every second press
+     * arrived as WM_LBUTTONDBLCLK, controls that did not handle it dropped
+     * it, and half of a run of fast clicks vanished. */
+    {
+        HWND host = CreateWindowExA(0, "weenclip", "fast",
+                                    WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0,
+                                    200, 120, NULL, NULL, NULL, NULL);
+        int cx = WEEN_NC_FRAME, cy = WEEN_NC_FRAME + WEEN_NC_CAPTION;
+        g_button_clicks = 0;
+        g_host = host;
+        CreateWindowA("BUTTON", "Press", WS_CHILD | WS_VISIBLE, 10, 10, 80, 24,
+                      host, (HMENU)(UINT_PTR)ID_FAST, NULL, NULL);
+        for (int i = 0; i < 4; i++) { /* four presses, one place, no waiting */
+            ween_event ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.kind = WEEN_EV_MOUSE_DOWN;
+            ev.button = 1;
+            ev.win = host->backend_win;
+            ev.x = cx + 40;
+            ev.y = cy + 20;
+            ween_headless_inject(ev);
+            ev.kind = WEEN_EV_MOUSE_UP;
+            ween_headless_inject(ev);
+        }
+        MSG msg;
+        while (GetMessageA(&msg, NULL, 0, 0))
+            DispatchMessageA(&msg);
+        CHECK(g_button_clicks == 4, "four fast clicks are four clicks");
+        DestroyWindow(host);
     }
 
     DestroyWindow(w);

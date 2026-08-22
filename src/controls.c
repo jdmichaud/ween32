@@ -2418,9 +2418,14 @@ void ween_register_controls(void)
     WNDCLASSA wc;
     memset(&wc, 0, sizeof(wc));
     wc.hbrBackground = NULL; /* every control paints its own background */
+    /* EDIT is the one control here that acts on a double click: it takes the
+     * word under it. Everything else is left to receive ordinary presses, so
+     * clicking one quickly never drops every other click. */
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = edit_proc;
     wc.lpszClassName = "EDIT";
     RegisterClassA(&wc);
+    wc.style = 0;
     wc.lpfnWndProc = scrollbar_proc;
     wc.lpszClassName = "SCROLLBAR";
     RegisterClassA(&wc);
