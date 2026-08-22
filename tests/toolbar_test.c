@@ -269,8 +269,8 @@ int main(void)
      * and the control filling what is left of it. */
     {
         HWND rebar = CreateWindowExA(0, REBARCLASSNAMEA, "",
-                                     WS_CHILD | WS_VISIBLE, 0, 30, 460, 60, w,
-                                     NULL, NULL, NULL);
+                                     WS_CHILD | WS_VISIBLE | RBS_BANDBORDERS,
+                                     0, 30, 460, 60, w, NULL, NULL, NULL);
         CHECK(rebar != NULL, "a rebar");
 
         HWND addr = CreateWindowExA(WS_EX_CLIENTEDGE, "COMBOBOX", "",
@@ -295,7 +295,9 @@ int main(void)
               "the rebar counts two bands");
 
         /* Two bands of 22 with an edge over each and one under the last:
-         * the rebar is ruled off top and bottom, not only between. */
+         * the rebar is ruled off top and bottom, not only between — which is
+         * what RBS_BANDBORDERS asks for, and without it there are no rules
+         * and no height for them. */
         int height = (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0);
         CHECK(height == 2 + 22 + 2 + 22 + 2,
               "and is both of them, each ruled off, and ruled off underneath");

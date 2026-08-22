@@ -3593,7 +3593,8 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE: {
         /* the strip sits along the bottom of the parent's client area, and
          * follows it when the window is resized — the app forwards WM_SIZE,
-         * as a win32 app does */
+         * as a win32 app does. Its height is its font's, not the caller's:
+         * that is what a status bar does with the rectangle it is given. */
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
         RECT pc;
         wnd->h = (f ? f->ascent - f->descent : 13) + 5;
@@ -4243,9 +4244,12 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0; /* nothing here depends on the app's struct size */
     case TB_SETBUTTONINFOA: {
         const TBBUTTONINFOA *bi = (const TBBUTTONINFOA *)lp;
+        int by_index = bi && (bi->dwMask & TBIF_BYINDEX);
         tb = toolbar_of(wnd);
         for (int i = 0; tb && bi && i < tb->count; i++) {
-            if (tb->btn[i].id != (int)wp)
+            /* by command, or by place when the caller says so — which is the
+             * only way to name a separator, since it carries no command */
+            if (by_index ? i != (int)wp : tb->btn[i].id != (int)wp)
                 continue;
             if (bi->dwMask & TBIF_SIZE)
                 tb->btn[i].fixed = bi->cx;
@@ -4658,6 +4662,7 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     RECT cr;
     int y = 0, i = 0;
+    int edge = (wnd->style & RBS_BANDBORDERS) ? ween_ncm(WEEN_RB_EDGE_H) : 0;
     GetClientRect(wnd, &cr);
     while (i < rb->count) {
         int row_h = 0, n = 0, x = 0, share;
@@ -4674,7 +4679,7 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
             ween_rbband *b = &rb->band[j];
             int content = ween_ncm(WEEN_RB_CONTENT_X);
             b->y = y;
-            b->h = ween_ncm(WEEN_RB_EDGE_H) + row_h;
+            b->h = edge + row_h;
             b->x = x;
             /* the last on the row takes whatever is left of the width */
             b->w = (j == i + n - 1) ? cr.right - x : (b->cx ? b->cx : share);
@@ -4685,12 +4690,10 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
                                                  (int)strlen(b->text)) +
                           ween_ncm(WEEN_RB_LABEL_GAP);
             if (b->child)
-                MoveWindow(b->child, b->x + content,
-                           y + ween_ncm(WEEN_RB_EDGE_H),
-                           b->w - content - ween_ncm(WEEN_RB_EDGE_H),
-                           b->h - ween_ncm(WEEN_RB_EDGE_H), TRUE);
+                MoveWindow(b->child, b->x + content, y + edge,
+                           b->w - content - edge, b->h - edge, TRUE);
         }
-        y += ween_ncm(WEEN_RB_EDGE_H) + row_h;
+        y += edge + row_h;
         i += n;
     }
 }
@@ -4699,7 +4702,7 @@ static int rebar_height(HWND wnd, ween_rebar *rb)
 {
     /* Each row carries the edge above it; the one under the last is the
      * bottom of the control, so it is counted here rather than by a band. */
-    int h = ween_ncm(WEEN_RB_EDGE_H);
+    int h = (wnd->style & RBS_BANDBORDERS) ? ween_ncm(WEEN_RB_EDGE_H) : 0;
     rebar_layout(wnd, rb);
     for (int i = 0; i < rb->count; i++)
         if (i == 0 || (rb->band[i].style & RBBS_BREAK))

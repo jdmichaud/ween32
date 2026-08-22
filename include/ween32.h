@@ -387,6 +387,10 @@ HCURSOR SetCursor(HCURSOR cursor);
  * what a shell's address bar is — a path shown as the tree it walks down. */
 #define WC_COMBOBOXEXA "ComboBoxEx32"
 #define CBEM_INSERTITEMA (WM_USER + 1)
+/* How tall the field is. A combo box works it out from its font; an
+ * application that has been given a height to fit into says so instead. */
+#define CB_SETITEMHEIGHT 0x0153
+#define CB_GETITEMHEIGHT 0x0154
 #define CBEM_SETIMAGELIST (WM_USER + 2)
 #define CBEIF_TEXT 0x0001
 #define CBEIF_IMAGE 0x0002
@@ -982,6 +986,9 @@ typedef struct {
 #define TBIF_IMAGE 0x0001
 #define TBIF_STYLE 0x0008
 #define TBIF_SIZE 0x0040
+/* the button is named by its place in the bar, not by its command — which is
+ * the only way to reach a separator, since separators carry no command */
+#define TBIF_BYINDEX 0x80000000
 typedef struct tagTBBUTTONINFOA {
     UINT cbSize;
     DWORD dwMask;
@@ -1044,6 +1051,12 @@ typedef struct {
  * Bands are stacked, one per row. A real rebar can put two side by side and
  * let them be dragged; this does the arrangement a shell actually uses. */
 #define REBARCLASSNAMEA "ReBarWindow32"
+/* A rebar rules its bands off from each other and from what is above and
+ * below. A shell's does; a bare one does not, and then the bands sit flush. */
+#define RBS_TOOLTIPS 0x0100
+#define RBS_VARHEIGHT 0x0200
+#define RBS_BANDBORDERS 0x0400
+#define RBS_FIXEDORDER 0x0800
 
 #define RBBIM_STYLE 0x00000001
 #define RBBIM_TEXT 0x00000004

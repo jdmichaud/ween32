@@ -1491,7 +1491,7 @@ static void build_menubar(void)
          * because it was never asked to, and the whole button is the
          * drop-down. BTNS_WHOLEDROPDOWN would say the same thing and draw an
          * arrow anyway, which a menu title does not have. */
-        b[i].fsStyle = BTNS_DROPDOWN | BTNS_AUTOSIZE;
+        b[i].fsStyle = BTNS_DROPDOWN;
         b[i].iString = (INT_PTR)label[i];
     }
     SendMessageA(g_menubar, TB_ADDBUTTONSA, (WPARAM)n, (LPARAM)b);
@@ -1520,6 +1520,9 @@ static void build_menubar(void)
         SelectObject(dc, was);
         ReleaseDC(g_menubar, dc);
     }
+    /* And again now the titles are in: a bar works its height out from what
+     * it holds, so being told before it held anything did not stick. */
+    SendMessageA(g_menubar, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, MENUBAR_H));
 }
 
 /* A title was pressed, or reached by the keyboard: put its menu under it. */
@@ -2017,8 +2020,9 @@ static void build_bands(HWND w)
      * bar: Tab walks into a container that wears it rather than over it,
      * which is how the address bar joins the ring the panes are in. */
     g_rebar = CreateWindowExA(WS_EX_CONTROLPARENT, REBARCLASSNAMEA, "",
-                              WS_CHILD | WS_VISIBLE, 0, 0, 100, 50, w,
-                              (HMENU)(UINT_PTR)ID_REBAR, NULL, NULL);
+                              WS_CHILD | WS_VISIBLE | RBS_BANDBORDERS, 0, 0,
+                              100, 50, w, (HMENU)(UINT_PTR)ID_REBAR, NULL,
+                              NULL);
     /* A toolbar left alone puts itself at the top of its parent and takes the
      * whole width — it is a control bar, and that is what one does. Inside a
      * rebar band the band says where it goes, so this one must not. */
@@ -2122,8 +2126,17 @@ static void build_bands(HWND w)
             TBBUTTONINFOA bi;
             int drop = (b[i].fsStyle & TBSTYLE_DROPDOWN) != 0;
             int cx;
-            if (b[i].fsStyle & TBSTYLE_SEP)
+            if (b[i].fsStyle & TBSTYLE_SEP) {
+                /* the machine's separator is six, where a toolbar's own is
+                 * eight: said outright like the buttons */
+                memset(&bi, 0, sizeof(bi));
+                bi.cbSize = sizeof(bi);
+                bi.dwMask = TBIF_SIZE | TBIF_BYINDEX;
+                bi.cx = 6;
+                SendMessageA(g_toolbar, TB_SETBUTTONINFOA, (WPARAM)i,
+                             (LPARAM)&bi);
                 continue;
+            }
             if (b[i].iString) {
                 SIZE sz;
                 const char *t = (const char *)b[i].iString;
@@ -2173,6 +2186,10 @@ static void build_bands(HWND w)
         SendMessageA(g_go, TB_ADDBUTTONSA, 1, (LPARAM)&g);
     }
     SendMessageA(g_address, CBEM_SETIMAGELIST, 0, (LPARAM)g_images);
+    /* The field is as tall as the band leaves it, not as tall as the font
+     * would have made it: the address bar is twenty-one in a band of
+     * twenty-two, which is what the machine has. */
+    SendMessageA(g_address, CB_SETITEMHEIGHT, (WPARAM)-1, 15);
 
     /* The menu bar: a flat toolbar of drop-down buttons, one per title, with
      * no arrow beside them — which is what makes the whole button the
@@ -2281,6 +2298,8 @@ static void build_views(HWND w)
         SendMessageA(g_list, LVM_INSERTCOLUMNA, (WPARAM)i, (LPARAM)&col);
     }
 
+    /* Left to put itself along the bottom and to be as tall as its font
+     * wants, which is what a status bar is for. */
     g_status = CreateWindowA(STATUSCLASSNAMEA, "",
                              WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 10,
                              10, w, (HMENU)(UINT_PTR)ID_STATUS, NULL, NULL);
