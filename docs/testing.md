@@ -103,29 +103,42 @@ Set the machine to Tools > Folder Options > Web View > "Use Windows classic
 folders" first: with the web view on, the shell puts a third panel between
 the tree and the list and nothing lines up.
 
-As of the last pass the whole window differs by 3917 of 355776 pixels — 1.1%.
-Two thirds of that is ours quantised to 5-5-5, which is the machine drawing
-every icon through a sixteen bit image list, and a slice of the rest is the
-mouse pointer the screenshot has drawn into it. What is left over — neither
-of those — is 946 pixels:
+The machine's columns have to be the ones the fixture uses — Name 120, Size
+96, Type 120, Modified 120. A divider double-clicked or dragged changes them
+and the shell remembers it, which puts every column after the first one out
+by the difference and makes the whole list look wrong. View > Choose Columns
+sets each one back by number; a width there is one more than the width here,
+so Name is 119 in that dialog.
 
-| band | differing | what it is |
-| --- | --- | --- |
-| menu band | 233 | the animation the shell plays at its right |
-| list pane | 119 | the caret on the first row: the machine's view lost it when the folder options refreshed it |
-| caption | 95 | the bold title — wine's Tahoma Bold is not the machine's, so "Local Disk (C:)" comes out two pixels wider |
-| toolbar band | 65 | Back is live on the machine and dead here |
-| left pane | 1 | one pixel of the Internet Explorer icon |
-| status bar | 1 | one pixel of a letter |
-| address band | 0 | |
+With a tree item picked — click "Local Disk (C:)" in the tree on both sides,
+which is the state the shell leaves after the Folders pane is opened — the
+window differs by 3243 of 355776 pixels, 0.9%:
 
-The rest of each band's count is the quantisation and the pointer.
-The tree pane is window-relative x 4..203, y 100..519. As of the last pass
-everything in it matches but the icons: every differing pixel is inside a
-16-pixel icon column, and all but two of those icons are ours quantised to
-5-5-5, which is the machine drawing them through a sixteen bit image list.
-The two that are not are My Computer and My Documents, whose icons are not
-in `assets/icons`.
+```sh
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/ts%d.bmp WEEN32_SCRIPT="w:200 d:140,179 u:140,179 w:400" \
+  ./examples/explorer
+tools/vm/grab.py /tmp/machine.png 132 132 654 544
+```
+
+2576 of those 3243 are ours quantised to 5-5-5 — the machine draws every icon
+through a sixteen bit image list, so its pixel is ours with the low three bits
+of each channel dropped and the top bits shifted back in. What is left over is
+667:
+
+| band | differing | left over | what it is |
+| --- | --- | --- | --- |
+| menu band | 228 | 228 | the animation the shell plays at its right |
+| list pane | 947 | 183 | two file icons whose art has a near-white where ours has white, and six pixels of a date |
+| caption | 118 | 118 | the bold title — wine's Tahoma Bold is not the machine's |
+| left pane | 1835 | 137 | the picked drive's icon: ween32 blends a selected icon halfway into the highlight and the machine does not |
+| status bar | 1 | 1 | one pixel of a letter |
+| toolbar band | 0 | 0 | |
+| address band | 114 | 0 | |
+
+The tree pane is window-relative x 4..203, y 100..519. Everything in it
+matches but the icons, and every icon difference but the picked one is the
+quantisation.
 
 **Wine is not the reference for drop-downs.** It renders a menu's border as a
 flat grey line and a separator as a single line; Windows draws a raised edge

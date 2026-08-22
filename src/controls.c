@@ -1633,14 +1633,18 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             int ty = y + (WEEN_TV_ITEM_H - th) / 2;
             int selected = it == sel && sel_state;
             if (selected) {
+                /* The bar is the whole row's height, not the text's, and it
+                 * starts two before the pen: sixteen deep and the label plus
+                 * four across, which is what the machine draws. */
                 int tw = ween_strike_text_width(f, it->text,
                                                 (int)strlen(it->text));
-                ween_surface_fill(s, tx - 1, ty, tw + 3, th,
+                ween_surface_fill(s, tx - 2, y, tw + 4, WEEN_TV_ITEM_H,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
                 /* and the caret over it, once the keyboard has been used —
                  * the same rule that brings out a menu's underlines */
                 if (sel_state == 2 && ween_ui_focus_cues)
-                    ween_surface_focus_rect(s, tx - 1, ty, tw + 3, th);
+                    ween_surface_focus_rect(s, tx - 2, y, tw + 4,
+                                            WEEN_TV_ITEM_H);
             }
             ween_strike_draw(f, s, tx, ty, it->text, (int)strlen(it->text),
                              sel_state == 2 && selected ? WEEN_WHITE
@@ -1898,6 +1902,12 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         hit = tree_at_row(t->root, 0, want, &row, &depth);
         if (!hit)
             return 0;
+        /* the pointer has taken over: the caret goes until a key asks for it,
+         * which is the rule the list keeps too */
+        if (ween_ui_focus_cues) {
+            ween_ui_focus_cues = 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         {   /* the button toggles, anywhere else selects */
             int bx = tree_button_x(wnd, depth, t->scroll_x);
             int x = GET_X_LPARAM(lp);
@@ -2084,10 +2094,12 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!hit)
             return 0;
         hi->hItem = hit;
-        {   /* which part of it: the box that opens it, or the item itself */
-            int bx = 5 + depth * WEEN_TV_INDENT;
-            int x = hi->pt.x + t->scroll_x;
-            hi->flags = (x >= bx && x < bx + WEEN_TV_BUTTON)
+        {   /* which part of it: the box that opens it, or the item itself —
+             * the same column the button is drawn in */
+            int bx = tree_button_x(wnd, depth, t->scroll_x);
+            int x = hi->pt.x;
+            hi->flags = (tree_has_button(wnd, hit, depth) && x >= bx &&
+                         x < bx + WEEN_TV_BUTTON)
                             ? TVHT_ONITEMBUTTON
                             : TVHT_ONITEMLABEL;
         }

@@ -430,10 +430,17 @@ void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned fl
  * white on alternating pixels. */
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h)
 {
+    /* The weave is anchored to the track's own corner, which carries the face
+     * colour: both Windows and wine draw it with the brush set to the track
+     * rather than to the window, so a bar that starts on an odd column comes
+     * out the same as one that starts on an even one. Anchored to the surface
+     * instead, half the bars in a window come out inverted — and which half
+     * depends on where the window is. */
     for (int py = y; py < y + h; py++)
         for (int px = x; px < x + w; px++)
             ween_surface_pixel(s, px, py,
-                               ((px + py) & 1) ? WEEN_FACE : WEEN_WHITE);
+                               ((px - x + py - y) & 1) ? WEEN_WHITE
+                                                       : WEEN_FACE);
 }
 
 /* The same weave the other way up. A toolbar button that is on is dithered
