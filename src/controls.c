@@ -2822,7 +2822,7 @@ void ween_register_controls(void)
 #define WEEN_TB_HEIGHT 22
 #define WEEN_TB_ICON_X 6
 #define WEEN_TB_TEXT_X 24
-#define WEEN_TB_PAD_RIGHT 6
+#define WEEN_TB_PAD_RIGHT 7
 #define WEEN_TB_SEP_W 8
 #define WEEN_TB_DROP_W 11 /* the arrow half of a drop-down button */
 
@@ -2881,9 +2881,11 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
             int text = b->text ? ween_strike_text_width(f, b->text,
                                                         (int)strlen(b->text))
                                : 0;
+            /* A button with nothing but an image is not symmetric: the
+             * image keeps its left inset and only two pixels follow it. */
             b->w = text ? ween_ncm(WEEN_TB_TEXT_X) + text +
                               ween_ncm(WEEN_TB_PAD_RIGHT)
-                        : ween_ncm(WEEN_TB_ICON_X) * 2 + 16;
+                        : ween_ncm(WEEN_TB_ICON_X) + 16 + ween_ncm(2);
             if (b->style & TBSTYLE_DROPDOWN)
                 b->w += ween_ncm(WEEN_TB_DROP_W);
         }
@@ -3173,13 +3175,13 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * label, then the control filling what is left.
  *
  * Measured off a Windows 2000 shell: the etched line is a shadow row with a
- * white one under it, and the content starts nine pixels in from the band's
- * left, which is two, the three of the gripper, then four.
+ * white one under it, and the content starts ten pixels in from the band's
+ * left, which is two, the three of the gripper, then five.
  */
 
 #define WEEN_RB_GRIPPER_W 3
 #define WEEN_RB_GRIPPER_INSET 2
-#define WEEN_RB_CONTENT_X 9
+#define WEEN_RB_CONTENT_X 10
 #define WEEN_RB_EDGE_H 2 /* the etched line above each band */
 #define WEEN_RB_LABEL_GAP 6
 

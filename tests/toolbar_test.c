@@ -23,7 +23,7 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-enum { ID_BACK = 1, ID_UP, ID_FOLDERS, ID_DEAD };
+enum { ID_BACK = 1, ID_UP, ID_FOLDERS, ID_DEAD, ID_VIEWS };
 
 static HWND g_tb;
 static int g_command, g_dropdown = -1;
@@ -88,7 +88,7 @@ int main(void)
                            0, 0, 460, 22, w, (HMENU)(UINT_PTR)10, NULL, NULL);
     CHECK(g_tb != NULL, "a toolbar");
 
-    TBBUTTON b[5];
+    TBBUTTON b[6];
     memset(b, 0, sizeof(b));
     b[0].idCommand = ID_BACK;
     b[0].fsState = TBSTATE_ENABLED;
@@ -107,8 +107,28 @@ int main(void)
     b[4].fsState = 0; /* not enabled */
     b[4].fsStyle = TBSTYLE_BUTTON;
     b[4].iString = (INT_PTR) "Nope";
-    CHECK(SendMessageA(g_tb, TB_ADDBUTTONSA, 5, (LPARAM)b), "five buttons went in");
-    CHECK(SendMessageA(g_tb, TB_BUTTONCOUNT, 0, 0) == 5, "and it counts five");
+    b[5].idCommand = ID_VIEWS;
+    b[5].fsState = TBSTATE_ENABLED;
+    b[5].fsStyle = TBSTYLE_BUTTON; /* no label: an image and nothing else */
+    CHECK(SendMessageA(g_tb, TB_ADDBUTTONSA, 6, (LPARAM)b), "six buttons went in");
+    CHECK(SendMessageA(g_tb, TB_BUTTONCOUNT, 0, 0) == 6, "and it counts six");
+
+    /* The two widths a button can have, both measured off a real toolbar. A
+     * labelled one is the image's inset, then the text, then seven. One with
+     * nothing but an image is not padded symmetrically: the inset stays and
+     * only two pixels follow the image. Get either wrong and the buttons
+     * after it walk away from where they belong, a little at a time. */
+    {
+        RECT r;
+        const ween_strike *f = ween_gui_font();
+        int text = ween_strike_text_width(f, "Folders", 7);
+        SendMessageA(g_tb, TB_GETITEMRECT, 3, (LPARAM)&r);
+        CHECK(r.right - r.left == 24 + text + 7,
+              "a labelled button is the inset, its text, and seven");
+        SendMessageA(g_tb, TB_GETITEMRECT, 5, (LPARAM)&r);
+        CHECK(r.right - r.left == 6 + 16 + 2,
+              "one with only an image keeps the inset and adds two");
+    }
 
     /* Each button has a rectangle, and they run left to right without gaps. */
     CHECK(button_left(0) == 0, "the first button starts at the left edge");
