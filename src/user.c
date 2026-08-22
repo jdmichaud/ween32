@@ -403,7 +403,11 @@ HWND ween_top_level(HWND wnd)
     return w;
 }
 
-static RECT nc_close_rect(const struct ween_wnd *w)
+/* The caption buttons, right to left: close at the edge, then a two-pixel gap,
+ * then maximize and minimize side by side — the arrangement in a Windows 2000
+ * caption, measured off a screenshot of one. `which` is 0 for close, 1 for
+ * maximize, 2 for minimize. */
+static RECT nc_button_rect(const struct ween_wnd *w, int which)
 {
     RECT r;
     int frame = ween_frame_width(w);
@@ -411,10 +415,28 @@ static RECT nc_close_rect(const struct ween_wnd *w)
     int bw = ween_ncm(WEEN_NC_BTN_W);
     int bh = ween_ncm(WEEN_NC_BTN_H);
     r.left = w->w - frame - ween_ncm(2) - bw;
+    if (which >= 1) /* the gap sits between close and the other two */
+        r.left -= ween_ncm(2) + bw * which;
     r.top = frame + (cap - bh) / 2;
     r.right = r.left + bw;
     r.bottom = r.top + bh;
     return r;
+}
+
+static RECT nc_close_rect(const struct ween_wnd *w)
+{
+    return nc_button_rect(w, 0);
+}
+
+/* Which caption buttons a window has, by its style. */
+static int nc_has_min(const struct ween_wnd *w)
+{
+    return (w->style & WS_MINIMIZEBOX) != 0;
+}
+
+static int nc_has_max(const struct ween_wnd *w)
+{
+    return (w->style & WS_MAXIMIZEBOX) != 0;
 }
 
 /* ---- creation / destruction ------------------------------------------- */
@@ -1445,6 +1467,45 @@ static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
     }
 }
 
+/* Holding a caption button: it goes down, follows the pointer in and out, and
+ * acts on the release — the same contract as the close box. */
+static void nc_track_button(struct ween_wnd *top, int which)
+{
+    top->nc_button_pressed = which;
+    top->dirty = 1;
+    ween_flush_paint();
+    for (;;) {
+        ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
+        if (ev.kind == WEEN_EV_EXPOSE) {
+            ween_mark_exposed(&ev);
+            ween_flush_paint();
+            continue;
+        }
+        if (ev.kind == WEEN_EV_MOUSE_MOVE) {
+            RECT c = nc_button_rect(top, which);
+            int in = ev.x >= c.left && ev.x < c.right && ev.y >= c.top &&
+                     ev.y < c.bottom;
+            if (in != (top->nc_button_pressed == which)) {
+                top->nc_button_pressed = in ? which : 0;
+                top->dirty = 1;
+                ween_flush_paint();
+            }
+        } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
+            int acted = top->nc_button_pressed == which;
+            top->nc_button_pressed = 0;
+            top->dirty = 1;
+            ween_flush_paint();
+            if (acted)
+                SendMessageA(top, WM_SYSCOMMAND,
+                             which == 1 ? (top->maximized ? SC_RESTORE
+                                                          : SC_MAXIMIZE)
+                                        : SC_MINIMIZE,
+                             0);
+            return;
+        }
+    }
+}
+
 static void nc_track_close(struct ween_wnd *top)
 {
     top->nc_close_pressed = 1;
@@ -1585,6 +1646,10 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
             nc_drag_caption(top, ev);
         else if (hit == HTCLOSE)
             nc_track_close(top);
+        else if (hit == HTMAXBUTTON)
+            nc_track_button(top, 1);
+        else if (hit == HTMINBUTTON)
+            nc_track_button(top, 2);
         else if (hit >= HTLEFT && hit <= HTBOTTOMRIGHT)
             nc_drag_size(top, ev, (int)hit);
         else {
@@ -1719,9 +1784,19 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!has_caption(wnd))
             return HTCLIENT;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
-        RECT c = nc_close_rect(wnd);
+        RECT c = nc_button_rect(wnd, 0);
         if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
             return HTCLOSE;
+        if (nc_has_max(wnd)) {
+            c = nc_button_rect(wnd, 1);
+            if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
+                return HTMAXBUTTON;
+        }
+        if (nc_has_min(wnd)) {
+            c = nc_button_rect(wnd, 2);
+            if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
+                return HTMINBUTTON;
+        }
         int frame = ween_frame_width(wnd);
         if (wnd->style & WS_THICKFRAME) {
             /* the sizing border, corners first */
@@ -1784,15 +1859,31 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                              WEEN_CAP_TEXT);
         }
         if (wnd->style & WS_SYSMENU) {
-            RECT c = nc_close_rect(wnd);
             struct ween_dc dc;
+            RECT c;
             memset(&dc, 0, sizeof(dc));
             dc.s = s;
             dc.clip_w = wnd->w;
             dc.clip_h = wnd->h;
+            c = nc_button_rect(wnd, 0);
             DrawFrameControl(&dc, &c, DFC_CAPTION,
                              DFCS_CAPTIONCLOSE |
                                  (wnd->nc_close_pressed ? DFCS_PUSHED : 0));
+            if (nc_has_max(wnd)) {
+                c = nc_button_rect(wnd, 1);
+                DrawFrameControl(&dc, &c, DFC_CAPTION,
+                                 (wnd->maximized ? DFCS_CAPTIONRESTORE
+                                                 : DFCS_CAPTIONMAX) |
+                                     (wnd->nc_button_pressed == 1 ? DFCS_PUSHED
+                                                                  : 0));
+            }
+            if (nc_has_min(wnd)) {
+                c = nc_button_rect(wnd, 2);
+                DrawFrameControl(&dc, &c, DFC_CAPTION,
+                                 DFCS_CAPTIONMIN |
+                                     (wnd->nc_button_pressed == 2 ? DFCS_PUSHED
+                                                                  : 0));
+            }
         }
         if (wnd->menu) { /* the bar sits between the caption and the client */
             const ween_strike *mf = ween_gui_font();
@@ -1804,6 +1895,38 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
 
+    case WM_SYSCOMMAND:
+        switch (wp & 0xfff0) {
+        case SC_MAXIMIZE: {
+            /* Fill the screen, remembering where to go back to. There is no
+             * work area to ask about, so the screen metrics are the extent. */
+            RECT r;
+            GetWindowRect(wnd, &r);
+            wnd->restore_rect = r;
+            wnd->maximized = 1;
+            MoveWindow(wnd, 0, 0, GetSystemMetrics(SM_CXSCREEN),
+                       GetSystemMetrics(SM_CYSCREEN), TRUE);
+            return 0;
+        }
+        case SC_RESTORE: {
+            RECT r = wnd->restore_rect;
+            wnd->maximized = 0;
+            if (r.right > r.left)
+                MoveWindow(wnd, r.left, r.top, r.right - r.left,
+                           r.bottom - r.top, TRUE);
+            return 0;
+        }
+        case SC_MINIMIZE:
+            /* Nothing to minimise into: there is no taskbar, and hiding the
+             * window would strand it. The app hears the command and can do
+             * what it likes with it. */
+            return 0;
+        case SC_CLOSE:
+            SendMessageA(wnd, WM_CLOSE, 0, 0);
+            return 0;
+        default:
+            return 0;
+        }
     case WM_CLOSE:
         DestroyWindow(wnd);
         return 0;

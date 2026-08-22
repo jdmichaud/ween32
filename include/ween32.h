@@ -594,6 +594,15 @@ typedef struct tagTCITEMA {
 #define HTBOTTOMLEFT 16
 #define HTBOTTOMRIGHT 17
 #define HTCLOSE 20
+#define HTMINBUTTON 8
+#define HTMAXBUTTON 9
+/* what a caption button asks the window to do */
+#define SC_SIZE 0xF000
+#define SC_MOVE 0xF010
+#define SC_MINIMIZE 0xF020
+#define SC_MAXIMIZE 0xF030
+#define SC_CLOSE 0xF060
+#define SC_RESTORE 0xF120
 
 /* ---- ShowWindow --------------------------------------------------------- */
 

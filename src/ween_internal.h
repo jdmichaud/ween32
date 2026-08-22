@@ -288,7 +288,10 @@ struct ween_wnd {
     ween_surface surface;
     void *backend_win;
     int dirty;
-    int nc_close_pressed; /* close-box tracking */
+    int nc_close_pressed;   /* close-box tracking */
+    int nc_button_pressed;  /* 1 maximize, 2 minimize, 0 none */
+    int maximized;          /* drawn as restore, and SC_MAXIMIZE toggles it */
+    RECT restore_rect;      /* where it goes back to */
 };
 
 /* Non-client metrics of a WS_CAPTION window at 96 dpi (classic Win2k popup
