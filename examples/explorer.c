@@ -55,6 +55,9 @@ enum {
     IDM_UNDO,
     IDM_VIEWS,
     IDM_GO,
+    IDM_CTX_EXPLORE,
+    IDM_CTX_OPEN,
+    IDM_CTX_PROPERTIES,
     IDM_CLOSE,
     IDM_ABOUT
 };
@@ -463,6 +466,8 @@ static char g_path[1024] = "/";
  * which entry that row was. */
 static fs_entry *g_entry;
 static int g_entries;
+static int g_ctx_row = -1;   /* the row a context menu was asked about */
+static HTREEITEM g_ctx_item; /* or the tree item, when it came from there */
 static int g_sort_col;  /* the column the list is ordered by */
 static int g_sort_down; /* and whether that order is reversed */
 
@@ -823,6 +828,63 @@ static void fill_children(HTREEITEM parent, const char *path)
                  has_subdir(child));
     }
     fs_close(&d);
+}
+
+/* ---- the menus a right click brings up ------------------------------------
+ *
+ * One for a folder and one for a file, built the way the shell builds them:
+ * what to open it with first and in bold, then the rest in groups, and Send
+ * To carrying a submenu. They are made once and kept, because a context menu
+ * is the same menu wherever it is asked for — only what it acts on changes.
+ */
+static HMENU g_folder_menu, g_file_menu;
+
+static HMENU build_send_to(void)
+{
+    HMENU m = CreatePopupMenu();
+    AppendMenuA(m, MF_STRING, 0, "3\275 Floppy (A)");
+    AppendMenuA(m, MF_STRING, 0, "Desktop (create shortcut)");
+    AppendMenuA(m, MF_STRING, 0, "Mail Recipient");
+    AppendMenuA(m, MF_STRING, 0, "My Documents");
+    return m;
+}
+
+static void build_context_menus(void)
+{
+    g_folder_menu = CreatePopupMenu();
+    AppendMenuA(g_folder_menu, MF_STRING | MF_DEFAULT, IDM_CTX_EXPLORE,
+                "&Explore");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_CTX_OPEN, "&Open");
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "Searc&h...");
+    AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "Sharing...");
+    AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_folder_menu, MF_POPUP, (UINT_PTR)build_send_to(), "Se&nd To");
+    AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "Cu&t");
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "&Copy");
+    AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "Create &Shortcut");
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "&Delete");
+    AppendMenuA(g_folder_menu, MF_STRING, 0, "Rena&me");
+    AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
+
+    g_file_menu = CreatePopupMenu();
+    AppendMenuA(g_file_menu, MF_STRING | MF_DEFAULT, IDM_CTX_OPEN, "&Open");
+    AppendMenuA(g_file_menu, MF_STRING, 0, "&Edit");
+    AppendMenuA(g_file_menu, MF_STRING, 0, "&Print");
+    AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_file_menu, MF_POPUP, (UINT_PTR)build_send_to(), "Se&nd To");
+    AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_file_menu, MF_STRING, 0, "Cu&t");
+    AppendMenuA(g_file_menu, MF_STRING, 0, "&Copy");
+    AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_file_menu, MF_STRING, 0, "Create &Shortcut");
+    AppendMenuA(g_file_menu, MF_STRING, 0, "&Delete");
+    AppendMenuA(g_file_menu, MF_STRING, 0, "Rena&me");
+    AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(g_file_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
 }
 
 /* ---- the menu bar, as a band of the rebar ---------------------------------
@@ -1466,6 +1528,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         g_main = w;
 #if HAVE(MENU)
         build_menu(w);
+        build_context_menus();
 #endif
 #if HAVE(IMAGELIST)
         load_icons();
@@ -1484,6 +1547,43 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         layout(w);
         return 0;
+
+    case WM_CONTEXTMENU: {
+        /* Which of the two panes asked, and about what. The list answers with
+         * a row and the tree with an item; either way what is wanted is
+         * whether it is a folder, since that is what the menu turns on. */
+        HWND from = (HWND)wp;
+        POINT pt;
+        HMENU menu = NULL;
+        pt.x = GET_X_LPARAM(lp);
+        pt.y = GET_Y_LPARAM(lp);
+        if (from == g_list) {
+            LVHITTESTINFO hi;
+            memset(&hi, 0, sizeof(hi));
+            hi.pt = pt;
+            ScreenToClient(g_list, &hi.pt);
+            if (SendMessageA(g_list, LVM_HITTEST, 0, (LPARAM)&hi) < 0)
+                return 0; /* the empty part of the pane has none of its own */
+            g_ctx_row = hi.iItem;
+            menu = (hi.iItem < g_entries && g_entry[hi.iItem].is_dir)
+                       ? g_folder_menu
+                       : g_file_menu;
+        } else if (from == g_tree) {
+            TVHITTESTINFO hi;
+            memset(&hi, 0, sizeof(hi));
+            hi.pt = pt;
+            ScreenToClient(g_tree, &hi.pt);
+            if (!SendMessageA(g_tree, TVM_HITTEST, 0, (LPARAM)&hi))
+                return 0;
+            g_ctx_item = hi.hItem; /* every item in the tree is a folder */
+            g_ctx_row = -1;
+            menu = g_folder_menu;
+        }
+        if (menu)
+            TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, pt.x, pt.y,
+                           0, w, NULL);
+        return 0;
+    }
 
     case WM_NOTIFY: {
         const NMHDR *nm = (const NMHDR *)lp;
@@ -1542,7 +1642,36 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
+        case IDM_CTX_EXPLORE:
+        case IDM_CTX_OPEN: {
+            /* Open what the menu was about: a row of the list, or an item of
+             * the tree. */
+            char path[1400];
+            if (g_ctx_row >= 0 && g_ctx_row < g_entries) {
+                if (!g_entry[g_ctx_row].is_dir)
+                    return 0;
+                snprintf(path, sizeof(path), "%s%s%s", g_path,
+                         strcmp(g_path, "/") ? "/" : "",
+                         g_entry[g_ctx_row].name);
+                show_directory(path);
+            } else if (g_ctx_item) {
+                path_of_item(g_ctx_item, path, sizeof(path));
+                show_directory(path);
+            }
+            return 0;
+        }
 #if HAVE(MESSAGEBOX)
+        case IDM_CTX_PROPERTIES: {
+            char msg[600];
+            const char *name = g_ctx_row >= 0 && g_ctx_row < g_entries
+                                   ? g_entry[g_ctx_row].name
+                                   : "";
+            snprintf(msg, sizeof(msg), "%s%s", name,
+                     name[0] ? "" : "Nothing is selected.");
+            MessageBoxA(w, msg[0] ? msg : "Nothing is selected.",
+                        "Properties", MB_OK);
+            return 0;
+        }
         case IDM_ABOUT:
             MessageBoxA(w, "ween32 — a win32 for the rest of us.",
                         "About Windows", MB_OK);
