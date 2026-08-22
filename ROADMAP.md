@@ -388,21 +388,22 @@ Measured against the machine, band by band:
 | the rebar's own edge | **0** |
 | menu band | **0**, outside the animation the shell plays at its right |
 | address band | **0**, outside what is written in the combo box |
-| toolbar band | **3** |
+| toolbar band | **0** |
 
-The three are two things, both of them a single pixel that has nowhere to
-live rather than a rule not yet found:
+Nothing is left in it. What differs in the window is the animation playing
+in the brand box and the path written in the address combo — the machine is
+looking at Local Disk (C:) and this is looking at a file system — and
+neither of those is a rendering.
 
-- **two** on Move To and Copy To, the seventeenth column of each. The dead
-  images are not the live ones embossed — embossing a silhouette loses the
-  detail the real ones keep, so the shell's strip carries both — and the
-  dead ones are a pixel wider than the cell the live ones fill. An image
-  list has one cell size, and the rest of the bar wants sixteen. Giving the
-  toolbar a seventeen-wide list of its own was tried and put every image in
-  the bar out; it is not worth the second list for two pixels.
-- **one** where the brand box's edge reaches a pixel into the rule beneath
-  the menu band. The band's child ends where the rule begins, so there is
-  nothing there to draw it with.
+The last three took the longest and were all one mistake, made twice: a
+dead image *is* the live one embossed, but the silhouette leaves white out.
+A shell's images are lit from the top left and the highlight is pure white;
+leave it in and the shape fills solid and loses the detail the real dead
+image keeps. Take it out and the emboss lands pixel for pixel — and that is
+where the seventeenth column comes from, the emboss reaching a pixel past
+the cell the image fills. Which of the four buttons are dead follows from
+it too: Move To and Copy To are embossed on the machine and Delete and Undo
+are not.
 
 ### The explorer, against its screenshot
 
