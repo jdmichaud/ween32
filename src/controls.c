@@ -3278,7 +3278,10 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             if (checked && !held)
                 ween_classic_check_dither(&top->surface, bx + 3, by + 2,
                                           b->w - 5, h - 3);
-            ween_classic_edge(&top->surface, bx + 1, by, b->w - 1, h,
+            /* A pixel wider than the hot edge: this one closes on the far
+             * side of the boundary it shares with the next button, where the
+             * hot edge stops short of it. Both are measured. */
+            ween_classic_edge(&top->surface, bx + 1, by, b->w, h,
                               BDR_SUNKENOUTER, BF_RECT, NULL);
         } else if (tb->hot == i && enabled) {
             /* A hot button in a flat toolbar wears one pixel of edge, not the
