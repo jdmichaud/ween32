@@ -239,10 +239,21 @@ typedef struct x11_win_s {
     XImage *img;
     XAtom wm_delete;
     int pos_x, pos_y;
-    int w, h;         /* native (renderer) size */
-    int win_w, win_h; /* what the window manager actually gave us, in device
-                       * pixels: a tiling one hands back its tile whatever the
-                       * window asked for */
+    /* Three sizes, and they are three different things.
+     *
+     *   w, h              what the app asked for, in renderer pixels. Only
+     *                     the size hints want this: it goes stale the moment
+     *                     a window manager resizes the window, because the
+     *                     core resizes the surface without telling us.
+     *   win_w, win_h      what the window manager actually gave us, in device
+     *                     pixels. A tiling one hands back its tile whatever
+     *                     the window asked for.
+     *   present_w/h       the buffer last handed to XPutImage. This is the
+     *                     one the pointer is offset against, because it is
+     *                     the one on the screen. */
+    int w, h;
+    int win_w, win_h;
+    int present_w, present_h;
     int zoom;    /* integer HiDPI magnification */
     ween_surface zbuf; /* zoomed present buffer (zoom > 1) */
     struct x11_win_s *next;
@@ -388,6 +399,9 @@ static void x11_present(void *win, const ween_surface *s)
         xw->img->bytes_per_line = out->w * 4;
     }
     xw->img->data = (char *)out->px;
+    /* what the pointer is being offset against, from here on */
+    xw->present_w = out->w;
+    xw->present_h = out->h;
 
     /* A window manager that will not respect a fixed size hands back a window
      * bigger than the one the app asked for. Stretching the app to fill it
@@ -494,10 +508,18 @@ static unsigned keysym_to_vk(unsigned long ks)
 
 /* The argument is only a hint about which connection to wait on: the event
  * that comes back names its own window, and every window shares the queue. */
-/* Where the surface sits inside the window, when the two differ. */
+/* Where the surface sits inside the window, when the two differ.
+ *
+ * This has to be taken from the buffer that was last *presented*, not from
+ * the size the window was opened at. When a window manager resizes a window,
+ * the core resizes the surface to match and never tells the backend — so the
+ * opened size goes stale, and an offset computed from it sends every click
+ * hundreds of pixels away from where it looks like it landed. The window then
+ * draws perfectly and responds to nothing, which is exactly how it looked. */
 static void surface_origin(const x11_win *xw, int *ox, int *oy)
 {
-    int sw = xw->w * xw->zoom, sh = xw->h * xw->zoom;
+    int sw = xw->present_w ? xw->present_w : xw->w * xw->zoom;
+    int sh = xw->present_h ? xw->present_h : xw->h * xw->zoom;
     *ox = xw->win_w > sw ? (xw->win_w - sw) / 2 : 0;
     *oy = xw->win_h > sh ? (xw->win_h - sh) / 2 : 0;
 }
