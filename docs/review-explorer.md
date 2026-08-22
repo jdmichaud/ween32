@@ -4,6 +4,25 @@ Scope: read-only review of `examples/explorer.c` (2,636 lines), `examples/fs.h`,
 `include/ween32.h`, and the parts of `src/` the app leans on (`user.c`,
 `menu.c`, `controls.c`). Line numbers are as of commit `ce6f2a0`.
 
+**What has been acted on since.** A2 — a rebar now passes `WM_COMMAND` and
+`WM_NOTIFY` to its parent, with a test whose control is the rebar's own child;
+every button in the window was dead and now works. A3 — `LVM_GETHEADER` hands
+back a real header and `HDM_SETITEM` is how the sort arrow is asked for;
+`LVCOLUMN.fmt` no longer carries `HDF_*`. A6 — `WEEN32_HAS_CURSORS` was never
+defined, so the explorer had no class cursors at all; the flag is declared,
+`-Wundef` is in `CFLAGS`, and all eleven `HAVE()` gates are gone from the app.
+A5 — `InitCommonControlsEx`, `lstrcmpiA`/`lstrcmpA`/`lstrlenA`, and
+`commctrl.h`/`windowsx.h` reached through `ween32.h` on Windows, which took two
+`#ifdef` blocks out of the file. D3 — the splitter goes through
+`ScreenToClient`, and `GetWindowRect` and `ClientToScreen` now measure from the
+same corner (they did not, which is a library bug this found). D4, D5, D6, D7,
+D9 — all fixed. D8 — Back and Forward walk a history.
+
+What is left is A1 (the menu band as a toolbar of drop-down buttons), the rest
+of A3 (the header drawing its own band), A4 (the pane's ✕ as a flat toolbar
+button), the rest of A5 (`TVIF_PARAM`, `LVIF_PARAM`, `LVM_SORTITEMS`,
+`ImageList_LoadImageA`), A7, B1 and B2. Those are on the ROADMAP's Next list.
+
 ## Summary
 
 About half of `explorer.c` is the file browser. The other half is four things
