@@ -436,6 +436,26 @@ int main(void)
             CHECK(SendMessageA(narrow, LVM_GETNEXTITEM, (WPARAM)-1,
                                LVNI_SELECTED) == 1,
                   "and the right button selects it");
+
+            /* A row is only its icon and its label. The cells to the right of
+             * the name are the background: clicking there drops the selection
+             * rather than picking the row, which is what the shell does and
+             * why a right click there brings up the folder's own menu. */
+            ht.pt.x = 200; /* past the sixty-pixel name column */
+            CHECK(SendMessageA(narrow, LVM_HITTEST, 0, (LPARAM)&ht) == -1,
+                  "a point past the name is on no row at all");
+            SendMessageA(narrow, WM_LBUTTONDOWN, 0,
+                         MAKELPARAM(200, 17 + 14 + 7));
+            CHECK(SendMessageA(narrow, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED) == -1,
+                  "clicking there drops the selection");
+            CHECK(SendMessageA(narrow, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_FOCUSED) == 1,
+                  "and leaves the caret on the row it was on");
+            SendMessageA(narrow, WM_KEYDOWN, VK_UP, 0);
+            CHECK(SendMessageA(narrow, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED) == 0,
+                  "so an arrow moves from there, not from the top");
         }
         DestroyWindow(lw);
     }

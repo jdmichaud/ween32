@@ -1624,6 +1624,8 @@ static void nc_track_menu(struct ween_wnd *top, const ween_event *ev)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
 }
 
+int ween_ui_focus_cues = 0;
+
 /* Alt, or Alt+letter, opens the bar from the keyboard. Returns whether the
  * key was one the menu wanted. */
 int ween_menu_key(HWND top, unsigned vk, unsigned ch)
@@ -1640,7 +1642,10 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     } else if (vk != VK_MENU && vk != VK_F10) {
         return 0;
     }
-    ween_menu_cues = 1; /* the bar was reached by key, so the letters show */
+    /* the bar was reached by key, so the letters show — and Alt brings out
+     * the focus rectangles with them */
+    ween_menu_cues = 1;
+    ween_ui_focus_cues = 1;
     UINT cmd = ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);

@@ -2036,6 +2036,9 @@ typedef struct {
     int width[4], ncol;
     ween_lvrow *row;
     int nrow, caprow, sel;
+    int focus;    /* 1-based: the row an arrow key moves from, which outlives
+                   * the selection — clicking a file's size clears the one and
+                   * leaves the other where it was */
     int top;      /* the first row drawn: a file list has to scroll */
     int pressed;  /* the header column being held down, -1 for none */
     int sizing;   /* the divider being dragged, -1 for none */
@@ -2170,6 +2173,58 @@ static int lv_divider_at(const ween_list *l, int x, int y)
     return -1;
 }
 
+/* The width of a row's label box: the text, clamped to what the name column
+ * leaves, with five pixels each side. The same number the painting uses, so
+ * what can be clicked is exactly what is drawn highlighted. */
+static int lv_label_w(HWND wnd, const ween_list *l, int row, int indent)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int tw;
+    if (!f || !l->row[row].text[0])
+        return 0;
+    tw = ween_strike_text_extent(f, l->row[row].text[0],
+                                 (int)strlen(l->row[row].text[0]));
+    if (tw > l->width[0] - indent - 12)
+        tw = l->width[0] - indent - 12;
+    return tw + 10;
+}
+
+/* Which row a point picks, and what part of it. A report-view row is only its
+ * icon and its label: the cells to the right of the name are background, which
+ * is why clicking a file's size clears the selection rather than picking the
+ * file, and why a right click there brings up the folder's menu instead of the
+ * file's. Returns -1 for a point on nothing. */
+static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
+{
+    ween_lv_layout g = lv_layout(wnd, l);
+    int icon_w = 0, icon_h = 0, indent, row;
+    if (flags)
+        *flags = LVHT_NOWHERE;
+    if (y < WEEN_LV_HEADER_H || (g.vbar && x >= g.view_w) ||
+        (g.hbar && y >= g.view_h))
+        return -1;
+    row = (y - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
+    if (row < 0 || row >= l->nrow)
+        return -1;
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
+    x += l->scroll_x;
+    if (x < 2)
+        return -1;
+    if (indent && x < 2 + icon_w) {
+        if (flags)
+            *flags = LVHT_ONITEMICON;
+        return row;
+    }
+    if (x >= 2 + indent && x < 2 + indent + lv_label_w(wnd, l, row, indent)) {
+        if (flags)
+            *flags = LVHT_ONITEMLABEL;
+        return row;
+    }
+    return -1;
+}
+
 /* As much of `text` as fits in `avail` pixels, with an ellipsis on the end
  * when it had to be cut — win32's DT_END_ELLIPSIS, which is what a list view
  * does to a name too long for its column. Without it a long name simply runs
@@ -2253,19 +2308,21 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
         int y = oy + WEEN_LV_HEADER_H + (i - l->top) * WEEN_LV_ITEM_H;
         int selected = i == l->sel - 1; /* sel is 1-based, 0 for none */
+        /* The caret is drawn on the row the arrows would move from, selected
+         * or not — but only once the keyboard has been used, which is the same
+         * rule that keeps a menu's underlines hidden until then. */
+        int caret = ween_ui_focus_cues && i == l->focus - 1;
         int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
         x = 0;
-        if (selected && f && l->row[i].text[0]) {
-            /* the label rect: the text inflated five pixels each side, with
-             * the focus rectangle drawn over it */
-            int tw = ween_strike_text_extent(f, l->row[i].text[0],
-                                             (int)strlen(l->row[i].text[0]));
-            if (tw > l->width[0] - indent - 12)
-                tw = l->width[0] - indent - 12;
-            ween_surface_fill(&top->surface, ox - sx + 2 + indent, y, tw + 10,
-                              WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
-            ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
-                                    tw + 10, WEEN_LV_ITEM_H);
+        if ((selected || caret) && f && l->row[i].text[0]) {
+            /* the label box: the text inflated five pixels each side */
+            int lw = lv_label_w(wnd, l, i, indent);
+            if (selected)
+                ween_surface_fill(&top->surface, ox - sx + 2 + indent, y, lw,
+                                  WEEN_LV_ITEM_H, WEEN_CAP_LEFT);
+            if (caret)
+                ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
+                                        lw, WEEN_LV_ITEM_H);
         }
         if (indent)
             ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
@@ -2348,6 +2405,10 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (!l)
             return 0;
+        /* An arrow starts from the caret rather than from the selection: a
+         * click on a row's size cell drops the selection but leaves the caret
+         * on that row, and the next arrow moves from there. */
+        l->sel = l->focus;
         switch (wp) {
         case VK_DOWN:
             if (l->sel < l->nrow)
@@ -2376,6 +2437,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         default:
             return DefWindowProcA(wnd, msg, wp, lp);
         }
+        l->focus = l->sel;
+        ween_ui_focus_cues = 1; /* the keyboard has been used, so it shows */
         /* keep the selection in view, which is the whole point of moving it */
         if (l->sel) {
             if (l->sel - 1 < l->top)
@@ -2453,9 +2516,16 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
-        i = (my - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
-        if (my >= WEEN_LV_HEADER_H && i >= 0 && i < l->nrow) {
-            l->sel = i + 1;
+        /* mx had the scroll added for the header; the hit test adds its own */
+        i = lv_item_hit(wnd, l, mx - l->scroll_x, my, NULL);
+        if (i >= 0) {
+            l->sel = l->focus = i + 1;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, LVN_ITEMCHANGED);
+        } else if (l->sel) {
+            /* a press on a row's other cells, or under the last row, drops
+             * the selection and keeps the caret where it was */
+            l->sel = 0;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
         }
@@ -2473,9 +2543,9 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if ((g.vbar && GET_X_LPARAM(lp) >= g.view_w) ||
             (g.hbar && my >= g.view_h) || my < WEEN_LV_HEADER_H)
             return 0; /* the bars and the header are not items */
-        i = (my - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
-        if (i >= 0 && i < l->nrow) {
-            l->sel = i + 1;
+        i = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, NULL);
+        if (i >= 0) {
+            l->sel = l->focus = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, NM_DBLCLK);
         }
@@ -2483,23 +2553,13 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case LVM_HITTEST: {
         LVHITTESTINFO *hi = (LVHITTESTINFO *)lp;
-        ween_lv_layout g;
         int i;
         l = list_of(wnd);
         if (!hi || !l)
             return -1;
-        hi->iItem = -1;
         hi->iSubItem = 0;
-        hi->flags = 0;
-        g = lv_layout(wnd, l);
-        if (hi->pt.y < WEEN_LV_HEADER_H || (g.vbar && hi->pt.x >= g.view_w) ||
-            (g.hbar && hi->pt.y >= g.view_h))
-            return -1;
-        i = (hi->pt.y - WEEN_LV_HEADER_H) / WEEN_LV_ITEM_H + l->top;
-        if (i < 0 || i >= l->nrow)
-            return -1;
+        i = lv_item_hit(wnd, l, hi->pt.x, hi->pt.y, &hi->flags);
         hi->iItem = i;
-        hi->flags = LVHT_ONITEMLABEL;
         return i;
     }
     case WM_RBUTTONDOWN: {
@@ -2511,9 +2571,16 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         hi.pt.x = GET_X_LPARAM(lp);
         hi.pt.y = GET_Y_LPARAM(lp);
         SetFocus(wnd);
-        if (l && SendMessageA(wnd, LVM_HITTEST, 0, (LPARAM)&hi) >= 0 &&
-            l->sel != hi.iItem + 1) {
-            l->sel = hi.iItem + 1;
+        if (l && SendMessageA(wnd, LVM_HITTEST, 0, (LPARAM)&hi) >= 0) {
+            if (l->sel != hi.iItem + 1) {
+                l->sel = l->focus = hi.iItem + 1;
+                InvalidateRect(wnd, NULL, FALSE);
+                notify_parent(wnd, LVN_ITEMCHANGED);
+            }
+        } else if (l && l->sel) {
+            /* off every label: the selection goes, as it does for the left
+             * button, and the menu that follows is the folder's own */
+            l->sel = 0;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
         }
@@ -2643,7 +2710,9 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * unfocused list view does not paint one */
         if (l && item && (item->state & LVIS_SELECTED) &&
             ween_focus_get() == wnd)
-            l->sel = (int)wp + 1;
+            l->sel = l->focus = (int)wp + 1;
+        if (l && item && (item->state & LVIS_FOCUSED))
+            l->focus = (int)wp + 1;
         return TRUE;
     }
     case LVM_DELETEALLITEMS:
@@ -2657,6 +2726,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 }
             l->nrow = 0;
             l->sel = 0;
+            l->focus = 0;
             l->top = 0;
             InvalidateRect(wnd, NULL, FALSE);
         }
@@ -2665,11 +2735,16 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         return l ? l->nrow : 0;
     case LVM_GETNEXTITEM:
-        /* only the one an app actually asks for: the selected row */
+        /* the selected row, or the one the caret is on — which are not always
+         * the same row, and after a click off a label not always both there */
         l = list_of(wnd);
-        if (!l || !(lp & LVNI_SELECTED))
+        if (!l)
             return -1;
-        return l->sel ? l->sel - 1 : -1;
+        if (lp & LVNI_SELECTED)
+            return l->sel ? l->sel - 1 : -1;
+        if (lp & LVNI_FOCUSED)
+            return l->focus ? l->focus - 1 : -1;
+        return -1;
     case LVM_SETCOLUMNWIDTH:
         l = list_of(wnd);
         if (!l || (int)wp < 0 || (int)wp >= l->ncol)
