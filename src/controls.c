@@ -1110,7 +1110,11 @@ void ween_popup_paint(void)
     ih = item_height(g_dropped);
     combo_list_rect(g_dropped, &x, &y, &w, &h);
 
-    ween_classic_edge(&top->surface, x, y, w, h, BDR_SUNKENOUTER, BF_RECT, NULL);
+    /* A combo's list is a list box with WS_BORDER, and a classic window
+     * border is one pixel of COLOR_WINDOWFRAME — flat black. It was drawn as
+     * a sunken edge instead, which over the window beneath is a grey line on
+     * two sides and a white one on the other two: no border to speak of. */
+    ween_surface_fill(&top->surface, x, y, w, h, WEEN_BLACK);
     ween_surface_fill(&top->surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
     for (int i = 0; it && i < it->count; i++) {
         int iy = y + 1 + i * ih;
