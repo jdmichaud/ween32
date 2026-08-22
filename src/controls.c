@@ -1093,16 +1093,18 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                               r.bottom - r.top, 1, 0, 0);
     if (it && it->cursel >= 0 && it->cursel < it->count) {
         int tx = 2;
-        /* the field shows the item's image but not its indent: it is what
-         * you are looking at, not where it sits in the tree */
+        /* The field shows the item's image but not its indent: it is what
+         * you are looking at, not where it sits in the tree. One in, with the
+         * label four past it and three down, which is where the machine's
+         * address bar has them. */
         if (it->images && it->image[it->cursel] >= 0) {
             ween_imagelist_draw(it->images, it->image[it->cursel],
-                                &top->surface, ox + 2,
+                                &top->surface, ox + 1,
                                 oy + (r.bottom - r.top - WEEN_CBEX_IMAGE) / 2);
-            tx = 2 + WEEN_CBEX_IMAGE + WEEN_CBEX_GAP;
+            tx = 1 + WEEN_CBEX_IMAGE + 4;
         }
         SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-        TextOutA(dc, tx, 2, it->item[it->cursel], -1);
+        TextOutA(dc, tx, 3, it->item[it->cursel], -1);
     }
 }
 

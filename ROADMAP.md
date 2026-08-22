@@ -364,6 +364,14 @@ button's width whatever the window has, and both sampler windows have one
 button, so that case keeps wine's number: the machine has never been measured
 with a caption that has only a close box.
 
+The caption's buttons are the fifth: their bevel is a soft edge — white on
+the outside of the top and left rather than a pixel in — and the three glyphs
+are drawn as measured rather than through Marlett, whose outlines at this size
+do not land on the same pixels. Each sits in its own place in the sixteen by
+fourteen button: the minimise bar six wide at (4,9), the box nine square at
+(3,2), the cross eight by seven at (4,3). The title above them is a pixel
+higher than centred, and the icon likewise.
+
 The lesson is narrower than "wine is unreliable". It is that wine is a
 reimplementation too, and where it has guessed, following it means inheriting
 the guess. A photograph of the real thing settles it.

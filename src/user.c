@@ -2021,14 +2021,15 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             idc.clip_w = wnd->w;
             idc.clip_h = wnd->h;
             /* centred in the caption, the odd pixel going above it */
-            DrawIconEx(&idc, frame + ween_ncm(2),
-                       frame + (cap - side + 1) / 2, wnd->icon, side, side, 0,
-                       NULL, DI_NORMAL);
+            /* centred in the caption, the odd pixel going below it — which
+             * is where the machine's sits */
+            DrawIconEx(&idc, frame + ween_ncm(2), frame + (cap - side) / 2,
+                       wnd->icon, side, side, 0, NULL, DI_NORMAL);
             title_x = frame + ween_ncm(2) + side + ween_ncm(2);
         }
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
-            int ty = frame + (cap - (f->ascent - f->descent)) / 2;
+            int ty = frame + (cap - (f->ascent - f->descent)) / 2 - 1;
             ween_strike_draw(f, s, title_x, ty, wnd->text,
                              (int)strlen(wnd->text), WEEN_CAP_TEXT);
         }

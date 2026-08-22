@@ -316,17 +316,52 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
         return FALSE;
     }
 
-    /* Wine's UITOOLS95_DrawFrameCaption: the button face + bevel on the full
-     * rect, then Marlett at SmallDiam = short side - 2, centred — and NOT
-     * shifted when pushed (only the bevel flips to sunken). */
+    /* The face and its bevel on the full rect, then the glyph. */
+    /* A soft edge: white on the outside of the top and left, shadow inside
+     * the bottom and right with dark shadow outside them. Without it the
+     * white lands a pixel in and the button reads as smaller than it is. */
     ween_classic_edge(dc->s, x, y, w, h, pushed ? EDGE_SUNKEN : EDGE_RAISED,
-                      BF_RECT | BF_MIDDLE, NULL);
-    const ween_marlett *m = ween_caption_font();
-    if (m) {
-        int size = (w < h ? w : h) - 2;
-        int gx = x + (w - size) / 2;
-        int gy = y + (h - size) / 2;
-        ween_marlett_draw(m, dc->s, code, gx, gy, size, WEEN_BLACK);
+                      BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+    /* The three a caption wears are drawn as they are on the machine rather
+     * than through Marlett: the font's outlines at this size do not land on
+     * the same pixels, and each of the three sits in its own place in the
+     * button — the minimise bar low, the box up, the cross between. */
+    {
+        static const unsigned short mini[] = { 0x3f, 0x3f };
+        static const unsigned short maxi[] = { 0x1ff, 0x1ff, 0x101, 0x101,
+                                               0x101, 0x101, 0x101, 0x101,
+                                               0x1ff };
+        static const unsigned short cross[] = { 0xc3, 0x66, 0x3c, 0x18,
+                                                0x3c, 0x66, 0xc3 };
+        const unsigned short *art = NULL;
+        int aw = 0, ah = 0, ax = 0, ay = 0;
+        switch (state & 0x000f) {
+        case DFCS_CAPTIONMIN:
+            art = mini; aw = 6; ah = 2; ax = 4; ay = 9;
+            break;
+        case DFCS_CAPTIONMAX:
+            art = maxi; aw = 9; ah = 9; ax = 3; ay = 2;
+            break;
+        case DFCS_CAPTIONCLOSE:
+            art = cross; aw = 8; ah = 7; ax = 4; ay = 3;
+            break;
+        default:
+            break;
+        }
+        if (art) {
+            for (int r = 0; r < ah; r++)
+                for (int i = 0; i < aw; i++)
+                    if (art[r] & (1u << i))
+                        ween_surface_pixel(dc->s, x + ax + i + pushed,
+                                           y + ay + r + pushed, WEEN_BLACK);
+        } else {
+            const ween_marlett *m = ween_caption_font();
+            if (m) {
+                int size = (w < h ? w : h) - 2;
+                ween_marlett_draw(m, dc->s, code, x + (w - size) / 2,
+                                  y + (h - size) / 2, size, WEEN_BLACK);
+            }
+        }
     }
     return TRUE;
 }

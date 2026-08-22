@@ -65,12 +65,12 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 5818 / 298596 — 1.9%
+tools/refcapture/pxdiff.py                  # expect 6117 / 298596 — 2.0%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 695 / 39200 — 1.8%
+  tools/refcapture/pxdiff.py                # expect 741 / 39200 — 1.9%
 ```
 
 Roughly 242 of that 1.8% is the menu bar, and is *deliberate*: wine spaces bar
