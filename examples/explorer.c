@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../fs.h"
+#include "fs.h"
 
 /* ---- what the window is made of ------------------------------------------ */
 
@@ -710,8 +710,8 @@ static const char *asset_dir(void)
 {
     static char base[512];
     static int looked;
-    const char *tries[4];
-    char beside[600], up[640];
+    const char *tries[5];
+    char beside[600], up[640], up2[680];
     int n = 0;
 
     if (looked)
@@ -731,14 +731,17 @@ static const char *asset_dir(void)
                 len = sizeof(beside) - 32;
             memcpy(beside, g_argv0, len);
             beside[len] = 0;
-            snprintf(up, sizeof(up), "%s/../../assets/icons", beside);
+            /* built in place the assets sit one level up; installed
+             * somewhere they may sit beside the executable instead */
+            snprintf(up, sizeof(up), "%s/../assets/icons", beside);
+            snprintf(up2, sizeof(up2), "%s/../../assets/icons", beside);
             strcat(beside, "/assets/icons");
             tries[n++] = up;
+            tries[n++] = up2;
             tries[n++] = beside;
         }
     }
     tries[n++] = "assets/icons";
-    tries[n++] = "../../assets/icons";
 
     for (int i = 0; i < n; i++) {
         char probe[600];

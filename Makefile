@@ -18,8 +18,20 @@ src/x11.o: CFLAGS += -DWEEN_BACKEND_X11
 LIBS += -lX11
 endif
 
-all: libween32.a examples/dialog examples/calc examples/controls examples/menu \
-      examples/explorer/explorer
+# One list, used to build them, to run them and to clean them. Kept in one
+# place because it drifted: three of the tests were run without being named
+# as something `test` depends on, so a stale binary could report a pass for
+# code that was no longer there.
+TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
+        tests/resize_test tests/multiwin_test tests/timer_test \
+        tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
+        tests/image_test tests/geometry_test tests/views_test \
+        tests/toolbar_test
+
+EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
+           examples/explorer
+
+all: libween32.a $(EXAMPLES)
 
 libween32.a: $(OBJS)
 	ar rcs $@ $(OBJS)
@@ -41,8 +53,8 @@ examples/controls: examples/controls.c libween32.a
 examples/menu: examples/menu.c libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/menu.c libween32.a $(LIBS)
 
-examples/explorer/explorer: examples/explorer/explorer.c examples/fs.h libween32.a
-	$(CC) $(CFLAGS) -o $@ examples/explorer/explorer.c libween32.a $(LIBS)
+examples/explorer: examples/explorer.c examples/fs.h libween32.a
+	$(CC) $(CFLAGS) -o $@ examples/explorer.c libween32.a $(LIBS)
 
 tests/render_test: tests/render_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
@@ -89,19 +101,6 @@ tests/views_test: tests/views_test.c libween32.a
 tests/toolbar_test: tests/toolbar_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/toolbar_test.c libween32.a $(LIBS)
 
-# One list, used to build them, to run them and to clean them. Kept in one
-# place because it drifted: three of the tests were run without being named
-# as something `test` depends on, so a stale binary could report a pass for
-# code that was no longer there.
-TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
-        tests/resize_test tests/multiwin_test tests/timer_test \
-        tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
-        tests/image_test tests/geometry_test tests/views_test \
-        tests/toolbar_test
-
-EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
-           examples/explorer/explorer
-
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; done
 
@@ -113,9 +112,8 @@ ZIGWIN = zig cc -target x86_64-windows-gnu -std=c99 -Iinclude
 win32:
 	@command -v zig >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
 	@for src in $(EXAMPLES:%=%.c); do \
-	   s=$${src%.c}.c; s=$${s#examples/}; s=examples/$${s}; \
-	   echo "  win32 $$s"; \
-	   $(ZIGWIN) $$s -luser32 -lgdi32 -lcomctl32 -o /tmp/ween32-win32.exe || exit 1; \
+	   echo "  win32 $$src"; \
+	   $(ZIGWIN) $$src -luser32 -lgdi32 -lcomctl32 -o /tmp/ween32-win32.exe || exit 1; \
 	 done
 	@python3 tools/win32check/genconsts.py > /tmp/ween32-consts.c
 	@zig cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
