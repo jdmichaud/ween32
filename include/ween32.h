@@ -1374,6 +1374,10 @@ INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
 /* ---- GDI ------------------------------------------------------------------ */
 
 HDC BeginPaint(HWND wnd, PAINTSTRUCT *ps);
+/* A context for a window outside a paint, which is what measuring text before
+ * laying anything out needs. */
+HDC GetDC(HWND wnd);
+int ReleaseDC(HWND wnd, HDC dc);
 BOOL EndPaint(HWND wnd, const PAINTSTRUCT *ps);
 BOOL FillRect(HDC dc, const RECT *rect, HBRUSH brush);
 int FrameRect(HDC dc, const RECT *rect, HBRUSH brush);

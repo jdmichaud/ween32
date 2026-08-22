@@ -997,6 +997,28 @@ HDC BeginPaint(HWND wnd, PAINTSTRUCT *ps)
     return &g_dc;
 }
 
+/* A device context for a window outside a paint. What it is for is measuring:
+ * an application that lays something out has to ask how wide its text is
+ * before it can draw any of it. Drawing through it works too — it is the same
+ * context BeginPaint hands out, on the same surface — but a window that draws
+ * outside WM_PAINT is drawing over whatever the next paint will put there. */
+HDC GetDC(HWND wnd)
+{
+    PAINTSTRUCT ps;
+    if (!wnd)
+        wnd = g_tops;
+    if (!wnd)
+        return NULL;
+    return BeginPaint(wnd, &ps);
+}
+
+int ReleaseDC(HWND wnd, HDC dc)
+{
+    (void)wnd;
+    (void)dc; /* the one context is static: there is nothing to give back */
+    return 1;
+}
+
 BOOL EndPaint(HWND wnd, const PAINTSTRUCT *ps)
 {
     (void)wnd;

@@ -161,12 +161,21 @@ xwininfo -root -tree | grep "Local Disk"   # the window id, to grab or click
 ```
 
 The fixture works on both sides, so the two windows hold the same content and
-can be put side by side. What will not match, and is not ours: wine's Tahoma
-is a substitute and is wider than the real one — "Documents and Settings"
-comes to 128 pixels there and 116 here — so every row and column drifts; wine's
-comctl32 has its own toolbar padding and list row height; and with no window
-manager the window never activates, so wine draws the caption inactive. The
-machine, not wine, is the yardstick for how it should look.
+can be put side by side. Everything that is *placed* now lands in the same
+pixel on both: the column dividers at 328, 424, 544 and 652, the pane's edge
+at 202, the status bar's top at 516, every band and every button. Getting
+there meant saying outright what a library would otherwise work out for
+itself — each toolbar button's width and each menu title's, since comctl32's
+padding is not the machine's.
+
+What is left over is the font and what is measured from it. Wine's Tahoma is
+not the machine's: "Documents and Settings" comes to 128 pixels there and 116
+here, so every run of text is wider, and comctl32 sizes a list's rows from it
+— 16 pixels against the 17 the machine has, which walks the rows apart down
+the list. The caption is the other one: with no window manager nothing takes
+the X focus, and wine paints an inactive caption over a window that says it is
+active. Neither is ween32's to fix, and the machine, not wine, is the yardstick
+for how any of it should look.
 
 **Wine is not the reference for drop-downs.** It renders a menu's border as a
 flat grey line and a separator as a single line; Windows draws a raised edge

@@ -1487,12 +1487,39 @@ static void build_menubar(void)
         b[i].iBitmap = -1; /* a title carries no image */
         b[i].idCommand = IDM_MENU_FIRST + i;
         b[i].fsState = TBSTATE_ENABLED;
-        /* The whole button is the drop-down: a menu title has no arrow half
-         * beside it, and it opens on the press. */
-        b[i].fsStyle = BTNS_DROPDOWN | BTNS_WHOLEDROPDOWN | BTNS_AUTOSIZE;
+        /* A drop-down with no arrow half beside it: the bar draws none
+         * because it was never asked to, and the whole button is the
+         * drop-down. BTNS_WHOLEDROPDOWN would say the same thing and draw an
+         * arrow anyway, which a menu title does not have. */
+        b[i].fsStyle = BTNS_DROPDOWN | BTNS_AUTOSIZE;
         b[i].iString = (INT_PTR)label[i];
     }
     SendMessageA(g_menubar, TB_ADDBUTTONSA, (WPARAM)n, (LPARAM)b);
+    {   /* Each title is its label and the sixteen that surround it, said
+         * outright: a toolbar left to work it out applies whatever padding it
+         * has, and the titles walk apart. */
+        HDC dc = GetDC(g_menubar);
+        HGDIOBJ was = SelectObject(dc, g_font);
+        for (int i = 0; i < n; i++) {
+            TBBUTTONINFOA bi;
+            SIZE sz;
+            char plain[64];
+            size_t j = 0;
+            for (const char *p = label[i]; *p && j < sizeof(plain) - 1; p++)
+                if (*p != '&')
+                    plain[j++] = *p;
+            plain[j] = 0;
+            GetTextExtentPoint32A(dc, plain, (int)j, &sz);
+            memset(&bi, 0, sizeof(bi));
+            bi.cbSize = sizeof(bi);
+            bi.dwMask = TBIF_SIZE;
+            bi.cx = (WORD)(sz.cx + MENUBAR_PAD);
+            SendMessageA(g_menubar, TB_SETBUTTONINFOA,
+                         (WPARAM)(IDM_MENU_FIRST + i), (LPARAM)&bi);
+        }
+        SelectObject(dc, was);
+        ReleaseDC(g_menubar, dc);
+    }
 }
 
 /* A title was pressed, or reached by the keyboard: put its menu under it. */
@@ -2081,15 +2108,41 @@ static void build_bands(HWND w)
     n++;
     SendMessageA(g_toolbar, TB_ADDBUTTONSA, n, (LPARAM)b);
     {
-        /* The views button does not follow from its image and its arrow the
-         * way the others do: the shell gives it thirty-one, which puts its
-         * arrow four into the last twelve of that. */
-        TBBUTTONINFOA bi;
-        memset(&bi, 0, sizeof(bi));
-        bi.cbSize = sizeof(bi);
-        bi.dwMask = TBIF_SIZE;
-        bi.cx = 31;
-        SendMessageA(g_toolbar, TB_SETBUTTONINFOA, IDM_VIEWS, (LPARAM)&bi);
+        /* Every button is given the width the machine's shell gives it,
+         * rather than left to whatever padding the toolbar would have
+         * applied: a labelled one is twenty-four, its label and seven, with
+         * five instead of the seven and thirteen more when an arrow follows;
+         * an image on its own is six, the image and two, and fourteen more
+         * with an arrow. Said outright, the bar comes out the same width
+         * whichever library lays it out. The views button is the shell's own
+         * exception at thirty-one. */
+        HDC dc = GetDC(g_toolbar);
+        HGDIOBJ was = SelectObject(dc, g_font);
+        for (int i = 0; i < n; i++) {
+            TBBUTTONINFOA bi;
+            int drop = (b[i].fsStyle & TBSTYLE_DROPDOWN) != 0;
+            int cx;
+            if (b[i].fsStyle & TBSTYLE_SEP)
+                continue;
+            if (b[i].iString) {
+                SIZE sz;
+                const char *t = (const char *)b[i].iString;
+                GetTextExtentPoint32A(dc, t, (int)strlen(t), &sz);
+                cx = 24 + sz.cx + (drop ? 5 + 13 : 7);
+            } else {
+                cx = 6 + 16 + 2 + (drop ? 12 : 0);
+            }
+            if (b[i].idCommand == IDM_VIEWS)
+                cx = 31;
+            memset(&bi, 0, sizeof(bi));
+            bi.cbSize = sizeof(bi);
+            bi.dwMask = TBIF_SIZE;
+            bi.cx = (WORD)cx;
+            SendMessageA(g_toolbar, TB_SETBUTTONINFOA, (WPARAM)b[i].idCommand,
+                         (LPARAM)&bi);
+        }
+        SelectObject(dc, was);
+        ReleaseDC(g_toolbar, dc);
     }
 
     g_addrband = CreateWindowExA(WS_EX_CONTROLPARENT, "exploreraddr", "",
