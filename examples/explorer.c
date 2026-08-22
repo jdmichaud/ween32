@@ -1729,13 +1729,95 @@ static void build_menu(HWND w)
     HMENU view = CreatePopupMenu(), favorites = CreatePopupMenu();
     HMENU tools = CreatePopupMenu(), help = CreatePopupMenu();
 
+    /* The six the machine has, item for item. What this explorer does not
+     * do is greyed or inert; the point is the menus a shell puts up. */
+    HMENU newmenu = CreatePopupMenu(), bars = CreatePopupMenu();
+    HMENU toolbars = CreatePopupMenu(), goto_menu = CreatePopupMenu();
+    HMENU arrange = CreatePopupMenu(), links = CreatePopupMenu();
+    HMENU media = CreatePopupMenu();
+
+    AppendMenuA(newmenu, MF_STRING, 0, "&Folder");
+    AppendMenuA(newmenu, MF_STRING, 0, "&Shortcut");
+    AppendMenuA(file, MF_POPUP, (UINT_PTR)newmenu, "Ne&w");
+    AppendMenuA(file, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(file, MF_STRING | MF_GRAYED, 0, "Create &Shortcut");
+    AppendMenuA(file, MF_STRING, 0, "&Delete");
+    AppendMenuA(file, MF_STRING, 0, "Rena&me");
+    AppendMenuA(file, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
+    AppendMenuA(file, MF_SEPARATOR, 0, NULL);
     AppendMenuA(file, MF_STRING, IDM_CLOSE, "&Close");
-    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "Cu&t\tCtrl+X");
-    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "&Copy\tCtrl+C");
+
+    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "&Undo\tCtrl+Z");
+    AppendMenuA(edit, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(edit, MF_STRING, 0, "Cu&t\tCtrl+X");
+    AppendMenuA(edit, MF_STRING, 0, "&Copy\tCtrl+C");
     AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "&Paste\tCtrl+V");
-    AppendMenuA(view, MF_STRING | MF_CHECKED, IDM_FOLDERS, "&Folders");
-    AppendMenuA(favorites, MF_STRING | MF_GRAYED, 0, "(empty)");
-    AppendMenuA(tools, MF_STRING | MF_GRAYED, 0, "&Map Network Drive...");
+    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "Paste &Shortcut");
+    AppendMenuA(edit, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(edit, MF_STRING, 0, "Select &All\tCtrl+A");
+    AppendMenuA(edit, MF_STRING, 0, "&Invert Selection");
+
+    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, 0, "&Standard Buttons");
+    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, 0, "&Address Bar");
+    AppendMenuA(toolbars, MF_STRING, 0, "&Links");
+    AppendMenuA(toolbars, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(toolbars, MF_STRING, 0, "&Customize...");
+    AppendMenuA(bars, MF_STRING, 0, "&Search");
+    AppendMenuA(bars, MF_STRING, 0, "&Favorites");
+    AppendMenuA(bars, MF_STRING, 0, "&History");
+    AppendMenuA(bars, MF_STRING | MF_CHECKED, IDM_FOLDERS, "F&olders");
+    AppendMenuA(bars, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(bars, MF_STRING, 0, "&Tip of the Day");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Name");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Type");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Size");
+    AppendMenuA(arrange, MF_STRING, 0, "by &Date");
+    AppendMenuA(arrange, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(arrange, MF_STRING | MF_GRAYED, 0, "&Auto Arrange");
+    AppendMenuA(goto_menu, MF_STRING, 0, "&Back\tAlt+Left Arrow");
+    AppendMenuA(goto_menu, MF_STRING | MF_GRAYED, 0, "&Forward\tAlt+Right Arrow");
+    AppendMenuA(goto_menu, MF_STRING, IDM_UP, "&Up One Level");
+    AppendMenuA(goto_menu, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(goto_menu, MF_STRING, 0, "&Home Page\tAlt+Home");
+    AppendMenuA(view, MF_POPUP, (UINT_PTR)toolbars, "&Toolbars");
+    AppendMenuA(view, MF_STRING | MF_CHECKED, 0, "Status &Bar");
+    AppendMenuA(view, MF_POPUP, (UINT_PTR)bars, "&Explorer Bar");
+    AppendMenuA(view, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(view, MF_STRING, 0, "Lar&ge Icons");
+    AppendMenuA(view, MF_STRING, 0, "S&mall Icons");
+    AppendMenuA(view, MF_STRING, 0, "&List");
+    AppendMenuA(view, MF_STRING, 0, "&Details");
+    AppendMenuA(view, MF_STRING, 0, "Thu&mbnails");
+    CheckMenuRadioItem(view, 4, 8, 7, MF_BYPOSITION);
+    AppendMenuA(view, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(view, MF_POPUP, (UINT_PTR)arrange, "Arrange &Icons");
+    AppendMenuA(view, MF_STRING | MF_GRAYED, 0, "Line &Up Icons");
+    AppendMenuA(view, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(view, MF_STRING, 0, "&Choose Columns...");
+    AppendMenuA(view, MF_STRING, 0, "Customi&ze This Folder...");
+    AppendMenuA(view, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(view, MF_POPUP, (UINT_PTR)goto_menu, "&Go To");
+    AppendMenuA(view, MF_STRING, 0, "&Refresh");
+
+    AppendMenuA(links, MF_STRING | MF_GRAYED, 0, "(empty)");
+    AppendMenuA(media, MF_STRING | MF_GRAYED, 0, "(empty)");
+    AppendMenuA(favorites, MF_STRING, 0, "&Add to Favorites...");
+    AppendMenuA(favorites, MF_STRING, 0, "&Organize Favorites...");
+    AppendMenuA(favorites, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(favorites, MF_POPUP, (UINT_PTR)links, "Links");
+    AppendMenuA(favorites, MF_POPUP, (UINT_PTR)media, "Media");
+    AppendMenuA(favorites, MF_STRING, 0, "MSN");
+    AppendMenuA(favorites, MF_STRING, 0, "Radio Station Guide");
+    AppendMenuA(favorites, MF_STRING, 0, "Web Events");
+
+    AppendMenuA(tools, MF_STRING, 0, "&Map Network Drive...");
+    AppendMenuA(tools, MF_STRING, 0, "&Disconnect Network Drive...");
+    AppendMenuA(tools, MF_STRING, 0, "&Synchronize...");
+    AppendMenuA(tools, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(tools, MF_STRING, 0, "F&older Options...");
+
+    AppendMenuA(help, MF_STRING, 0, "&Help Topics");
+    AppendMenuA(help, MF_SEPARATOR, 0, NULL);
     AppendMenuA(help, MF_STRING, IDM_ABOUT, "&About Windows");
 
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&File");
@@ -2352,13 +2434,14 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             DestroyWindow(w);
             return 0;
         case IDM_FOLDERS:
-            /* the toolbar's Folders button, View > Folders and the cross in
-             * the pane's own bar all come here, as they all do on the machine */
+            /* the toolbar's Folders button, View > Explorer Bar > Folders and
+             * the cross in the pane's own bar all come here, as they all do on
+             * the machine */
             g_folders = !g_folders;
             if (g_toolbar)
                 SendMessageA(g_toolbar, TB_CHECKBUTTON, IDM_FOLDERS,
                              MAKELPARAM(g_folders, 0));
-            if (g_menu)
+            if (g_menu) /* by command, so it reaches into Explorer Bar */
                 CheckMenuItem(GetSubMenu(g_menu, 2), IDM_FOLDERS,
                               g_folders ? MF_CHECKED : MF_UNCHECKED);
             layout(w);
