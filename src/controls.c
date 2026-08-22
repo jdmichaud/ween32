@@ -1590,8 +1590,13 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
              * different one — an open folder, which is what a shell does. */
             int img = (it == sel && it->sel_image >= 0) ? it->sel_image
                                                         : it->image;
-            ween_imagelist_draw(images, img, s, tx,
-                                y + (WEEN_TV_ITEM_H - icon_h) / 2);
+            if (it == sel)
+                ween_imagelist_draw_blend(images, img, s, tx,
+                                          y + (WEEN_TV_ITEM_H - icon_h) / 2,
+                                          WEEN_CAP_LEFT);
+            else
+                ween_imagelist_draw(images, img, s, tx,
+                                    y + (WEEN_TV_ITEM_H - icon_h) / 2);
             tx += icon_w + 5;
         }
         if (f && it->text) {
@@ -2370,9 +2375,17 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_focus_rect(&top->surface, ox - sx + 2 + indent, y,
                                         lw, ih);
         }
-        if (indent)
-            ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
-                                ox - sx + 2, y + (ih - icon_h) / 2);
+        if (indent) {
+            /* a picked row's picture goes blue with it, half way to the
+             * highlight — the row is what is selected, not the text in it */
+            if (selected)
+                ween_imagelist_draw_blend(l->images, l->row[i].image,
+                                          &top->surface, ox - sx + 2,
+                                          y + (ih - icon_h) / 2, WEEN_CAP_LEFT);
+            else
+                ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
+                                    ox - sx + 2, y + (ih - icon_h) / 2);
+        }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             int lead = (c ? 5 : 7) + (c ? 0 : indent);

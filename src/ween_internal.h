@@ -194,6 +194,8 @@ void ween_letterbox_to_surface(const ween_letterbox *lb, int zoom, int *x,
 /* ---- image lists ---------------------------------------------------------- */
 
 int ween_imagelist_reserve(HIMAGELIST il, int count);
+void ween_imagelist_draw_blend(HIMAGELIST il, int index, ween_surface *s,
+                               int x, int y, ween_color c);
 void ween_imagelist_draw_mono(HIMAGELIST il, int index, ween_surface *s, int x,
                               int y, ween_color c);
 void ween_imagelist_draw(HIMAGELIST il, int index, ween_surface *s, int x,

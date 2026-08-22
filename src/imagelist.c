@@ -447,6 +447,31 @@ void ween_imagelist_draw(HIMAGELIST il, int index, ween_surface *s, int x,
     }
 }
 
+/* Half way to a colour, which is what a selected icon is: win32 blends the
+ * image with COLOR_HIGHLIGHT so the picture goes blue with the row rather
+ * than sitting on it in its own colours. ILD_BLEND50, in win32's words. */
+void ween_imagelist_draw_blend(HIMAGELIST il, int index, ween_surface *s, int x,
+                               int y, ween_color c)
+{
+    if (!il || index < 0 || index >= il->count || !s)
+        return;
+    size_t base = (size_t)index * il->cx * il->cy;
+    for (int iy = 0; iy < il->cy; iy++) {
+        for (int ix = 0; ix < il->cx; ix++) {
+            size_t at = base + (size_t)iy * il->cx + ix;
+            ween_color p = il->px[at];
+            ween_color out = 0xff000000u;
+            if (!il->mask[at])
+                continue;
+            for (int sh = 0; sh < 24; sh += 8) {
+                unsigned a = (p >> sh) & 0xff, b = (c >> sh) & 0xff;
+                out |= ((a + b) / 2) << sh;
+            }
+            ween_surface_pixel(s, x + ix, y + iy, out);
+        }
+    }
+}
+
 /* The same shape in one colour, which is what greying one takes: win32 draws
  * a dead image as its silhouette in white a pixel down and to the right, then
  * again in shadow on the spot.

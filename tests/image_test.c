@@ -254,14 +254,23 @@ int main(void)
         s = ween_headless_surface();
         int green_px = 0;
         red = 0;
+        /* A selected item's picture is drawn half way to the highlight — it
+         * goes blue with the row rather than sitting on it in its own
+         * colours — so what is on screen is that blend, not the pure green. */
+        ween_color want = 0;
+        for (int sh = 0; sh < 24; sh += 8) {
+            unsigned a = (WEEN_RGBX(0, 0xff, 0) >> sh) & 0xff;
+            unsigned b = (WEEN_CAP_LEFT >> sh) & 0xff;
+            want |= ((a + b) / 2) << sh;
+        }
         for (int i = 0; s && i < s->w * s->h; i++) {
-            if ((s->px[i] & 0xffffff) == WEEN_RGBX(0, 0xff, 0))
+            if ((s->px[i] & 0xffffff) == (want & 0xffffff))
                 green_px++;
             else if ((s->px[i] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
                 red++;
         }
         CHECK(green_px == 16 && red == 0,
-              "and a selected item wears the image it named for that");
+              "and a selected item wears the image it named for that, blended");
         DestroyWindow(w);
     }
 
