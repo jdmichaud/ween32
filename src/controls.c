@@ -3963,19 +3963,29 @@ static void lv_draw_heading(ween_surface *s, const ween_strike *f,
                       BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
     if (f && l->col[c]) {
         int len, th = f->ascent - f->descent;
-        const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
+        int sorted = (l->fmt[c] & (HDF_SORTUP | HDF_SORTDOWN)) != 0;
+        /* the arrow takes room from the name, so a long one is cut for it */
+        const char *t = fit_text(f, l->col[c],
+                                 l->width[c] - 12 - (sorted ? 12 : 0), buf,
                                  sizeof(buf), &len);
+        int tw = ween_strike_text_width(f, t, len);
         int tx = cx + 6;
-        if (l->fmt[c] & LVCFMT_RIGHT) /* the heading follows its cells */
-            tx = cx + l->width[c] - 6 - ween_strike_text_width(f, t, len);
+        int ax;
+        /* A heading follows its cells: right-aligned, the name sits against
+         * the far edge — and when it is the one sorted by, it steps aside for
+         * the arrow rather than handing it the space past the column. The
+         * machine's Size column ends its arrow two short of the shadow that
+         * divides it from the next, with the name nine short of that. */
+        if (l->fmt[c] & LVCFMT_RIGHT)
+            tx = cx + l->width[c] - (sorted ? 20 : 6) - tw;
+        ax = (l->fmt[c] & LVCFMT_RIGHT) ? cx + l->width[c] - 11 : tx + tw + 9;
         ween_strike_draw(f, s, tx + (down ? 1 : 0),
                          oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0), t,
                          len, WEEN_BLACK);
-        /* and the sort arrow ten past the end of it */
-        if (l->fmt[c] & (HDF_SORTUP | HDF_SORTDOWN))
-            ween_classic_sort_arrow(
-                s, tx + ween_strike_text_width(f, t, len) + 9 + (down ? 1 : 0),
-                oy + 5 + (down ? 1 : 0), (l->fmt[c] & HDF_SORTUP) != 0);
+        if (sorted)
+            ween_classic_sort_arrow(s, ax + (down ? 1 : 0),
+                                    oy + 5 + (down ? 1 : 0),
+                                    (l->fmt[c] & HDF_SORTUP) != 0);
     }
 }
 

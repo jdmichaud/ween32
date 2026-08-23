@@ -811,6 +811,35 @@ int main(void)
                   SendMessageA(mv, LVM_GETCOLUMNWIDTH, 1, 0) == 100 &&
                   SendMessageA(mv, LVM_GETCOLUMNWIDTH, 2, 0) == 80,
               "and the columns are in the order it left them");
+        {   /* A heading that follows its cells — right-aligned, as Size is —
+             * steps aside for the sort arrow rather than putting it past the
+             * column's own edge, where nothing would show it. */
+            const ween_surface *sf;
+            int ox2, oy2, arrow = 0, right = 0;
+            LVCOLUMNA sc;
+            memset(&sc, 0, sizeof(sc));
+            sc.mask = LVCF_FMT;
+            sc.fmt = LVCFMT_RIGHT | HDF_STRING | HDF_SORTUP;
+            SendMessageA(mv, LVM_SETCOLUMNA, 2, (LPARAM)&sc);
+            InvalidateRect(mw, NULL, TRUE);
+            ween_flush_paint();
+            ween_client_origin(mv, &ox2, &oy2);
+            sf = &mw->surface;
+            /* the third column runs from 190 to 270: the arrow's white base
+             * is inside it, not past its edge */
+            for (int x = ox2 + 190; sf && x < ox2 + 270; x++)
+                for (int y = oy2; y < oy2 + 17; y++)
+                    if ((sf->px[(size_t)y * sf->w + x] & 0xffffff) ==
+                        WEEN_WHITE) {
+                        arrow++;
+                        if (x > right)
+                            right = x;
+                    }
+            CHECK(arrow > 0, "a right-aligned heading shows the sort arrow");
+            CHECK(right <= ox2 + 268,
+                  "and shows it inside the column, not past its edge");
+        }
+
         {   /* The item's own picture and name go with their column: on the
              * machine the icons are in the Name column wherever it is put,
              * not in whichever column happens to be leftmost. A press on the
