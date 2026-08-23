@@ -286,13 +286,16 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
         if (h / 3 == 0) r.top = @min(p.y, r.bottom - 1);
         if (h / 3 == 2) r.bottom = @max(p.y + 1, r.top + 1);
         size_rect = r;
-        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        d.cur = p;
+        invalidatePreview(hwnd);
         return;
     }
     if (moving and d.active) {
+        invalidatePreview(hwnd); // where it was
         selection.moveBy(p.x - d.last.x, p.y - d.last.y);
         d.last = p;
-        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        d.cur = p;
+        invalidatePreview(hwnd); // and where it is now
         return;
     }
     if (!d.active) {
@@ -300,7 +303,7 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
         // pointer even with the button up
         if (d.stage > 0 or (d.tool == .polygon and d.count > 0)) {
             d.cur = p;
-            _ = w.InvalidateRect(hwnd, null, w.FALSE);
+            invalidatePreview(hwnd);
         }
         return;
     }
@@ -314,8 +317,76 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
             d.last = p;
             invalidateStroke(hwnd, from, p, toolReach());
         },
-        else => _ = w.InvalidateRect(hwnd, null, w.FALSE),
+        else => invalidatePreview(hwnd),
     }
+}
+
+/// The rectangle the drag's preview can cover, in picture coordinates: the
+/// points it has collected so far, wherever the pointer is now, and — for a
+/// selection being moved or stretched — the selection itself.
+fn dragBounds() w.RECT {
+    const d = &tools.drag;
+    var r = w.RECT{
+        .left = @min(d.start.x, d.cur.x),
+        .top = @min(d.start.y, d.cur.y),
+        .right = @max(d.start.x, d.cur.x),
+        .bottom = @max(d.start.y, d.cur.y),
+    };
+    for (d.points[0..@min(d.count + 1, tools.max_points)]) |q| {
+        r.left = @min(r.left, q.x);
+        r.top = @min(r.top, q.y);
+        r.right = @max(r.right, q.x);
+        r.bottom = @max(r.bottom, q.y);
+    }
+    if (d.tool == .free_select) {
+        for (tools.lasso[0..tools.lasso_n]) |q| {
+            r.left = @min(r.left, q.x);
+            r.top = @min(r.top, q.y);
+            r.right = @max(r.right, q.x);
+            r.bottom = @max(r.bottom, q.y);
+        }
+    }
+    if (selection.active()) {
+        const b = selection.borderRect();
+        r.left = @min(r.left, b.left - 2);
+        r.top = @min(r.top, b.top - 2);
+        r.right = @max(r.right, b.right + 2);
+        r.bottom = @max(r.bottom, b.bottom + 2);
+    }
+    return r;
+}
+
+/// What the last preview covered, so that the next one can rub it out
+/// without repainting the whole view.
+var last_preview: ?w.RECT = null;
+
+/// Ask for a repaint of what the preview covered and what it covers now.
+/// A rubber-banded shape follows the pointer over a few hundred pixels; the
+/// tool box, the colour box and the rest of the picture have nothing to say.
+fn invalidatePreview(hwnd: w.HWND) void {
+    const o = pageOrigin();
+    const z = app.zoom;
+    const pad = (tools.penWidth() + 4);
+    const b = dragBounds();
+    var r = w.RECT{
+        .left = o.x + (b.left - pad) * z,
+        .top = o.y + (b.top - pad) * z,
+        .right = o.x + (b.right + pad + 1) * z,
+        .bottom = o.y + (b.bottom + pad + 1) * z,
+    };
+    if (last_preview) |old| {
+        r.left = @min(r.left, old.left);
+        r.top = @min(r.top, old.top);
+        r.right = @max(r.right, old.right);
+        r.bottom = @max(r.bottom, old.bottom);
+    }
+    last_preview = .{
+        .left = o.x + (b.left - pad) * z,
+        .top = o.y + (b.top - pad) * z,
+        .right = o.x + (b.right + pad + 1) * z,
+        .bottom = o.y + (b.bottom + pad + 1) * z,
+    };
+    _ = w.InvalidateRect(hwnd, &r, w.FALSE);
 }
 
 /// Ask for a repaint of the picture between two points and no more of it.
@@ -498,9 +569,16 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             return w.DefWindowProcA(hwnd, msg, wp, lp);
         },
         w.WM_LBUTTONDBLCLK => {
-            // a double click ends a polygon
-            if (tools.drag.tool == .polygon and tools.drag.count > 2) commit();
-            return 0;
+            // A double click ends a polygon, wherever it lands: the click
+            // before it has already put its point down, so what is left is
+            // to close the shape and draw it.
+            if (tools.drag.tool == .polygon and tools.drag.count >= 2) {
+                tools.drag.cur = toImage(lp);
+                commit();
+                _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                return 0;
+            }
+            return w.DefWindowProcA(hwnd, msg, wp, lp);
         },
         w.WM_PAINT => {
             paint(hwnd);
@@ -555,6 +633,9 @@ pub fn setZoom(z: i32, at: w.POINT) void {
 
 pub fn register() void {
     var wc = w.WNDCLASSA{
+        // The view hears about double clicks: one closes a polygon, which is
+        // how the shape is finished without going back to where it started.
+        .style = w.CS_DBLCLKS,
         .lpfnWndProc = proc,
         .hbrBackground = w.GetSysColorBrush(workspace),
         .hCursor = w.LoadCursorA(null, w.IDC_ARROW),

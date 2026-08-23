@@ -142,6 +142,20 @@ a click with each on the machine, read back off the screen. The disc a wide
 pen puts down is the machine's too — two across is a full square, three a
 plus, four and five squares with the corners off.
 
+**What a preview costs.** A shape being dragged out is drawn twice a frame —
+the picture underneath comes back, the outline goes on top — and the first
+version of that asked for the whole picture back each time, which is why a
+rectangle dragged across the page crawled while the pencil did not. What has
+to come back is only the two rectangles the outline can be inside: where it
+was and where it is now, grown by the pen. Freehand does the same with the
+segment just drawn. Three thousand moves of an ellipse's corner take nine
+milliseconds, and nothing is left behind on the page.
+
+**A polyline ends where the drawing stops.** A double click closes it, which
+means the window has to be told it wants double clicks (`CS_DBLCLKS`) and the
+second click has to reach the tool with the vertices in it rather than start a
+new one.
+
 ## Checking it
 
 ```sh

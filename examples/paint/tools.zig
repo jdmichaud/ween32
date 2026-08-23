@@ -244,6 +244,16 @@ fn lineWidth() i32 {
     return @as(i32, @intCast(A.option())) + 1;
 }
 
+/// How wide the mark a shape leaves is, which is how far past the shape a
+/// repaint has to reach.
+pub fn penWidth() i32 {
+    return switch (app.tool) {
+        .rect, .ellipse, .round_rect, .polygon => 1,
+        .line, .curve => lineWidth(),
+        else => 1,
+    };
+}
+
 /// The pen and brush a shape is drawn with: the outline in the pen colour at
 /// the chosen width, and the inside according to the fill style — outline
 /// only, filled with the background, or filled with the foreground.
