@@ -3485,6 +3485,10 @@ typedef struct {
     int drag_x;   /* where the pointer is now, so the ghost follows it */
     int drag_grab; /* how far into the heading it was taken hold of */
     int drop_at;  /* the place it would go: the column it would sit before */
+    int icon_col; /* the column the item's own picture and name are in: the
+                   * first one until a heading is carried somewhere else, and
+                   * then wherever that one went — the machine's icons travel
+                   * with the Name column */
     int sizing;   /* the divider being dragged, -1 for none */
     int size_x0;  /* where the drag started, and the width it started at */
     int size_w0;
@@ -3849,12 +3853,12 @@ static int lv_label_w(HWND wnd, const ween_list *l, int row, int indent)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     int tw;
-    if (!f || !l->row[row].text[0])
+    if (!f || !l->row[row].text[l->icon_col])
         return 0;
-    tw = ween_strike_text_extent(f, l->row[row].text[0],
-                                 (int)strlen(l->row[row].text[0]));
-    if (tw > l->width[0] - indent - 8)
-        tw = l->width[0] - indent - 8;
+    tw = ween_strike_text_extent(f, l->row[row].text[l->icon_col],
+                                 (int)strlen(l->row[row].text[l->icon_col]));
+    if (tw > l->width[l->icon_col] - indent - 8)
+        tw = l->width[l->icon_col] - indent - 8;
     /* Two before the text and four after, which is the box the machine
      * highlights: "WINNT" picked comes to forty-two pixels of blue. A list
      * with no images has no icon column to start after and keeps the wider
@@ -3867,6 +3871,15 @@ static int lv_label_w(HWND wnd, const ween_list *l, int row, int indent)
 static int lv_label_x(int indent)
 {
     return indent ? indent : 2;
+}
+
+/* How far in the column the item's picture and name are drawn in starts. */
+static int lv_icon_col_x(const ween_list *l)
+{
+    int x = 0;
+    for (int c = 0; c < l->icon_col && c < l->ncol; c++)
+        x += l->width[c];
+    return x;
 }
 
 /* Where a heading being carried would land: the column it would sit before,
@@ -3913,6 +3926,12 @@ static void lv_move_column(ween_list *l, int from, int to)
     l->col[to] = col;
     l->width[to] = width;
     l->fmt[to] = fmt;
+    if (l->icon_col == from)
+        l->icon_col = to;
+    else if (from < l->icon_col && to >= l->icon_col)
+        l->icon_col--;
+    else if (from > l->icon_col && to <= l->icon_col)
+        l->icon_col++;
     for (int r = 0; r < l->nrow; r++) {
         char *cell = l->row[r].text[from];
         if (to < from)
@@ -4014,8 +4033,11 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
     indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
     x += l->scroll_x;
+    /* the item's picture and name are in whichever column they were left in,
+     * so everything about them is measured from where that column starts */
+    x -= lv_icon_col_x(l);
     if (x < 2)
-        return -1;
+        return (l->exstyle & LVS_EX_FULLROWSELECT) ? row : -1;
     if (lv_check_w(l)) { /* the box before everything else */
         /* the whole state column answers for the box in it, not just the
          * thirteen pixels the box itself is drawn on */
@@ -4043,7 +4065,8 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
     /* LVS_EX_FULLROWSELECT: the row is what is picked, so the whole width of
      * it answers — a press on a cell to the right of the name picks the row
      * it is in rather than falling through to the background. */
-    if ((l->exstyle & LVS_EX_FULLROWSELECT) && x < lv_content_w(l)) {
+    if ((l->exstyle & LVS_EX_FULLROWSELECT) &&
+        x + lv_icon_col_x(l) < lv_content_w(l)) {
         if (flags)
             *flags = LVHT_ONITEMLABEL;
         return row;
@@ -4265,6 +4288,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int caret = ween_ui_focus_cues && focused && i == l->focus - 1;
         int box = lv_check_w(l);
         int has_image = l->images && l->row[i].image >= 0;
+        int icx = lv_icon_col_x(l); /* where the item's own column starts */
         /* Where the label column starts. A row with a tick box and no
          * picture starts two past the box, the same two an icon leaves
          * between itself and the name — the box stands in for the icon. */
@@ -4272,7 +4296,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         x = 0;
         if (box && l->row[i].state_img) {
             int by = y + (ih - WEEN_LV_CHECK) / 2;
-            ween_classic_check_flat(&top->surface, ox - sx + 4, by,
+            ween_classic_check_flat(&top->surface, ox - sx + icx + 4, by,
                                     l->row[i].state_img == 2);
         }
         /* LVS_EX_FULLROWSELECT: the row is picked, not the name in it, so
@@ -4285,10 +4309,10 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
                 ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih);
-        } else if ((selected || caret) && f && l->row[i].text[0]) {
+        } else if ((selected || caret) && f && l->row[i].text[l->icon_col]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
-            int lx = ox - sx + lv_label_x(indent);
+            int lx = ox - sx + icx + lv_label_x(indent);
             if (selected)
                 ween_surface_fill(&top->surface, lx, y, lw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
@@ -4301,17 +4325,20 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * hidden file — goes half way into the window's own colour. */
             if (l->row[i].cut)
                 ween_imagelist_draw_blend(l->images, l->row[i].image,
-                                          &top->surface, ox - sx + 2 + box,
+                                          &top->surface, ox - sx + icx + 2 + box,
                                           y + (ih - icon_h) / 2, WEEN_WHITE);
             else
                 ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
-                                    ox - sx + 2 + box, y + (ih - icon_h) / 2);
+                                    ox - sx + icx + 2 + box,
+                                    y + (ih - icon_h) / 2);
         }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             /* the name sits two past its box, which starts where the icon
              * ends; the other cells sit closer to their own column */
-            int lead = c ? 6 : (has_image || box ? indent + 2 : indent + 7);
+            int lead = c != l->icon_col
+                           ? 6
+                           : (has_image || box ? indent + 2 : indent + 7);
             if (f && l->row[i].text[c]) {
                 int len;
                 const char *t = fit_text(f, l->row[i].text[c],

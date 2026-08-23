@@ -811,6 +811,21 @@ int main(void)
                   SendMessageA(mv, LVM_GETCOLUMNWIDTH, 1, 0) == 100 &&
                   SendMessageA(mv, LVM_GETCOLUMNWIDTH, 2, 0) == 80,
               "and the columns are in the order it left them");
+        {   /* The item's own picture and name go with their column: on the
+             * machine the icons are in the Name column wherever it is put,
+             * not in whichever column happens to be leftmost. A press on the
+             * name in its new place still finds the row. */
+            LVHITTESTINFO ht;
+            memset(&ht, 0, sizeof(ht));
+            ht.pt.x = 100; /* inside the Name column, now the second one */
+            ht.pt.y = 17 + 5;
+            CHECK(SendMessageA(mv, LVM_HITTEST, 0, (LPARAM)&ht) == 0 &&
+                      (ht.flags & LVHT_ONITEMLABEL),
+                  "the name is hit where its column now is");
+            ht.pt.x = 40; /* where it used to be, now another column's cell */
+            CHECK(SendMessageA(mv, LVM_HITTEST, 0, (LPARAM)&ht) == -1,
+                  "and not where it used to be");
+        }
         DestroyWindow(mw);
     }
 
