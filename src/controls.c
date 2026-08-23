@@ -1087,6 +1087,11 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
+    case WM_GETDLGCODE:
+        /* A field keeps a selection, which is how a dialog knows to select
+         * what is in it when it hands it the focus: the size in the
+         * Attributes box is there to be typed over, not added to. */
+        return DLGC_WANTCHARS | DLGC_WANTARROWS | DLGC_HASSETSEL;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
@@ -2826,7 +2831,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                  * the same rule that brings out a menu's underlines */
                 if (sel_state == 2 && ween_ui_focus_cues)
                     ween_surface_focus_rect(s, tx - 2, y, tw + 4,
-                                            WEEN_TV_ITEM_H);
+                                            WEEN_TV_ITEM_H, 0);
             }
             ween_strike_draw(f, s, tx, ty, it->text, (int)strlen(it->text),
                              sel_state == 2 && selected ? WEEN_WHITE
@@ -4046,13 +4051,13 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
             if (icons)
                 ween_surface_focus_rect(&top->surface, ox + c.left,
                                         oy + c.top, WEEN_LV_ICON_W,
-                                        c.bottom - c.top);
+                                        c.bottom - c.top, 0);
             else
                 ween_surface_focus_rect(&top->surface,
                                         ox + c.left + icon_w + 1,
                                         oy + c.top +
                                             (WEEN_LV_FLOW_H - th) / 2,
-                                        tw + 3, th);
+                                        tw + 3, th, 0);
         }
     }
     (void)dc;
@@ -4172,7 +4177,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, ox - sx, y, rw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih);
+                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih, 0);
         } else if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
@@ -4181,7 +4186,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, lx, y, lw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, lx, y, lw, ih);
+                ween_surface_focus_rect(&top->surface, lx, y, lw, ih, 0);
         }
         if (has_image) {
             /* A picked row's picture is drawn as it is — the machine washes

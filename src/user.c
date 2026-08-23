@@ -386,6 +386,29 @@ BOOL ClientToScreen(HWND wnd, POINT *pt)
     return TRUE;
 }
 
+/* Where the pointer is now, in desktop coordinates.
+ *
+ * The pump remembers where it last saw it, in the coordinates events arrive
+ * in — its top-level window's — and this puts that back on the desktop the
+ * same way ClientToScreen does, so that a window asking where the pointer is
+ * inside itself gets an answer that agrees with its own rectangle. A window
+ * that wants the pointer while handling WM_SETCURSOR has no other way to ask:
+ * the message does not carry it. */
+static struct ween_wnd *g_cursor_top;
+static int g_cursor_x, g_cursor_y;
+
+BOOL GetCursorPos(POINT *pt)
+{
+    int ox = 0, oy = 0;
+    if (!pt)
+        return FALSE;
+    if (g_cursor_top)
+        ween_window_origin(g_cursor_top, &ox, &oy);
+    pt->x = g_cursor_x + ox;
+    pt->y = g_cursor_y + oy;
+    return TRUE;
+}
+
 BOOL ScreenToClient(HWND wnd, POINT *pt)
 {
     POINT zero;
@@ -2115,6 +2138,9 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
     int ox, oy;
     struct ween_wnd *dst = g_capture;
+    g_cursor_top = top; /* the last place the pointer was seen */
+    g_cursor_x = x;
+    g_cursor_y = y;
     if (!dst)
         dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst)

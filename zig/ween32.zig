@@ -330,6 +330,7 @@ pub const MEMORYSTATUS = extern struct {
 pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) void;
 pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) BOOL;
 pub extern fn ScreenToClient(wnd: HWND, pt: *POINT) BOOL;
+pub extern fn GetCursorPos(pt: *POINT) BOOL;
 pub extern fn GetWindowLongA(wnd: HWND, index: c_int) LONG;
 pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) LONG;
 pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) BOOL;

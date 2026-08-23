@@ -59,7 +59,8 @@ void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
 void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c);
 /* DrawFocusRect's dotted, inverting rectangle. */
-void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h);
+void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h,
+                             int phase);
 /* The same dots drawn in one colour instead of inverting what is under them:
  * what a button's rectangle is, where a view's caret inverts. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,

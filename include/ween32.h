@@ -216,6 +216,22 @@ typedef struct tagCREATESTRUCTA {
 #define WM_CLOSE 0x0010
 #define WM_QUIT 0x0012
 #define WM_ENABLE 0x000A
+/* What a control says it wants from the dialog manager. Only the one bit is
+ * acted on so far: a control that keeps a selection has all of it selected
+ * when a dialog gives it the focus, so that typing replaces what is there. */
+#define WM_GETDLGCODE 0x0087
+#define DLGC_WANTARROWS 0x0001
+#define DLGC_WANTTAB 0x0002
+#define DLGC_WANTALLKEYS 0x0004
+#define DLGC_WANTMESSAGE 0x0004
+#define DLGC_HASSETSEL 0x0008
+#define DLGC_DEFPUSHBUTTON 0x0010
+#define DLGC_UNDEFPUSHBUTTON 0x0020
+#define DLGC_RADIOBUTTON 0x0040
+#define DLGC_WANTCHARS 0x0080
+#define DLGC_STATIC 0x0100
+#define DLGC_BUTTON 0x2000
+
 #define WM_SETFONT 0x0030
 #define WM_GETFONT 0x0031
 #define WM_SETICON 0x0080
@@ -1993,6 +2009,7 @@ BOOL GetWindowRect(HWND wnd, LPRECT rect);
 HWND GetParent(HWND wnd);
 BOOL ClientToScreen(HWND wnd, POINT *pt);
 BOOL ScreenToClient(HWND wnd, POINT *pt);
+BOOL GetCursorPos(POINT *pt);
 
 /* ---- the clipboard -------------------------------------------------------
  *

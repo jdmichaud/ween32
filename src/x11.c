@@ -589,6 +589,7 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
         unsigned long cur = x11_cursor_image(custom);
         if (cur) {
             XDefineCursor(xw->dpy, xw->win, cur);
+            XFlush(xw->dpy);
             return;
         }
     }
@@ -597,6 +598,10 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
     if (!made[shape])
         made[shape] = XCreateFontCursor(g_dpy, cursor_glyph(shape));
     XDefineCursor(xw->dpy, xw->win, made[shape]);
+    /* The pointer's shape is not part of a frame: nothing else is going to
+     * flush this. A cursor that changes only the next time the window happens
+     * to repaint is one that does not change when it should. */
+    XFlush(xw->dpy);
 }
 
 /* Where the surface's top-left is on the desktop.

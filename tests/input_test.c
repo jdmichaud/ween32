@@ -56,11 +56,29 @@ static LRESULT CALLBACK nested_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(w, msg, wp, lp);
 }
 static int g_edit_changed, g_check_clicked, g_list_changed, g_scrolled;
+/* the last mouse move the host saw, as the message gave it and as
+ * GetCursorPos answered when asked in the middle of handling it */
+static POINT g_move_client, g_move_asked;
+static int g_moves_asked;
 
 
 static LRESULT CALLBACK host_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    /* Where the pointer is, asked for rather than read off the message:
+     * WM_SETCURSOR does not carry it, and a window whose shape depends on
+     * where the pointer is — Paint's page, with three handles on it that
+     * size the picture — has nothing else to go on. */
+    case WM_MOUSEMOVE: {
+        POINT here;
+        g_move_client.x = GET_X_LPARAM(lp);
+        g_move_client.y = GET_Y_LPARAM(lp);
+        if (GetCursorPos(&here)) {
+            g_move_asked = here;
+            g_moves_asked++;
+        }
+        return 0;
+    }
     /* a control that has no menu of its own leaves the request to its
      * parent, and it arrives here naming the window it started in */
     case WM_CONTEXTMENU:
@@ -288,6 +306,14 @@ int main(void)
         ClientToScreen(g_nested, &pt);
         CHECK(g_ctx_x == pt.x && g_ctx_y == pt.y,
               "the point comes in screen coordinates, where a menu goes");
+    }
+
+    {
+        POINT same = g_move_client;
+        ClientToScreen(wnd, &same);
+        CHECK(g_moves_asked > 0, "GetCursorPos answered while a move was being handled");
+        CHECK(same.x == g_move_asked.x && same.y == g_move_asked.y,
+              "and gave the point the message did, in desktop coordinates");
     }
 
     if (g_failures) {

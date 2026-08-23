@@ -1080,9 +1080,12 @@ BOOL DrawFocusRect(HDC dc, const RECT *rect)
     if (!dc || !rect)
         return FALSE;
     clip_push(dc, &saved);
+    /* The dots fall on the window's own coordinates, as win32's brush origin
+     * does, not on the surface the window happens to sit in. */
     ween_surface_focus_rect(dc->s, dc->org_x + dc->vp_x + rect->left,
                             dc->org_y + dc->vp_y + rect->top,
-                            rect->right - rect->left, rect->bottom - rect->top);
+                            rect->right - rect->left, rect->bottom - rect->top,
+                            (dc->org_x + dc->org_y) & 1);
     clip_pop(dc, &saved);
     return TRUE;
 }
