@@ -3922,6 +3922,14 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
             *flags = LVHT_ONITEMLABEL;
         return row;
     }
+    /* LVS_EX_FULLROWSELECT: the row is what is picked, so the whole width of
+     * it answers — a press on a cell to the right of the name picks the row
+     * it is in rather than falling through to the background. */
+    if ((l->exstyle & LVS_EX_FULLROWSELECT) && x < lv_content_w(l)) {
+        if (flags)
+            *flags = LVHT_ONITEMLABEL;
+        return row;
+    }
     return -1;
 }
 

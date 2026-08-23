@@ -749,6 +749,7 @@ int main(void)
                                      (HMENU)(UINT_PTR)9, NULL, NULL);
         LVCOLUMNA col;
         LVHITTESTINFO ht;
+        LVITEMA it;
         memset(&col, 0, sizeof(col));
         col.mask = LVCF_WIDTH | LVCF_TEXT;
         col.cx = 180;
@@ -778,6 +779,31 @@ int main(void)
         CHECK(SendMessageA(ticks, LVM_HITTEST, 0, (LPARAM)&ht) == 0 &&
                   (ht.flags & LVHT_ONITEMLABEL),
               "the name starts two past the box");
+
+        /* LVS_EX_FULLROWSELECT: the whole row answers, so a press on a cell
+         * to the right of the name picks the row rather than the background.
+         * Without it that press drops the selection, which is what a shell's
+         * file list does. */
+        {
+            LVHITTESTINFO fr;
+            SendMessageA(ticks, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                         LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT);
+            memset(&fr, 0, sizeof(fr));
+            fr.pt.x = 150; /* past the name, inside the column */
+            fr.pt.y = 4;
+            CHECK(SendMessageA(ticks, LVM_HITTEST, 0, (LPARAM)&fr) == 0,
+                  "a point past the name is on the row when the row is what "
+                  "is picked");
+            SendMessageA(ticks, WM_LBUTTONDOWN, 0, MAKELPARAM(150, 4));
+            CHECK(SendMessageA(ticks, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED) == 0,
+                  "and a press there picks it");
+            SendMessageA(ticks, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                         LVS_EX_CHECKBOXES);
+            memset(&it, 0, sizeof(it));
+            it.stateMask = LVIS_SELECTED;
+            SendMessageA(ticks, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&it);
+        }
 
         CHECK(!ListView_GetCheckState(ticks, 0), "a row starts unticked");
         SendMessageA(ticks, WM_LBUTTONDOWN, 0, MAKELPARAM(9, 4));
