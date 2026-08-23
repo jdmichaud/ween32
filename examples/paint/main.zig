@@ -239,7 +239,7 @@ fn layout(cw: i32, ch: i32) void {
     _ = w.MoveWindow(app.view, left, 0, cw - left, top, w.TRUE);
 }
 
-fn frameProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {
+fn frameProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.LRESULT {
     switch (msg) {
         w.WM_CREATE => {
             app.frame = hwnd;
@@ -495,7 +495,7 @@ pub fn refresh() void {
 /// The colour box belongs to the system, and its title is "Color". Paint's
 /// says "Edit Colors", which is what the hook a program hands over with
 /// CC_ENABLEHOOK is for.
-fn colorHook(dlg: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn colorHook(dlg: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = wp;
     _ = lp;
     if (msg == w.WM_INITDIALOG) _ = w.SetWindowTextA(dlg, "Edit Colors");
@@ -741,6 +741,52 @@ fn accelerators() w.HACCEL {
         .{ .fVirt = v | w.FSHIFT, .key = 'N', .cmd = ID.image_clear },
     };
     return w.CreateAcceleratorTableA(&S.table, S.table.len);
+}
+
+/// What a failed check does.
+///
+/// Zig's own handler leaves through ntdll's RtlExitUserProcess, which is not
+/// on a machine this old, and a program that so much as mentions it will not
+/// load there. This says what happened in a box and goes through the door
+/// win32 has always had.
+pub const panic = std.debug.FullPanic(paintPanic);
+
+fn paintPanic(msg: []const u8, _: ?usize) noreturn {
+    var buf: [512]u8 = undefined;
+    const text = std.fmt.bufPrintSentinel(&buf, "{s}", .{msg}, 0) catch "Paint stopped.";
+    _ = w.MessageBoxA(null, text, "Paint", w.MB_OK | w.MB_ICONERROR);
+    w.ExitProcess(3);
+}
+
+/// Where Windows starts it.
+///
+/// Zig's own start-up leaves through ntdll's RtlExitUserProcess, which
+/// Windows 2000 does not have — the program will not load at all, before a
+/// line of it runs. Entering here instead means the only calls it makes are
+/// ones that machine has: it runs there, which is the whole point of being
+/// able to build it as win32 at all.
+fn startup() callconv(w.winapi_cc) noreturn {
+    main();
+    w.ExitProcess(0);
+}
+
+/// The one call Zig's library makes that Windows 2000 has not got.
+///
+/// It is how a Zig program leaves — the start-up's own exit and the abort a
+/// failed check ends in both go through it — and a program that names a
+/// procedure ntdll does not export is refused by the loader before any of it
+/// runs, whatever it would have called. Defining it here answers the name
+/// ourselves, so nothing is ever looked up, and does what it says through the
+/// call that has been there since Windows had windows.
+fn exitUserProcess(code: u32) callconv(w.winapi_cc) noreturn {
+    w.ExitProcess(code);
+}
+
+comptime {
+    if (@import("builtin").target.os.tag == .windows) {
+        @export(&startup, .{ .name = "paintStartup" });
+        @export(&exitUserProcess, .{ .name = "RtlExitUserProcess" });
+    }
 }
 
 pub fn main() void {

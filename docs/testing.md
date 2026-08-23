@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **454 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **465 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:

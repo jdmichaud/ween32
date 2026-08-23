@@ -215,6 +215,49 @@ int main(void)
         CHECK(DestroyCursor(cur) == TRUE, "and it can be given back");
     }
 
+    {
+        /* The file calls a win32 program reads and writes with. Paint uses
+         * these rather than the C library's so that its Windows build carries
+         * no C runtime at all — the one a modern toolchain links is the UCRT,
+         * and a machine of the age this library imitates cannot start a
+         * program that asks for it. */
+        char fpath[512];
+        char back[16];
+        DWORD n = 0;
+        HANDLE f;
+        snprintf(fpath, sizeof(fpath), "%s/api_file.bin", dir ? dir : ".");
+        f = CreateFileA(fpath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+        CHECK(f != INVALID_HANDLE_VALUE, "CreateFileA makes a file");
+        CHECK(WriteFile(f, "ween32", 6, &n, NULL) && n == 6,
+              "WriteFile says how much of it went");
+        CHECK(CloseHandle(f), "and the handle is given back");
+
+        f = CreateFileA(fpath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        CHECK(f != INVALID_HANDLE_VALUE, "and opened again for reading");
+        CHECK(GetFileSize(f, NULL) == 6, "GetFileSize is what was written");
+        CHECK(ReadFile(f, back, 6, &n, NULL) && n == 6 &&
+                  !memcmp(back, "ween32", 6),
+              "ReadFile gives it back");
+        CHECK(SetFilePointer(f, 2, NULL, FILE_BEGIN) == 2,
+              "SetFilePointer moves to where it says");
+        CHECK(ReadFile(f, back, 4, &n, NULL) && n == 4 &&
+                  !memcmp(back, "en32", 4),
+              "and reading goes on from there");
+        /* the end of the file is a short read, not a failure: the count is
+         * what says so, which is the one thing about this call that catches
+         * people out */
+        CHECK(ReadFile(f, back, 4, &n, NULL) && n == 0,
+              "reading past the end succeeds, with nothing in it");
+        CHECK(CloseHandle(f), "and it closes");
+        CHECK(CreateFileA("nothing/of/the/sort", GENERIC_READ, 0, NULL,
+                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                          NULL) == INVALID_HANDLE_VALUE,
+              "a file that is not there is INVALID_HANDLE_VALUE");
+        remove(fpath);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

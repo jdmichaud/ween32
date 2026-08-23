@@ -12,7 +12,7 @@ pub const class_name = "PaintViewBitmap";
 
 var window: ?w.HWND = null;
 
-fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {
+fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.LRESULT {
     switch (msg) {
         w.WM_PAINT => {
             var ps: w.PAINTSTRUCT = undefined;

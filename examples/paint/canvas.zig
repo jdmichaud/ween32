@@ -663,7 +663,7 @@ fn setCursor(hwnd: w.HWND) void {
     _ = w.SetCursor(cursors.forTool(app.tool));
 }
 
-fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {
+fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.LRESULT {
     switch (msg) {
         w.WM_SETCURSOR => {
             if (w.LOWORD(lp) == w.HTCLIENT) {

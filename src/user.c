@@ -424,6 +424,15 @@ BOOL ScreenToClient(HWND wnd, POINT *pt)
 /* The command line, as one string with the program name first: what win32
  * hands over, rebuilt here from what this machine keeps instead. An
  * argument with a space in it is quoted, as the caller will expect. */
+/* Leave, the way a win32 program leaves. Windows 2000's ntdll has no
+ * RtlExitUserProcess, which is what a Zig program's own start-up would call,
+ * so Paint enters and leaves through the calls that have always been there
+ * and runs on the machine it is a copy of. */
+void ExitProcess(UINT code)
+{
+    exit((int)code);
+}
+
 LPSTR GetCommandLineA(void)
 {
     static char line[4096];

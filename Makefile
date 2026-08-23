@@ -12,7 +12,7 @@ CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Wundef -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o src/propsheet.o \
-       src/gdi.o src/draw.o src/comdlg.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
+       src/file.o src/gdi.o src/draw.o src/comdlg.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
 ifeq ($(X11),1)
@@ -143,7 +143,9 @@ win32:
 	   /tmp/ween32-consts.c && echo "  win32 constants agree"
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
-	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1;; \
+	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1; \
+	      echo "  win32 examples/paint, 32-bit (zig)"; \
+	      $(ZIG) build paint -Dtarget=x86-windows-gnu || exit 1;; \
 	   *) echo "  win32 examples/paint: needs zig $(ZIG_NEEDS), skipped";; \
 	 esac
 

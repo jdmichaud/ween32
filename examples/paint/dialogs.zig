@@ -139,7 +139,7 @@ fn readAttrSizes(hwnd: w.HWND) void {
     }
 }
 
-fn attrProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn attrProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = lp;
     switch (msg) {
         w.WM_INITDIALOG => {
@@ -234,7 +234,7 @@ fn flipEnableAngles(hwnd: w.HWND, on: bool) void {
     }
 }
 
-fn flipProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn flipProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = lp;
     switch (msg) {
         w.WM_INITDIALOG => {
@@ -386,7 +386,7 @@ fn zoomItems() []const dlg.Item {
     return &S.items;
 }
 
-fn zoomProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn zoomProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = lp;
     switch (msg) {
         w.WM_INITDIALOG => {
@@ -419,7 +419,7 @@ pub fn customZoom(owner: w.HWND) i32 {
     return zoom_factor[zoom_pick];
 }
 
-fn stretchProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn stretchProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = lp;
     switch (msg) {
         w.WM_INITDIALOG => {
@@ -526,7 +526,7 @@ fn aboutMemory(hwnd: w.HWND) void {
     _ = w.SetDlgItemTextA(hwnd, about_memory, @ptrCast(&out));
 }
 
-fn aboutProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+fn aboutProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.INT_PTR {
     _ = lp;
     if (msg == w.WM_INITDIALOG) {
         const S = struct {

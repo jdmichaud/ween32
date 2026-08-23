@@ -2026,6 +2026,34 @@ BOOL GetCursorPos(POINT *pt);
  * WM_CUT/WM_COPY/WM_PASTE are what a control acts on; an EDIT also takes
  * Ctrl+X, Ctrl+C, Ctrl+V and Ctrl+A directly. */
 typedef void *HANDLE;
+
+/* ---- files -------------------------------------------------------------
+ * The KERNEL32 calls a win32 program reads and writes a file with. A program
+ * that uses these rather than the C library's needs no C runtime on Windows,
+ * which is the difference between running on a machine of that age and not
+ * starting at all. */
+#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+#define GENERIC_READ 0x80000000u
+#define GENERIC_WRITE 0x40000000u
+#define FILE_SHARE_READ 0x00000001u
+#define FILE_SHARE_WRITE 0x00000002u
+#define CREATE_ALWAYS 2
+#define OPEN_EXISTING 3
+#define FILE_ATTRIBUTE_NORMAL 0x00000080u
+#define FILE_BEGIN 0
+#define FILE_CURRENT 1
+#define FILE_END 2
+#define INVALID_SET_FILE_POINTER ((DWORD)-1)
+#define INVALID_FILE_SIZE ((DWORD)0xFFFFFFFF)
+HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, void *security,
+                   DWORD disposition, DWORD flags, HANDLE template_file);
+BOOL ReadFile(HANDLE file, void *buf, DWORD to_read, DWORD *read, void *ovl);
+BOOL WriteFile(HANDLE file, const void *buf, DWORD to_write, DWORD *written,
+               void *ovl);
+DWORD SetFilePointer(HANDLE file, LONG distance, LONG *high, DWORD method);
+DWORD GetFileSize(HANDLE file, DWORD *high);
+BOOL CloseHandle(HANDLE h);
+void ExitProcess(UINT code);
 #define CF_TEXT 1
 #define CF_BITMAP 2
 #define WM_CUT 0x0300

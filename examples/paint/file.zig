@@ -10,19 +10,6 @@ const w = @import("ween32");
 const A = @import("app.zig");
 const app = &A.app;
 
-/// The C runtime's file calls. A win32 program written in C would use these,
-/// and they are the same on both sides of the port; Zig's own file API is
-/// mid-rewrite and would need a different spelling on each.
-const c = struct {
-    const FILE = opaque {};
-    extern fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*FILE;
-    extern fn fclose(f: *FILE) c_int;
-    extern fn fread(ptr: [*]u8, size: usize, n: usize, f: *FILE) usize;
-    extern fn fwrite(ptr: [*]const u8, size: usize, n: usize, f: *FILE) usize;
-    extern fn fseek(f: *FILE, off: c_long, whence: c_int) c_int;
-    extern fn ftell(f: *FILE) c_long;
-};
-
 var path_buf: [300]u8 = undefined;
 
 fn zpath(path: []const u8) [*:0]const u8 {
@@ -52,8 +39,9 @@ pub fn save(path: []const u8) !void {
     } };
     _ = w.GetDIBits(app.pic.dc, app.pic.bmp, 0, @intCast(height), bits.ptr, &info, w.DIB_RGB_COLORS);
 
-    const f = c.fopen(zpath(path), "wb") orelse return error.CannotCreate;
-    defer _ = c.fclose(f);
+    const f = w.CreateFileA(zpath(path), w.GENERIC_WRITE, 0, null, w.CREATE_ALWAYS, w.FILE_ATTRIBUTE_NORMAL, null);
+    if (f == w.INVALID_HANDLE_VALUE) return error.CannotCreate;
+    defer _ = w.CloseHandle(f);
     var head: [file_header + info_header]u8 = undefined;
     @memset(&head, 0);
     head[0] = 'B';
@@ -66,21 +54,24 @@ pub fn save(path: []const u8) !void {
     std.mem.writeInt(u16, head[26..28], 1, .little);
     std.mem.writeInt(u16, head[28..30], 24, .little);
     std.mem.writeInt(u32, head[34..38], @intCast(bytes), .little);
-    if (c.fwrite(&head, 1, head.len, f) != head.len) return error.WriteFailed;
-    if (c.fwrite(bits.ptr, 1, bytes, f) != bytes) return error.WriteFailed;
+    var done: u32 = 0;
+    if (w.WriteFile(f, &head, head.len, &done, null) == 0 or done != head.len) return error.WriteFailed;
+    if (w.WriteFile(f, bits.ptr, @intCast(bytes), &done, null) == 0 or done != bytes) return error.WriteFailed;
 }
 
 /// Read a .bmp into the picture, which takes its size.
 pub fn open(path: []const u8) !void {
     const alloc = std.heap.page_allocator;
-    const f = c.fopen(zpath(path), "rb") orelse return error.CannotOpen;
-    defer _ = c.fclose(f);
-    _ = c.fseek(f, 0, 2); // SEEK_END
-    const size: usize = @intCast(c.ftell(f));
-    _ = c.fseek(f, 0, 0);
+    const f = w.CreateFileA(zpath(path), w.GENERIC_READ, w.FILE_SHARE_READ, null, w.OPEN_EXISTING, w.FILE_ATTRIBUTE_NORMAL, null);
+    if (f == w.INVALID_HANDLE_VALUE) return error.CannotOpen;
+    defer _ = w.CloseHandle(f);
+    const size32 = w.GetFileSize(f, null);
+    if (size32 == w.INVALID_FILE_SIZE) return error.CannotOpen;
+    const size: usize = size32;
     const data = try alloc.alloc(u8, size);
     defer alloc.free(data);
-    if (c.fread(data.ptr, 1, size, f) != size) return error.Truncated;
+    var got: u32 = 0;
+    if (w.ReadFile(f, data.ptr, size32, &got, null) == 0 or got != size32) return error.Truncated;
     if (data.len < file_header + info_header or data[0] != 'B' or data[1] != 'M')
         return error.NotABitmap;
     const offset = std.mem.readInt(u32, data[10..14], .little);

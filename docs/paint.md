@@ -342,6 +342,54 @@ the other chequer from the machine's. Both leave the corner the top and the
 left share blank, and both step every other pixel; they simply start on
 opposite ones. The machine is what ween32 follows.
 
+## On the machine itself
+
+```sh
+zig build paint -Dtarget=x86-windows-gnu     # thirty-two bits: NT is not 64
+python3 tools/vm/pe2k.py zig-out/bin/paint.exe
+cp zig-out/bin/paint.exe ~/paintshare/
+# in the guest: Z:\paint.exe
+```
+
+It runs there. Not "compiles for", not "runs under wine" — the same
+`paint.exe` on the Windows 2000 in the emulator, beside the Paint it is a
+copy of, drawing with that machine's own USER32 and GDI32.
+
+Four things had to be true for that, and none of them is about the drawing:
+
+- **Thirty-two bits, and the stdcall that comes with them.** A win32 function
+  on x86 is `__stdcall`, so every declaration says which convention it is —
+  and says it in a way that is still right on the other side, where these
+  names are ween32's and the convention is the platform's own C. Zig's
+  `.winapi` is chosen by the *architecture*, not the system, so writing that
+  on a 64-bit Linux asks for the Microsoft register order and hands the
+  library its arguments in the wrong ones. It segfaults on the first call.
+- **A PE that says NT 4.0.** Modern toolchains stamp 6.0 into the version
+  fields and NT 5.0 refuses anything newer, before a line of the program runs
+  (`tools/vm/pe2k.py`).
+- **No C runtime.** The one a modern toolchain links is the UCRT, whose
+  `api-ms-win-crt-*` this machine has never heard of. Paint reads and writes
+  its .bmp with `CreateFile`, `ReadFile` and `WriteFile` instead — which is
+  what a win32 program does anyway — and links no libc on Windows at all.
+- **A way in and a way out that this machine has.** Zig's own start-up leaves
+  through ntdll's `RtlExitUserProcess`, which arrived with XP; a program that
+  so much as names it is refused by the loader. Paint enters at its own
+  symbol and leaves through `ExitProcess`, and answers the ntdll name itself
+  so that nothing is ever looked up.
+
+What is left is eight KERNEL32 calls, two from ntdll that Windows 2000 does
+have (`NtAllocateVirtualMemory`, `NtFreeVirtualMemory`), and USER32, GDI32,
+COMCTL32 and COMDLG32 — sixty-six, thirty-three, four and three of them, all
+present since NT 4.0.
+
+Checked on it, by hand and by script: the menus and their status-bar lines,
+Attributes with the width already selected, the handles round the page
+dragging out a rubber band and sizing the picture, a rectangle dragged past
+the left of the page stopping at the page's edge, Colors > Edit Colors coming
+up as the system's own box, Save As writing a .bmp to the share — 182x145, the
+size the drag made — and the same file opened back with the picture in it and
+its name in the title bar.
+
 ## What is not there
 
 - **The text toolbar.** It would offer a choice of faces and sizes that
