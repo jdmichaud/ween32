@@ -446,8 +446,12 @@ int ween_x11_probe_dpi(void);
 
 /* ---- controls (controls.c) ----------------------------------------------- */
 
-int ween_ex_edge(const struct ween_wnd *w); /* field-border width, 0 if none */
-void ween_paint_ex_edge(struct ween_wnd *w);
+/* What a window wears outside its client area: WS_EX_CLIENTEDGE's two,
+ * WS_EX_STATICEDGE's one, and WS_BORDER's line on top of either. 0 for a
+ * window with none of them, and for a captioned one, whose border is its
+ * frame. */
+int ween_border_width(const struct ween_wnd *w);
+void ween_paint_border(struct ween_wnd *w);
 int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
@@ -501,6 +505,8 @@ int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
 void ween_client_origin(HWND wnd, int *ox, int *oy);
 HWND ween_top_level(HWND wnd);
 int ween_frame_width(const struct ween_wnd *w); /* scaled, per style */
+/* Whether the window carries a caption — and so draws WS_BORDER as frame. */
+int ween_has_caption(const struct ween_wnd *w);
 HWND ween_focus_get(void);
 /* The next/previous focusable (WS_TABSTOP) child of `dlg`, wrapping. */
 HWND ween_tab_next(HWND dlg, HWND cur, int forward);

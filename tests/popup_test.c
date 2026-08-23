@@ -142,13 +142,13 @@ int main(void)
     {   /* a list box knows how tall a row is, and will say */
         int ih = (int)SendMessageA(g_list, LB_GETITEMHEIGHT, 0, 0);
         CHECK(ih > 0, "the list box says how tall one of its rows is");
-        CHECK((g_list->h - 2 * ween_ex_edge(g_list)) % ih == 0 &&
+        CHECK((g_list->h - 2 * ween_border_width(g_list)) % ih == 0 &&
                   g_list->h <= 90,
               "and trimmed the height it was made with down to whole ones");
         /* made a different size, it still ends on a row rather than in the
          * middle of a name */
         MoveWindow(g_list, 1, 1, 180, 90 + ih + ih / 2, TRUE);
-        CHECK((g_list->h - 2 * ween_ex_edge(g_list)) % ih == 0,
+        CHECK((g_list->h - 2 * ween_border_width(g_list)) % ih == 0,
               "resized, it snaps back to whole rows");
     }
 

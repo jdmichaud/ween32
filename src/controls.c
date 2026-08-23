@@ -9,33 +9,55 @@
 
 #include "ween_internal.h"
 
-/* Non-client edge width of a child window: the two field-border styles. */
-int ween_ex_edge(const struct ween_wnd *w)
+/* What a window wears outside its client area, in pixels: the field border
+ * WS_EX_CLIENTEDGE draws (two), the status-field border WS_EX_STATICEDGE
+ * (one), and WS_BORDER's single line on top of either.
+ *
+ * WS_BORDER counts on a control as much as on a window of its own — it is one
+ * line of COLOR_WINDOWFRAME and one pixel of client area, wherever it is
+ * asked for. A captioned window is the exception: WS_CAPTION *is*
+ * WS_BORDER | WS_DLGFRAME, and that border is drawn as part of the frame. */
+int ween_border_width(const struct ween_wnd *w)
 {
+    int n = 0;
     if (w->ex_style & WS_EX_CLIENTEDGE)
-        return 2;
-    if (w->ex_style & WS_EX_STATICEDGE)
-        return 1;
-    return 0;
+        n = 2;
+    else if (w->ex_style & WS_EX_STATICEDGE)
+        n = 1;
+    if ((w->style & WS_BORDER) && !ween_has_caption(w))
+        n += 1;
+    return n;
 }
 
-/* Paint that edge. WS_EX_CLIENTEDGE is the field border (sunken outer and
- * inner); WS_EX_STATICEDGE is the status-field border (sunken outer only). */
-void ween_paint_ex_edge(struct ween_wnd *w)
+/* Paint it. WS_EX_CLIENTEDGE is the field border (sunken outer and inner);
+ * WS_EX_STATICEDGE is the status-field border (sunken outer only); WS_BORDER
+ * is the flat line, drawn inside whichever of those came first. */
+void ween_paint_border(struct ween_wnd *w)
 {
     struct ween_wnd *top = ween_top_level(w);
-    int ox, oy;
-    if (!ween_ex_edge(w))
+    int ox, oy, all = ween_border_width(w), field;
+    if (!all)
         return;
     ween_client_origin(w, &ox, &oy);
-    ox -= ween_ex_edge(w);
-    oy -= ween_ex_edge(w);
+    ox -= all;
+    oy -= all;
     if (w->ex_style & WS_EX_CLIENTEDGE)
         ween_classic_edge(&top->surface, ox, oy, w->w, w->h, EDGE_SUNKEN,
                           BF_RECT, NULL);
-    else
+    else if (w->ex_style & WS_EX_STATICEDGE)
         ween_classic_edge(&top->surface, ox, oy, w->w, w->h, BDR_SUNKENOUTER,
                           BF_RECT, NULL);
+    field = (w->ex_style & WS_EX_CLIENTEDGE) ? 2
+            : (w->ex_style & WS_EX_STATICEDGE) ? 1
+                                               : 0;
+    if (all > field) { /* WS_BORDER: one line of COLOR_WINDOWFRAME */
+        int x = ox + field, y = oy + field;
+        int cw = w->w - 2 * field, ch = w->h - 2 * field;
+        ween_surface_fill(&top->surface, x, y, cw, 1, WEEN_BLACK);
+        ween_surface_fill(&top->surface, x, y + ch - 1, cw, 1, WEEN_BLACK);
+        ween_surface_fill(&top->surface, x, y, 1, ch, WEEN_BLACK);
+        ween_surface_fill(&top->surface, x + cw - 1, y, 1, ch, WEEN_BLACK);
+    }
 }
 
 /* ---- scroll bars ---------------------------------------------------------
@@ -240,7 +262,7 @@ int ween_wnd_sb_shown(const struct ween_wnd *w, int vert)
 static void wnd_sb_rect(const struct ween_wnd *w, int vert, RECT *r)
 {
     int sz = ween_scroll_metric();
-    int edge = ween_ex_edge(w);
+    int edge = ween_border_width(w);
     int right = w->w - edge, bottom = w->h - edge;
     if (vert) {
         r->left = right - sz;
@@ -258,7 +280,7 @@ static void wnd_sb_rect(const struct ween_wnd *w, int vert, RECT *r)
 void ween_wnd_sb_paint(struct ween_wnd *w)
 {
     struct ween_wnd *top = ween_top_level(w);
-    int ox, oy, edge = ween_ex_edge(w);
+    int ox, oy, edge = ween_border_width(w);
     if (!ween_wnd_sb_shown(w, 0) && !ween_wnd_sb_shown(w, 1))
         return;
     ween_client_origin(w, &ox, &oy);
@@ -300,7 +322,7 @@ static int wnd_sb_which(const struct ween_wnd *w, int wx, int wy)
 
 int ween_wnd_sb_at(const struct ween_wnd *w, int x, int y)
 {
-    int ox, oy, edge = ween_ex_edge(w);
+    int ox, oy, edge = ween_border_width(w);
     ween_client_origin((HWND)w, &ox, &oy);
     return wnd_sb_which(w, x - ox + edge, y - oy + edge);
 }
@@ -329,7 +351,7 @@ static int g_sb_track_vert;
 
 int ween_wnd_sb_mouse(struct ween_wnd *w, UINT msg, int x, int y)
 {
-    int ox, oy, edge = ween_ex_edge(w), wx, wy, vert, at, len;
+    int ox, oy, edge = ween_border_width(w), wx, wy, vert, at, len;
     RECT r;
     ween_sbstate st;
 
@@ -829,7 +851,7 @@ static int edit_margin(HWND wnd)
         return 4;
     for (int i = 0; i < 52; i++)
         sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
-    return (ween_ex_edge(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
+    return (ween_border_width(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
 }
 
 /* The character index nearest an x offset within the text. */
@@ -873,7 +895,7 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     /* Wine's EDIT_SetRectNP: a field-bordered edit gives up one pixel on each
      * side, then the format rect is inset by the margins, which default to
      * half the average character width. */
-    int inset = ween_ex_edge(wnd) ? 1 : 0;
+    int inset = ween_border_width(wnd) ? 1 : 0;
     int margin = 3;
     if (f) {
         static const char alpha[] =
@@ -1495,7 +1517,7 @@ static void lb_whole_items(HWND wnd)
     int ih = item_height(wnd);
     if (wnd->style & LBS_NOINTEGRALHEIGHT)
         return; /* it was told to take the height it was given */
-    int client = wnd->h - 2 * ween_ex_edge(wnd);
+    int client = wnd->h - 2 * ween_border_width(wnd);
     int rem = ih ? client % ih : 0;
     if (wnd->h > ih && rem)
         wnd->h -= rem;
@@ -1818,8 +1840,8 @@ static void combo_list_rect(HWND wnd, int *x, int *y, int *w, int *h)
 {
     int ox, oy;
     ween_client_origin(wnd, &ox, &oy);
-    *x = ox - ween_ex_edge(wnd);
-    *y = oy - ween_ex_edge(wnd) + wnd->h;
+    *x = ox - ween_border_width(wnd);
+    *y = oy - ween_border_width(wnd) + wnd->h;
     *w = wnd->w;
     *h = combo_list_height(wnd);
 }
@@ -1960,7 +1982,7 @@ BOOL GetComboBoxInfo(HWND combo, COMBOBOXINFO *info)
     if (!combo || !info)
         return FALSE;
     it = combo->ctl;
-    edge = ween_ex_edge(combo);
+    edge = ween_border_width(combo);
     GetClientRect(combo, &cr);
     memset(&info->rcItem, 0, sizeof(info->rcItem));
     /* The band the text lives in: the rows the field is put on, and as wide
@@ -2399,7 +2421,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         it = items_of(wnd);
         if (it)
             it->drop_h = wnd->h; /* what it will be when the list is down */
-        wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
+        wnd->h = item_height(wnd) + 4 + 2 * ween_border_width(wnd);
         combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
     case WM_PAINT: {
@@ -2423,7 +2445,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         was = it->images;
         it->images = (HIMAGELIST)lp;
         /* the rows grow to fit the images, and so does the closed control */
-        wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
+        wnd->h = item_height(wnd) + 4 + 2 * ween_border_width(wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)(INT_PTR)was;
     }

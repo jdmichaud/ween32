@@ -260,15 +260,24 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
 
 /* ---- geometry ---------------------------------------------------------- */
 
-static int has_caption(const struct ween_wnd *w)
+/* WS_CAPTION is WS_BORDER | WS_DLGFRAME, so a captioned window has the border
+ * bit set and draws it as part of its frame. Everything else that asks for
+ * WS_BORDER — a window of its own, a control in a dialog — gets the flat line
+ * instead; see ween_border_width. */
+int ween_has_caption(const struct ween_wnd *w)
 {
     return !w->parent && (w->style & WS_CAPTION) == WS_CAPTION;
 }
 
+static int has_caption(const struct ween_wnd *w)
+{
+    return ween_has_caption(w);
+}
+
 /* A window of its own with WS_BORDER and no caption is bordered the way a
  * combo box's dropped list is: one pixel of COLOR_WINDOWFRAME, flat black,
- * rather than the raised edge a menu wears. The client area starts inside
- * it, so what is put at the origin does not sit on the line. */
+ * rather than the raised edge a menu wears. Its own frame paints it; a
+ * control's is painted with its other borders, in ween_paint_border. */
 static int has_flat_border(const struct ween_wnd *w)
 {
     return !w->parent && !has_caption(w) && (w->style & WS_BORDER);
@@ -297,8 +306,8 @@ static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
         *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION) +
               ween_menu_bar_height(w);
     } else {
-        *ox = ween_ex_edge(w) + (has_flat_border(w) ? 1 : 0);
-        *oy = ween_ex_edge(w) + (has_flat_border(w) ? 1 : 0);
+        *ox = ween_border_width(w);
+        *oy = ween_border_width(w);
     }
 }
 
@@ -511,9 +520,8 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    int trail = has_caption(wnd)
-                    ? ween_frame_width(wnd)
-                    : ween_ex_edge(wnd) + (has_flat_border(wnd) ? 1 : 0);
+    int trail = has_caption(wnd) ? ween_frame_width(wnd)
+                                 : ween_border_width(wnd);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
     /* A window's own scroll bars live outside the client area, which is why
@@ -1318,14 +1326,14 @@ static void paint_tree(struct ween_wnd *w)
 
     if (w->parent) {
         /* the frame sits outside the client area: clip it to the window rect */
-        int edge = ween_ex_edge(w);
+        int edge = ween_border_width(w);
         int wx = ox - edge, wy = oy - edge;
         int l = wx > outer.left ? wx : outer.left;
         int t = wy > outer.top ? wy : outer.top;
         int r = wx + w->w < outer.right ? wx + w->w : outer.right;
         int b = wy + w->h < outer.bottom ? wy + w->h : outer.bottom;
         ween_surface_clip(&top->surface, l, t, r - l, b - t);
-        ween_paint_ex_edge(w);
+        ween_paint_border(w);
         ween_wnd_sb_paint(w);
     }
 

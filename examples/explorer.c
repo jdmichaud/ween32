@@ -2020,8 +2020,9 @@ static void show_properties(HWND owner)
     } while (0)
     /* the name, in a box of its own, and then a row per thing */
     /* the name in a box you can type in, as the shell has it */
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 46, 8, 148, 12,
-         IDC_PROP_NAME, ATOM_EDIT, name);
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 46, 8, 148, 12, IDC_PROP_NAME,
+         ATOM_EDIT, name);
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE; /* a field's own sunken border */
     ITEM(WS_CHILD | WS_VISIBLE, 8, 30, 40, 9, 0, ATOM_STATIC, "Type:");
     ITEM(WS_CHILD | WS_VISIBLE, 52, 30, 142, 9, IDC_PROP_TYPE, ATOM_STATIC,
          type);
@@ -2864,10 +2865,11 @@ static void folder_options(HWND owner)
     PUSH(46, 31, 86, 14, IDC_FO_LIKE, "&Like Current Folder");
     PUSH(140, 31, 86, 14, IDC_FO_RESET_ALL, "&Reset All Folders");
     LABEL(7, 62, 100, 9, IDC_FO_VS2, "&Advanced settings:");
-    ITEM(WS_TABSTOP | WS_BORDER | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
+    ITEM(WS_TABSTOP | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
              LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS,
          7, 73, 232, 121, IDC_FO_ADVANCED, 0, NULL);
     items[n - 1].clsname = WC_LISTVIEWA;
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     PUSH(160, 199, 79, 14, IDC_FO_VDEFAULTS, "R&estore Defaults");
     ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I5, ATOM_STATIC, "");
     build_dialog_template(t_view, sizeof(t_view), WS_CHILD | DS_SETFONT, 243,
@@ -2877,10 +2879,11 @@ static void folder_options(HWND owner)
     n = 0;
     memset(items, 0, sizeof(items));
     LABEL(7, 7, 120, 9, 0, "&Registered file types:");
-    ITEM(WS_TABSTOP | WS_BORDER | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
+    ITEM(WS_TABSTOP | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
              LVS_SHOWSELALWAYS,
          7, 18, 232, 87, IDC_FO_TYPES, 0, NULL);
     items[n - 1].clsname = WC_LISTVIEWA;
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     PUSH(129, 110, 52, 14, IDC_FO_NEW, "&New");
     PUSH(187, 110, 52, 14, IDC_FO_DELETE, "&Delete");
     GROUP(7, 132, 232, 76, "Details for extension");
@@ -2906,8 +2909,9 @@ static void folder_options(HWND owner)
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 72, 200, 10, IDC_FO_OFF_REMIND,
          ATOM_BUTTON, "Enable &reminders");
     LABEL(28, 89, 110, 9, IDC_FO_OS2, "Display reminder balloon every");
-    ITEM(WS_TABSTOP | WS_BORDER | ES_RIGHT, 140, 87, 26, 12,
-         IDC_FO_OFF_MINUTES, ATOM_EDIT, "60");
+    ITEM(WS_TABSTOP | ES_RIGHT, 140, 87, 26, 12, IDC_FO_OFF_MINUTES,
+         ATOM_EDIT, "60");
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     LABEL(172, 89, 40, 9, IDC_FO_OS3, "minutes.");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 105, 220, 10, IDC_FO_OFF_SHORTCUT,
          ATOM_BUTTON, "&Place shortcut to Offline Files folder on the desktop");
