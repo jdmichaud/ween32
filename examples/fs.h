@@ -4,7 +4,7 @@
  * it is compiled against, and the POSIX equivalent otherwise. ween32 itself
  * stays a GUI library and knows nothing about files.
  *
- * The whole of it is one struct and three calls:
+ * Listing is one struct and three calls:
  *
  *     fs_dir d;
  *     fs_entry e;
@@ -12,6 +12,10 @@
  *         while (fs_next(&d, &e))
  *             ... e.name, e.is_dir, e.size ...
  *     fs_close(&d);
+ *
+ * and the four things the File and Edit menus do to what they find —
+ * fs_mkdir, fs_rename, fs_delete and fs_copy — each returning zero on
+ * failure, since a shell says so rather than stopping.
  */
 
 #ifndef WEEN32_EXAMPLE_FS_H
@@ -76,16 +80,53 @@ static void fs_close(fs_dir *d)
         FindClose(d->h);
 }
 
+/* The separator, so a path can be put together without knowing which side
+ * this is: a shell shows one and the file system takes the other. */
+#define FS_SEP '\\'
+
+static int fs_mkdir(const char *path)
+{
+    return CreateDirectoryA(path, NULL) != 0;
+}
+
+static int fs_rename(const char *from, const char *to)
+{
+    return MoveFileA(from, to) != 0;
+}
+
+static int fs_delete(const char *path, int is_dir)
+{
+    return is_dir ? RemoveDirectoryA(path) != 0 : DeleteFileA(path) != 0;
+}
+
+static int fs_copy(const char *from, const char *to)
+{
+    return CopyFileA(from, to, TRUE) != 0;
+}
+
+static int fs_exists(const char *path)
+{
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
 #else /* POSIX */
 
 #include <dirent.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef struct {
     DIR *dir;
     char base[512];
 } fs_dir;
+
+static int fs_exists(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0;
+}
 
 static int fs_open(fs_dir *d, const char *path)
 {
@@ -132,6 +173,51 @@ static void fs_close(fs_dir *d)
 {
     if (d->dir)
         closedir(d->dir);
+}
+
+/* The separator, so a path can be put together without knowing which side
+ * this is: a shell shows one and the file system takes the other. */
+#define FS_SEP '/'
+
+static int fs_mkdir(const char *path)
+{
+    return mkdir(path, 0777) == 0;
+}
+
+static int fs_rename(const char *from, const char *to)
+{
+    return rename(from, to) == 0;
+}
+
+static int fs_delete(const char *path, int is_dir)
+{
+    return is_dir ? rmdir(path) == 0 : unlink(path) == 0;
+}
+
+static int fs_copy(const char *from, const char *to)
+{
+    FILE *in, *out;
+    char buf[8192];
+    size_t n;
+    int ok = 1;
+    if (fs_exists(to))
+        return 0; /* never over the top of something that is there */
+    in = fopen(from, "rb");
+    if (!in)
+        return 0;
+    out = fopen(to, "wb");
+    if (!out) {
+        fclose(in);
+        return 0;
+    }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+        if (fwrite(buf, 1, n, out) != n) {
+            ok = 0;
+            break;
+        }
+    fclose(in);
+    fclose(out);
+    return ok;
 }
 
 #endif

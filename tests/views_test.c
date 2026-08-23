@@ -373,6 +373,48 @@ int main(void)
             }
         }
 
+        /* More than one row at a time: Select All picks every one of them,
+         * asking for -1; Ctrl adds a row to what is there, Shift takes the
+         * run from the anchor, and a plain click drops the rest. */
+        {
+            LVITEMA st;
+            int n = 0, i = -1, rows;
+            for (int k = 0; k < 8; k++) { /* the list was emptied earlier */
+                char name[32];
+                sprintf(name, "pick%d.txt", k);
+                add_row(name);
+            }
+            rows = (int)SendMessageA(g_list, LVM_GETITEMCOUNT, 0, 0);
+            memset(&st, 0, sizeof(st));
+            st.mask = LVIF_STATE;
+            st.state = LVIS_SELECTED;
+            st.stateMask = LVIS_SELECTED;
+            SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+            CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == rows,
+                  "asking for -1 picks every row");
+            while ((i = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)i,
+                                          LVNI_SELECTED)) >= 0)
+                n++;
+            CHECK(n == rows, "and they can be walked one after another");
+            st.state = 0;
+            SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+            CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 0,
+                  "and dropped the same way");
+
+            SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(30, 30));
+            SendMessageA(g_list, WM_LBUTTONDOWN, MK_CONTROL,
+                         MAKELPARAM(30, 30 + 3 * 17));
+            CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 2,
+                  "Ctrl and a click adds one to what is picked");
+            SendMessageA(g_list, WM_LBUTTONDOWN, MK_SHIFT,
+                         MAKELPARAM(30, 30 + 5 * 17));
+            CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) > 2,
+                  "Shift takes the run from the one before it");
+            SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(30, 30));
+            CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
+                  "and a plain click drops the rest");
+        }
+
         /* a press away from any divider is a sort, as before */
         SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(60, 4));
         SendMessageA(g_list, WM_LBUTTONUP, 0, MAKELPARAM(60, 4));

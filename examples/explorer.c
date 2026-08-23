@@ -53,9 +53,63 @@ enum {
     IDM_CTX_REFRESH,
     IDM_CLOSE,
     IDM_ABOUT,
+
+    /* File */
+    IDM_NEW_FOLDER,
+    IDM_NEW_SHORTCUT,
+    IDM_CREATE_SHORTCUT,
+    IDM_RENAME,
+    /* Edit */
+    IDM_CUT,
+    IDM_COPY,
+    IDM_PASTE,
+    IDM_PASTE_SHORTCUT,
+    IDM_SELECT_ALL,
+    IDM_INVERT,
+    /* View: the five ways of showing a folder, in the order the menu has
+     * them — the code leans on that, so they stay together and in order */
+    IDM_VIEW_LARGE,
+    IDM_VIEW_SMALL,
+    IDM_VIEW_LIST,
+    IDM_VIEW_DETAILS,
+    IDM_VIEW_THUMBS,
+    IDM_TOOLBAR_STD,
+    IDM_TOOLBAR_ADDR,
+    IDM_TOOLBAR_LINKS,
+    IDM_TOOLBAR_CUSTOMIZE,
+    IDM_STATUSBAR,
+    IDM_BAR_SEARCH,
+    IDM_BAR_FAVORITES,
+    IDM_BAR_HISTORY,
+    IDM_BAR_TIP,
+    /* and the four orders it can be in, in the same way */
+    IDM_ARRANGE_NAME,
+    IDM_ARRANGE_TYPE,
+    IDM_ARRANGE_SIZE,
+    IDM_ARRANGE_DATE,
+    IDM_AUTO_ARRANGE,
+    IDM_LINEUP,
+    IDM_CHOOSE_COLUMNS,
+    IDM_CUSTOMIZE_FOLDER,
+    IDM_HOME,
+    IDM_REFRESH,
+    /* Favorites */
+    IDM_FAV_ADD,
+    IDM_FAV_ORGANIZE,
+    IDM_FAV_MSN,
+    IDM_FAV_RADIO,
+    IDM_FAV_WEB,
+    /* Tools */
+    IDM_MAP_DRIVE,
+    IDM_DISCONNECT,
+    IDM_SYNCHRONIZE,
+    IDM_FOLDER_OPTIONS,
+    /* Help */
+    IDM_HELP_TOPICS,
+
     /* one per title of the menu bar, since a toolbar's buttons are known by
      * their command and these are the buttons the bar is made of */
-    IDM_MENU_FIRST = 300
+    IDM_MENU_FIRST = 400
 };
 
 /* the icons the shell shows, by their number in assets/icons */
@@ -1351,24 +1405,25 @@ static HMENU build_background_menu(void)
     HMENU arrange = CreatePopupMenu();
     HMENU new_menu = CreatePopupMenu();
 
-    AppendMenuA(view, MF_STRING, 0, "Lar&ge Icons");
-    AppendMenuA(view, MF_STRING, 0, "S&mall Icons");
-    AppendMenuA(view, MF_STRING, 0, "&List");
-    AppendMenuA(view, MF_STRING, 0, "&Details");
-    AppendMenuA(view, MF_STRING, 0, "Thu&mbnails");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_LARGE, "Lar&ge Icons");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_SMALL, "S&mall Icons");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_LIST, "&List");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_DETAILS, "&Details");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_THUMBS, "Thu&mbnails");
     /* Details is the view this explorer is in, and a menu says which of a set
      * it is on with a bullet rather than a tick */
     CheckMenuRadioItem(view, 0, 4, 3, MF_BYPOSITION);
 
-    AppendMenuA(arrange, MF_STRING, 0, "by &Name");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Type");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Size");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Date");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_NAME, "by &Name");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_TYPE, "by &Type");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_SIZE, "by &Size");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_DATE, "by &Date");
     AppendMenuA(arrange, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(arrange, MF_STRING | MF_GRAYED, 0, "&Auto Arrange");
+    AppendMenuA(arrange, MF_STRING | MF_GRAYED, IDM_AUTO_ARRANGE,
+                "&Auto Arrange");
 
-    AppendMenuA(new_menu, MF_STRING, 0, "&Folder");
-    AppendMenuA(new_menu, MF_STRING, 0, "&Shortcut");
+    AppendMenuA(new_menu, MF_STRING, IDM_NEW_FOLDER, "&Folder");
+    AppendMenuA(new_menu, MF_STRING, IDM_NEW_SHORTCUT, "&Shortcut");
     AppendMenuA(new_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(new_menu, MF_STRING, 0, "Briefcase");
     AppendMenuA(new_menu, MF_STRING, 0, "Bitmap Image");
@@ -1380,10 +1435,11 @@ static HMENU build_background_menu(void)
     AppendMenuA(m, MF_POPUP, (UINT_PTR)view, "&View");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
     AppendMenuA(m, MF_POPUP, (UINT_PTR)arrange, "Arrange &Icons");
-    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "Li&ne Up Icons");
+    AppendMenuA(m, MF_STRING | MF_GRAYED, IDM_LINEUP, "Li&ne Up Icons");
     AppendMenuA(m, MF_STRING, IDM_CTX_REFRESH, "R&efresh");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(m, MF_STRING, 0, "C&ustomize This Folder...");
+    AppendMenuA(m, MF_STRING, IDM_CUSTOMIZE_FOLDER,
+                "C&ustomize This Folder...");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
     AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "&Paste");
     AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "Paste &Shortcut");
@@ -1730,87 +1786,99 @@ static void build_menu(HWND w)
     HMENU arrange = CreatePopupMenu(), links = CreatePopupMenu();
     HMENU media = CreatePopupMenu();
 
-    AppendMenuA(newmenu, MF_STRING, 0, "&Folder");
-    AppendMenuA(newmenu, MF_STRING, 0, "&Shortcut");
+    AppendMenuA(newmenu, MF_STRING, IDM_NEW_FOLDER, "&Folder");
+    AppendMenuA(newmenu, MF_STRING, IDM_NEW_SHORTCUT, "&Shortcut");
     AppendMenuA(file, MF_POPUP, (UINT_PTR)newmenu, "Ne&w");
     AppendMenuA(file, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(file, MF_STRING | MF_GRAYED, 0, "Create &Shortcut");
-    AppendMenuA(file, MF_STRING, 0, "&Delete");
-    AppendMenuA(file, MF_STRING, 0, "Rena&me");
+    AppendMenuA(file, MF_STRING, IDM_CREATE_SHORTCUT, "Create &Shortcut");
+    AppendMenuA(file, MF_STRING, IDM_DELETE, "&Delete");
+    AppendMenuA(file, MF_STRING, IDM_RENAME, "Rena&me");
     AppendMenuA(file, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
     AppendMenuA(file, MF_SEPARATOR, 0, NULL);
     AppendMenuA(file, MF_STRING, IDM_CLOSE, "&Close");
 
-    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "&Undo\tCtrl+Z");
+    /* Undo is named after what it would undo — "Undo Delete", "Undo Rename" —
+     * and WM_INITMENU writes that name in. */
+    AppendMenuA(edit, MF_STRING, IDM_UNDO, "&Undo\tCtrl+Z");
     AppendMenuA(edit, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(edit, MF_STRING, 0, "Cu&t\tCtrl+X");
-    AppendMenuA(edit, MF_STRING, 0, "&Copy\tCtrl+C");
-    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "&Paste\tCtrl+V");
-    AppendMenuA(edit, MF_STRING | MF_GRAYED, 0, "Paste &Shortcut");
+    AppendMenuA(edit, MF_STRING, IDM_CUT, "Cu&t\tCtrl+X");
+    AppendMenuA(edit, MF_STRING, IDM_COPY, "&Copy\tCtrl+C");
+    AppendMenuA(edit, MF_STRING, IDM_PASTE, "&Paste\tCtrl+V");
+    AppendMenuA(edit, MF_STRING, IDM_PASTE_SHORTCUT, "Paste &Shortcut");
     AppendMenuA(edit, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(edit, MF_STRING, 0, "Select &All\tCtrl+A");
-    AppendMenuA(edit, MF_STRING, 0, "&Invert Selection");
+    AppendMenuA(edit, MF_STRING, IDM_COPYTO, "Copy To F&older...");
+    AppendMenuA(edit, MF_STRING, IDM_MOVETO, "Mo&ve To Folder...");
+    AppendMenuA(edit, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(edit, MF_STRING, IDM_SELECT_ALL, "Select &All\tCtrl+A");
+    AppendMenuA(edit, MF_STRING, IDM_INVERT, "&Invert Selection");
 
-    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, 0, "&Standard Buttons");
-    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, 0, "&Address Bar");
-    AppendMenuA(toolbars, MF_STRING, 0, "&Links");
+    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, IDM_TOOLBAR_STD,
+                "&Standard Buttons");
+    AppendMenuA(toolbars, MF_STRING | MF_CHECKED, IDM_TOOLBAR_ADDR,
+                "&Address Bar");
+    AppendMenuA(toolbars, MF_STRING, IDM_TOOLBAR_LINKS, "&Links");
     AppendMenuA(toolbars, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(toolbars, MF_STRING, 0, "&Customize...");
-    AppendMenuA(bars, MF_STRING, 0, "&Search");
-    AppendMenuA(bars, MF_STRING, 0, "&Favorites");
-    AppendMenuA(bars, MF_STRING, 0, "&History");
+    AppendMenuA(toolbars, MF_STRING, IDM_TOOLBAR_CUSTOMIZE, "&Customize...");
+    AppendMenuA(bars, MF_STRING, IDM_BAR_SEARCH, "&Search");
+    AppendMenuA(bars, MF_STRING, IDM_BAR_FAVORITES, "&Favorites");
+    AppendMenuA(bars, MF_STRING, IDM_BAR_HISTORY, "&History");
     AppendMenuA(bars, MF_STRING | MF_CHECKED, IDM_FOLDERS, "F&olders");
     AppendMenuA(bars, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(bars, MF_STRING, 0, "&Tip of the Day");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Name");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Type");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Size");
-    AppendMenuA(arrange, MF_STRING, 0, "by &Date");
+    AppendMenuA(bars, MF_STRING, IDM_BAR_TIP, "&Tip of the Day");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_NAME, "by &Name");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_TYPE, "by &Type");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_SIZE, "by &Size");
+    AppendMenuA(arrange, MF_STRING, IDM_ARRANGE_DATE, "by &Date");
     AppendMenuA(arrange, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(arrange, MF_STRING | MF_GRAYED, 0, "&Auto Arrange");
-    AppendMenuA(goto_menu, MF_STRING, 0, "&Back\tAlt+Left Arrow");
-    AppendMenuA(goto_menu, MF_STRING | MF_GRAYED, 0, "&Forward\tAlt+Right Arrow");
+    AppendMenuA(arrange, MF_STRING | MF_GRAYED, IDM_AUTO_ARRANGE,
+                "&Auto Arrange");
+    AppendMenuA(goto_menu, MF_STRING, IDM_BACK, "&Back\tAlt+Left Arrow");
+    AppendMenuA(goto_menu, MF_STRING, IDM_FORWARD,
+                "&Forward\tAlt+Right Arrow");
     AppendMenuA(goto_menu, MF_STRING, IDM_UP, "&Up One Level");
     AppendMenuA(goto_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(goto_menu, MF_STRING, 0, "&Home Page\tAlt+Home");
+    AppendMenuA(goto_menu, MF_STRING, IDM_HOME, "&Home Page\tAlt+Home");
     AppendMenuA(view, MF_POPUP, (UINT_PTR)toolbars, "&Toolbars");
-    AppendMenuA(view, MF_STRING | MF_CHECKED, 0, "Status &Bar");
+    AppendMenuA(view, MF_STRING | MF_CHECKED, IDM_STATUSBAR, "Status &Bar");
     AppendMenuA(view, MF_POPUP, (UINT_PTR)bars, "&Explorer Bar");
     AppendMenuA(view, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(view, MF_STRING, 0, "Lar&ge Icons");
-    AppendMenuA(view, MF_STRING, 0, "S&mall Icons");
-    AppendMenuA(view, MF_STRING, 0, "&List");
-    AppendMenuA(view, MF_STRING, 0, "&Details");
-    AppendMenuA(view, MF_STRING, 0, "Thu&mbnails");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_LARGE, "Lar&ge Icons");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_SMALL, "S&mall Icons");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_LIST, "&List");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_DETAILS, "&Details");
+    AppendMenuA(view, MF_STRING, IDM_VIEW_THUMBS, "Thu&mbnails");
     CheckMenuRadioItem(view, 4, 8, 7, MF_BYPOSITION);
     AppendMenuA(view, MF_SEPARATOR, 0, NULL);
     AppendMenuA(view, MF_POPUP, (UINT_PTR)arrange, "Arrange &Icons");
-    AppendMenuA(view, MF_STRING | MF_GRAYED, 0, "Line &Up Icons");
+    AppendMenuA(view, MF_STRING | MF_GRAYED, IDM_LINEUP, "Line &Up Icons");
     AppendMenuA(view, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(view, MF_STRING, 0, "&Choose Columns...");
-    AppendMenuA(view, MF_STRING, 0, "Customi&ze This Folder...");
+    AppendMenuA(view, MF_STRING, IDM_CHOOSE_COLUMNS, "&Choose Columns...");
+    AppendMenuA(view, MF_STRING, IDM_CUSTOMIZE_FOLDER,
+                "Customi&ze This Folder...");
     AppendMenuA(view, MF_SEPARATOR, 0, NULL);
     AppendMenuA(view, MF_POPUP, (UINT_PTR)goto_menu, "&Go To");
-    AppendMenuA(view, MF_STRING, 0, "&Refresh");
+    AppendMenuA(view, MF_STRING, IDM_REFRESH, "&Refresh");
 
     AppendMenuA(links, MF_STRING | MF_GRAYED, 0, "(empty)");
     AppendMenuA(media, MF_STRING | MF_GRAYED, 0, "(empty)");
-    AppendMenuA(favorites, MF_STRING, 0, "&Add to Favorites...");
-    AppendMenuA(favorites, MF_STRING, 0, "&Organize Favorites...");
+    AppendMenuA(favorites, MF_STRING, IDM_FAV_ADD, "&Add to Favorites...");
+    AppendMenuA(favorites, MF_STRING, IDM_FAV_ORGANIZE,
+                "&Organize Favorites...");
     AppendMenuA(favorites, MF_SEPARATOR, 0, NULL);
     AppendMenuA(favorites, MF_POPUP, (UINT_PTR)links, "Links");
     AppendMenuA(favorites, MF_POPUP, (UINT_PTR)media, "Media");
-    AppendMenuA(favorites, MF_STRING, 0, "MSN");
-    AppendMenuA(favorites, MF_STRING, 0, "Radio Station Guide");
-    AppendMenuA(favorites, MF_STRING, 0, "Web Events");
+    AppendMenuA(favorites, MF_STRING, IDM_FAV_MSN, "MSN");
+    AppendMenuA(favorites, MF_STRING, IDM_FAV_RADIO, "Radio Station Guide");
+    AppendMenuA(favorites, MF_STRING, IDM_FAV_WEB, "Web Events");
 
-    AppendMenuA(tools, MF_STRING, 0, "&Map Network Drive...");
-    AppendMenuA(tools, MF_STRING, 0, "&Disconnect Network Drive...");
-    AppendMenuA(tools, MF_STRING, 0, "&Synchronize...");
+    AppendMenuA(tools, MF_STRING, IDM_MAP_DRIVE, "&Map Network Drive...");
+    AppendMenuA(tools, MF_STRING, IDM_DISCONNECT,
+                "&Disconnect Network Drive...");
+    AppendMenuA(tools, MF_STRING, IDM_SYNCHRONIZE, "&Synchronize...");
     AppendMenuA(tools, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(tools, MF_STRING, 0, "F&older Options...");
+    AppendMenuA(tools, MF_STRING, IDM_FOLDER_OPTIONS, "F&older Options...");
 
-    AppendMenuA(help, MF_STRING, 0, "&Help Topics");
+    AppendMenuA(help, MF_STRING, IDM_HELP_TOPICS, "&Help Topics");
     AppendMenuA(help, MF_SEPARATOR, 0, NULL);
     AppendMenuA(help, MF_STRING, IDM_ABOUT, "&About Windows");
 
@@ -2277,7 +2345,7 @@ static void build_views(HWND w)
      * which is how the machine moves between them. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT |
-                                 LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+                                 LVS_SHOWSELALWAYS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 

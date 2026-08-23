@@ -2230,8 +2230,10 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 typedef struct {
     char *text[4];
-    int image; /* index into the view's image list, -1 for none */
-    int cut;   /* LVIS_CUT: drawn ghosted, which is how a hidden file looks */
+    int image;    /* index into the view's image list, -1 for none */
+    int cut;      /* LVIS_CUT: drawn ghosted, which is how a hidden file looks */
+    int selected; /* LVIS_SELECTED, per row: a list without LVS_SINGLESEL can
+                   * have any number of them, which is what Select All is for */
 } ween_lvrow;
 
 typedef struct {
@@ -2239,7 +2241,10 @@ typedef struct {
     char *col[4];
     int width[4], fmt[4], ncol;
     ween_lvrow *row;
-    int nrow, caprow, sel;
+    int nrow, caprow;
+    int sel;      /* 1-based: the row last picked, which a shell shows in its
+                   * status bar and which Shift extends from. What is drawn
+                   * selected is each row's own flag. */
     int focus;    /* 1-based: the row an arrow key moves from, which outlives
                    * the selection — clicking a file's size clears the one and
                    * leaves the other where it was */
@@ -2285,6 +2290,41 @@ static int lv_item_h(HWND wnd, const ween_list *l)
     if (l && l->images)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
     return (icon_h > th ? icon_h : th) + 1;
+}
+
+/* Selecting rows. A list without LVS_SINGLESEL can have any number picked at
+ * once — Ctrl adds one, Shift takes the run from the anchor, and everything
+ * else picks one and drops the rest. */
+static void lv_select_none(ween_list *l)
+{
+    for (int i = 0; i < l->nrow; i++)
+        l->row[i].selected = 0;
+}
+
+static void lv_select_one(ween_list *l, int row)
+{
+    lv_select_none(l);
+    if (row >= 0 && row < l->nrow)
+        l->row[row].selected = 1;
+    l->sel = row + 1;
+}
+
+static void lv_select_range(ween_list *l, int from, int to)
+{
+    int a = from < to ? from : to, b = from < to ? to : from;
+    lv_select_none(l);
+    for (int i = a; i <= b; i++)
+        if (i >= 0 && i < l->nrow)
+            l->row[i].selected = 1;
+}
+
+/* How many are picked, and the first of them. */
+static int lv_selected_count(const ween_list *l)
+{
+    int n = 0;
+    for (int i = 0; i < l->nrow; i++)
+        n += l->row[i].selected != 0;
+    return n;
 }
 
 /* Columns, and every row's cells: the list view owns all of those strings. */
@@ -2605,7 +2645,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                                        : 0;
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
         int y = oy + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + (i - l->top) * ih;
-        int selected = i == l->sel - 1 && sel_state; /* sel is 1-based */
+        int selected = l->row[i].selected && sel_state;
         /* The caret is drawn on the row the arrows would move from, selected
          * or not — but only once the keyboard has been used, which is the same
          * rule that keeps a menu's underlines hidden until then. */
@@ -2735,6 +2775,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* An arrow starts from the caret rather than from the selection: a
          * click on a row's size cell drops the selection but leaves the caret
          * on that row, and the next arrow moves from there. */
+        {
+        int anchor = l->sel ? l->sel : l->focus;
         l->sel = l->focus;
         switch (wp) {
         case VK_DOWN:
@@ -2765,6 +2807,12 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return DefWindowProcA(wnd, msg, wp, lp);
         }
         l->focus = l->sel;
+        /* the arrow moves the one that is picked, unless Shift is held, which
+         * takes the run from where it started instead */
+        if (!(wnd->style & LVS_SINGLESEL) && (lp & 1))
+            lv_select_range(l, anchor - 1, l->sel - 1);
+        else
+            lv_select_one(l, l->sel - 1);
         ween_ui_focus_cues = 1; /* the keyboard has been used, so it shows */
         /* keep the selection in view, which is the whole point of moving it */
         if (l->sel) {
@@ -2775,6 +2823,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         InvalidateRect(wnd, NULL, FALSE);
         notify_parent(wnd, LVN_ITEMCHANGED);
+        }
         return 0;
 
     case WM_LBUTTONDOWN: {
@@ -2851,12 +2900,23 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         i = lv_item_hit(wnd, l, mx - l->scroll_x, my, NULL);
         if (i >= 0) {
-            l->sel = l->focus = i + 1;
+            int single = (wnd->style & LVS_SINGLESEL) != 0;
+            int ctrl = (wp & MK_CONTROL) != 0, shift = (wp & MK_SHIFT) != 0;
+            if (!single && ctrl) { /* add this one, keep the rest */
+                l->row[i].selected = !l->row[i].selected;
+                l->sel = i + 1;
+            } else if (!single && shift && l->sel) {
+                lv_select_range(l, l->sel - 1, i); /* the run from the anchor */
+            } else {
+                lv_select_one(l, i);
+            }
+            l->focus = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
-        } else if (l->sel) {
+        } else if (lv_selected_count(l)) {
             /* a press on a row's other cells, or under the last row, drops
              * the selection and keeps the caret where it was */
+            lv_select_none(l);
             l->sel = 0;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
@@ -2887,7 +2947,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0; /* the bars are not items */
         i = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, NULL);
         if (i >= 0) {
-            l->sel = l->focus = i + 1;
+            lv_select_one(l, i);
+            l->focus = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, NM_DBLCLK);
         }
@@ -2946,12 +3007,13 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         if (l && SendMessageA(wnd, LVM_HITTEST, 0, (LPARAM)&hi) >= 0) {
-            if (l->sel != hi.iItem + 1) {
-                l->sel = l->focus = hi.iItem + 1;
+            if (!l->row[hi.iItem].selected) {
+                lv_select_one(l, hi.iItem);
+                l->focus = hi.iItem + 1;
                 InvalidateRect(wnd, NULL, FALSE);
                 notify_parent(wnd, LVN_ITEMCHANGED);
             }
-        } else if (l && l->sel) {
+        } else if (l && lv_selected_count(l)) {
             /* off every label: the selection goes, as it does for the left
              * button, and the menu that follows is the folder's own */
             l->sel = 0;
@@ -3084,23 +3146,35 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case LVM_SETITEMSTATE: {
+        /* -1 means every row, which is how Select All is asked for and how a
+         * selection is dropped wholesale. */
         const LVITEMA *item = (const LVITEMA *)lp;
+        int at = (int)wp, from, to;
         l = list_of(wnd);
-        /* the selection only shows once the control has been clicked, as an
-         * unfocused list view does not paint one */
-        if (l && item && (item->state & LVIS_SELECTED) &&
-            ween_focus_get() == wnd)
-            l->sel = l->focus = (int)wp + 1;
-        else if (l && item && (item->stateMask & LVIS_SELECTED) &&
-                 !(item->state & LVIS_SELECTED) && l->sel) {
-            l->sel = 0; /* asked to clear it, which is how a shell drops one */
+        if (!l || !item)
+            return FALSE;
+        from = at < 0 ? 0 : at;
+        to = at < 0 ? l->nrow - 1 : at;
+        if (item->stateMask & LVIS_SELECTED) {
+            int on = (item->state & LVIS_SELECTED) != 0;
+            for (int i = from; i <= to && i < l->nrow; i++)
+                if (i >= 0)
+                    l->row[i].selected = on;
+            if (on && at >= 0)
+                l->sel = at + 1;
+            else if (!on)
+                l->sel = at < 0 ? 0 : l->sel;
             InvalidateRect(wnd, NULL, FALSE);
         }
-        if (l && item && (item->state & LVIS_FOCUSED))
-            l->focus = (int)wp + 1;
-        if (l && item && (item->stateMask & LVIS_CUT) && (int)wp >= 0 &&
-            (int)wp < l->nrow) {
-            l->row[(int)wp].cut = (item->state & LVIS_CUT) != 0;
+        if (item->stateMask & LVIS_FOCUSED) {
+            if (item->state & LVIS_FOCUSED)
+                l->focus = at + 1;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        if (item->stateMask & LVIS_CUT) {
+            for (int i = from; i <= to && i < l->nrow; i++)
+                if (i >= 0)
+                    l->row[i].cut = (item->state & LVIS_CUT) != 0;
             InvalidateRect(wnd, NULL, FALSE);
         }
         return TRUE;
@@ -3121,20 +3195,28 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         return TRUE;
+    case LVM_GETSELECTEDCOUNT:
+        l = list_of(wnd);
+        return l ? lv_selected_count(l) : 0;
     case LVM_GETITEMCOUNT:
         l = list_of(wnd);
         return l ? l->nrow : 0;
     case LVM_GETNEXTITEM:
-        /* the selected row, or the one the caret is on — which are not always
-         * the same row, and after a click off a label not always both there */
+        /* The next row after wp with what lParam asks for — which is how a
+         * list with more than one selected is walked: start at -1 and keep
+         * asking until it says -1 back. */
         l = list_of(wnd);
         if (!l)
             return -1;
-        if (lp & LVNI_SELECTED)
-            return l->sel ? l->sel - 1 : -1;
+        if (lp & LVNI_SELECTED) {
+            for (int i = (int)wp + 1; i < l->nrow; i++)
+                if (l->row[i].selected)
+                    return i;
+            return -1;
+        }
         if (lp & LVNI_FOCUSED)
-            return l->focus ? l->focus - 1 : -1;
-        return -1;
+            return (l->focus && (int)wp < l->focus - 1) ? l->focus - 1 : -1;
+        return (int)wp + 1 < l->nrow ? (int)wp + 1 : -1;
     case LVM_SETCOLUMNA: {
         const LVCOLUMNA *col = (const LVCOLUMNA *)lp;
         int i = (int)wp;

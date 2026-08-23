@@ -1501,6 +1501,10 @@ static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under)
     }
 }
 
+/* What is held down as far as the backend has told us: the events carry it,
+ * and a mouse message passes it on in its wParam the way win32 does. */
+static int g_mods;
+
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
     int ox, oy;
@@ -1522,7 +1526,8 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
         msg = WM_LBUTTONDBLCLK;
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
-    post_msg(dst, msg, 0, MAKELPARAM((WORD)(x - ox), (WORD)(y - oy)));
+    post_msg(dst, msg, (WPARAM)g_mods,
+             MAKELPARAM((WORD)(x - ox), (WORD)(y - oy)));
 }
 
 /* Grow or shrink the top-level window: the surface follows the backend, and
@@ -1864,6 +1869,9 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
          ev->kind == WEEN_EV_WHEEL || ev->kind == WEEN_EV_CLOSE))
         return;
 
+    /* Every event says what was held when it happened; a mouse message passes
+     * that on as win32 does, in the low bits of its wParam. */
+    g_mods = (ev->shift ? MK_SHIFT : 0) | (ev->ctrl ? MK_CONTROL : 0);
     switch (ev->kind) {
     case WEEN_EV_EXPOSE:
         top->dirty = 1;

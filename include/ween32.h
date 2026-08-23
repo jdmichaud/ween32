@@ -256,7 +256,12 @@ typedef struct tagCREATESTRUCTA {
  * coordinates — which is where a context menu goes. DefWindowProc sends it,
  * so a window that does not want one need do nothing. */
 #define WM_CONTEXTMENU 0x007B
+/* What was held when a mouse message was sent, in its wParam — a list view
+ * asks, because Ctrl adds to a selection and Shift extends it. */
+#define MK_LBUTTON 0x0001
 #define MK_RBUTTON 0x0002
+#define MK_SHIFT 0x0004
+#define MK_CONTROL 0x0008
 /* A window is only sent double-click messages if its class asked for them.
  * Without this the second of two quick clicks arrives as another plain
  * WM_LBUTTONDOWN, which is what a control that does not care about double
@@ -556,6 +561,7 @@ typedef struct {
 #define LVM_SETIMAGELIST (LVM_FIRST + 3)
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
 #define LVM_GETITEMCOUNT (LVM_FIRST + 4)
+#define LVM_GETSELECTEDCOUNT (LVM_FIRST + 50)
 #define LVM_GETNEXTITEM (LVM_FIRST + 12)
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
 #define LVM_GETHEADER (LVM_FIRST + 31)
