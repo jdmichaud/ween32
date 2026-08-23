@@ -3476,12 +3476,16 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
     if (x < 2)
         return -1;
     if (lv_check_w(l)) { /* the box before everything else */
-        if (x < 2 + WEEN_LV_CHECK) {
+        /* the whole state column answers for the box in it, not just the
+         * thirteen pixels the box itself is drawn on */
+        if (x < 2 + lv_check_w(l)) {
             if (flags)
                 *flags = LVHT_ONITEMSTATEICON;
             return row;
         }
-        indent += lv_check_w(l);
+        /* and the label starts where the paint puts it: two past the box
+         * when the box is all that comes before it */
+        indent += lv_check_w(l) + (indent ? 0 : 2);
     }
     if (l->images && l->row[row].image >= 0 &&
         x < 2 + lv_check_w(l) + icon_w) {
