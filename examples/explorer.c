@@ -3241,8 +3241,32 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                                   LVNI_SELECTED));
             return 0;
         }
-        if (flags & MF_POPUP)
+        if (flags & MF_POPUP) {
+            /* a submenu is named by its place, not by a command, so what it
+             * is has to be read back off the menu it is in */
+            static const struct {
+                const char *label, *help;
+            } subs[] = {
+                { "New", "Contains commands for creating new items." },
+                { "Toolbars", "Shows or hides toolbars." },
+                { "Explorer Bar", "Shows or hides an Explorer bar." },
+                { "Arrange Icons", "Arranges items in the window." },
+                { "Go To", "Goes to another page." },
+                { "Send To", "Sends the selected items to another place." },
+            };
+            char label[64], plain[64];
+            size_t j = 0;
+            GetMenuStringA((HMENU)lp, id, label, (int)sizeof(label),
+                           MF_BYPOSITION);
+            for (const char *q = label; *q && j < sizeof(plain) - 1; q++)
+                if (*q != '&')
+                    plain[j++] = *q;
+            plain[j] = 0;
             help = "Contains commands for working with the selected items.";
+            for (size_t k = 0; k < sizeof(subs) / sizeof(*subs); k++)
+                if (!strcmp(plain, subs[k].label))
+                    help = subs[k].help;
+        }
         else if (flags & MF_SEPARATOR)
             help = "";
         else
