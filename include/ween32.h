@@ -418,6 +418,10 @@ typedef struct tagCOMBOBOXEXITEMA {
     LPARAM lParam;
 } COMBOBOXEXITEMA;
 #define CB_SETCURSEL 0x014E
+/* Drop the list, or put it away, without the button being pressed — which is
+ * how a list of suggestions comes up as you type. */
+#define CB_SHOWDROPDOWN 0x014F
+#define CB_GETDROPPEDSTATE 0x0157
 #define CBN_SELCHANGE 1
 #define CBN_EDITCHANGE 5
 #define CBN_DROPDOWN 7

@@ -1304,13 +1304,12 @@ static int combo_text_is_sel(ween_items *it)
 static int combo_edit_x(HWND wnd, ween_items *it)
 {
     /* Where the text goes, which with no margin is where the field goes: four
-     * past the picture, or two in when there is none — the two places the
-     * combo's own painting used to put it. */
-    if (it && it->images && combo_text_is_sel(it) && it->cursel >= 0 &&
-        it->image[it->cursel] >= 0)
-        return 1 + WEEN_CBEX_IMAGE + 4;
+     * past the picture, or two in when the control has no pictures at all.
+     * It does not move when the picture stops being drawn — type over an
+     * address bar on the machine and the folder's icon goes, but the space it
+     * stood in stays and the text keeps its inset. */
     (void)wnd;
-    return 2;
+    return it && it->images ? 1 + WEEN_CBEX_IMAGE + 4 : 2;
 }
 
 /* The field of an editable combo: an EDIT over everything but the button and
@@ -1375,7 +1374,7 @@ static void combo_show_sel(HWND wnd, ween_items *it)
     SetWindowTextA(it->edit, t);
     strncpy(it->was, t, sizeof(it->was) - 1);
     it->was[sizeof(it->was) - 1] = 0;
-    combo_edit(wnd); /* the picture is back, so the field starts past it */
+    (void)wnd;
 }
 
 static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -1404,7 +1403,8 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 combo_show_sel(wnd, it); /* back to what it was */
                 combo_end_edit(wnd, it, CBENF_ESCAPE, -1);
             } else if (HIWORD(wp) == EN_CHANGE) {
-                combo_edit(wnd); /* the picture comes and goes with the text */
+                /* the picture goes when the text is no longer that item's,
+                 * and comes back when it is — the field stays where it is */
                 InvalidateRect(wnd, NULL, FALSE);
                 if (wnd->parent)
                     SendMessageA(wnd->parent, WM_COMMAND,
@@ -1581,6 +1581,21 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return at;
     }
+    case CB_SHOWDROPDOWN:
+        it = items_of(wnd);
+        if (wp && it && it->count) {
+            g_dropped = wnd;
+            it->track = -1;
+            it->opened = 1;
+        } else if (g_dropped == wnd) {
+            g_dropped = NULL;
+            if (it)
+                it->track = -1;
+        }
+        ween_top_level(wnd)->dirty = 1;
+        return 0;
+    case CB_GETDROPPEDSTATE:
+        return g_dropped == wnd;
     case CB_RESETCONTENT:
         /* Emptying it takes the selection with it, so the field goes blank
          * rather than keeping the item that was there. An app that refills a

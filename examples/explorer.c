@@ -1051,6 +1051,7 @@ static char g_clip[SEL_MAX][PATH_MAX_LEN];
 static int g_clip_n, g_clip_cut;
 
 static void show_directory(const char *path);
+static void tree_follow(const char *path);
 
 /* Read this folder again, keeping where we are: what a command has changed
  * on disk shows up because the list is filled from disk again. */
@@ -1321,6 +1322,98 @@ static const char *command_help(UINT id)
     }
 }
 
+/* ---- the address bar's suggestions ----------------------------------------
+ *
+ * Typing a path offers what it could be: everything in the folder named so
+ * far whose name starts with what has been typed. The shell does this with
+ * its own window; here the combo's own list is refilled, which is what an
+ * application can do with what a combo box offers.
+ */
+static void address_suggest(void)
+{
+    HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0,
+                                             0);
+    char typed[PATH_MAX_LEN], dir[PATH_MAX_LEN];
+    const char *leaf;
+    size_t dirlen;
+    fs_dir d;
+    fs_entry e;
+    int n = 0;
+    if (!field)
+        return;
+    GetWindowTextA(field, typed, (int)sizeof(typed));
+    /* only a path can be completed: a bare name is the folder we are in and
+     * has nothing to be completed against */
+    leaf = strrchr(typed, FS_SEP);
+    if (!leaf) {
+        SendMessageA(g_address, CB_SHOWDROPDOWN, FALSE, 0);
+        return;
+    }
+    dirlen = (size_t)(leaf - typed);
+    if (!dirlen)
+        dirlen = 1; /* the root itself */
+    if (dirlen >= sizeof(dir))
+        dirlen = sizeof(dir) - 1;
+    memcpy(dir, typed, dirlen);
+    dir[dirlen] = 0;
+    leaf++;
+
+    SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
+    if (fs_open(&d, dir)) {
+        static char found[20][260];
+        while (fs_next(&d, &e) && n < 20) {
+            if (e.name[0] == '.')
+                continue;
+            if (strncmp(e.name, leaf, strlen(leaf)) != 0 &&
+                lstrcmpiA(e.name, leaf) != 0) {
+                /* case-insensitively, since a shell's completion is */
+                size_t k = strlen(leaf);
+                int same = 1;
+                for (size_t i = 0; i < k && same; i++) {
+                    char a = e.name[i], b = leaf[i];
+                    if (a >= 'A' && a <= 'Z')
+                        a = (char)(a + 32);
+                    if (b >= 'A' && b <= 'Z')
+                        b = (char)(b + 32);
+                    same = a == b;
+                }
+                if (!same)
+                    continue;
+            }
+            snprintf(found[n], sizeof(found[0]), "%s", e.name);
+            n++;
+        }
+        fs_close(&d);
+        /* in name order, as the shell offers them */
+        for (int i = 1; i < n; i++)
+            for (int j = i; j > 0 && lstrcmpiA(found[j - 1], found[j]) > 0; j--) {
+                char t[260];
+                snprintf(t, sizeof(t), "%s", found[j - 1]);
+                snprintf(found[j - 1], sizeof(found[0]), "%s", found[j]);
+                snprintf(found[j], sizeof(found[0]), "%s", t);
+            }
+        for (int i = 0; i < n; i++) {
+            COMBOBOXEXITEMA ci;
+            char full[PATH_MAX_LEN];
+            size_t at = dirlen;
+            memcpy(full, dir, at);
+            if (at && full[at - 1] != FS_SEP)
+                full[at++] = FS_SEP;
+            for (size_t k = 0; found[i][k] && at < sizeof(full) - 1; k++)
+                full[at++] = found[i][k];
+            full[at] = 0;
+            memset(&ci, 0, sizeof(ci));
+            ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_INDENT;
+            ci.iItem = -1;
+            ci.pszText = full;
+            ci.iImage = -1; /* a suggestion is a path, with no picture */
+            ci.iIndent = 0;
+            SendMessageA(g_address, CBEM_INSERTITEMA, 0, (LPARAM)&ci);
+        }
+    }
+    SendMessageA(g_address, CB_SHOWDROPDOWN, n > 0, 0);
+}
+
 /* ---- Properties -----------------------------------------------------------
  *
  * What the shell shows about one thing: its name in a box, what kind it is,
@@ -1586,6 +1679,8 @@ static void show_directory(const char *path)
         const char *leaf = strrchr(path, '/');
         SetWindowTextA(g_main, leaf && leaf[1] ? leaf + 1 : path);
     }
+    /* and the tree opens down to it, so both halves show the same place */
+    tree_follow(path);
 }
 
 /* ---- the folder tree ------------------------------------------------------ */
@@ -1654,6 +1749,66 @@ static void path_of_item(HTREEITEM item, char *out, size_t len)
     }
     if (!out[0])
         strncpy(out, "/", len - 1);
+}
+
+/* The child of an item whose label is `name`, or NULL. */
+static HTREEITEM tree_child_named(HTREEITEM parent, const char *name)
+{
+    HTREEITEM child = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM,
+                                              TVGN_CHILD, (LPARAM)parent);
+    while (child) {
+        char label[260];
+        TVITEMA q;
+        memset(&q, 0, sizeof(q));
+        q.mask = TVIF_TEXT;
+        q.hItem = child;
+        q.pszText = label;
+        q.cchTextMax = (int)sizeof(label);
+        if (SendMessageA(g_tree, TVM_GETITEMA, 0, (LPARAM)&q) &&
+            !strcmp(label, name))
+            return child;
+        child = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_NEXT,
+                                        (LPARAM)child);
+    }
+    return NULL;
+}
+
+/* Put the tree on the folder the list is showing. Wherever the view is told
+ * to go — a path typed in the address bar, a folder opened in the list, a
+ * step of the walk — the tree opens down to it and lights it up, which is
+ * what the shell's does: the two halves show the same place. */
+static void tree_follow(const char *path)
+{
+    HTREEITEM at = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_ROOT,
+                                           0);
+    const char *p = path;
+    char walked[PATH_MAX_LEN];
+    if (!at || g_fixture)
+        return;
+    snprintf(walked, sizeof(walked), "%s", home_path());
+    while (*p) {
+        char name[260];
+        HTREEITEM child;
+        size_t n = 0;
+        while (*p == FS_SEP)
+            p++;
+        while (p[n] && p[n] != FS_SEP && n < sizeof(name) - 1)
+            n++;
+        if (!n)
+            break;
+        memcpy(name, p, n);
+        name[n] = 0;
+        p += n;
+        /* the level has to be read before its children can be looked at */
+        SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)at);
+        child = tree_child_named(at, name);
+        if (!child)
+            break; /* nothing in the tree stands for this step */
+        at = child;
+    }
+    g_crossing = 1; /* the tree is following the list, not driving it */
+    SendMessageA(g_tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)at);
+    g_crossing = 0;
 }
 
 /* Whether a folder has any folder in it, which is what decides the box to
@@ -3328,6 +3483,25 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         break;
 
     case WM_COMMAND:
+        /* the address bar's text changed: offer what it could be */
+        if ((HWND)lp == g_address && HIWORD(wp) == CBN_EDITCHANGE) {
+            address_suggest();
+            return 0;
+        }
+        if ((HWND)lp == g_address && HIWORD(wp) == CBN_SELCHANGE) {
+            /* a suggestion picked from the list is where to go */
+            HWND field = (HWND)(INT_PTR)SendMessageA(g_address,
+                                                     CBEM_GETEDITCONTROL, 0, 0);
+            char picked[PATH_MAX_LEN];
+            if (field) {
+                GetWindowTextA(field, picked, (int)sizeof(picked));
+                if (picked[0] && fs_exists(picked)) {
+                    show_directory(picked);
+                    SetFocus(g_list);
+                }
+            }
+            return 0;
+        }
         switch (LOWORD(wp)) {
         case IDM_BACK:
             history_go(-1);
