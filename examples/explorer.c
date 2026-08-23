@@ -2374,7 +2374,8 @@ enum {
     IDC_FO_OFF_DELETE, IDC_FO_OFF_VIEW, IDC_FO_OFF_ADVANCED,
     IDC_FO_OS1, IDC_FO_OS2, IDC_FO_OS3, IDC_FO_OS4, IDC_FO_OS5,
     IDC_FO_TS1, /* "Registered file types:" */
-    IDC_FO_TS2  /* "Opens with:" */
+    IDC_FO_TS2, /* "Opens with:" */
+    IDC_FO_OFF_SPIN /* the arrows beside the minutes */
 };
 
 /* The View page's Advanced settings, which is the one place the settings are
@@ -2616,6 +2617,7 @@ static const fo_place g_fo_offline_at[] = {
     { IDC_FO_OFF_REMIND, 24, 123, 250, 16 },
     { IDC_FO_OS2, 41, 149, 145, 14 },
     { IDC_FO_OFF_MINUTES, 201, 146, 53, 20 },
+    { IDC_FO_OFF_SPIN, 237, 149, 15, 15 },
     { IDC_FO_OS3, 261, 149, 50, 14 },
     { IDC_FO_OFF_SHORTCUT, 24, 178, 285, 16 },
     { IDC_FO_OS4, 24, 206, 300, 14 },
@@ -2977,6 +2979,13 @@ static INT_PTR CALLBACK fo_offline(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         CheckDlgButton(dlg, IDC_FO_OFF_SYNC, BST_CHECKED);
         CheckDlgButton(dlg, IDC_FO_OFF_REMIND, BST_CHECKED);
         SetDlgItemTextA(dlg, IDC_FO_OFF_MINUTES, "60");
+        {   /* the arrows step the field they are put against */
+            HWND spin = GetDlgItem(dlg, IDC_FO_OFF_SPIN);
+            SendMessageA(spin, UDM_SETBUDDY,
+                         (WPARAM)GetDlgItem(dlg, IDC_FO_OFF_MINUTES), 0);
+            SendMessageA(spin, UDM_SETRANGE, 0, MAKELPARAM(999, 1));
+            SendMessageA(spin, UDM_SETPOS, 0, MAKELPARAM(60, 0));
+        }
         /* The shell offers up to about a third of the drive, not all of it,
          * which is what puts its thumb a third along at ten percent. */
         SendMessageA(GetDlgItem(dlg, IDC_FO_OFF_SPACE), TBM_SETRANGE, TRUE,
@@ -3120,6 +3129,10 @@ static void folder_options(HWND owner)
     ITEM(WS_TABSTOP | ES_RIGHT, 140, 87, 26, 12, IDC_FO_OFF_MINUTES,
          ATOM_EDIT, "60");
     items[n - 1].exstyle = WS_EX_CLIENTEDGE;
+    /* the arrows sit inside the field's border, against its right edge */
+    ITEM(UDS_ALIGNRIGHT | UDS_SETBUDDYINT, 160, 88, 8, 10, IDC_FO_OFF_SPIN, 0,
+         NULL);
+    items[n - 1].clsname = UPDOWN_CLASSA;
     LABEL(172, 89, 40, 9, IDC_FO_OS3, "minutes.");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 105, 220, 10, IDC_FO_OFF_SHORTCUT,
          ATOM_BUTTON, "&Place shortcut to Offline Files folder on the desktop");

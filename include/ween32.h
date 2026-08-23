@@ -514,6 +514,25 @@ typedef struct {
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"
+
+/* ---- the up-down: the pair of arrows beside a number ---------------------
+ * Two buttons stacked, stepping a value up and down. Given a buddy — the
+ * field it belongs to — it writes the value there and reads it back, which is
+ * what makes the pair behave as one thing. */
+#define UPDOWN_CLASSA "msctls_updown32"
+#define UDS_WRAP 0x0001
+#define UDS_SETBUDDYINT 0x0002
+#define UDS_ALIGNRIGHT 0x0004
+#define UDS_ALIGNLEFT 0x0008
+#define UDS_ARROWKEYS 0x0020
+#define UDS_NOTHOUSANDS 0x0080
+#define UDM_SETRANGE (WM_USER + 101)
+#define UDM_GETRANGE (WM_USER + 102)
+#define UDM_SETPOS (WM_USER + 103)
+#define UDM_GETPOS (WM_USER + 104)
+#define UDM_SETBUDDY (WM_USER + 105)
+#define UDM_GETBUDDY (WM_USER + 106)
+#define UDN_DELTAPOS (0U - 722U)
 #define TBS_AUTOTICKS 0x0001L
 #define TBS_VERT 0x0002L
 #define TBS_HORZ 0x0000L

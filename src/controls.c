@@ -905,13 +905,28 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
         margin = ((sum + 26) / 52) / 2;
     }
-    {   /* unless the application said what the margin is */
+    int rmargin = margin;
+    {   /* unless the application said what the margins are */
         ween_edit *m = edit_state(wnd);
         if (m && m->left_margin >= 0)
             margin = m->left_margin;
+        if (m && m->right_margin >= 0)
+            rmargin = m->right_margin;
     }
     int tx = inset + margin;
     int ty = inset;
+    /* ES_RIGHT and ES_CENTER: a single line sits against the far margin or in
+     * the middle of what is between the two. A number in a field is usually
+     * right-aligned — the machine's reminder-minutes box is. */
+    if (!multi && f && (wnd->style & (ES_CENTER | ES_RIGHT))) {
+        RECT cr;
+        int tw = ween_strike_text_width(f, wnd->text, (int)strlen(wnd->text));
+        int room;
+        GetClientRect(wnd, &cr);
+        room = cr.right - sb - (inset + margin) - (inset + rmargin) - tw;
+        if (room > 0)
+            tx += (wnd->style & ES_RIGHT) ? room : room / 2;
+    }
     {
         ween_edit *e = edit_state(wnd);
         int from = 0, to = 0, focused = ween_focus_get() == wnd;
@@ -4995,6 +5010,168 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- the up-down ----------------------------------------------------------
+ *
+ * Two buttons stacked in one control, each half the height, with a small
+ * arrow in the middle of it: what the machine puts beside the number of
+ * minutes on the Offline Files page. Given a buddy it keeps the value in that
+ * window's text, which is what UDS_SETBUDDYINT asks for.
+ */
+typedef struct {
+    HWND buddy;
+    int min, max, pos;
+    int pressed; /* 0 none, 1 up, 2 down */
+} ween_updown;
+
+static void updown_free(void *p) { free(p); }
+
+static ween_updown *updown_of(HWND w)
+{
+    if (!w->ctl) {
+        ween_updown *u = calloc(1, sizeof(*u));
+        if (u) {
+            u->max = 100;
+            w->ctl = u;
+            w->ctl_free = updown_free;
+        }
+    }
+    return w->ctl;
+}
+
+/* The arrow: three pixels over one, the way the machine draws it. */
+static void updown_arrow(ween_surface *s, int cx, int cy, int up)
+{
+    ween_surface_fill(s, cx - 1, cy + (up ? 1 : 0), 3, 1, WEEN_BLACK);
+    ween_surface_fill(s, cx, cy + (up ? 0 : 1), 1, 1, WEEN_BLACK);
+}
+
+static void updown_show(HWND wnd, ween_updown *u)
+{
+    char text[32];
+    int v = u->pos, n = 0, i;
+    if (!u->buddy)
+        return;
+    if (v < 0) {
+        text[n++] = '-';
+        v = -v;
+    }
+    {   /* the digits, without stdio in a control */
+        char rev[16];
+        int m = 0;
+        do {
+            rev[m++] = (char)('0' + v % 10);
+            v /= 10;
+        } while (v && m < (int)sizeof(rev));
+        for (i = m - 1; i >= 0; i--)
+            text[n++] = rev[i];
+    }
+    text[n] = 0;
+    SetWindowTextA(u->buddy, text);
+    (void)wnd;
+}
+
+static void updown_step(HWND wnd, ween_updown *u, int by)
+{
+    int was = u->pos;
+    u->pos += by;
+    if (u->pos < u->min)
+        u->pos = (wnd->style & UDS_WRAP) ? u->max : u->min;
+    if (u->pos > u->max)
+        u->pos = (wnd->style & UDS_WRAP) ? u->min : u->max;
+    if (u->pos != was)
+        updown_show(wnd, u);
+}
+
+static LRESULT updown_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    ween_updown *u = updown_of(wnd);
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        struct ween_wnd *top = ween_top_level(wnd);
+        RECT cr;
+        int ox, oy, half;
+        BeginPaint(wnd, &ps);
+        GetClientRect(wnd, &cr);
+        ween_client_origin(wnd, &ox, &oy);
+        /* Two buttons of the same height with a row of face between them,
+         * and a column of it against the field they stand in — which is what
+         * the machine's pair has. */
+        half = (cr.bottom - 1) / 2;
+        ween_surface_fill(&top->surface, ox, oy, cr.right, cr.bottom,
+                          WEEN_FACE);
+        for (int i = 0; i < 2; i++) {
+            int y = i ? cr.bottom - half : 0, h = half;
+            int down = u && u->pressed == i + 1;
+            ween_classic_bevel(&top->surface, ox + 1, oy + y, cr.right - 1, h,
+                               down);
+            updown_arrow(&top->surface,
+                         ox + 1 + (cr.right - 1) / 2 + (down ? 1 : 0),
+                         oy + y + h / 2 - 1 + (down ? 1 : 0), !i);
+        }
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        RECT cr;
+        int at = GET_Y_LPARAM(lp);
+        GetClientRect(wnd, &cr);
+        if (!u)
+            return 0;
+        u->pressed = at < cr.bottom / 2 ? 1 : 2;
+        updown_step(wnd, u, u->pressed == 1 ? 1 : -1);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case WM_LBUTTONUP:
+        if (u && u->pressed) {
+            u->pressed = 0;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    case UDM_SETRANGE:
+        if (u) {
+            u->max = (short)LOWORD(lp);
+            u->min = (short)HIWORD(lp);
+        }
+        return 0;
+    case UDM_GETRANGE:
+        return u ? (LRESULT)(((unsigned)u->min << 16) |
+                             ((unsigned)u->max & 0xffff))
+                 : 0;
+    case UDM_SETPOS: {
+        int was = u ? u->pos : 0;
+        if (u) {
+            u->pos = (short)LOWORD(lp);
+            updown_show(wnd, u);
+        }
+        return was;
+    }
+    case UDM_GETPOS:
+        return u ? u->pos : 0;
+    case UDM_SETBUDDY: {
+        HWND was = u ? u->buddy : NULL;
+        if (u)
+            u->buddy = (HWND)wp;
+        /* UDS_ALIGNRIGHT: the arrows stand inside the field's own border, so
+         * the field keeps that much of its right side clear — which is what
+         * puts the machine's "60" against them rather than under them. */
+        if (u && u->buddy && (wnd->style & UDS_ALIGNRIGHT)) {
+            RECT r;
+            GetWindowRect(wnd, &r);
+            SendMessageA(u->buddy, EM_SETMARGINS, EC_RIGHTMARGIN,
+                         MAKELPARAM(0, r.right - r.left + 3));
+        }
+        return (LRESULT)(UINT_PTR)was;
+    }
+    case UDM_GETBUDDY:
+        return (LRESULT)(UINT_PTR)(u ? u->buddy : NULL);
+    default:
+        break;
+    }
+    return DefWindowProcA(wnd, msg, wp, lp);
+}
+
 /* ---- the trackbar ---------------------------------------------------------
  *
  * A sunken channel with a pointed thumb riding it and a row of ticks below.
@@ -5624,6 +5801,9 @@ void ween_register_controls(void)
     /* The same control, told about images and indents. win32 makes this one
      * host the other; here it is the one class answering to both names. */
     wc.lpszClassName = WC_COMBOBOXEXA;
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = updown_proc;
+    wc.lpszClassName = UPDOWN_CLASSA;
     RegisterClassA(&wc);
     wc.lpfnWndProc = progress_proc;
     wc.lpszClassName = PROGRESS_CLASSA;
