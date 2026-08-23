@@ -2009,49 +2009,9 @@ static void address_suggest(void)
         suggest_hide();
 }
 
-/* ---- Properties -----------------------------------------------------------
- *
- * What the shell shows about one thing: its name in a box, what kind it is,
- * where it is, how big, when it was written, and the three attributes. Built
- * from a dialog template, so the same source puts it up on either side.
- */
-enum {
-    IDC_PROP_NAME = 100,
-    IDC_PROP_TYPE,
-    IDC_PROP_WHERE,
-    IDC_PROP_SIZE,
-    IDC_PROP_WHEN,
-    IDC_PROP_READONLY,
-    IDC_PROP_HIDDEN,
-    IDC_PROP_ARCHIVE
-};
-
-static int g_prop_row = -1; /* the row Properties is about */
-
-static int end_rename(int row, const char *name);
-
-static INT_PTR CALLBACK prop_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
-{
-    (void)lp;
-    if (msg == WM_COMMAND) {
-        WORD id = LOWORD(wp);
-        if (id == IDOK) { /* a name typed in the box is a rename */
-            char typed[280];
-            GetDlgItemTextA(dlg, IDC_PROP_NAME, typed, (int)sizeof(typed));
-            EndDialog(dlg, id);
-            if (typed[0])
-                end_rename(g_prop_row, typed);
-            return TRUE;
-        }
-        if (id == IDCANCEL) {
-            EndDialog(dlg, id);
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-
-/* "91.0 KB (93,204 bytes)", which is how the shell says a size. */
+/* How the shell says a size: what it comes to, and then the count in bytes —
+ * "16.0 KB (16,384 bytes)", "203 bytes (203 bytes)". Nothing at all is "0
+ * bytes" on its own, which is what the machine writes for an empty file. */
 static void size_text(unsigned long bytes, char *out, size_t max)
 {
     char grouped[32];
@@ -2064,90 +2024,18 @@ static void size_text(unsigned long bytes, char *out, size_t max)
         grouped[j++] = digits[i];
     }
     grouped[j] = 0;
-    if (bytes >= 1024)
+    if (!bytes)
+        snprintf(out, max, "0 bytes");
+    else if (bytes >= 1024u * 1024u)
+        snprintf(out, max, "%lu.%02lu MB (%s bytes)", bytes / (1024 * 1024),
+                 (bytes % (1024 * 1024)) * 100 / (1024 * 1024), grouped);
+    else if (bytes >= 1024)
         snprintf(out, max, "%lu.%lu KB (%s bytes)", bytes / 1024,
                  (bytes % 1024) * 10 / 1024, grouped);
     else
-        snprintf(out, max, "%s bytes", grouped);
+        snprintf(out, max, "%s bytes (%s bytes)", grouped, grouped);
 }
 
-static void show_properties(HWND owner)
-{
-    int row = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
-                                LVNI_SELECTED);
-    static char title[300], name[280], type[64], size[64], when[64];
-    static char where[sizeof(g_path)];
-    unsigned char buf[3000];
-    UINT_PTR len;
-    dlg_item items[16];
-    int n = 0;
-    memset(items, 0, sizeof(items)); /* a field nobody sets is not a stray */
-    if (row < 0 && g_ctx_row >= 0)
-        row = g_ctx_row;
-    if (row < 0 || row >= g_entries) {
-        MessageBoxA(owner, "Nothing is selected.", "Properties",
-                    MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-    g_prop_row = row;
-    snprintf(title, sizeof(title), "%s Properties", g_entry[row].name);
-    snprintf(name, sizeof(name), "%s", g_entry[row].name);
-    snprintf(type, sizeof(type), "%s", type_of(&g_entry[row]));
-    snprintf(where, sizeof(where), "%s", g_path);
-    if (g_entry[row].is_dir)
-        snprintf(size, sizeof(size), "%s", "");
-    else
-        size_text(g_entry[row].size, size, sizeof(size));
-    snprintf(when, sizeof(when), "%s", g_entry[row].modified);
-
-/* one row of the table, since a dozen of them written out is a wall */
-#define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                               \
-    do {                                                                       \
-        items[n].style = (st);                                                 \
-        items[n].x = (short)(ix);                                              \
-        items[n].y = (short)(iy);                                              \
-        items[n].cx = (short)(iw);                                             \
-        items[n].cy = (short)(ih);                                             \
-        items[n].id = (WORD)(iid);                                             \
-        items[n].cls = (WORD)(icls);                                           \
-        items[n].text = (itx);                                                 \
-        n++;                                                                   \
-    } while (0)
-    /* the name, in a box of its own, and then a row per thing */
-    /* the name in a box you can type in, as the shell has it */
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 46, 8, 148, 12, IDC_PROP_NAME,
-         ATOM_EDIT, name);
-    items[n - 1].exstyle = WS_EX_CLIENTEDGE; /* a field's own sunken border */
-    ITEM(WS_CHILD | WS_VISIBLE, 8, 30, 40, 9, 0, ATOM_STATIC, "Type:");
-    ITEM(WS_CHILD | WS_VISIBLE, 52, 30, 142, 9, IDC_PROP_TYPE, ATOM_STATIC,
-         type);
-    ITEM(WS_CHILD | WS_VISIBLE, 8, 44, 40, 9, 0, ATOM_STATIC, "Location:");
-    ITEM(WS_CHILD | WS_VISIBLE, 52, 44, 142, 9, IDC_PROP_WHERE, ATOM_STATIC,
-         where);
-    ITEM(WS_CHILD | WS_VISIBLE, 8, 58, 40, 9, 0, ATOM_STATIC, "Size:");
-    ITEM(WS_CHILD | WS_VISIBLE, 52, 58, 142, 9, IDC_PROP_SIZE, ATOM_STATIC,
-         size);
-    ITEM(WS_CHILD | WS_VISIBLE, 8, 76, 40, 9, 0, ATOM_STATIC, "Modified:");
-    ITEM(WS_CHILD | WS_VISIBLE, 52, 76, 142, 9, IDC_PROP_WHEN, ATOM_STATIC,
-         when);
-    ITEM(WS_CHILD | WS_VISIBLE, 8, 96, 40, 9, 0, ATOM_STATIC, "Attributes:");
-    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 95, 60, 10,
-         IDC_PROP_READONLY, ATOM_BUTTON, "&Read-only");
-    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 108, 60, 10,
-         IDC_PROP_HIDDEN, ATOM_BUTTON, "&Hidden");
-    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 121, 60, 10,
-         IDC_PROP_ARCHIVE, ATOM_BUTTON, "A&rchive");
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 84, 142, 50,
-         14, IDOK, ATOM_BUTTON, "OK");
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 140, 142, 50, 14, IDCANCEL,
-         ATOM_BUTTON, "Cancel");
-#undef ITEM
-    len = build_dialog_template(buf, sizeof(buf),
-                                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-                                200, 164, title, items, n);
-    if (len <= sizeof(buf))
-        DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, prop_proc, 0);
-}
 
 /* A row's state picture: 0 none, 1 a box, 2 a ticked box. Written out rather
  * than through ListView_SetCheckState, because the macro is a brace block on
@@ -3324,6 +3212,315 @@ static void folder_options(HWND owner)
     hdr.hwndParent = owner;
     hdr.pszCaption = "Folder Options";
     hdr.nPages = 4;
+    hdr.ppsp = pages;
+    PropertySheetA(&hdr);
+}
+
+/* ---- Properties -----------------------------------------------------------
+ *
+ * What the shell shows about one thing: its name in a box that can be typed
+ * in, what kind it is and what opens it, where it is and what it takes up,
+ * the three dates, and the attributes that can be changed. The shell's is a
+ * property sheet with a single General page, so this is one too — which is
+ * where the tab above it and the OK, Cancel and Apply along the bottom come
+ * from.
+ */
+enum {
+    IDC_PROP_ICON = 1500, /* the picture of the thing itself */
+    IDC_PROP_NAME,        /* its name, in a box that can be typed in */
+    IDC_PROP_L_TYPE,      /* from here down every row is a label and a value */
+    IDC_PROP_TYPE,
+    IDC_PROP_L_OPENS,
+    IDC_PROP_APPICON, /* the picture of the program that opens it */
+    IDC_PROP_OPENS,
+    IDC_PROP_CHANGE,
+    IDC_PROP_L_WHERE,
+    IDC_PROP_WHERE,
+    IDC_PROP_L_SIZE,
+    IDC_PROP_SIZE,
+    IDC_PROP_L_ONDISK,
+    IDC_PROP_ONDISK,
+    IDC_PROP_L_CREATED,
+    IDC_PROP_CREATED,
+    IDC_PROP_L_WHEN,
+    IDC_PROP_WHEN,
+    IDC_PROP_L_ACCESSED,
+    IDC_PROP_ACCESSED,
+    IDC_PROP_L_ATTRS,
+    IDC_PROP_READONLY,
+    IDC_PROP_HIDDEN,
+    IDC_PROP_ARCHIVE,
+    IDC_PROP_RULE1, /* the four lines the rows are grouped by */
+    IDC_PROP_RULE2,
+    IDC_PROP_RULE3,
+    IDC_PROP_RULE4
+};
+
+/* Where each of those goes, in pixels of the page, measured off the machine's
+ * own General page the way Folder Options' pages are. Every row of the middle
+ * is a label at 14 and its value at 90, twenty-six apart, and a line rules
+ * off each group of them. */
+static const fo_place g_prop_at[] = {
+    { IDC_PROP_ICON, 14, 12, 32, 32 },
+    { IDC_PROP_NAME, 87, 19, 246, 23 },
+    { IDC_PROP_RULE1, 14, 53, 318, 2 },
+    { IDC_PROP_L_TYPE, 14, 66, 76, 14 },
+    { IDC_PROP_TYPE, 90, 66, 160, 14 },
+    { IDC_PROP_L_OPENS, 14, 92, 76, 14 },
+    { IDC_PROP_APPICON, 87, 92, 16, 16 },
+    { IDC_PROP_OPENS, 90, 92, 160, 14 },
+    { IDC_PROP_CHANGE, 258, 89, 75, 23 },
+    { IDC_PROP_RULE2, 14, 118, 318, 2 },
+    { IDC_PROP_L_WHERE, 14, 131, 76, 14 },
+    { IDC_PROP_WHERE, 90, 131, 240, 14 },
+    { IDC_PROP_L_SIZE, 14, 157, 76, 14 },
+    { IDC_PROP_SIZE, 90, 157, 240, 14 },
+    { IDC_PROP_L_ONDISK, 14, 183, 76, 14 },
+    { IDC_PROP_ONDISK, 90, 183, 240, 14 },
+    { IDC_PROP_RULE3, 14, 209, 318, 2 },
+    { IDC_PROP_L_CREATED, 14, 222, 76, 14 },
+    { IDC_PROP_CREATED, 90, 222, 240, 14 },
+    { IDC_PROP_L_WHEN, 14, 248, 76, 14 },
+    { IDC_PROP_WHEN, 90, 248, 240, 14 },
+    { IDC_PROP_L_ACCESSED, 14, 274, 76, 14 },
+    { IDC_PROP_ACCESSED, 90, 274, 240, 14 },
+    { IDC_PROP_RULE4, 14, 300, 318, 2 },
+    { IDC_PROP_L_ATTRS, 14, 313, 76, 14 },
+    { IDC_PROP_READONLY, 87, 313, 76, 16 },
+    { IDC_PROP_HIDDEN, 167, 313, 76, 16 },
+    { IDC_PROP_ARCHIVE, 246, 313, 76, 16 },
+};
+
+/* The row the sheet is about, and what its box said when it was put up: a
+ * name that comes back changed is a rename. */
+static int g_prop_row = -1;
+static char g_prop_was[280];
+
+/* The picture a thing wears, at the size asked for. */
+static HICON entry_icon(const fs_entry *e, int size)
+{
+    int t = type_index(e);
+    if (t >= 0)
+        return load_icon_named(g_types[t].icon, size);
+    return load_icon_named(e->is_dir ? ICON_FOLDER : ICON_FILE, size);
+}
+
+/* What the page was asked to keep: the name, if it was typed over, and the
+ * three attributes. */
+static void prop_apply(HWND dlg)
+{
+    char typed[280], full[300];
+    char path[PATH_MAX_LEN];
+    int r = IsDlgButtonChecked(dlg, IDC_PROP_READONLY) == BST_CHECKED;
+    int h = IsDlgButtonChecked(dlg, IDC_PROP_HIDDEN) == BST_CHECKED;
+    int a = IsDlgButtonChecked(dlg, IDC_PROP_ARCHIVE) == BST_CHECKED;
+    if (g_prop_row < 0 || g_prop_row >= g_entries)
+        return;
+    path_of_row(g_prop_row, path, sizeof(path));
+    fs_set_attributes(path, r, h, a);
+    GetDlgItemTextA(dlg, IDC_PROP_NAME, typed, (int)sizeof(typed));
+    if (!typed[0] || strcmp(typed, g_prop_was) == 0)
+        return;
+    /* What was typed stands in for the name that was shown, so an extension
+     * the shell left off the box goes back on the end of it — the shell keeps
+     * the kind of a file whose name is typed over. */
+    if (strcmp(g_prop_was, g_entry[g_prop_row].name) != 0) {
+        const char *dot = strrchr(g_entry[g_prop_row].name, '.');
+        snprintf(full, sizeof(full), "%s%s", typed, dot ? dot : "");
+    } else {
+        snprintf(full, sizeof(full), "%s", typed);
+    }
+    end_rename(g_prop_row, full);
+    snprintf(g_prop_was, sizeof(g_prop_was), "%s", typed);
+}
+
+static INT_PTR CALLBACK prop_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_INITDIALOG: {
+        const fs_entry *e = &g_entry[g_prop_row];
+        int t = type_index(e);
+        char text[128], shown[280];
+        HICON icon;
+        fo_layout(dlg, g_prop_at, (int)(sizeof(g_prop_at) / sizeof(*g_prop_at)));
+        SetDlgItemTextA(dlg, IDC_PROP_NAME,
+                        display_name(e, shown, sizeof(shown)));
+        SetDlgItemTextA(dlg, IDC_PROP_TYPE, type_of(e));
+        SetDlgItemTextA(dlg, IDC_PROP_WHERE, g_path);
+        SetDlgItemTextA(dlg, IDC_PROP_CREATED, e->created_long);
+        SetDlgItemTextA(dlg, IDC_PROP_WHEN, e->modified_long);
+        SetDlgItemTextA(dlg, IDC_PROP_ACCESSED, e->accessed_long);
+        if (e->is_dir) { /* a folder is not weighed, and has no program */
+            SetDlgItemTextA(dlg, IDC_PROP_SIZE, "");
+            SetDlgItemTextA(dlg, IDC_PROP_ONDISK, "");
+        } else {
+            size_text(e->size, text, sizeof(text));
+            SetDlgItemTextA(dlg, IDC_PROP_SIZE, text);
+            size_text(e->on_disk, text, sizeof(text));
+            SetDlgItemTextA(dlg, IDC_PROP_ONDISK, text);
+        }
+        /* What opens it, with the program's own picture beside it. Nothing
+         * is registered against most kinds, and the shell says so; the value
+         * stands where the others do when there is no picture in front of
+         * it, and steps aside for one when there is. */
+        if (t >= 0 && g_types[t].opens[0]) {
+            SetDlgItemTextA(dlg, IDC_PROP_OPENS, g_types[t].opens);
+            if (g_types[t].app) {
+                HWND at = GetDlgItem(dlg, IDC_PROP_OPENS);
+                icon = load_icon_named(g_types[t].app, 16);
+                if (icon)
+                    SendMessageA(GetDlgItem(dlg, IDC_PROP_APPICON),
+                                 STM_SETICON, (WPARAM)icon, 0);
+                MoveWindow(at, 112, 92, 160, 14, FALSE);
+            }
+        } else {
+            SetDlgItemTextA(dlg, IDC_PROP_OPENS, "Unknown application");
+        }
+        icon = entry_icon(e, 32);
+        if (icon)
+            SendMessageA(GetDlgItem(dlg, IDC_PROP_ICON), STM_SETICON,
+                         (WPARAM)icon, 0);
+        CheckDlgButton(dlg, IDC_PROP_READONLY,
+                       strchr(e->attributes, 'R') ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(dlg, IDC_PROP_HIDDEN,
+                       strchr(e->attributes, 'H') ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(dlg, IDC_PROP_ARCHIVE,
+                       strchr(e->attributes, 'A') ? BST_CHECKED : BST_UNCHECKED);
+        snprintf(g_prop_was, sizeof(g_prop_was), "%s",
+                 display_name(e, shown, sizeof(shown)));
+        /* The machine's own page opens with the keyboard on the first
+         * attribute rather than in the name box, and says so with a focus
+         * rectangle around Read-only. Answering FALSE is how a page says it
+         * has placed the keyboard itself. */
+        SetFocus(GetDlgItem(dlg, IDC_PROP_READONLY));
+        return FALSE;
+    }
+    case WM_COMMAND: {
+        WORD id = LOWORD(wp);
+        if (id == IDC_PROP_CHANGE) {
+            MessageBoxA(dlg,
+                        "The file types are what this example knows an "
+                        "extension to mean.\nThey are not the machine's "
+                        "registry, so there is nothing here to change.",
+                        "Properties", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        }
+        /* Anything typed or ticked is something worth keeping, which is what
+         * lights the Apply button. */
+        if ((id == IDC_PROP_NAME && HIWORD(wp) == EN_CHANGE) ||
+            (HIWORD(wp) == BN_CLICKED &&
+             (id == IDC_PROP_READONLY || id == IDC_PROP_HIDDEN ||
+              id == IDC_PROP_ARCHIVE)))
+            PropSheet_Changed(GetParent(dlg), dlg);
+        return FALSE;
+    }
+    case WM_NOTIFY: {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (nm && nm->code == PSN_APPLY) {
+            prop_apply(dlg);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    default:
+        return FALSE;
+    }
+}
+
+static void show_properties(HWND owner)
+{
+    static unsigned char page[3000];
+    static char caption[300];
+    dlg_item items[32];
+    PROPSHEETPAGEA pages[1];
+    PROPSHEETHEADERA hdr;
+    int n = 0;
+    int row = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    if (row < 0 && g_ctx_row >= 0)
+        row = g_ctx_row;
+    if (row < 0 || row >= g_entries) {
+        MessageBoxA(owner, "Nothing is selected.", "Properties",
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    g_prop_row = row;
+    {   /* the caption is the name as the shell shows it, extension and all
+         * or not, which is what the machine puts in its title bar */
+        char shown[280];
+        snprintf(caption, sizeof(caption), "%s Properties",
+                 display_name(&g_entry[row], shown, sizeof(shown)));
+    }
+
+    memset(items, 0, sizeof(items)); /* a field nobody sets is not a stray */
+/* The template puts the controls in the page in the order they are reached by
+ * Tab; where they sit is g_prop_at's business. */
+#define ITEM(st, iid, icls, itx)                                               \
+    do {                                                                       \
+        items[n].style = (st) | WS_CHILD | WS_VISIBLE;                         \
+        items[n].cx = 40;                                                      \
+        items[n].cy = 10;                                                      \
+        items[n].id = (WORD)(iid);                                             \
+        items[n].cls = (WORD)(icls);                                           \
+        items[n].text = (itx);                                                 \
+        n++;                                                                   \
+    } while (0)
+#define LABEL(iid, itx) ITEM(SS_LEFTNOWORDWRAP, iid, ATOM_STATIC, itx)
+#define RULE(iid) ITEM(SS_ETCHEDHORZ, iid, ATOM_STATIC, "")
+    ITEM(SS_ICON, IDC_PROP_ICON, ATOM_STATIC, "");
+    ITEM(WS_TABSTOP | ES_AUTOHSCROLL, IDC_PROP_NAME, ATOM_EDIT, "");
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE; /* a field's own sunken border */
+    RULE(IDC_PROP_RULE1);
+    LABEL(IDC_PROP_L_TYPE, "Type of file:");
+    LABEL(IDC_PROP_TYPE, "");
+    LABEL(IDC_PROP_L_OPENS, "Opens with:");
+    ITEM(SS_ICON, IDC_PROP_APPICON, ATOM_STATIC, "");
+    LABEL(IDC_PROP_OPENS, "");
+    ITEM(BS_PUSHBUTTON | WS_TABSTOP, IDC_PROP_CHANGE, ATOM_BUTTON,
+         "&Change...");
+    RULE(IDC_PROP_RULE2);
+    LABEL(IDC_PROP_L_WHERE, "Location:");
+    LABEL(IDC_PROP_WHERE, "");
+    LABEL(IDC_PROP_L_SIZE, "Size:");
+    LABEL(IDC_PROP_SIZE, "");
+    LABEL(IDC_PROP_L_ONDISK, "Size on disk:");
+    LABEL(IDC_PROP_ONDISK, "");
+    RULE(IDC_PROP_RULE3);
+    LABEL(IDC_PROP_L_CREATED, "Created:");
+    LABEL(IDC_PROP_CREATED, "");
+    LABEL(IDC_PROP_L_WHEN, "Modified:");
+    LABEL(IDC_PROP_WHEN, "");
+    LABEL(IDC_PROP_L_ACCESSED, "Accessed:");
+    LABEL(IDC_PROP_ACCESSED, "");
+    RULE(IDC_PROP_RULE4);
+    LABEL(IDC_PROP_L_ATTRS, "Attributes:");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, IDC_PROP_READONLY,
+         ATOM_BUTTON, "&Read-only");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, IDC_PROP_HIDDEN, ATOM_BUTTON, "&Hidden");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, IDC_PROP_ARCHIVE, ATOM_BUTTON,
+         "Arch&ive");
+#undef RULE
+#undef LABEL
+#undef ITEM
+    /* The shell's own face, not the older dialog one: a Properties page is set
+     * in Tahoma where Folder Options is set in MS Sans Serif, and the sheet
+     * around it follows its page. */
+    build_dialog_template_font(page, sizeof(page), WS_CHILD | DS_SETFONT, 230,
+                               217, "", items, n, "MS Shell Dlg 2", 8);
+
+    memset(pages, 0, sizeof(pages));
+    pages[0].dwSize = sizeof(pages[0]);
+    pages[0].dwFlags = PSP_DLGINDIRECT | PSP_USETITLE;
+    pages[0].pResource = (LPCDLGTEMPLATEA)page;
+    pages[0].pszTitle = "General";
+    pages[0].pfnDlgProc = prop_general;
+
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.dwSize = sizeof(hdr);
+    hdr.dwFlags = PSH_PROPSHEETPAGE;
+    hdr.hwndParent = owner;
+    hdr.pszCaption = caption;
+    hdr.nPages = 1;
     hdr.ppsp = pages;
     PropertySheetA(&hdr);
 }
