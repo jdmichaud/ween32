@@ -151,6 +151,29 @@ was and where it is now, grown by the pen. Freehand does the same with the
 segment just drawn. Three thousand moves of an ellipse's corner take nine
 milliseconds, and nothing is left behind on the page.
 
+**The three handles that size the picture.** Eight sit round the page and
+only three do anything — the right edge, the bottom edge and the corner
+between them; the other five are drawn hollow to say so. What they do was
+read off the machine: the picture does not change while the drag is on, a
+dotted rectangle runs from the page's top-left corner to the pointer, and on
+release the picture becomes exactly that — pointer minus origin, so a drag to
+window x=246 with the page at x=66 gives a width of 180. What is there stays
+in the top left and the new part is the background colour, which is Image >
+Attributes' rule as well; the least a picture can be is one pixel by one, and
+dragging past the corner stops there rather than going negative. It is one
+step of undo. Over the three the pointer is the arrows for that edge, and the
+status bar says nothing at all while it happens.
+
+The dotted rectangle is `DrawFocusRect`, which put two library faults on
+show. Its dots were laid on the coordinates of the *surface* rather than of
+the window being drawn in, so in a window whose client corner sits on an odd
+pixel every dot was one out — half a rectangle's perimeter wrong, invisible
+until something in a child window was compared against the machine. And win32
+draws a focus rectangle as four inverted strips, of which the left one and
+the top overlap in a single pixel: inverted twice, that corner is not drawn
+at all. The machine's rectangle has that blank top-left corner, and ours now
+matches it dot for dot.
+
 **A polyline ends where the drawing stops.** A double click closes it, which
 means the window has to be told it wants double clicks (`CS_DBLCLKS`) and the
 second click has to reach the tool with the vertices in it rather than start a

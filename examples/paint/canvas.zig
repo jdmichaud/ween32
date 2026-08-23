@@ -92,6 +92,78 @@ fn drawHandles(dc: w.HDC) void {
     }
 }
 
+/// Dragging one of the three live handles round the page: which one, and the
+/// size the picture would become. The picture itself does not change until
+/// the button comes up — until then it is a dotted rectangle, which is what
+/// the machine shows.
+var page_sizing: ?u8 = null;
+var page_size: w.POINT = .{ .x = 0, .y = 0 };
+
+const page_handle = struct {
+    const right = 0; // the width follows the pointer
+    const bottom = 1; // the height does
+    const corner = 2; // both
+};
+
+/// Which live handle is under a point in client coordinates, if any. The
+/// five hollow ones are not answers: Paint draws them to say they do nothing.
+fn liveHandleAt(pt: w.POINT) ?u8 {
+    const o = pageOrigin();
+    const rx = o.x + shownWidth();
+    const by = o.y + shownHeight();
+    const mx = o.x + @divTrunc(shownWidth(), 2) - 1;
+    const my = o.y + @divTrunc(shownHeight(), 2) - 1;
+    const at = struct {
+        fn in(q: w.POINT, hx: i32, hy: i32) bool {
+            return q.x >= hx and q.x < hx + handle and q.y >= hy and q.y < hy + handle;
+        }
+    };
+    if (at.in(pt, rx, by)) return page_handle.corner;
+    if (at.in(pt, rx, my)) return page_handle.right;
+    if (at.in(pt, mx, by)) return page_handle.bottom;
+    return null;
+}
+
+/// The rubber band, in client coordinates: the page's corner to where the
+/// pointer has taken the size.
+fn pagePreviewRect() w.RECT {
+    const o = pageOrigin();
+    return .{
+        .left = o.x,
+        .top = o.y,
+        .right = o.x + page_size.x * app.zoom,
+        .bottom = o.y + page_size.y * app.zoom,
+    };
+}
+
+/// What a drag of that handle makes of the picture, in its own pixels: the
+/// pointer says where the edges it owns are, and one pixel is the least a
+/// picture can be.
+fn pageSizeFor(h: u8, pt: w.POINT) w.POINT {
+    const o = pageOrigin();
+    var size = w.POINT{ .x = app.pic.width, .y = app.pic.height };
+    if (h != page_handle.bottom)
+        size.x = @max(1, @divTrunc(pt.x - o.x, app.zoom));
+    if (h != page_handle.right)
+        size.y = @max(1, @divTrunc(pt.y - o.y, app.zoom));
+    return size;
+}
+
+/// The four edges of a rectangle in client coordinates, and nothing in the
+/// middle: a rubber band round the whole page is a frame, not a page.
+fn invalidateBand(hwnd: w.HWND, r: w.RECT) void {
+    const edges = [_]w.RECT{
+        .{ .left = r.left - 1, .top = r.top - 1, .right = r.right + 1, .bottom = r.top + 1 },
+        .{ .left = r.left - 1, .top = r.bottom - 1, .right = r.right + 1, .bottom = r.bottom + 1 },
+        .{ .left = r.left - 1, .top = r.top - 1, .right = r.left + 1, .bottom = r.bottom + 1 },
+        .{ .left = r.right - 1, .top = r.top - 1, .right = r.right + 1, .bottom = r.bottom + 1 },
+    };
+    for (edges) |e| {
+        var q = e;
+        _ = w.InvalidateRect(hwnd, &q, w.FALSE);
+    }
+}
+
 fn paint(hwnd: w.HWND) void {
     var ps: w.PAINTSTRUCT = undefined;
     const dc = w.BeginPaint(hwnd, &ps).?;
@@ -128,6 +200,10 @@ fn paint(hwnd: w.HWND) void {
         if (app.grid and app.zoom >= 4) drawGrid(dc, o);
     }
     drawHandles(dc);
+    if (page_sizing != null) {
+        var pr = pagePreviewRect();
+        _ = w.DrawFocusRect(dc, &pr);
+    }
     _ = w.EndPaint(hwnd, &ps);
 }
 
@@ -170,6 +246,10 @@ fn scroll(hwnd: w.HWND, bar: i32, code: u16, pos: *i32) void {
 }
 
 /// A point in the window, in the picture's coordinates.
+fn clientPoint(lp: w.LPARAM) w.POINT {
+    return .{ .x = w.GET_X_LPARAM(lp), .y = w.GET_Y_LPARAM(lp) };
+}
+
 fn toImage(lp: w.LPARAM) w.POINT {
     const o = pageOrigin();
     return .{
@@ -182,6 +262,19 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     const p = toImage(lp);
     const d = &tools.drag;
     if (d.active) return;
+    // The live handles sit outside the picture, so a press on one is not a
+    // press with a tool: it starts sizing the picture itself.
+    if (!right and page_sizing == null) {
+        if (liveHandleAt(clientPoint(lp))) |h| {
+            if (textbox.active()) textbox.commit();
+            page_sizing = h;
+            page_size = .{ .x = app.pic.width, .y = app.pic.height };
+            _ = w.SetCapture(hwnd);
+            _ = w.SetFocus(hwnd);
+            _ = w.InvalidateRect(hwnd, null, w.FALSE);
+            return;
+        }
+    }
     // The curve and the polygon are still going from the press before this
     // one; everything else starts afresh.
     const continuing = (app.tool == .curve or app.tool == .polygon) and
@@ -277,6 +370,14 @@ var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    if (page_sizing) |h| {
+        const size = pageSizeFor(h, clientPoint(lp));
+        if (size.x == page_size.x and size.y == page_size.y) return;
+        invalidateBand(hwnd, pagePreviewRect()); // where the band was
+        page_size = size;
+        invalidateBand(hwnd, pagePreviewRect()); // and where it is now
+        return;
+    }
     if (sizing) |h| {
         if (!d.active) return;
         var r = selection.sel.rect;
@@ -419,6 +520,20 @@ const spray_timer = 1;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
+    if (page_sizing) |h| {
+        page_size = pageSizeFor(h, clientPoint(lp));
+        page_sizing = null;
+        _ = w.ReleaseCapture();
+        if (page_size.x != app.pic.width or page_size.y != app.pic.height) {
+            undo.take();
+            // what was there stays in the top left and the rest is the
+            // background colour, exactly as Image > Attributes does it
+            app.pic.resize(page_size.x, page_size.y, app.bg);
+            updateScroll(hwnd);
+        }
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        return;
+    }
     if (!d.active) return;
     if (d.tool == .airbrush) _ = w.KillTimer(hwnd, spray_timer);
     d.cur = toImage(lp);
@@ -514,8 +629,25 @@ fn commit() void {
 }
 
 /// The pointer over the picture: Paint's own drawing for the tool in hand,
-/// read off the machine.
-fn setCursor() void {
+/// read off the machine. Over one of the three handles that size the picture
+/// — or through a drag of one — it is the arrows that edge is dragged with,
+/// which is the machine's answer there too.
+fn setCursor(hwnd: w.HWND) void {
+    var h = page_sizing;
+    if (h == null) {
+        var pt: w.POINT = undefined;
+        if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0)
+            h = liveHandleAt(pt);
+    }
+    if (h) |which| {
+        const shape = switch (which) {
+            page_handle.right => w.IDC_SIZEWE,
+            page_handle.bottom => w.IDC_SIZENS,
+            else => w.IDC_SIZENWSE,
+        };
+        _ = w.SetCursor(w.LoadCursorA(null, shape));
+        return;
+    }
     _ = w.SetCursor(cursors.forTool(app.tool));
 }
 
@@ -523,7 +655,7 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
     switch (msg) {
         w.WM_SETCURSOR => {
             if (w.LOWORD(lp) == w.HTCLIENT) {
-                setCursor();
+                setCursor(hwnd);
                 return 1;
             }
             return w.DefWindowProcA(hwnd, msg, wp, lp);
