@@ -2735,7 +2735,7 @@ static int label_height(const struct ween_wnd *w)
 static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     RECT r = ps->rcPaint;
-    if (wnd->style & BS_DEFPUSHBUTTON) {
+    if (button_type(wnd) == BS_DEFPUSHBUTTON) {
         /* the default ring: 1px black outline, button inset within */
         struct ween_wnd *top = ween_top_level(wnd);
         int ox, oy;
@@ -2762,7 +2762,7 @@ static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         struct ween_wnd *top = ween_top_level(wnd);
         int ox, oy;
         ween_client_origin(wnd, &ox, &oy);
-        int in = (wnd->style & BS_DEFPUSHBUTTON) ? 4 : 3;
+        int in = button_type(wnd) == BS_DEFPUSHBUTTON ? 4 : 3;
         ween_surface_focus_rect(&top->surface, ox + in, oy + in,
                                 wnd->w - 2 * in, wnd->h - 2 * in);
     }

@@ -126,10 +126,12 @@ pub const Picture = struct {
     /// negative, which is what mirroring is in GDI.
     pub fn mirror(self: *Picture, horizontal: bool) void {
         const tmp = self.blank(self.width, self.height, 0xFFFFFF);
+        // the rectangle runs back from where it starts, so a mirror onto
+        // the same size starts one past the far edge
         if (horizontal)
-            _ = w.StretchBlt(tmp, self.width - 1, 0, -self.width, self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY)
+            _ = w.StretchBlt(tmp, self.width, 0, -self.width, self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY)
         else
-            _ = w.StretchBlt(tmp, 0, self.height - 1, self.width, -self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY);
+            _ = w.StretchBlt(tmp, 0, self.height, self.width, -self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY);
         self.adopt(tmp, self.width, self.height);
     }
 
@@ -138,7 +140,7 @@ pub const Picture = struct {
     pub fn rotate(self: *Picture, degrees: i32) void {
         if (degrees == 180) {
             const tmp = self.blank(self.width, self.height, 0xFFFFFF);
-            _ = w.StretchBlt(tmp, self.width - 1, self.height - 1, -self.width, -self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY);
+            _ = w.StretchBlt(tmp, self.width, self.height, -self.width, -self.height, self.dc, 0, 0, self.width, self.height, w.SRCCOPY);
             self.adopt(tmp, self.width, self.height);
             return;
         }

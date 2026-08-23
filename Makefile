@@ -28,7 +28,7 @@ TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
         tests/resize_test tests/multiwin_test tests/timer_test \
         tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
         tests/image_test tests/geometry_test tests/views_test \
-        tests/toolbar_test tests/popup_test \
+        tests/toolbar_test tests/draw_test tests/popup_test \
         tests/propsheet_test
 
 EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
@@ -110,6 +110,9 @@ tests/views_test: tests/views_test.c libween32.a
 
 tests/toolbar_test: tests/toolbar_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/toolbar_test.c libween32.a $(LIBS)
+
+tests/draw_test: tests/draw_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/draw_test.c libween32.a $(LIBS)
 
 test: $(TESTS)
 	@for t in $(TESTS); do ./$$t || exit 1; done

@@ -305,9 +305,12 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         /* The first BS_DEFPUSHBUTTON in the template is the dialog's default
          * command, which is what Enter presses — and only a button can be
          * one. The style bit it lives in is bit zero, which every class uses
-         * for something else: a list view's LVS_REPORT is the same bit. */
+         * for something else: a list view's LVS_REPORT is the same bit. And
+         * the button styles are a small number in that field rather than a
+         * set of flags — BS_AUTORADIOBUTTON is 9, which has bit zero in it —
+         * so the whole field has to match, not the one bit. */
         if (!dlg->defid && cls && !strcmp(cls, "BUTTON") &&
-            (istyle & BS_DEFPUSHBUTTON) == BS_DEFPUSHBUTTON)
+            (istyle & BS_TYPEMASK) == BS_DEFPUSHBUTTON)
             dlg->defid = id;
     }
 
