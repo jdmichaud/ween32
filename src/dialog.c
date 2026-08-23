@@ -350,6 +350,15 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
             dlg->defid = id;
     }
 
+    /* A dialog put up after somebody has typed shows the letters its
+     * mnemonics are on; one put up from a menu walked with the mouse does
+     * not. That is win32's UISF_HIDEACCEL, which a new window takes from the
+     * system rather than from its owner. */
+    if (ween_kbd_used) {
+        ween_menu_cues = 1;
+        ween_ui_focus_cues = 1;
+    }
+
     /* WM_INITDIALOG (after the controls exist). TRUE => set default focus. */
     HWND first = ween_tab_next(dlg, NULL, 1);
     INT_PTR r = SendMessageA(dlg, WM_INITDIALOG, (WPARAM)first, init_param);

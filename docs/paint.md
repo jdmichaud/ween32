@@ -192,6 +192,41 @@ means the window has to be told it wants double clicks (`CS_DBLCLKS`) and the
 second click has to reach the tool with the vertices in it rather than start a
 new one.
 
+**The Open box is the shell's.** What a program gets when it calls
+`GetOpenFileNameA` on the machine is not the plain dialog the API had in 1993
+but the shell's browser: a places bar down the left with History, Desktop, My
+Documents, My Computer and My Network Places, a tool bar beside the "Look in"
+box, the files in a list view, and a size grip in the corner because the
+dialog can be resized. Every rectangle in ours was read off the machine with
+`tools/vm/probe.c`, which dumps the dialog's window tree -- they are in
+pixels, not dialog units, because the shell lays this one out itself -- and
+the pictures were cut out of a capture of it by
+`tools/refcapture/shellart.py`, background and all, since each of them sits on
+a colour the library knows.
+
+    tools/refcapture/shellart.py > src/shellart.c     # the pictures
+    PXDIFF_REF=tools/refcapture/paint/dlg-open.png \
+    PXDIFF_OUR=/tmp/open-ours.png tools/refcapture/pxdiff.py
+
+Against the machine's own, in the same folder with the same file in it: **319
+pixels of 195361**, and 218 of those are two letters. The machine's MS Sans
+Serif draws a `y` with a straighter tail than the one Wine redistributes and
+ween32 embeds, so every label with a `y` in it -- History, My Documents, My
+Computer, My Network Places, "Files of type:", "My Pictures" -- differs by a
+handful; and the bold `O` of the word "Open" in the caption differs the same
+way. The rest is 47 pixels scattered over the list and the boxes.
+
+Five things came out of getting there, and all of them are the library's
+rather than Paint's: `IntersectClipRect` was already there, but the file
+dialog wanted `CBS_OWNERDRAWFIXED` with `WM_DRAWITEM` and `WM_MEASUREITEM`
+(the "Look in" box is drawn by the shell, not by the control, which is why it
+is a pixel taller than the box below it), `CB_GETLBTEXT`, `LVM_GETITEM`, and
+`DT_END_ELLIPSIS` for "My Network P...". Two were faults rather than gaps: a
+list view counted a column header's height in every view rather than only in
+the report view, so the top seventeen pixels of a List view -- where the file
+dialog's first file sits -- answered clicks as though they were a column
+button; and a combo box put its text a pixel below where the machine has it.
+
 ## Checking it
 
 ```sh

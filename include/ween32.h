@@ -152,6 +152,18 @@ typedef struct tagPAINTSTRUCT {
     BYTE rgbReserved[32];
 } PAINTSTRUCT;
 
+/* What an owner-drawn control asks its parent before it lays anything out.
+ * The shell's file dialog answers it for the "Look in" box, which is why that
+ * box is a pixel taller than the plain one below it. */
+typedef struct tagMEASUREITEMSTRUCT {
+    UINT CtlType;
+    UINT CtlID;
+    UINT itemID;
+    UINT itemWidth;
+    UINT itemHeight;
+    UINT_PTR itemData;
+} MEASUREITEMSTRUCT, *LPMEASUREITEMSTRUCT;
+
 typedef struct tagDRAWITEMSTRUCT {
     UINT CtlType;
     UINT CtlID;
@@ -244,6 +256,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_NCLBUTTONDOWN 0x00A1
 #define WM_NCLBUTTONUP 0x00A2
 #define WM_DRAWITEM 0x002B
+#define WM_MEASUREITEM 0x002C
 #define WM_INITDIALOG 0x0110
 #define WM_USER 0x0400
 #define DM_GETDEFID (WM_USER + 0)
@@ -438,11 +451,14 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define CBS_SIMPLE 0x0001L
 #define CBS_DROPDOWN 0x0002L
 #define CBS_DROPDOWNLIST 0x0003L
+#define CBS_OWNERDRAWFIXED 0x0010L
+#define CB_ERR (-1)
 #define CB_ADDSTRING 0x0143
 #define CB_DELETESTRING 0x0144
 #define CB_GETCOUNT 0x0146
 #define CB_GETCURSEL 0x0147
 #define CB_GETLBTEXT 0x0148
+#define CB_GETLBTEXTLEN 0x0149
 #define CB_INSERTSTRING 0x014A
 #define CB_RESETCONTENT 0x014B
 
@@ -643,6 +659,7 @@ typedef struct tagTVHITTESTINFO {
 #define LVS_TYPEMASK 0x0003L
 #define LVS_SINGLESEL 0x0004L
 #define LVS_SHOWSELALWAYS 0x0008L
+#define LVS_SHAREIMAGELISTS 0x0040L
 /* A row's label can be typed over in place — which is what Rename is, and
  * what a folder just made is left in. */
 #define LVS_EDITLABELS 0x0200L
@@ -715,6 +732,7 @@ typedef struct {
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
+#define LVM_GETITEMA (LVM_FIRST + 5)
 #define LVM_INSERTITEMA (LVM_FIRST + 7)
 #define LVM_SETIMAGELIST (LVM_FIRST + 3)
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
@@ -761,6 +779,7 @@ typedef struct tagLVHITTESTINFO {
     int iItem;
     int iSubItem;
 } LVHITTESTINFO;
+#define LVM_GETITEMTEXTA (LVM_FIRST + 45)
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
 #define LVM_GETITEMSTATE (LVM_FIRST + 44)
@@ -1127,10 +1146,18 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define BST_PUSHED 0x0004
 
 /* owner draw */
+#define ODT_MENU 1
+#define ODT_LISTBOX 2
+#define ODT_COMBOBOX 3
 #define ODT_BUTTON 4
+#define ODT_STATIC 5
 #define ODA_DRAWENTIRE 0x0001
 #define ODA_SELECT 0x0002
+#define ODA_FOCUS 0x0004
 #define ODS_SELECTED 0x0001
+#define ODS_DISABLED 0x0004
+#define ODS_FOCUS 0x0010
+#define ODS_COMBOBOXEDIT 0x1000
 
 /* ---- hit-test results --------------------------------------------------- */
 
@@ -1280,6 +1307,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DT_CALCRECT 0x00000400
 #define DT_NOCLIP 0x00000100
 #define DT_NOPREFIX 0x00000800
+#define DT_END_ELLIPSIS 0x00008000
 /* Draw the label without the '&' and without the underline under the letter
  * after it. Windows hides those until the keyboard has been used, and asks
  * for them this way when they are hidden. */

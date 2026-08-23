@@ -518,6 +518,28 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             underline = -1; /* the '&' goes, the line under it never comes */
     }
 
+    /* Too wide for the rectangle, and told to cut it: as many characters as
+     * fit with three dots after them, which is what a places bar does with
+     * "My Network Places" and a status bar with a long path. */
+    char cut[512];
+    if ((format & DT_END_ELLIPSIS) && rect->right > rect->left &&
+        ween_strike_text_extent(f, text, len) > rect->right - rect->left) {
+        int avail = rect->right - rect->left;
+        int dots = ween_strike_text_extent(f, "...", 3);
+        int take = len;
+        while (take > 0 &&
+               ween_strike_text_extent(f, text, take) + dots > avail)
+            take--;
+        if (take > (int)sizeof(cut) - 4)
+            take = (int)sizeof(cut) - 4;
+        memcpy(cut, text, (size_t)take);
+        memcpy(cut + take, "...", 4);
+        text = cut;
+        len = take + 3;
+        if (underline >= len)
+            underline = -1;
+    }
+
     /* Alignment is done with the *measured* width and cell height; the glyphs
      * are then drawn with the strike's own advances. */
     int tw = ween_strike_text_extent(f, text, len);

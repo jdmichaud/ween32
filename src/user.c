@@ -81,6 +81,11 @@ int ween_render_dpi(void)
     return g_render_dpi;
 }
 
+/* Whether anything has been typed yet. A dialog created after it has takes
+ * its keyboard cues from this, the way win32 takes them from the system's
+ * own "the last thing the user did was type" flag. */
+int ween_kbd_used = 0;
+
 int ween_zoom(void)
 {
     dpi_init();
@@ -2697,6 +2702,12 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
                  MAKELPARAM((WORD)ev->x, (WORD)ev->y));
         break;
     case WEEN_EV_KEY:
+        /* Somebody is using the keyboard, which is what a window put up from
+         * here on has to know: the machine shows the underlines under the
+         * mnemonics of a dialog opened by key and not of one opened by mouse,
+         * and Ctrl+O is enough to count -- its Open box comes up with them.
+         * The windows already on the screen keep what they had. */
+        ween_kbd_used = 1;
         /* the character rides in the high word, where win32 keeps the scan
          * code and repeat count; TranslateMessage turns it into WM_CHAR */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,

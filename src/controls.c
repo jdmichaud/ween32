@@ -1757,6 +1757,34 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 static int combo_text_is_sel(ween_items *it);
 
+/* A box whose owner draws what is in it, which is how the shell's file
+ * dialog puts a folder's picture beside its name in the "Look in" box: the
+ * control draws the frame and the button, and the parent is handed the
+ * rectangle between them. */
+static int combo_owner_drew(HWND wnd, HDC dc, const RECT *item, int which,
+                            UINT state)
+{
+    DRAWITEMSTRUCT di;
+    ween_items *it = items_of(wnd);
+    if (!(wnd->style & CBS_OWNERDRAWFIXED) || !wnd->parent)
+        return 0;
+    memset(&di, 0, sizeof di);
+    di.CtlType = ODT_COMBOBOX;
+    di.CtlID = (UINT)wnd->id;
+    di.itemID = (UINT)which;
+    di.itemAction = ODA_DRAWENTIRE;
+    di.itemState = state;
+    di.hwndItem = wnd;
+    di.hDC = dc;
+    di.rcItem = *item;
+    di.itemData = it && which >= 0 && which < it->count ? (UINT_PTR)which : 0;
+    SendMessageA(wnd->parent, WM_DRAWITEM, (WPARAM)wnd->id, (LPARAM)&di);
+    /* Whatever the parent made of it, the box does not draw the item itself:
+     * that is what owner-drawn means, and a parent that draws nothing gets an
+     * empty box rather than the control's idea of one. */
+    return 1;
+}
+
 static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
@@ -1781,6 +1809,15 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                 oy + (r.bottom - r.top - WEEN_CBEX_IMAGE) / 2);
         return;
     }
+    {
+        /* the part between the frame and the button, which is the item's */
+        RECT item;
+        GetClientRect(wnd, &item);
+        item.right -= btn;
+        if (combo_owner_drew(wnd, dc, &item, it ? it->cursel : -1,
+                             ODS_COMBOBOXEDIT))
+            return;
+    }
     if (it && it->cursel >= 0 && it->cursel < it->count) {
         int tx = 2;
         /* The field shows the item's image but not its indent: it is what
@@ -1793,8 +1830,18 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                 oy + (r.bottom - r.top - WEEN_CBEX_IMAGE) / 2);
             tx = 1 + WEEN_CBEX_IMAGE + 4;
         }
-        SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-        TextOutA(dc, tx, 3, it->item[it->cursel], -1);
+        {
+            /* the line sits in the middle of what the box has room for,
+             * which is where the machine's has it */
+            const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+            /* the line the letters sit on, not the strike's own cell, which
+             * for a bitmap face is a row taller */
+            int cell = f ? f->ascent - f->descent : 13;
+            RECT c;
+            GetClientRect(wnd, &c);
+            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+            TextOutA(dc, tx, (c.bottom - cell) / 2, it->item[it->cursel], -1);
+        }
     }
 }
 
@@ -1988,7 +2035,7 @@ static int combo_edit_x(HWND wnd, ween_items *it)
      * address bar on the machine and the folder's icon goes, but the space it
      * stood in stays and the text keeps its inset. */
     (void)wnd;
-    return it && it->images ? 1 + WEEN_CBEX_IMAGE + 4 : 2;
+    return it && it->images ? 1 + WEEN_CBEX_IMAGE + 4 : 1;
 }
 
 /* What a combo box is made of. A program that wants to put something under
@@ -2433,17 +2480,44 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g_dropped == wnd)
             g_dropped = NULL;
         return 0;
-    case WM_CREATE:
+    case WM_CREATE: {
         /* The combo box wears the field border itself, whatever ex-style it
-         * was created with, and a closed drop-down list is one item tall
-         * however high the app asked for. */
+         * was created with, and a closed drop-down list is one row tall
+         * however high the app asked for -- what it asked for is how far the
+         * list drops.
+         *
+         * The row is the font's line with a pixel over and under it, or the
+         * sixteen a picture wants; the box is six more than that, which is
+         * the two edges and the two paddings. The machine's plain box is
+         * twenty-one and the one that draws pictures is twenty-two, and this
+         * is where those two numbers come from. */
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        int row = f ? f->ascent - f->descent + 2 : 15;
         wnd->ex_style |= WS_EX_CLIENTEDGE;
         it = items_of(wnd);
         if (it)
             it->drop_h = wnd->h; /* what it will be when the list is down */
-        wnd->h = item_height(wnd) + 4 + 2 * ween_border_width(wnd);
+        if (wnd->cls && wnd->cls->name &&
+            !strcmp(wnd->cls->name, WC_COMBOBOXEXA) && row < WEEN_CBEX_IMAGE)
+            row = WEEN_CBEX_IMAGE;
+        if ((wnd->style & CBS_OWNERDRAWFIXED) && wnd->parent) {
+            /* the owner says how tall a row of its own drawing is */
+            MEASUREITEMSTRUCT mi;
+            memset(&mi, 0, sizeof mi);
+            mi.CtlType = ODT_COMBOBOX;
+            mi.CtlID = (UINT)wnd->id;
+            mi.itemHeight = (UINT)row;
+            SendMessageA(wnd->parent, WM_MEASUREITEM, (WPARAM)wnd->id,
+                         (LPARAM)&mi);
+            if (mi.itemHeight > 0)
+                row = (int)mi.itemHeight;
+            if (it)
+                it->item_h = row;
+        }
+        wnd->h = row + 6;
         combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
+    }
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
@@ -2541,6 +2615,30 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case CB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;
+    case CB_GETLBTEXTLEN: {
+        int i = (int)wp;
+        it = items_of(wnd);
+        if (!it || i < 0 || i >= it->count)
+            return CB_ERR;
+        return (LRESULT)strlen(it->item[i]);
+    }
+    case CB_GETLBTEXT: {
+        /* One item's text, into the caller's buffer: the only way a program
+         * reads back what it put in, and what an owner-drawn box is handed an
+         * item number for. */
+        int i = (int)wp;
+        char *out = (char *)lp;
+        size_t n;
+        it = items_of(wnd);
+        if (!out || !it || i < 0 || i >= it->count) {
+            if (out)
+                out[0] = 0;
+            return CB_ERR;
+        }
+        n = strlen(it->item[i]);
+        memcpy(out, it->item[i], n + 1);
+        return (LRESULT)n;
+    }
     default:
         return DefWindowProcA(wnd, msg, wp, lp);
     }
@@ -3447,9 +3545,17 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 /* How tall the heading strip is on this view: none, when it was told to do
  * without one. */
+static int lv_mode(const struct ween_wnd *wnd);
+
+/* Only the report view has a header: the others show no columns, so there is
+ * nothing to head. Counting one anyway left the top seventeen pixels of a
+ * List view answering clicks as though they were on a column button, which is
+ * where the file dialog's first file sits. */
 static int lv_header_h(HWND wnd)
 {
-    return (wnd->style & LVS_NOCOLUMNHEADER) ? 0 : WEEN_LV_HEADER_H;
+    if (lv_mode(wnd) != LVS_REPORT || (wnd->style & LVS_NOCOLUMNHEADER))
+        return 0;
+    return WEEN_LV_HEADER_H;
 }
 /* The two rows of window a list keeps between its header and its first item.
  * Windows leaves them; without them every row sits two pixels high. */
@@ -4033,8 +4139,10 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
                 line++;
             }
         } else {
-            /* the picture, then the name beside it */
-            int ix = ox + c.left, iy = oy + c.top + (WEEN_LV_FLOW_H - icon_h) / 2;
+            /* the picture, then the name beside it. The picture sits at the
+             * top of the cell and the name in the middle of it, which is
+             * where the machine's file dialog has them. */
+            int ix = ox + c.left, iy = oy + c.top;
             int tx = ix + icon_w + 2;
             int ty = oy + c.top + (WEEN_LV_FLOW_H - th) / 2;
             if (images && l->row[i].image >= 0)
@@ -4807,6 +4915,48 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return (LRESULT)(UINT_PTR)was;
         }
         return 0;
+    case LVM_GETITEMA: {
+        /* What a row holds, which a program that put it there is entitled to
+         * ask for: the text into the caller's own buffer, and whichever of
+         * the picture and the state it says it wants. */
+        LVITEMA *item = (LVITEMA *)lp;
+        l = list_of(wnd);
+        if (!l || !item || item->iItem < 0 || item->iItem >= l->nrow ||
+            item->iSubItem < 0 || item->iSubItem >= WEEN_LV_COLS)
+            return FALSE;
+        if ((item->mask & LVIF_TEXT) && item->pszText && item->cchTextMax > 0) {
+            const char *t = l->row[item->iItem].text[item->iSubItem];
+            int n = 0;
+            while (t && t[n] && n < item->cchTextMax - 1) {
+                item->pszText[n] = t[n];
+                n++;
+            }
+            item->pszText[n] = 0;
+        }
+        if (item->mask & LVIF_IMAGE)
+            item->iImage = l->row[item->iItem].image;
+        if (item->mask & LVIF_STATE)
+            item->state = (UINT)(l->row[item->iItem].selected ? LVIS_SELECTED : 0) |
+                          (UINT)(l->focus == item->iItem ? LVIS_FOCUSED : 0);
+        return TRUE;
+    }
+    case LVM_GETITEMTEXTA: {
+        LVITEMA *item = (LVITEMA *)lp;
+        int i = (int)wp;
+        const char *t;
+        int n = 0;
+        l = list_of(wnd);
+        if (!l || !item || i < 0 || i >= l->nrow || item->iSubItem < 0 ||
+            item->iSubItem >= WEEN_LV_COLS || !item->pszText)
+            return 0;
+        t = l->row[i].text[item->iSubItem];
+        while (t && t[n] && n < item->cchTextMax - 1) {
+            item->pszText[n] = t[n];
+            n++;
+        }
+        item->pszText[n] = 0;
+        return n;
+    }
     case LVM_SETITEMTEXTA: {
         const LVITEMA *item = (const LVITEMA *)lp;
         int i = (int)wp;

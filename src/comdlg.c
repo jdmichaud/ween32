@@ -106,19 +106,49 @@ static DLGTEMPLATE *build(void *buf, DWORD style, short cx, short cy,
     return (DLGTEMPLATE *)base;
 }
 
-/* ---- the file dialog ---------------------------------------------------- */
+/* ---- the file dialog ----------------------------------------------------
+ *
+ * The shell's dialog, the way Windows 2000 puts it up: a places bar down the
+ * left, a tool bar beside the "Look in" box, and the files in a list view.
+ *
+ * Every rectangle here was read off the machine rather than guessed --
+ * tools/vm/probe.c dumps the dialog's whole window tree -- and they are in
+ * pixels rather than dialog units, because the shell builds this dialog
+ * itself and its parts do not land on the dialog grid. The pictures are cut
+ * out of a capture of it, in src/shellart.c.
+ */
 
-#define IDC_FILE_LIST 0x0460
-#define IDC_FILE_NAME 0x0480
-#define IDC_FILE_TYPE 0x0470
-#define IDC_FILE_DIR 0x0471
-#define IDC_FILE_UP 0x0472
+/* The ids the shell uses. A program that hooks this dialog asks for its
+ * controls by these numbers, so they are not ours to choose. */
+#define IDC_FILE_LOOKIN_LABEL 1091
+#define IDC_FILE_LOOKIN 1137
+#define IDC_FILE_PLACES 1184
+#define IDC_FILE_BAR 1186
+#define IDC_FILE_LIST 1
+#define IDC_FILE_NAME_LABEL 1090
+#define IDC_FILE_NAME 1148
+#define IDC_FILE_TYPE_LABEL 1089
+#define IDC_FILE_TYPE 1136
+
+/* The client area, and where everything in it sits. */
+#define FD_CX 555
+#define FD_CY 320
+#define FD_PLACES_X 6
+#define FD_PLACES_Y 36
+#define FD_PLACES_CX 87
+#define FD_PLACES_CY 273
+#define FD_PLACE_PITCH 52 /* one place under the next */
+#define FD_LIST_X 99
+#define FD_LIST_Y 36
+#define FD_LIST_CX 450
+#define FD_LIST_CY 218
 
 static struct {
     OPENFILENAMEA *ofn;
     int saving;
-    char dir[1024];
-    char pick[1400];
+    char dir[1400];
+    char pick[1800];
+    HIMAGELIST icons; /* the two the list draws: a folder and a document */
 } g_fd;
 
 /* The extensions the caller's filter allows, as a list of "*.bmp" patterns.
@@ -170,33 +200,310 @@ static int matches(const char *name, const char *patterns)
     return 0;
 }
 
-/* Directories first, in square brackets as the old dialog wrote them, then
- * the files the filter allows. */
+/* ---- the dialog's pictures ---------------------------------------------- */
+
+/* A picture as a bitmap, made once and kept: these are drawn on every paint
+ * and none of them ever changes. */
+static HBITMAP art_bitmap(int which)
+{
+    static HBITMAP made[WEEN_ART_DOCUMENT16 + 1];
+    const ween_shell_art *a;
+    unsigned char *bits;
+    HBITMAP bmp;
+    if (which < 0 || which > WEEN_ART_DOCUMENT16)
+        return NULL;
+    if (made[which])
+        return made[which];
+    a = ween_shell_picture(which);
+    if (!a)
+        return NULL;
+    bits = malloc((size_t)a->w * (size_t)a->h * 4);
+    if (!bits)
+        return NULL;
+    for (int i = 0; i < a->w * a->h; i++) {
+        bits[i * 4 + 0] = (unsigned char)(a->px[i] & 0xff);         /* blue */
+        bits[i * 4 + 1] = (unsigned char)((a->px[i] >> 8) & 0xff);  /* green */
+        bits[i * 4 + 2] = (unsigned char)((a->px[i] >> 16) & 0xff); /* red */
+        bits[i * 4 + 3] = 0;
+    }
+    bmp = CreateBitmap(a->w, a->h, 1, 32, bits);
+    free(bits);
+    made[which] = bmp;
+    return bmp;
+}
+
+static void art_draw(HDC dc, int which, int x, int y)
+{
+    const ween_shell_art *a = ween_shell_picture(which);
+    HBITMAP bmp = art_bitmap(which);
+    HDC mem;
+    HGDIOBJ old;
+    if (!a || !bmp)
+        return;
+    mem = CreateCompatibleDC(dc);
+    old = SelectObject(mem, bmp);
+    BitBlt(dc, x, y, a->w, a->h, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, old);
+    DeleteDC(mem);
+}
+
+/* ---- the places bar ----------------------------------------------------- */
+
+/* The five the shell offers, in its order. Where each one goes is this
+ * machine's answer to the same question -- there is no Desktop folder here
+ * that is not the home directory, and no network at all. */
+static const struct {
+    const char *name;
+    int art;
+} g_places[5] = {
+    { "History", WEEN_ART_HISTORY },
+    { "Desktop", WEEN_ART_DESKTOP },
+    { "My Documents", WEEN_ART_DOCUMENTS },
+    { "My Computer", WEEN_ART_COMPUTER },
+    { "My Network Places", WEEN_ART_NETWORK },
+};
+
+static void places_go(HWND dlg, int which);
+
+static LRESULT CALLBACK places_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        RECT c, in;
+        HBRUSH grey;
+        GetClientRect(wnd, &c);
+        /* the bar is sunken, and what is inside it is the shadow grey rather
+         * than the face -- which is what the labels are white against */
+        DrawEdge(dc, &c, EDGE_SUNKEN, BF_RECT);
+        in.left = c.left + 2;
+        in.top = c.top + 2;
+        in.right = c.right - 2;
+        in.bottom = c.bottom - 2;
+        grey = CreateSolidBrush(RGB(128, 128, 128));
+        FillRect(dc, &in, grey);
+        DeleteObject(grey);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(255, 255, 255));
+        for (int i = 0; i < 5; i++) {
+            const ween_shell_art *a = ween_shell_picture(g_places[i].art);
+            int top = in.top + 3 + FD_PLACE_PITCH * i;
+            RECT t;
+            art_draw(dc, g_places[i].art,
+                     in.left + ((in.right - in.left) - a->w) / 2, top);
+            /* four in on each side: "My Network Places" is cut to "My
+             * Network P..." on the machine, and one more letter fits in the
+             * whole width */
+            t.left = in.left + 3;
+            t.right = in.right - 3;
+            t.top = top + 33; /* where the machine's line of text starts */
+            t.bottom = t.top + 13;
+            DrawTextA(dc, g_places[i].name, -1, &t,
+                      DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        }
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        int y = GET_Y_LPARAM(lp) - 2 - 3;
+        int which = y / FD_PLACE_PITCH;
+        if (which >= 0 && which < 5)
+            places_go(GetParent(wnd), which);
+        return 0;
+    }
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* ---- the tool bar ------------------------------------------------------- */
+
+/* Four buttons of twenty-three pixels and the arrow beside the last: Back,
+ * Up one level, Create New Folder and the view menu. The strip is drawn from
+ * the capture, so what it looks like at rest is what the machine looks like;
+ * only what the buttons do is ours. */
+#define FD_BAR_BUTTON 23
+#define FD_BAR_BACK 0
+#define FD_BAR_UP 1
+#define FD_BAR_NEW 2
+#define FD_BAR_VIEWS 3
+
+static void bar_click(HWND dlg, int which);
+
+static LRESULT CALLBACK bar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(wnd, &ps);
+        art_draw(dc, WEEN_ART_TOOLBAR, 0, 0);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        int which = GET_X_LPARAM(lp) / FD_BAR_BUTTON;
+        if (which >= 0 && which <= FD_BAR_VIEWS)
+            bar_click(GetParent(wnd), which);
+        return 0;
+    }
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+/* The corner a resizable dialog is dragged bigger by. The machine puts a
+ * scroll bar control with SBS_SIZEGRIP there; what shows is the hatch. */
+static LRESULT CALLBACK grip_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        RECT c;
+        int ox, oy;
+        BeginPaint(wnd, &ps);
+        GetClientRect(wnd, &c);
+        ween_client_origin(wnd, &ox, &oy);
+        /* the twelve-pixel hatch a status bar wears, in the corner of the
+         * sixteen the control occupies -- which is what the machine draws */
+        ween_classic_sizegrip(&ween_top_level(wnd)->surface, ox + c.right - 1,
+                              oy + c.bottom - 1);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+}
+
+static void register_parts(void)
+{
+    static int done;
+    WNDCLASSA wc;
+    if (done)
+        return;
+    done = 1;
+    memset(&wc, 0, sizeof wc);
+    wc.lpfnWndProc = places_proc;
+    wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    wc.lpszClassName = "weenfileplaces";
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = bar_proc;
+    wc.lpszClassName = "weenfilebar";
+    RegisterClassA(&wc);
+    wc.lpfnWndProc = grip_proc;
+    wc.hCursor = LoadCursorA(NULL, IDC_SIZENWSE);
+    wc.lpszClassName = "weenfilegrip";
+    RegisterClassA(&wc);
+}
+
+/* ---- what the dialog shows ---------------------------------------------- */
+
+/* The two the list draws beside a name. The folder is the one the machine's
+ * own "Look in" box wears, since that is the folder picture this capture
+ * has; the document is the one it drew beside a .bmp. */
+#define FD_ICON_FOLDER 0
+#define FD_ICON_FILE 1
+
+static void make_icons(void)
+{
+    HBITMAP bmp;
+    if (g_fd.icons)
+        return;
+    g_fd.icons = ImageList_Create(16, 16, ILC_MASK, 2, 0);
+    if (!g_fd.icons)
+        return;
+    bmp = art_bitmap(WEEN_ART_LOOKIN);
+    if (bmp)
+        ImageList_Add(g_fd.icons, bmp, NULL);
+    bmp = art_bitmap(WEEN_ART_DOCUMENT16);
+    if (bmp)
+        ImageList_Add(g_fd.icons, bmp, NULL);
+}
+
+/* The name a path ends in, which is what the "Look in" box shows. */
+static const char *leaf(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    if (!slash || !slash[1])
+        return path;
+    return slash + 1;
+}
+
+/* What the list writes beside the picture.
+ *
+ * The shell leaves the extension off a file whose type it knows, which is
+ * every type its Open box is filtering for: the machine's list says "mru"
+ * where the file is mru.bmp. What it hands back is still the whole name. */
+static const char *shown_name(const char *name, const char *patterns)
+{
+    static char cut[300];
+    const char *dot = strrchr(name, '.');
+    char one[64];
+    const char *p = patterns;
+    if (!dot || dot == name || strlen(name) >= sizeof cut)
+        return name;
+    while (*p) {
+        const char *semi = strchr(p, ';');
+        size_t n = semi ? (size_t)(semi - p) : strlen(p);
+        if (n < sizeof one && n > 2) {
+            memcpy(one, p, n);
+            one[n] = 0;
+            if (one[0] == '*' && one[1] == '.' && lstrcmpiA(dot, one + 1) == 0) {
+                memcpy(cut, name, (size_t)(dot - name));
+                cut[dot - name] = 0;
+                return cut;
+            }
+        }
+        if (!semi)
+            break;
+        p = semi + 1;
+    }
+    return name;
+}
+
+static void add_item(HWND list, int at, const char *text, int image)
+{
+    LVITEMA it;
+    memset(&it, 0, sizeof it);
+    it.mask = LVIF_TEXT | LVIF_IMAGE;
+    it.iItem = at;
+    it.pszText = (LPSTR)text;
+    it.iImage = image;
+    SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+}
+
+/* Folders first, then the files the filter allows -- which is the order the
+ * shell lists them in, each kind sorted by name. */
 static void fill_list(HWND dlg)
 {
     HWND list = GetDlgItem(dlg, IDC_FILE_LIST);
+    HWND lookin = GetDlgItem(dlg, IDC_FILE_LOOKIN);
     const char *patterns = filter_patterns();
     DIR *d;
     struct dirent *e;
-    char line[300];
+    int at = 0;
 
-    SendMessageA(list, LB_RESETCONTENT, 0, 0);
-    SetDlgItemTextA(dlg, IDC_FILE_DIR, g_fd.dir);
+    SendMessageA(list, LVM_DELETEALLITEMS, 0, 0);
+    if (lookin) {
+        SendMessageA(lookin, CB_RESETCONTENT, 0, 0);
+        SendMessageA(lookin, CB_ADDSTRING, 0, (LPARAM)leaf(g_fd.dir));
+        SendMessageA(lookin, CB_SETCURSEL, 0, 0);
+    }
     d = opendir(g_fd.dir);
     if (!d)
         return;
     while ((e = readdir(d))) {
         struct stat st;
-        char full[1400];
-        if (strcmp(e->d_name, ".") == 0)
+        char full[1700];
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
             continue;
+        if (e->d_name[0] == '.')
+            continue; /* the shell hides what begins with a dot */
         snprintf(full, sizeof full, "%s/%s", g_fd.dir, e->d_name);
-        if (stat(full, &st) != 0)
+        if (stat(full, &st) != 0 || !S_ISDIR(st.st_mode))
             continue;
-        if (S_ISDIR(st.st_mode)) {
-            snprintf(line, sizeof line, "[%s]", e->d_name);
-            SendMessageA(list, LB_ADDSTRING, 0, (LPARAM)line);
-        }
+        add_item(list, at++, e->d_name, FD_ICON_FOLDER);
     }
     closedir(d);
     d = opendir(g_fd.dir);
@@ -204,43 +511,71 @@ static void fill_list(HWND dlg)
         return;
     while ((e = readdir(d))) {
         struct stat st;
-        char full[1400];
+        char full[1700];
         snprintf(full, sizeof full, "%s/%s", g_fd.dir, e->d_name);
         if (stat(full, &st) != 0 || S_ISDIR(st.st_mode))
             continue;
         if (!matches(e->d_name, patterns))
             continue;
-        SendMessageA(list, LB_ADDSTRING, 0, (LPARAM)e->d_name);
+        add_item(list, at++, shown_name(e->d_name, patterns), FD_ICON_FILE);
     }
     closedir(d);
 }
 
-/* Follow a directory, or take a file name. */
-static void chosen(HWND dlg, const char *name)
+/* Go somewhere: a folder inside this one, or the one above. */
+static void go_to(HWND dlg, const char *path)
 {
-    if (name[0] == '[') {
-        char sub[300];
-        size_t n = strlen(name);
-        if (n < 3)
-            return;
-        memcpy(sub, name + 1, n - 2);
-        sub[n - 2] = 0;
-        if (strcmp(sub, "..") == 0) {
-            char *slash = strrchr(g_fd.dir, '/');
-            if (slash && slash != g_fd.dir)
-                *slash = 0;
-            else if (slash)
-                slash[1] = 0;
-        } else {
-            size_t len = strlen(g_fd.dir);
-            snprintf(g_fd.dir + len, sizeof g_fd.dir - len, "%s%s",
-                     len && g_fd.dir[len - 1] == '/' ? "" : "/", sub);
-        }
-        fill_list(dlg);
-        SetDlgItemTextA(dlg, IDC_FILE_NAME, "");
+    if (strlen(path) >= sizeof g_fd.dir)
+        return; /* deeper than anything here can hold */
+    snprintf(g_fd.dir, sizeof g_fd.dir, "%s", path);
+    fill_list(dlg);
+}
+
+static void go_into(HWND dlg, const char *name)
+{
+    char next[1700];
+    size_t len = strlen(g_fd.dir);
+    snprintf(next, sizeof next, "%s%s%s", g_fd.dir,
+             len && g_fd.dir[len - 1] == '/' ? "" : "/", name);
+    go_to(dlg, next);
+}
+
+static void go_up(HWND dlg)
+{
+    char up[1400];
+    char *slash;
+    snprintf(up, sizeof up, "%s", g_fd.dir);
+    slash = strrchr(up, '/');
+    if (!slash)
         return;
+    if (slash == up)
+        slash[1] = 0;
+    else
+        *slash = 0;
+    go_to(dlg, up);
+}
+
+static void places_go(HWND dlg, int which)
+{
+    const char *home = getenv("HOME");
+    switch (which) {
+    case 1: /* Desktop */
+    case 2: /* My Documents */
+        if (home)
+            go_to(dlg, home);
+        break;
+    case 3: /* My Computer */
+        go_to(dlg, "/");
+        break;
+    default: /* History and the network are not places here */
+        break;
     }
-    SetDlgItemTextA(dlg, IDC_FILE_NAME, name);
+}
+
+static void bar_click(HWND dlg, int which)
+{
+    if (which == FD_BAR_UP)
+        go_up(dlg);
 }
 
 /* Put the typed name together with the directory and hand it back. */
@@ -250,14 +585,17 @@ static int accept(HWND dlg)
     GetDlgItemTextA(dlg, IDC_FILE_NAME, name, sizeof name);
     if (!name[0])
         return 0;
-    if (name[0] == '[') {
-        chosen(dlg, name);
-        return 0;
-    }
     if (name[0] != '/') {
         size_t len = strlen(g_fd.dir);
+        struct stat st;
         snprintf(g_fd.pick, sizeof g_fd.pick, "%s%s%s", g_fd.dir,
                  len && g_fd.dir[len - 1] == '/' ? "" : "/", name);
+        /* a name that is a folder walks into it, as the shell does */
+        if (stat(g_fd.pick, &st) == 0 && S_ISDIR(st.st_mode)) {
+            go_into(dlg, name);
+            SetDlgItemTextA(dlg, IDC_FILE_NAME, "");
+            return 0;
+        }
     } else {
         snprintf(g_fd.pick, sizeof g_fd.pick, "%s", name);
     }
@@ -278,20 +616,139 @@ static int accept(HWND dlg)
     return 1;
 }
 
+/* What the list has picked out, into the name box. */
+static void selection_changed(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_FILE_LIST);
+    LVITEMA it;
+    char name[300];
+    int sel = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    if (sel < 0)
+        return;
+    memset(&it, 0, sizeof it);
+    it.mask = LVIF_TEXT | LVIF_IMAGE;
+    it.iItem = sel;
+    it.pszText = name;
+    it.cchTextMax = sizeof name;
+    SendMessageA(list, LVM_GETITEMA, 0, (LPARAM)&it);
+    if (it.iImage != FD_ICON_FOLDER)
+        SetDlgItemTextA(dlg, IDC_FILE_NAME, name);
+}
+
+static void open_selection(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_FILE_LIST);
+    LVITEMA it;
+    char name[300];
+    int sel = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    if (sel < 0)
+        return;
+    memset(&it, 0, sizeof it);
+    it.mask = LVIF_TEXT | LVIF_IMAGE;
+    it.iItem = sel;
+    it.pszText = name;
+    it.cchTextMax = sizeof name;
+    SendMessageA(list, LVM_GETITEMA, 0, (LPARAM)&it);
+    if (it.iImage == FD_ICON_FOLDER) {
+        go_into(dlg, name);
+        SetDlgItemTextA(dlg, IDC_FILE_NAME, "");
+        return;
+    }
+    SetDlgItemTextA(dlg, IDC_FILE_NAME, name);
+    if (accept(dlg))
+        EndDialog(dlg, 1);
+}
+
+/* One control, at the pixels the machine puts it. */
+static HWND part(HWND dlg, DWORD ex, const char *cls, const char *text,
+                 DWORD style, int x, int y, int cx, int cy, int id)
+{
+    HWND w = CreateWindowExA(ex, cls, text, WS_CHILD | WS_VISIBLE | style, x, y,
+                             cx, cy, dlg, (HMENU)(INT_PTR)id, NULL, NULL);
+    /* The dialog's own face, which is the one its template asked for. A
+     * control the dialog manager makes is given it; one made by hand here
+     * would otherwise be lettered in the shell's font instead, and the two
+     * are not the same width. */
+    if (w)
+        ((struct ween_wnd *)w)->font = ((struct ween_wnd *)dlg)->font;
+    return w;
+}
+
 static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     (void)lp;
     switch (msg) {
     case WM_INITDIALOG: {
-        HWND type = GetDlgItem(dlg, IDC_FILE_TYPE);
+        HWND type, list;
         const char *p = g_fd.ofn->lpstrFilter;
-        fill_list(dlg);
-        if (g_fd.ofn->lpstrFile && g_fd.ofn->lpstrFile[0]) {
-            const char *slash = strrchr(g_fd.ofn->lpstrFile, '/');
-            SetDlgItemTextA(dlg, IDC_FILE_NAME,
-                            slash ? slash + 1 : g_fd.ofn->lpstrFile);
+        RECT want;
+        register_parts();
+        make_icons();
+
+        /* the client area the machine's dialog has, whatever a frame costs */
+        want.left = 0;
+        want.top = 0;
+        want.right = FD_CX;
+        want.bottom = FD_CY;
+        AdjustWindowRectEx(&want, (DWORD)GetWindowLongA(dlg, GWL_STYLE), FALSE,
+                           (DWORD)GetWindowLongA(dlg, GWL_EXSTYLE));
+        {
+            RECT owner;
+            int cx = want.right - want.left, cy = want.bottom - want.top;
+            int x = 0, y = 0;
+            if (g_fd.ofn->hwndOwner &&
+                GetWindowRect(g_fd.ofn->hwndOwner, &owner)) {
+                x = owner.left + ((owner.right - owner.left) - cx) / 2;
+                y = owner.top + ((owner.bottom - owner.top) - cy) / 2;
+            }
+            if (x < 0)
+                x = 0;
+            if (y < 0)
+                y = 0;
+            MoveWindow(dlg, x, y, cx, cy, FALSE);
         }
-        while (p && *p) { /* the filter's labels go in the combo box */
+
+        part(dlg, 0, "STATIC", "Look &in:", SS_RIGHT, 6, 11, 86, 13,
+             IDC_FILE_LOOKIN_LABEL);
+        /* The machine's "Look in" box is drawn by the shell rather than by
+         * the control: a folder's picture, then its name, at margins of the
+         * shell's own choosing. Ours is the same -- CBS_OWNERDRAWFIXED, and
+         * WM_DRAWITEM below. */
+        part(dlg, 0, "COMBOBOX", "",
+                      WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED, 99,
+                      7, 261, 22, IDC_FILE_LOOKIN);
+        part(dlg, 0, "weenfilebar", "", 0, 372, 7, 120, 23, IDC_FILE_BAR);
+        part(dlg, 0, "weenfileplaces", "", 0, FD_PLACES_X, FD_PLACES_Y,
+             FD_PLACES_CX, FD_PLACES_CY, IDC_FILE_PLACES);
+        list = part(dlg, WS_EX_CLIENTEDGE, "SysListView32", "",
+                    WS_TABSTOP | LVS_LIST | LVS_SINGLESEL | LVS_SHAREIMAGELISTS,
+                    FD_LIST_X, FD_LIST_Y, FD_LIST_CX, FD_LIST_CY,
+                    IDC_FILE_LIST);
+        if (list)
+            SendMessageA(list, LVM_SETIMAGELIST, LVSIL_SMALL,
+                         (LPARAM)g_fd.icons);
+        part(dlg, 0, "STATIC", "File &name:", SS_LEFT, 101, 268, 87, 13,
+             IDC_FILE_NAME_LABEL);
+        /* the name box is the one with pictures in it on the machine, which
+         * is why it is a pixel taller than the type box below it */
+        part(dlg, 0, WC_COMBOBOXEXA, "", WS_TABSTOP | CBS_DROPDOWN, 195, 263,
+             246, 22, IDC_FILE_NAME);
+        part(dlg, 0, "STATIC", "Files of &type:", SS_LEFT, 101, 294, 87, 13,
+             IDC_FILE_TYPE_LABEL);
+        type = part(dlg, 0, "COMBOBOX", "", WS_TABSTOP | CBS_DROPDOWNLIST, 195,
+                    291, 246, 21, IDC_FILE_TYPE);
+        part(dlg, 0, "BUTTON", g_fd.saving ? "&Save" : "&Open",
+             WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 474, 263, 75, 23, IDOK);
+        part(dlg, 0, "BUTTON", "Cancel", WS_TABSTOP | BS_PUSHBUTTON, 474, 289,
+             75, 23, IDCANCEL);
+        part(dlg, 0, "weenfilegrip", "", 0, 539, 304, 16, 16, -1);
+
+        fill_list(dlg);
+        if (g_fd.ofn->lpstrFile && g_fd.ofn->lpstrFile[0])
+            SetDlgItemTextA(dlg, IDC_FILE_NAME, leaf(g_fd.ofn->lpstrFile));
+        while (p && *p) { /* the filter's labels go in the type box */
             SendMessageA(type, CB_ADDSTRING, 0, (LPARAM)p);
             p += strlen(p) + 1;
             if (!*p)
@@ -303,42 +760,57 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         SetFocus(GetDlgItem(dlg, IDC_FILE_NAME));
         return 0; /* the focus is ours */
     }
+    case WM_MEASUREITEM: {
+        /* A row of the "Look in" box is the folder picture's sixteen, which
+         * is what makes the box twenty-two rather than twenty-one. */
+        MEASUREITEMSTRUCT *mi = (MEASUREITEMSTRUCT *)lp;
+        if (!mi || mi->CtlID != IDC_FILE_LOOKIN)
+            return FALSE;
+        mi->itemHeight = 16;
+        return TRUE;
+    }
+    case WM_DRAWITEM: {
+        /* The "Look in" box: the folder's picture four pixels in and three
+         * down, its name five past that. Those three numbers are the shell's,
+         * measured off the machine's own dialog. */
+        DRAWITEMSTRUCT *di = (DRAWITEMSTRUCT *)lp;
+        char name[300];
+        if (!di || di->CtlID != IDC_FILE_LOOKIN)
+            return FALSE;
+        name[0] = 0;
+        FillRect(di->hDC, &di->rcItem, GetSysColorBrush(COLOR_WINDOW));
+        art_draw(di->hDC, WEEN_ART_LOOKIN, di->rcItem.left + 4,
+                 di->rcItem.top + 1);
+        if (SendMessageA(di->hwndItem, CB_GETLBTEXT, (WPARAM)di->itemID,
+                         (LPARAM)name) != CB_ERR) {
+            RECT t = di->rcItem;
+            t.left += 4 + 16 + 4;
+            t.top += 2;
+            SetBkMode(di->hDC, TRANSPARENT);
+            SetTextColor(di->hDC, GetSysColor(COLOR_WINDOWTEXT));
+            DrawTextA(di->hDC, name, -1, &t,
+                      DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
+        }
+        return TRUE;
+    }
+    case WM_NOTIFY: {
+        NMHDR *nm = (NMHDR *)lp;
+        if (nm && nm->idFrom == IDC_FILE_LIST) {
+            if (nm->code == LVN_ITEMCHANGED)
+                selection_changed(dlg);
+            else if (nm->code == NM_DBLCLK)
+                open_selection(dlg);
+        }
+        return FALSE;
+    }
     case WM_COMMAND: {
         int id = LOWORD(wp);
         int code = HIWORD(wp);
-        if (id == IDC_FILE_LIST && code == LBN_SELCHANGE) {
-            char name[300];
-            int sel = (int)SendMessageA(GetDlgItem(dlg, IDC_FILE_LIST),
-                                        LB_GETCURSEL, 0, 0);
-            if (sel >= 0 &&
-                SendMessageA(GetDlgItem(dlg, IDC_FILE_LIST), LB_GETTEXT,
-                             (WPARAM)sel, (LPARAM)name) >= 0 &&
-                name[0] != '[')
-                SetDlgItemTextA(dlg, IDC_FILE_NAME, name);
-            return TRUE;
-        }
-        if (id == IDC_FILE_LIST && code == LBN_DBLCLK) {
-            char name[300];
-            int sel = (int)SendMessageA(GetDlgItem(dlg, IDC_FILE_LIST),
-                                        LB_GETCURSEL, 0, 0);
-            if (sel >= 0) {
-                SendMessageA(GetDlgItem(dlg, IDC_FILE_LIST), LB_GETTEXT,
-                             (WPARAM)sel, (LPARAM)name);
-                chosen(dlg, name);
-                if (name[0] != '[' && accept(dlg))
-                    EndDialog(dlg, 1);
-            }
-            return TRUE;
-        }
         if (id == IDC_FILE_TYPE && code == CBN_SELCHANGE) {
             int sel = (int)SendMessageA(GetDlgItem(dlg, IDC_FILE_TYPE),
                                         CB_GETCURSEL, 0, 0);
             g_fd.ofn->nFilterIndex = (DWORD)(sel < 0 ? 1 : sel + 1);
             fill_list(dlg);
-            return TRUE;
-        }
-        if (id == IDC_FILE_UP) {
-            chosen(dlg, "[..]");
             return TRUE;
         }
         if (id == IDOK) {
@@ -359,27 +831,7 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 
 static BOOL run_file_dialog(OPENFILENAMEA *ofn, int saving)
 {
-    static unsigned char buf[4096] __attribute__((aligned(4)));
-    const DWORD child = WS_CHILD | WS_VISIBLE;
-    dlg_item items[] = {
-        { child | SS_LEFT, 0, 7, 9, 40, 8, 0, ATOM_STATIC, NULL, "Look &in:" },
-        { child | SS_LEFT, WS_EX_CLIENTEDGE, 50, 7, 150, 12, IDC_FILE_DIR,
-          ATOM_STATIC, NULL, "" },
-        { child | WS_TABSTOP | BS_PUSHBUTTON, 0, 206, 7, 30, 12, IDC_FILE_UP,
-          ATOM_BUTTON, NULL, "&Up" },
-        { child | WS_TABSTOP | LBS_NOTIFY, WS_EX_CLIENTEDGE, 7, 24, 229, 90,
-          IDC_FILE_LIST, ATOM_LISTBOX, NULL, "" },
-        { child | SS_LEFT, 0, 7, 121, 45, 8, 0, ATOM_STATIC, NULL, "File &name:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 55, 119, 130,
-          12, IDC_FILE_NAME, ATOM_EDIT, NULL, "" },
-        { child | SS_LEFT, 0, 7, 139, 45, 8, 0, ATOM_STATIC, NULL, "Files of &type:" },
-        { child | WS_TABSTOP | CBS_DROPDOWNLIST, 0, 55, 137, 130, 60,
-          IDC_FILE_TYPE, ATOM_COMBOBOX, NULL, "" },
-        { child | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0, 192, 119, 44, 14,
-          IDOK, ATOM_BUTTON, NULL, saving ? "&Save" : "&Open" },
-        { child | WS_TABSTOP | BS_PUSHBUTTON, 0, 192, 137, 44, 14, IDCANCEL,
-          ATOM_BUTTON, NULL, "Cancel" },
-    };
+    static unsigned char buf[1024] __attribute__((aligned(4)));
     DLGTEMPLATE *tmpl;
 
     if (!ofn || !ofn->lpstrFile)
@@ -392,12 +844,16 @@ static BOOL run_file_dialog(OPENFILENAMEA *ofn, int saving)
     else if (!getcwd(g_fd.dir, sizeof g_fd.dir))
         snprintf(g_fd.dir, sizeof g_fd.dir, "/");
 
+    /* An empty template: the size is set and the controls are made when it
+     * comes up, because both are in pixels rather than in dialog units. */
+    /* The machine's is resizable -- WS_THICKFRAME, which is where its size
+     * grip comes from and why its frame is four pixels rather than three. */
     tmpl = build(buf,
-                 WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME |
-                     DS_SETFONT | DS_3DLOOK,
-                 243, 158,
+                 WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                     DS_MODALFRAME | DS_SETFONT | DS_3DLOOK | DS_CONTEXTHELP,
+                 200, 100,
                  ofn->lpstrTitle ? ofn->lpstrTitle : (saving ? "Save As" : "Open"),
-                 items, (int)(sizeof items / sizeof items[0]));
+                 NULL, 0);
     if (DialogBoxIndirectParamA(NULL, tmpl, ofn->hwndOwner, file_proc, 0) != 1)
         return FALSE;
 

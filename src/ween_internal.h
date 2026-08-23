@@ -64,6 +64,28 @@ void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h,
 /* Where a DC may draw, in surface coordinates: its window, narrowed by
  * whatever IntersectClipRect has been given. */
 void ween_dc_clip_box(HDC dc, RECT *out);
+
+/* A picture the file dialog draws, cut out of a capture of the machine's own
+ * dialog by tools/refcapture/shellart.py. Opaque, background and all: the
+ * background it was cut from is the one it is drawn on, which is what makes
+ * it exact without anything having to be interpreted. */
+typedef struct {
+    int w, h;
+    const ween_color *px;
+} ween_shell_art;
+
+enum {
+    WEEN_ART_HISTORY,
+    WEEN_ART_DESKTOP,
+    WEEN_ART_DOCUMENTS,
+    WEEN_ART_COMPUTER,
+    WEEN_ART_NETWORK,
+    WEEN_ART_TOOLBAR,
+    WEEN_ART_LOOKIN,
+    WEEN_ART_DOCUMENT16
+};
+
+const ween_shell_art *ween_shell_picture(int which);
 /* The same dots drawn in one colour instead of inverting what is under them:
  * what a button's rectangle is, where a view's caret inverts. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
@@ -278,6 +300,7 @@ ween_color ween_cr_to_px(COLORREF c);
  * hidden until the keyboard has been used to reach a menu, and shows them from
  * then on; a menu opened and worked with the mouse never grows them. */
 extern int ween_menu_cues;
+extern int ween_kbd_used;
 
 /* And the dotted rectangle round the thing the keyboard would act on. This
  * one starts shown — a folder opens with it on the first item — and a click
