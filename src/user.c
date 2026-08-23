@@ -1006,6 +1006,12 @@ LONG_PTR GetWindowLongPtrA(HWND wnd, int index)
         return 0;
     if (index == GWL_WNDPROC)
         return (LONG_PTR)wnd->proc;
+    if (index == GWL_USERDATA) /* whole, not squeezed through a LONG */
+        return wnd->userdata;
+    if (index == DWLP_MSGRESULT && wnd->is_dialog)
+        return (LONG_PTR)wnd->dlg_msgresult;
+    if (index == DWLP_USER && wnd->is_dialog)
+        return wnd->dlg_user;
     return (LONG_PTR)GetWindowLongA(wnd, index);
 }
 
@@ -1017,6 +1023,22 @@ LONG_PTR SetWindowLongPtrA(HWND wnd, int index, LONG_PTR value)
         WNDPROC was = wnd->proc;
         wnd->proc = (WNDPROC)value;
         return (LONG_PTR)was;
+    }
+    if (index == GWL_USERDATA) {
+        LONG_PTR was = wnd->userdata;
+        wnd->userdata = value;
+        return was;
+    }
+    if (index == DWLP_USER && wnd->is_dialog) {
+        LONG_PTR was = wnd->dlg_user;
+        wnd->dlg_user = value;
+        return was;
+    }
+    if (index == DWLP_MSGRESULT && wnd->is_dialog) {
+        LONG_PTR was = (LONG_PTR)wnd->dlg_msgresult;
+        wnd->dlg_msgresult = (LRESULT)value;
+        wnd->dlg_msgresult_set = 1;
+        return was;
     }
     return (LONG_PTR)SetWindowLongA(wnd, index, (LONG)value);
 }
@@ -1038,6 +1060,8 @@ LONG GetWindowLongA(HWND wnd, int index)
         return (LONG)wnd->ex_style;
     case GWL_ID:
         return (LONG)wnd->id;
+    case GWL_USERDATA:
+        return (LONG)wnd->userdata;
     default:
         return 0;
     }
@@ -1062,6 +1086,9 @@ LONG SetWindowLongA(HWND wnd, int index, LONG value)
         break;
     case GWL_ID:
         wnd->id = (UINT)value;
+        break;
+    case GWL_USERDATA:
+        wnd->userdata = (LONG_PTR)value;
         break;
     default:
         break;

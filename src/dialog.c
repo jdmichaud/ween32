@@ -140,12 +140,31 @@ static const char *class_from_ord(WORD ord)
 #define MB_ICON_W 32   /* the picture beside the message, and what follows it */
 #define MB_ICON_GAP 12
 
+/* The messages whose answer *is* the dialog procedure's return value. For
+ * every other message the return says only whether the procedure dealt with
+ * it, and the answer is whatever it left in DWLP_MSGRESULT — nothing, meaning
+ * zero, unless it said otherwise. Win32's list also has the WM_CTLCOLOR*
+ * messages and a few others ween32 has no use for yet; add them here when it
+ * does, rather than letting a return value stand in for an answer. */
+static int dlg_returns_answer(UINT msg)
+{
+    switch (msg) {
+    case WM_INITDIALOG:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static LRESULT dlg_class_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (w->dlgproc) {
-        INT_PTR r = w->dlgproc(w, msg, wp, lp);
+        INT_PTR r;
+        w->dlg_msgresult = 0;
+        w->dlg_msgresult_set = 0;
+        r = w->dlgproc(w, msg, wp, lp);
         if (r)
-            return (LRESULT)r; /* handled */
+            return dlg_returns_answer(msg) ? (LRESULT)r : w->dlg_msgresult;
     }
     return DefDlgProcA(w, msg, wp, lp);
 }
@@ -402,17 +421,27 @@ INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
             EnableWindow(owner, TRUE);
         return -1;
     }
-    dlg->is_modal = 1;
+    return ween_dialog_modal(dlg, owner, reenable);
+}
 
+/* Run a dialog that already exists until EndDialog answers it. Split out
+ * because a property sheet has to put its pages in before anyone can be shown
+ * one, so it makes its frame first and runs it afterwards. */
+INT_PTR ween_dialog_modal(HWND dlg, HWND owner, int reenable)
+{
     MSG msg;
+    INT_PTR result;
+    if (!dlg)
+        return -1;
+    dlg->is_modal = 1;
     while (!dlg->dlg_ended && GetMessageA(&msg, NULL, 0, 0)) {
         if (IsDialogMessageA(dlg, &msg))
             continue;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-    INT_PTR result = dlg->dlg_result;
-    if (reenable)
+    result = dlg->dlg_result;
+    if (reenable && owner)
         EnableWindow(owner, TRUE);
     if (!dlg->destroyed)
         DestroyWindow(dlg);

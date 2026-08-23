@@ -720,6 +720,116 @@ typedef struct tagLVITEMA {
 #define TCIF_TEXT 0x0001
 #define TCIF_IMAGE 0x0002
 #define TCN_SELCHANGE (0U - 551U)
+#define TCN_SELCHANGING (0U - 552U)
+
+/* ---- property sheets (comctl32) -------------------------------------------
+ *
+ * A dialog with a row of tabs across it, one page behind each. Each page is
+ * an ordinary dialog of its own, made from its own template with its own
+ * procedure; the sheet puts them all in the same place, one at a time, and
+ * owns the OK, Cancel and Apply along the bottom.
+ *
+ * A page hears PSN_SETACTIVE when it comes to the front, PSN_KILLACTIVE
+ * before it goes to the back, PSN_APPLY when what it holds is to be kept and
+ * PSN_RESET when it is to be thrown away. It says it has something worth
+ * keeping with PropSheet_Changed, which is what lights the Apply button. */
+
+/* What a page's fields mean. */
+#define PSP_DEFAULT 0x0000
+#define PSP_DLGINDIRECT 0x0001 /* pResource is the template itself */
+#define PSP_USEHICON 0x0002
+#define PSP_USEICONID 0x0004
+#define PSP_USETITLE 0x0008 /* pszTitle is the tab's label */
+#define PSP_HASHELP 0x0020
+#define PSP_PREMATURE 0x0400
+
+/* and the sheet's. */
+#define PSH_DEFAULT 0x00000000
+#define PSH_PROPTITLE 0x00000001 /* the caption reads "<title> Properties" */
+#define PSH_USEHICON 0x00000002
+#define PSH_USEICONID 0x00000004
+#define PSH_PROPSHEETPAGE 0x00000008 /* ppsp is an array, not handles */
+#define PSH_USEPSTARTPAGE 0x00000040
+#define PSH_NOAPPLYNOW 0x00000080 /* no Apply button at all */
+#define PSH_USECALLBACK 0x00000100
+#define PSH_HASHELP 0x00000200
+#define PSH_MODELESS 0x00000400
+#define PSH_NOCONTEXTHELP 0x02000000
+
+typedef struct _PSP *HPROPSHEETPAGE;
+
+typedef struct tagPROPSHEETPAGEA {
+    DWORD dwSize;
+    DWORD dwFlags;
+    HINSTANCE hInstance;
+    /* win32 keeps these in nameless unions with pszTemplate and pszIcon; a
+     * program that names the members used here reads the same on both. */
+    LPCDLGTEMPLATEA pResource;
+    HICON hIcon;
+    LPCSTR pszTitle;
+    DLGPROC pfnDlgProc;
+    LPARAM lParam;
+    void *pfnCallback;
+    UINT *pcRefParent;
+} PROPSHEETPAGEA, *LPPROPSHEETPAGEA;
+typedef const PROPSHEETPAGEA *LPCPROPSHEETPAGEA;
+
+typedef struct tagPROPSHEETHEADERA {
+    DWORD dwSize;
+    DWORD dwFlags;
+    HWND hwndParent;
+    HINSTANCE hInstance;
+    HICON hIcon;
+    LPCSTR pszCaption;
+    UINT nPages;
+    UINT nStartPage;
+    LPCPROPSHEETPAGEA ppsp;
+    void *pfnCallback;
+} PROPSHEETHEADERA, *LPPROPSHEETHEADERA;
+typedef const PROPSHEETHEADERA *LPCPROPSHEETHEADERA;
+
+/* What a page is told, and what it says back. */
+#define PSN_FIRST (0U - 200U)
+#define PSN_SETACTIVE (PSN_FIRST - 0)
+#define PSN_KILLACTIVE (PSN_FIRST - 1)
+#define PSN_APPLY (PSN_FIRST - 2)
+#define PSN_RESET (PSN_FIRST - 3)
+#define PSN_HELP (PSN_FIRST - 5)
+#define PSN_QUERYCANCEL (PSN_FIRST - 9)
+
+#define PSNRET_NOERROR 0
+#define PSNRET_INVALID 1
+#define PSNRET_INVALID_NOCHANGEPAGE 2
+
+typedef struct _PSHNOTIFY {
+    NMHDR hdr;
+    LPARAM lParam;
+} PSHNOTIFY, *LPPSHNOTIFY;
+
+/* What a page says to the sheet. */
+#define PSM_SETCURSEL (WM_USER + 101)
+#define PSM_CHANGED (WM_USER + 104)
+#define PSM_CANCELTOCLOSE (WM_USER + 107)
+#define PSM_UNCHANGED (WM_USER + 109)
+#define PSM_APPLY (WM_USER + 110)
+#define PSM_GETTABCONTROL (WM_USER + 116)
+#define PSM_GETCURRENTPAGEHWND (WM_USER + 118)
+
+/* A page tells the sheet it now holds something worth keeping, which is what
+ * lights Apply; and that it does not, which puts it out again. */
+#define PropSheet_Changed(sheet, page)                                             SendMessageA(sheet, PSM_CHANGED, (WPARAM)(page), 0)
+#define PropSheet_UnChanged(sheet, page)                                           SendMessageA(sheet, PSM_UNCHANGED, (WPARAM)(page), 0)
+#define PropSheet_Apply(sheet) SendMessageA(sheet, PSM_APPLY, 0, 0)
+#define PropSheet_SetCurSel(sheet, page, i)                                        SendMessageA(sheet, PSM_SETCURSEL, (WPARAM)(i), (LPARAM)(page))
+#define PropSheet_GetTabControl(sheet)                                             ((HWND)(INT_PTR)SendMessageA(sheet, PSM_GETTABCONTROL, 0, 0))
+#define PropSheet_GetCurrentPageHwnd(sheet)                                        ((HWND)(INT_PTR)SendMessageA(sheet, PSM_GETCURRENTPAGEHWND, 0, 0))
+
+/* The Apply button's id, which is comctl32's own. */
+#define IDD_APPLYNOW 0x3021
+
+/* Put the sheet up and do not return until it is answered: >0 if OK or Apply
+ * was pressed, 0 if it was cancelled, -1 if it could not be made. */
+INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header);
 #define TVN_SELCHANGEDA (0U - 402U)
 /* ITEMEXPANDING comes before the item opens, which is where a tree that
  * fills lazily puts the children; ITEMEXPANDED comes after. */
@@ -1341,6 +1451,22 @@ HWND GetFocus(void);
 #define GWL_STYLE (-16)
 #define GWL_EXSTYLE (-20)
 #define GWL_ID (-12)
+/* A program's own value, hung off a window: what a class with no globals uses
+ * to find its instance data from its procedure. */
+#define GWL_USERDATA (-21)
+#define GWLP_USERDATA (-21)
+/* A dialog's procedure returns only whether it dealt with a message; what the
+ * message *answers* goes here, which is how a page in a property sheet says
+ * yes or no to being taken off the front. */
+#define DWL_MSGRESULT 0
+#define DWLP_MSGRESULT 0
+/* The dialog's own extra bytes come after that answer and the procedure
+ * pointer, so where the program's slot begins depends on how wide a pointer
+ * is — which is how win32 spells it too. */
+#define DWLP_DLGPROC (DWLP_MSGRESULT + (int)sizeof(LRESULT))
+#define DWLP_USER (DWLP_DLGPROC + (int)sizeof(DLGPROC))
+#define DWL_USER DWLP_USER
+#define DWL_DLGPROC DWLP_DLGPROC
 LONG GetWindowLongA(HWND wnd, int index);
 LONG SetWindowLongA(HWND wnd, int index, LONG value);
 /* The same two where the value is a pointer — a window procedure does not fit

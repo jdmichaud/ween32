@@ -82,6 +82,13 @@ static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
     db_w(&b, 0);         /* menu: none */
     db_w(&b, 0);         /* window class: default (dialog) */
     db_wsz(&b, title);
+    /* DS_SETFONT promises a point size and a face name here, and the reader
+     * skips exactly that much before the first control. Saying so without
+     * writing them slides every control out of step. */
+    if (style & DS_SETFONT) {
+        db_w(&b, 8);
+        db_wsz(&b, "MS Shell Dlg");
+    }
 
     /* DLGITEMTEMPLATE for each control */
     for (int i = 0; i < n; i++) {

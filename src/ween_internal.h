@@ -84,6 +84,9 @@ void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size,
 /* Whether a size grip is standing in this window's bottom-right corner, which
  * is how anything that scrolls knows to draw its bar short of it. */
 int ween_corner_taken(HWND wnd);
+
+/* Run an already-created dialog modally until EndDialog answers it. */
+INT_PTR ween_dialog_modal(HWND dlg, HWND owner, int reenable);
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_classic_menu_bullet(ween_surface *s, int x, int y, ween_color c);
 void ween_classic_menu_check(ween_surface *s, int x, int y, ween_color c);
@@ -296,6 +299,14 @@ struct ween_wnd {
     struct ween_wnd *next_sibling;
     DWORD style;
     DWORD ex_style;
+    LONG_PTR userdata;      /* GWLP_USERDATA: a program's own, hung off a window */
+    LRESULT dlg_msgresult;  /* DWLP_MSGRESULT: what a dialog's last message
+                             * answered, since its procedure returns only
+                             * whether it dealt with it */
+    int dlg_msgresult_set;  /* and whether it said so at all, since saying
+                             * "no" and saying nothing are different answers */
+    LONG_PTR dlg_user;      /* DWLP_USER: a dialog's own slot, which win32
+                             * keeps apart from GWLP_USERDATA */
     int x, y, w, h; /* window rect; children: in parent CLIENT coordinates */
     char *text;    /* never NULL; grows to fit, see ween_wnd_set_text */
     int text_cap;  /* bytes allocated, including the terminator */

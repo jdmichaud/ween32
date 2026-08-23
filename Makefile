@@ -11,7 +11,7 @@ CFLAGS  ?= -O2
 CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Wundef -Iinclude
 X11     ?= 1
 
-OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o \
+OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o src/propsheet.o \
        src/gdi.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
@@ -28,7 +28,8 @@ TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
         tests/resize_test tests/multiwin_test tests/timer_test \
         tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
         tests/image_test tests/geometry_test tests/views_test \
-        tests/toolbar_test tests/popup_test
+        tests/toolbar_test tests/popup_test \
+        tests/propsheet_test
 
 EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
            examples/explorer
@@ -78,6 +79,9 @@ tests/multiwin_test: tests/multiwin_test.c libween32.a
 
 tests/popup_test: tests/popup_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/popup_test.c libween32.a $(LIBS)
+
+tests/propsheet_test: tests/propsheet_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/propsheet_test.c libween32.a $(LIBS)
 
 tests/timer_test: tests/timer_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/timer_test.c libween32.a $(LIBS)

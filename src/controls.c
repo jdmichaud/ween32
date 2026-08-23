@@ -4733,6 +4733,29 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case TCM_GETCURSEL:
         it = items_of(wnd);
         return it ? it->cursel : -1;
+    case TCM_ADJUSTRECT: {
+        /* Between the whole control and the page inside it: wp says which way
+         * to go. The strip the tabs stand in comes off the top, and the body's
+         * own border off the rest. */
+        RECT *r = (RECT *)lp;
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        /* the strip the tabs stand in, and the body's own raised edge */
+        int th = (f ? f->ascent - f->descent : 13) + 5 + 2, edge = 2;
+        if (!r)
+            return 0;
+        if (wp) { /* a page's rectangle -> the control that must hold it */
+            r->left -= edge;
+            r->top -= th;
+            r->right += edge;
+            r->bottom += edge;
+        } else { /* the control -> where its page goes */
+            r->left += edge;
+            r->top += th;
+            r->right -= edge;
+            r->bottom -= edge;
+        }
+        return 0;
+    }
     default:
         return DefWindowProcA(wnd, msg, wp, lp);
     }
