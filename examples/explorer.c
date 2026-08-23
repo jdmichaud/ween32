@@ -720,6 +720,8 @@ static void set_cell(HWND list, int row, int col, const char *text)
 /* The address bar: the path opened out, one item per level, each indented a
  * step further than the one above and wearing the icon for what it is. The
  * one you are in is the one selected. */
+static void suggest_hide(void); /* the box under the address bar, put away */
+
 static void fill_address(const char *path)
 {
     COMBOBOXEXITEMA ci;
@@ -1325,10 +1327,176 @@ static const char *command_help(UINT id)
 /* ---- the address bar's suggestions ----------------------------------------
  *
  * Typing a path offers what it could be: everything in the folder named so
- * far whose name starts with what has been typed. The shell does this with
- * its own window; here the combo's own list is refilled, which is what an
- * application can do with what a combo box offers.
+ * far whose name starts with what has been typed. It goes in a window of its
+ * own — a list box in a popup, with a corner to drag it bigger by — rather
+ * than in the combo's own list, which belongs to the places the arrow drops.
+ * That is how the shell does it too: the box under an address bar is not the
+ * address bar's list.
  */
+static HWND g_sugg, g_sugg_list, g_sugg_grip;
+#define SUGG_ROWS 7 /* what it shows before it needs its bar, as the shell has it */
+#define SUGG_MIN_H 40 /* not to be dragged shut, only smaller */
+
+static void suggest_hide(void)
+{
+    if (g_sugg)
+        ShowWindow(g_sugg, SW_HIDE);
+}
+
+/* Take what the list is on and put it in the field, which is what walking
+ * onto a suggestion means: the name appears as though it had been typed, with
+ * the caret after it, and the field goes on being the thing typed into.
+ * Walking with the arrows leaves the box up to walk further; picking one with
+ * the mouse or with Enter is done with it. */
+static void suggest_take(int close)
+{
+    HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0,
+                                             0);
+    int at = (int)SendMessageA(g_sugg_list, LB_GETCURSEL, 0, 0);
+    char pick[PATH_MAX_LEN];
+    if (!field || at < 0)
+        return;
+    if (SendMessageA(g_sugg_list, LB_GETTEXT, (WPARAM)at, (LPARAM)pick) < 0)
+        return;
+    if (close)
+        suggest_hide();
+    SetWindowTextA(field, pick);
+    SendMessageA(field, EM_SETSEL, (WPARAM)strlen(pick), (LPARAM)strlen(pick));
+}
+
+/* The popup's own procedure: it is a frame around the list and the corner,
+ * and the corner drags it taller. */
+static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    static int sizing, from_y, was_h;
+    switch (msg) {
+    case WM_SIZE: {
+        RECT cr;
+        int sb = GetSystemMetrics(SM_CXVSCROLL);
+        GetClientRect(w, &cr);
+        if (g_sugg_list)
+            MoveWindow(g_sugg_list, 1, 1, cr.right - 2, cr.bottom - 2 - sb,
+                       TRUE);
+        if (g_sugg_grip)
+            MoveWindow(g_sugg_grip, cr.right - 1 - sb, cr.bottom - 1 - sb, sb,
+                       sb, TRUE);
+        return 0;
+    }
+    case WM_SYSCOMMAND:
+        if ((wp & 0xfff0) == SC_SIZE) { /* the corner was taken hold of */
+            RECT wr;
+            GetWindowRect(w, &wr);
+            sizing = 1;
+            was_h = wr.bottom - wr.top;
+            from_y = GET_Y_LPARAM(lp); /* on the screen, where it stays put */
+            SetCapture(w);
+            return 0;
+        }
+        break;
+    case WM_MOUSEMOVE:
+        if (sizing) {
+            RECT wr;
+            POINT at = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            int h;
+            ClientToScreen(w, &at); /* the corner started on the screen too */
+            GetWindowRect(w, &wr);
+            h = was_h + (at.y - from_y);
+            if (h < SUGG_MIN_H)
+                h = SUGG_MIN_H;
+            MoveWindow(w, wr.left, wr.top, wr.right - wr.left, h, TRUE);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        if (sizing) {
+            sizing = 0;
+            ReleaseCapture();
+        }
+        return 0;
+    case WM_COMMAND:
+        /* the list says one was landed on, which the mouse only does by
+         * pressing on it, and that is picking it */
+        if ((HWND)lp == g_sugg_list &&
+            (HIWORD(wp) == LBN_DBLCLK || HIWORD(wp) == LBN_SELCHANGE))
+            suggest_take(1);
+        return 0;
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
+/* The field with the application's procedure in front of it: while the box of
+ * suggestions is up, the keys that walk it are the box's. Everything else —
+ * including everything the combo box took for itself — carries on to what was
+ * there before. Subclassing on top of subclassing, which is what it is for. */
+static WNDPROC g_field_proc;
+
+static LRESULT CALLBACK address_field_proc(HWND box, UINT msg, WPARAM wp,
+                                           LPARAM lp)
+{
+    if (msg == WM_KEYDOWN && g_sugg && IsWindowVisible(g_sugg)) {
+        int n = (int)SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0);
+        int at = (int)SendMessageA(g_sugg_list, LB_GETCURSEL, 0, 0);
+        switch (wp) {
+        case VK_DOWN:
+            if (at + 1 < n) {
+                SendMessageA(g_sugg_list, LB_SETCURSEL, (WPARAM)(at + 1), 0);
+                suggest_take(0);
+            }
+            return 0;
+        case VK_UP:
+            if (at > 0) {
+                SendMessageA(g_sugg_list, LB_SETCURSEL, (WPARAM)(at - 1), 0);
+                suggest_take(0);
+            }
+            return 0;
+        case VK_RETURN:
+            if (at >= 0) { /* take what the box is on, and go there */
+                suggest_take(1);
+                break;      /* and Enter still means go, as it always did */
+            }
+            break;
+        case VK_ESCAPE:
+            /* the box goes and the typing stays; a second Escape is the
+             * field's own, and puts back where we are */
+            if (IsWindowVisible(g_sugg)) {
+                suggest_hide();
+                return 0;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return CallWindowProcA(g_field_proc, box, msg, wp, lp);
+}
+
+/* Put it under the field, as wide as the bar, and no taller than the rows it
+ * is allowed: past that the list box's own bar takes over and the corner is
+ * there for anyone who wants to see more at once. A box already dragged
+ * taller is left at the height it was dragged to. */
+static void suggest_show(int count)
+{
+    RECT band;
+    int sb = GetSystemMetrics(SM_CXVSCROLL);
+    int rows = count < SUGG_ROWS ? count : SUGG_ROWS;
+    int ih, h;
+    if (!g_sugg)
+        return;
+    /* the list box knows how tall a name is; asking it is the only way to
+     * end up showing whole ones */
+    ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
+    h = rows * ih + 2 + sb;
+    GetWindowRect(g_address, &band);
+    if (IsWindowVisible(g_sugg)) {
+        RECT was;
+        GetWindowRect(g_sugg, &was);
+        if (was.bottom - was.top > h)
+            h = was.bottom - was.top;
+    }
+    MoveWindow(g_sugg, band.left, band.bottom, band.right - band.left, h,
+               TRUE);
+    ShowWindow(g_sugg, SW_SHOW);
+}
+
 static void address_suggest(void)
 {
     HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0,
@@ -1346,7 +1514,7 @@ static void address_suggest(void)
      * has nothing to be completed against */
     leaf = strrchr(typed, FS_SEP);
     if (!leaf) {
-        SendMessageA(g_address, CB_SHOWDROPDOWN, FALSE, 0);
+        suggest_hide();
         return;
     }
     dirlen = (size_t)(leaf - typed);
@@ -1358,7 +1526,7 @@ static void address_suggest(void)
     dir[dirlen] = 0;
     leaf++;
 
-    SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
+    SendMessageA(g_sugg_list, LB_RESETCONTENT, 0, 0);
     if (fs_open(&d, dir)) {
         static char found[20][260];
         while (fs_next(&d, &e) && n < 20) {
@@ -1393,7 +1561,6 @@ static void address_suggest(void)
                 snprintf(found[j], sizeof(found[0]), "%s", t);
             }
         for (int i = 0; i < n; i++) {
-            COMBOBOXEXITEMA ci;
             char full[PATH_MAX_LEN];
             size_t at = dirlen;
             memcpy(full, dir, at);
@@ -1402,16 +1569,13 @@ static void address_suggest(void)
             for (size_t k = 0; found[i][k] && at < sizeof(full) - 1; k++)
                 full[at++] = found[i][k];
             full[at] = 0;
-            memset(&ci, 0, sizeof(ci));
-            ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_INDENT;
-            ci.iItem = -1;
-            ci.pszText = full;
-            ci.iImage = -1; /* a suggestion is a path, with no picture */
-            ci.iIndent = 0;
-            SendMessageA(g_address, CBEM_INSERTITEMA, 0, (LPARAM)&ci);
+            SendMessageA(g_sugg_list, LB_ADDSTRING, 0, (LPARAM)full);
         }
     }
-    SendMessageA(g_address, CB_SHOWDROPDOWN, n > 0, 0);
+    if (n)
+        suggest_show(n);
+    else
+        suggest_hide();
 }
 
 /* ---- Properties -----------------------------------------------------------
@@ -1681,6 +1845,7 @@ static void show_directory(const char *path)
     }
     /* and the tree opens down to it, so both halves show the same place */
     tree_follow(path);
+    suggest_hide(); /* whatever was being offered is now beside the point */
 }
 
 /* ---- the folder tree ------------------------------------------------------ */
@@ -3098,6 +3263,32 @@ static void build_views(HWND w)
                              WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 10,
                              10, w, (HMENU)(UINT_PTR)ID_STATUS, NULL, NULL);
     SendMessageA(g_status, WM_SETFONT, (WPARAM)g_font, TRUE);
+    /* The box the address bar's suggestions go in: a window of its own, which
+     * does not take the keyboard when it appears — the field keeps it, and
+     * goes on being typed in while the box is up. */
+    g_sugg = CreateWindowExA(WS_EX_NOACTIVATE, "explorersuggest", "",
+                             WS_POPUP | WS_BORDER, 0, 0, 200, 100, NULL, NULL,
+                             NULL, NULL);
+    if (g_sugg) {
+        int sb = GetSystemMetrics(SM_CXVSCROLL);
+        g_sugg_list = CreateWindowExA(0, "LISTBOX", "",
+                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                          LBS_NOTIFY,
+                                      1, 1, 198, 100 - 2 - sb, g_sugg, NULL,
+                                      NULL, NULL);
+        g_sugg_grip = CreateWindowExA(0, "SCROLLBAR", "",
+                                      WS_CHILD | WS_VISIBLE | SBS_SIZEGRIP, 0,
+                                      0, sb, sb, g_sugg, NULL, NULL, NULL);
+        if (g_sugg_list)
+            SendMessageA(g_sugg_list, WM_SETFONT, (WPARAM)g_font, TRUE);
+    }
+    {   /* and the field answers to this window first */
+        HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL,
+                                                 0, 0);
+        if (field)
+            g_field_proc = (WNDPROC)SetWindowLongPtrA(
+                field, GWLP_WNDPROC, (LONG_PTR)address_field_proc);
+    }
     SendMessageA(g_rebar, WM_SETFONT, (WPARAM)g_font, TRUE);
     if (g_address)
         SendMessageA(g_address, WM_SETFONT, (WPARAM)g_font, TRUE);
@@ -3357,6 +3548,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             } else if (ed->iWhy != CBENF_DROPDOWN) {
                 fill_address(g_path);
             }
+            suggest_hide();
             return 0;
         } else if (nm->code == LVN_ENDLABELEDITA) {
             const NMLVDISPINFOA *di = (const NMLVDISPINFOA *)lp;
@@ -3831,6 +4023,12 @@ int main(int argc, char **argv)
     wc.lpfnWndProc = panehead_proc;
     wc.lpszClassName = "explorerpane";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    RegisterClassA(&wc);
+
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = suggest_proc;
+    wc.lpszClassName = "explorersuggest";
+    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     RegisterClassA(&wc);
 
     memset(&wc, 0, sizeof(wc));
