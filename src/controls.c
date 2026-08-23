@@ -3037,7 +3037,9 @@ typedef struct {
     int cut;      /* LVIS_CUT: drawn ghosted, which is how a hidden file looks */
     int selected; /* LVIS_SELECTED, per row: a list without LVS_SINGLESEL can
                    * have any number of them, which is what Select All is for */
-    int checked;  /* the row's state picture, when the view has check boxes */
+    int state_img; /* the row's state picture: 0 none, 1 a box, 2 a ticked box.
+                    * A row with none is a heading, which is how a list of
+                    * settings groups them. */
 } ween_lvrow;
 
 typedef struct {
@@ -3716,11 +3718,11 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int has_image = l->images && l->row[i].image >= 0;
         int indent = has_image ? box + icon_w + 2 : box;
         x = 0;
-        if (box) {
+        if (box && l->row[i].state_img) {
             int by = y + (ih - WEEN_LV_CHECK) / 2;
             ween_classic_check(&top->surface, ox - sx + 2, by, WEEN_LV_CHECK,
                                WEEN_LV_CHECK,
-                               l->row[i].checked ? DFCS_CHECKED : 0);
+                               l->row[i].state_img == 2 ? DFCS_CHECKED : 0);
         }
         if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */
@@ -3936,11 +3938,12 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* An arrow starts from the caret rather than from the selection: a
          * click on a row's size cell drops the selection but leaves the caret
          * on that row, and the next arrow moves from there. */
-        if (wp == VK_SPACE && (l->exstyle & LVS_EX_CHECKBOXES) && l->focus) {
+        if (wp == VK_SPACE && (l->exstyle & LVS_EX_CHECKBOXES) && l->focus &&
+            l->row[l->focus - 1].state_img) {
             /* Space turns the box on the row the caret is on, which is how a
              * list of things to tick is worked without the mouse. */
             int i = l->focus - 1;
-            l->row[i].checked = !l->row[i].checked;
+            l->row[i].state_img = l->row[i].state_img == 2 ? 1 : 2;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
             return 0;
@@ -4074,8 +4077,9 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
              * nothing else: it is not a way of picking the row */
             UINT where = 0;
             int on = lv_item_hit(wnd, l, mx - l->scroll_x, my, &where);
-            if (on >= 0 && (where & LVHT_ONITEMSTATEICON)) {
-                l->row[on].checked = !l->row[on].checked;
+            if (on >= 0 && (where & LVHT_ONITEMSTATEICON) &&
+                l->row[on].state_img) {
+                l->row[on].state_img = l->row[on].state_img == 2 ? 1 : 2;
                 InvalidateRect(wnd, NULL, FALSE);
                 notify_parent(wnd, LVN_ITEMCHANGED);
                 return 0;
@@ -4096,6 +4100,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->focus = i + 1;
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
+            notify_parent(wnd, NM_CLICK);
         } else if (lv_selected_count(l)) {
             /* a press on a row's other cells, or under the last row, drops
              * the selection and keeps the caret where it was */
@@ -4329,6 +4334,10 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l->row = rows;
         memset(&l->row[l->nrow], 0, sizeof(*rows));
         l->row[l->nrow].image = (item->mask & LVIF_IMAGE) ? item->iImage : -1;
+        /* a new row in a view with boxes gets one, unticked, which a program
+         * can then take away to make the row a heading */
+        if (l->exstyle & LVS_EX_CHECKBOXES)
+            l->row[l->nrow].state_img = 1;
         l->row[l->nrow].text[0] = dup_str(item->pszText);
         InvalidateRect(wnd, NULL, FALSE);
         return l->nrow++;
@@ -4385,7 +4394,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (l->focus == i + 1)
             state |= LVIS_FOCUSED;
         if (l->exstyle & LVS_EX_CHECKBOXES)
-            state |= INDEXTOSTATEIMAGEMASK(l->row[i].checked ? 2 : 1);
+            state |= INDEXTOSTATEIMAGEMASK(l->row[i].state_img);
         return state & want;
     }
     case LVM_SETITEMSTATE: {
@@ -4421,12 +4430,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         if (item->stateMask & LVIS_STATEIMAGEMASK) {
-            /* the state picture: two is ticked, one is not */
-            int on = (item->state & LVIS_STATEIMAGEMASK) ==
-                     INDEXTOSTATEIMAGEMASK(2);
+            /* the state picture by number: none, a box, a ticked box */
+            int img = (int)((item->state & LVIS_STATEIMAGEMASK) >> 12);
             for (int i = from; i <= to && i < l->nrow; i++)
                 if (i >= 0)
-                    l->row[i].checked = on;
+                    l->row[i].state_img = img;
             InvalidateRect(wnd, NULL, FALSE);
         }
         return TRUE;

@@ -726,8 +726,14 @@ typedef struct tagLVITEMA {
     } while (0)
 /* Whether a row's box is ticked, and ticking it. A list view keeps this as
  * the row's state picture, which is why it reads so roundaboutly. */
-#define ListView_GetCheckState(w, i)                                               ((((UINT)SendMessageA((w), LVM_GETITEMSTATE, (WPARAM)(i),                                             LVIS_STATEIMAGEMASK)) >>                                   12) -                                                                         1)
-#define ListView_SetCheckState(w, i, on)                                           ListView_SetItemState(w, i, INDEXTOSTATEIMAGEMASK((on) ? 2 : 1),                                     LVIS_STATEIMAGEMASK)
+#define ListView_GetCheckState(w, i)                                           \
+    ((int)((((UINT)SendMessageA((w), LVM_GETITEMSTATE, (WPARAM)(i),            \
+                                LVIS_STATEIMAGEMASK)) >>                           \
+            12)) -                                                             \
+     1)
+#define ListView_SetCheckState(w, i, on)                                       \
+    ListView_SetItemState(w, i, INDEXTOSTATEIMAGEMASK((on) ? 2 : 1),           \
+                          LVIS_STATEIMAGEMASK)
 
 /* tab control (comctl32) */
 #define WC_TABCONTROLA "SysTabControl32"
@@ -864,6 +870,9 @@ typedef struct tagNMTREEVIEWA {
 } NMTREEVIEWA;
 /* Sent by any common control that a double click landed on. A shell opens
  * what was double-clicked on this. */
+/* A press on an item and a double press on one, which a view sends its
+ * parent so a program can decide what either means. */
+#define NM_CLICK (0U - 2U)
 #define NM_DBLCLK (0U - 3U)
 #define LVN_ITEMCHANGED (0U - 101U)
 #define LVN_COLUMNCLICK (0U - 108U)

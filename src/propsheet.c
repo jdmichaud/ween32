@@ -19,14 +19,20 @@
 #define PS_ATOM_BUTTON 0x0080 /* the BUTTON class's ordinal in a template */
 #define PS_MAX_PAGES 16
 
-/* The gaps around a page inside the sheet, in pixels, as the machine has
- * them: the tab control is inset from the frame, and the buttons sit in a
- * band below it. */
-#define PS_MARGIN 7   /* frame to tab control */
-#define PS_BTN_W 75   /* one of OK / Cancel / Apply */
-#define PS_BTN_H 23
-#define PS_BTN_GAP 6  /* between two of them */
-#define PS_BTN_TOP 6  /* tab control to the button row */
+/* The frame around a page, in dialog units, measured off the machine's own
+ * Folder Options: a 386 by 468 window with a 365 by 377 page in it. The tab
+ * control is inset from the frame and the three buttons sit in a band below
+ * it, their right edges level with the tab control's. */
+#define PS_MARGIN_X 3 /* frame to tab control, left */
+#define PS_MARGIN_Y 6 /* and top */
+#define PS_RIGHT 4    /* and right */
+#define PS_BOTTOM 4   /* under the buttons */
+#define PS_TAB_PAD 1  /* the tab control's own border, around its page */
+#define PS_TAB_STRIP 12 /* the strip the tabs stand in */
+#define PS_BTN_W 50   /* one of OK / Cancel / Apply */
+#define PS_BTN_H 14
+#define PS_BTN_GAP 5  /* between two of them */
+#define PS_BTN_TOP 4  /* tab control to the button row */
 
 typedef struct {
     HWND sheet;
@@ -297,13 +303,9 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     cx = (int)largest.right;
     cy = (int)largest.bottom;
 
-    /* Everything past this point is in dialog units, because the template is:
-     * four horizontally and eight vertically to the character cell. */
-#define PS_DX(px) MulDiv((px), 4, 6)
-#define PS_DY(px) MulDiv((px), 8, 13)
-    tab_h = PS_DY(21); /* the strip the tabs themselves take */
-    sheet_w = cx + 2 * PS_DX(PS_MARGIN) + PS_DX(6);
-    sheet_h = tab_h + cy + PS_DY(PS_MARGIN + PS_BTN_TOP + PS_BTN_H + PS_MARGIN);
+    tab_h = PS_TAB_STRIP + cy + PS_TAB_PAD;
+    sheet_w = PS_MARGIN_X + cx + 2 * PS_TAB_PAD + PS_RIGHT;
+    sheet_h = PS_MARGIN_Y + tab_h + PS_BTN_TOP + PS_BTN_H + PS_BOTTOM;
 
     b.p = tmpl;
     b.end = tmpl + sizeof(tmpl);
@@ -321,23 +323,19 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     ps_w(&b, 8); /* point size */
     ps_sz(&b, "MS Shell Dlg");
 
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, PS_DX(PS_MARGIN),
-            PS_DY(PS_MARGIN), sheet_w - 2 * PS_DX(PS_MARGIN),
-            tab_h + cy + PS_DY(PS_MARGIN), PS_TAB, 0, WC_TABCONTROLA, "");
+    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, PS_MARGIN_X, PS_MARGIN_Y,
+            cx + 2 * PS_TAB_PAD, tab_h, PS_TAB, 0, WC_TABCONTROLA, "");
 
-    y = PS_DY(PS_MARGIN) + tab_h + cy + PS_DY(PS_MARGIN + PS_BTN_TOP);
-    bx = sheet_w - PS_DX(PS_MARGIN) - 3 * PS_DX(PS_BTN_W) - 2 * PS_DX(PS_BTN_GAP);
+    y = PS_MARGIN_Y + tab_h + PS_BTN_TOP;
+    bx = PS_MARGIN_X + cx + 2 * PS_TAB_PAD - 3 * PS_BTN_W - 2 * PS_BTN_GAP;
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, bx, y,
-            PS_DX(PS_BTN_W), PS_DY(PS_BTN_H), IDOK, PS_ATOM_BUTTON, NULL, "OK");
-    bx += PS_DX(PS_BTN_W + PS_BTN_GAP);
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx, y, PS_DX(PS_BTN_W),
-            PS_DY(PS_BTN_H), IDCANCEL, PS_ATOM_BUTTON, NULL, "Cancel");
-    bx += PS_DX(PS_BTN_W + PS_BTN_GAP);
+            PS_BTN_W, PS_BTN_H, IDOK, PS_ATOM_BUTTON, NULL, "OK");
+    bx += PS_BTN_W + PS_BTN_GAP;
+    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx, y, PS_BTN_W, PS_BTN_H,
+            IDCANCEL, PS_ATOM_BUTTON, NULL, "Cancel");
+    bx += PS_BTN_W + PS_BTN_GAP;
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED, bx, y,
-            PS_DX(PS_BTN_W), PS_DY(PS_BTN_H), IDD_APPLYNOW, PS_ATOM_BUTTON, NULL,
-            "Apply");
-#undef PS_DX
-#undef PS_DY
+            PS_BTN_W, PS_BTN_H, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "Apply");
     if (b.p > b.end)
         return -1;
 
@@ -396,6 +394,20 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
                    page_area.right - page_area.left,
                    page_area.bottom - page_area.top, FALSE);
         ShowWindow(ps.page[i], SW_HIDE);
+        /* Tab goes tabs, then what is on the page, then OK and Cancel. The
+         * buttons are in the frame's template and so were made first; the
+         * page is moved to sit right behind the tab control, which is the
+         * order the ring is taken in. */
+        {
+            struct ween_wnd **link = &ps.sheet->first_child;
+            while (*link && *link != ps.page[i])
+                link = &(*link)->next_sibling;
+            if (*link) {
+                *link = ps.page[i]->next_sibling;
+                ps.page[i]->next_sibling = ps.tabs->next_sibling;
+                ps.tabs->next_sibling = ps.page[i];
+            }
+        }
     }
 
     i = (int)header->nStartPage;

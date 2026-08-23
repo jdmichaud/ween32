@@ -13,6 +13,7 @@
 #include <ween32.h>
 
 #include <stdio.h>
+#include <stddef.h> /* offsetof: the settings table names its fields */
 #include <stdlib.h>
 #include <string.h>
 
@@ -660,6 +661,27 @@ static void layout(HWND w)
 
 /* ---- the file list ------------------------------------------------------- */
 
+/* What the example knows an extension to mean, and what it says opens one.
+ * A table rather than a chain of tests, because Folder Options > File Types
+ * shows the same list back. */
+static const struct {
+    const char *ext; /* without the dot, as a shell shows it */
+    const char *desc;
+    const char *opens;
+} g_types[] = {
+    { "AVI", "Video Clip", "Windows Media Player" },
+    { "BAT", "MS-DOS Batch File", "Command Prompt" },
+    { "BMP", "Bitmap Image", "Paint" },
+    { "DLL", "Application Extension", "" },
+    { "EXE", "Application", "" },
+    { "HTT", "HyperText Template", "Notepad" },
+    { "INI", "Configuration Settings", "Notepad" },
+    { "LOG", "Text Document", "Notepad" },
+    { "PIF", "Shortcut to MS-DOS Program", "" },
+    { "SYS", "System file", "" },
+    { "TXT", "Text Document", "Notepad" },
+};
+
 static const char *type_of(const fs_entry *e)
 {
     const char *dot;
@@ -668,16 +690,9 @@ static const char *type_of(const fs_entry *e)
     dot = strrchr(e->name, '.');
     if (!dot || !dot[1])
         return "File";
-    if (!strcmp(dot, ".txt"))
-        return "Text Document";
-    if (!strcmp(dot, ".ini"))
-        return "Configuration Settings";
-    if (!strcmp(dot, ".exe"))
-        return "Application";
-    if (!strcmp(dot, ".dll"))
-        return "Application Extension";
-    if (!strcmp(dot, ".log"))
-        return "Text Document";
+    for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
+        if (!lstrcmpiA(dot + 1, g_types[i].ext))
+            return g_types[i].desc;
     return "File";
 }
 
@@ -925,6 +940,27 @@ static void mark_sorted_column(void)
 }
 
 /* Put what was read into the list, in whatever order the columns are in. */
+/* What the sheet settles. The live copy is what the explorer reads; the
+ * pages work on a copy and hand it over on Apply, which is what makes Cancel
+ * mean anything. */
+typedef struct {
+    int classic_desktop, classic_folders;
+    int same_window;
+    int single_click, underline_always;
+    /* the View page's advanced settings, in the order the machine lists the
+     * ones this example can act on */
+    int show_full_path_address;
+    int show_full_path_title;
+    int show_hidden;
+    int hide_extensions;
+    int remember_views;
+} explorer_options;
+
+static explorer_options g_opt = { 1, 1, 1, 0, 1, 0, 0, 0, 1, 1 };
+static explorer_options g_opt_edit; /* what the pages are working on */
+
+static const explorer_options g_opt_default = { 1, 1, 1, 0, 1, 0, 0, 0, 1, 1 };
+
 /* ---- the columns ----------------------------------------------------------
  *
  * Which of them are shown, in which order and how wide, is what View > Choose
@@ -961,8 +997,26 @@ static const char *cell_text(const fs_entry *e, int kind, char *buf,
                              size_t cap)
 {
     switch (kind) {
-    case COL_NAME:
+    case COL_NAME: {
+        /* Folder Options can say to leave the extension off a name it knows
+         * the meaning of, which is what the shell does by default. */
+        const char *dot;
+        if (!g_opt.hide_extensions || e->is_dir)
+            return e->name;
+        dot = strrchr(e->name, '.');
+        if (!dot || dot == e->name || !dot[1])
+            return e->name;
+        for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
+            if (!lstrcmpiA(dot + 1, g_types[i].ext)) {
+                size_t k = (size_t)(dot - e->name);
+                if (k >= cap)
+                    k = cap - 1;
+                memcpy(buf, e->name, k);
+                buf[k] = 0;
+                return buf;
+            }
         return e->name;
+    }
     case COL_SIZE:
         if (e->is_dir)
             return "";
@@ -1999,6 +2053,18 @@ static void show_properties(HWND owner)
         DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, prop_proc, 0);
 }
 
+/* A row's state picture: 0 none, 1 a box, 2 a ticked box. Written out rather
+ * than through ListView_SetCheckState, because the macro is a brace block on
+ * one side and cannot sit in the arm of an if. */
+static void lv_state_image(HWND list, int row, int img)
+{
+    LVITEMA st;
+    memset(&st, 0, sizeof(st));
+    st.stateMask = LVIS_STATEIMAGEMASK;
+    st.state = INDEXTOSTATEIMAGEMASK(img);
+    SendMessageA(list, LVM_SETITEMSTATE, (WPARAM)row, (LPARAM)&st);
+}
+
 /* ---- View > Choose Columns -------------------------------------------------
  *
  * "Column Settings" on the machine: every column it can show, ticked or not,
@@ -2036,7 +2102,7 @@ static void cc_fill(HWND dlg)
         it.iItem = i;
         it.pszText = (char *)g_col[g_cc.order[i]].title;
         SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
-        ListView_SetCheckState(list, i, g_cc.on[g_cc.order[i]]);
+        lv_state_image(list, i, g_cc.on[g_cc.order[i]] ? 2 : 1);
     }
     if (sel < 0)
         sel = 0;
@@ -2109,9 +2175,11 @@ static INT_PTR CALLBACK cc_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_INITDIALOG: {
         LVCOLUMNA col;
+        RECT cr;
+        GetClientRect(list, &cr);
         memset(&col, 0, sizeof(col));
         col.mask = LVCF_WIDTH;
-        col.cx = 200;
+        col.cx = cr.right - GetSystemMetrics(SM_CXVSCROLL);
         SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
         SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                      LVS_EX_CHECKBOXES);
@@ -2145,7 +2213,7 @@ static INT_PTR CALLBACK cc_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
             if (at >= 0) {
                 int on = LOWORD(wp) == IDC_CC_SHOW;
                 g_cc.on[g_cc.order[at]] = on;
-                ListView_SetCheckState(list, at, on);
+                lv_state_image(list, at, on ? 2 : 1);
                 cc_sync(dlg);
             }
             return TRUE;
@@ -2227,6 +2295,496 @@ static void choose_columns(HWND owner)
                                 216, 178, "Column Settings", items, n);
     if (len <= sizeof(buf))
         DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, cc_proc, 0);
+}
+
+/* ---- Tools > Folder Options ------------------------------------------------
+ *
+ * A property sheet of four pages, laid out from the machine's own: General,
+ * View, File Types and Offline Files. What the first two hold, this example
+ * acts on; the last two are the shell's own business — the file types are
+ * what it knows an extension to mean, and the offline pages have no network
+ * behind them, so what they say is remembered and nothing else.
+ */
+enum {
+    IDC_FO_WEB_DESKTOP = 1500, IDC_FO_CLASSIC_DESKTOP,
+    IDC_FO_WEB_FOLDERS, IDC_FO_CLASSIC_FOLDERS,
+    IDC_FO_SAME_WINDOW, IDC_FO_OWN_WINDOW,
+    IDC_FO_SINGLE, IDC_FO_UNDERLINE_ALWAYS, IDC_FO_UNDERLINE_POINT,
+    IDC_FO_DOUBLE, IDC_FO_DEFAULTS,
+    IDC_FO_LIKE, IDC_FO_RESET_ALL, IDC_FO_ADVANCED, IDC_FO_VDEFAULTS,
+    IDC_FO_TYPES, IDC_FO_NEW, IDC_FO_DELETE, IDC_FO_OPENS, IDC_FO_DETAILS,
+    IDC_FO_CHANGE, IDC_FO_TYPE_ADVANCED, IDC_FO_DETAIL_TEXT,
+    IDC_FO_OFF_ENABLE, IDC_FO_OFF_SYNC, IDC_FO_OFF_REMIND,
+    IDC_FO_OFF_MINUTES, IDC_FO_OFF_SHORTCUT, IDC_FO_OFF_SPACE,
+    IDC_FO_OFF_DELETE, IDC_FO_OFF_VIEW, IDC_FO_OFF_ADVANCED
+};
+
+/* The View page's list, which is the one place the advanced settings are
+ * named. A row with no field is a heading. */
+static const struct {
+    const char *label;
+    size_t field; /* offset into explorer_options, or 0 for a heading */
+    int radio;    /* a pair of options rather than a box, as the machine has
+                   * for hidden files */
+} g_advanced[] = {
+    { "Files and Folders", 0, 0 },
+    { "Display the full path in the address bar",
+      offsetof(explorer_options, show_full_path_address), 0 },
+    { "Display the full path in title bar",
+      offsetof(explorer_options, show_full_path_title), 0 },
+    { "Hidden files and folders", 0, 0 },
+    { "Show hidden files and folders",
+      offsetof(explorer_options, show_hidden), 1 },
+    { "Hide file extensions for known file types",
+      offsetof(explorer_options, hide_extensions), 0 },
+    { "Remember each folder's view settings",
+      offsetof(explorer_options, remember_views), 0 },
+};
+
+static int *opt_field(explorer_options *o, size_t at)
+{
+    return (int *)((char *)o + at);
+}
+
+/* Everything the settings touch, done again. */
+static void options_applied(void)
+{
+    refresh_view();
+    if (g_main) {
+        const char *leaf = strrchr(g_path, FS_SEP);
+        SetWindowTextA(g_main, g_opt.show_full_path_title
+                                   ? g_path
+                                   : (leaf && leaf[1] ? leaf + 1 : g_path));
+    }
+}
+
+/* ---- the General page ---- */
+static INT_PTR CALLBACK fo_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_INITDIALOG:
+        CheckRadioButton(dlg, IDC_FO_WEB_DESKTOP, IDC_FO_CLASSIC_DESKTOP,
+                         g_opt_edit.classic_desktop ? IDC_FO_CLASSIC_DESKTOP
+                                                    : IDC_FO_WEB_DESKTOP);
+        CheckRadioButton(dlg, IDC_FO_WEB_FOLDERS, IDC_FO_CLASSIC_FOLDERS,
+                         g_opt_edit.classic_folders ? IDC_FO_CLASSIC_FOLDERS
+                                                    : IDC_FO_WEB_FOLDERS);
+        CheckRadioButton(dlg, IDC_FO_SAME_WINDOW, IDC_FO_OWN_WINDOW,
+                         g_opt_edit.same_window ? IDC_FO_SAME_WINDOW
+                                                : IDC_FO_OWN_WINDOW);
+        CheckRadioButton(dlg, IDC_FO_SINGLE, IDC_FO_DOUBLE,
+                         g_opt_edit.single_click ? IDC_FO_SINGLE
+                                                 : IDC_FO_DOUBLE);
+        CheckRadioButton(dlg, IDC_FO_UNDERLINE_ALWAYS, IDC_FO_UNDERLINE_POINT,
+                         g_opt_edit.underline_always ? IDC_FO_UNDERLINE_ALWAYS
+                                                     : IDC_FO_UNDERLINE_POINT);
+        /* the two under Single-click only mean anything when it is chosen */
+        EnableWindow(GetDlgItem(dlg, IDC_FO_UNDERLINE_ALWAYS),
+                     g_opt_edit.single_click);
+        EnableWindow(GetDlgItem(dlg, IDC_FO_UNDERLINE_POINT),
+                     g_opt_edit.single_click);
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_FO_DEFAULTS:
+            g_opt_edit = g_opt_default;
+            SendMessageA(dlg, WM_INITDIALOG, 0, 0);
+            PropSheet_Changed(GetParent(dlg), dlg);
+            return TRUE;
+        case IDC_FO_WEB_DESKTOP:
+        case IDC_FO_CLASSIC_DESKTOP:
+        case IDC_FO_WEB_FOLDERS:
+        case IDC_FO_CLASSIC_FOLDERS:
+        case IDC_FO_SAME_WINDOW:
+        case IDC_FO_OWN_WINDOW:
+        case IDC_FO_SINGLE:
+        case IDC_FO_DOUBLE:
+        case IDC_FO_UNDERLINE_ALWAYS:
+        case IDC_FO_UNDERLINE_POINT:
+            g_opt_edit.classic_desktop =
+                IsDlgButtonChecked(dlg, IDC_FO_CLASSIC_DESKTOP) != 0;
+            g_opt_edit.classic_folders =
+                IsDlgButtonChecked(dlg, IDC_FO_CLASSIC_FOLDERS) != 0;
+            g_opt_edit.same_window =
+                IsDlgButtonChecked(dlg, IDC_FO_SAME_WINDOW) != 0;
+            g_opt_edit.single_click =
+                IsDlgButtonChecked(dlg, IDC_FO_SINGLE) != 0;
+            g_opt_edit.underline_always =
+                IsDlgButtonChecked(dlg, IDC_FO_UNDERLINE_ALWAYS) != 0;
+            EnableWindow(GetDlgItem(dlg, IDC_FO_UNDERLINE_ALWAYS),
+                         g_opt_edit.single_click);
+            EnableWindow(GetDlgItem(dlg, IDC_FO_UNDERLINE_POINT),
+                         g_opt_edit.single_click);
+            PropSheet_Changed(GetParent(dlg), dlg);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    case WM_NOTIFY: {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (nm && nm->code == PSN_APPLY) {
+            g_opt = g_opt_edit;
+            options_applied();
+            SetWindowLongPtrA(dlg, DWLP_MSGRESULT, PSNRET_NOERROR);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    default:
+        break;
+    }
+    return FALSE;
+}
+
+/* ---- the View page ---- */
+static void fo_view_fill(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_FO_ADVANCED);
+    int n = (int)(sizeof(g_advanced) / sizeof(*g_advanced));
+    SendMessageA(list, LVM_DELETEALLITEMS, 0, 0);
+    for (int i = 0; i < n; i++) {
+        LVITEMA it;
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT;
+        it.iItem = i;
+        it.pszText = (char *)g_advanced[i].label;
+        SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        lv_state_image(list, i,
+                       !g_advanced[i].field
+                           ? 0 /* a heading has no box */
+                           : (*opt_field(&g_opt_edit, g_advanced[i].field) ? 2
+                                                                          : 1));
+    }
+}
+
+static INT_PTR CALLBACK fo_view(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    HWND list = GetDlgItem(dlg, IDC_FO_ADVANCED);
+    switch (msg) {
+    case WM_INITDIALOG: {
+        LVCOLUMNA col;
+        memset(&col, 0, sizeof(col));
+        RECT cr;
+        GetClientRect(list, &cr);
+        col.mask = LVCF_WIDTH;
+        col.cx = cr.right - GetSystemMetrics(SM_CXVSCROLL);
+        SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                     LVS_EX_CHECKBOXES);
+        fo_view_fill(dlg);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_FO_VDEFAULTS:
+            g_opt_edit = g_opt_default;
+            fo_view_fill(dlg);
+            PropSheet_Changed(GetParent(dlg), dlg);
+            return TRUE;
+        case IDC_FO_LIKE:
+        case IDC_FO_RESET_ALL:
+            MessageBoxA(dlg,
+                        "This example shows one folder at a time and does "
+                        "not keep a view for each.",
+                        "Folder Views", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    case WM_NOTIFY: {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (!nm)
+            return FALSE;
+        if (nm->hwndFrom == list && nm->code == LVN_ITEMCHANGED) {
+            int n = (int)(sizeof(g_advanced) / sizeof(*g_advanced));
+            for (int i = 0; i < n; i++)
+                if (g_advanced[i].field)
+                    *opt_field(&g_opt_edit, g_advanced[i].field) =
+                        ListView_GetCheckState(list, i) > 0;
+            PropSheet_Changed(GetParent(dlg), dlg);
+            return TRUE;
+        }
+        if (nm->code == PSN_SETACTIVE) {
+            fo_view_fill(dlg); /* the other page may have changed them */
+            return TRUE;
+        }
+        if (nm->code == PSN_APPLY) {
+            g_opt = g_opt_edit;
+            options_applied();
+            SetWindowLongPtrA(dlg, DWLP_MSGRESULT, PSNRET_NOERROR);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    default:
+        break;
+    }
+    return FALSE;
+}
+
+/* ---- the File Types page ---- */
+static void fo_types_detail(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_FO_TYPES);
+    int at = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED);
+    int n = (int)(sizeof(g_types) / sizeof(*g_types));
+    char line[400], group[80];
+    if (at < 0 || at >= n)
+        return;
+    snprintf(group, sizeof(group), "Details for '%s' extension",
+             g_types[at].ext);
+    SetDlgItemTextA(dlg, IDC_FO_DETAILS, group);
+    SetDlgItemTextA(dlg, IDC_FO_OPENS,
+                    g_types[at].opens[0] ? g_types[at].opens : "(unknown)");
+    snprintf(line, sizeof(line),
+             "Files with extension '%s' are of type '%s'.  To change "
+             "settings that affect all '%s' files, click Advanced.",
+             g_types[at].ext, g_types[at].desc, g_types[at].desc);
+    SetDlgItemTextA(dlg, IDC_FO_DETAIL_TEXT, line);
+}
+
+static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    HWND list = GetDlgItem(dlg, IDC_FO_TYPES);
+    switch (msg) {
+    case WM_INITDIALOG: {
+        LVCOLUMNA col;
+        int n = (int)(sizeof(g_types) / sizeof(*g_types));
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.pszText = (char *)"Extensions";
+        col.cx = 80;
+        SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        col.pszText = (char *)"File Types";
+        {
+            RECT cr;
+            GetClientRect(list, &cr);
+            col.cx = cr.right - 80 - GetSystemMetrics(SM_CXVSCROLL);
+        }
+        SendMessageA(list, LVM_INSERTCOLUMNA, 1, (LPARAM)&col);
+        for (int i = 0; i < n; i++) {
+            LVITEMA it;
+            memset(&it, 0, sizeof(it));
+            it.mask = LVIF_TEXT;
+            it.iItem = i;
+            it.pszText = (char *)g_types[i].ext;
+            SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+            set_cell(list, i, 1, g_types[i].desc);
+        }
+        ListView_SetItemState(list, 0, LVIS_SELECTED | LVIS_FOCUSED,
+                              LVIS_SELECTED | LVIS_FOCUSED);
+        fo_types_detail(dlg);
+        return TRUE;
+    }
+    case WM_NOTIFY: {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (nm && nm->hwndFrom == list && nm->code == LVN_ITEMCHANGED) {
+            fo_types_detail(dlg);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_FO_NEW:
+        case IDC_FO_DELETE:
+        case IDC_FO_CHANGE:
+        case IDC_FO_TYPE_ADVANCED:
+            MessageBoxA(dlg,
+                        "The file types are what this example knows an "
+                        "extension to mean.\nThey are not the machine's "
+                        "registry, so there is nothing here to change.",
+                        "File Types", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    default:
+        break;
+    }
+    return FALSE;
+}
+
+/* ---- the Offline Files page ---- */
+static INT_PTR CALLBACK fo_offline(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    switch (msg) {
+    case WM_INITDIALOG:
+        CheckDlgButton(dlg, IDC_FO_OFF_ENABLE, BST_CHECKED);
+        CheckDlgButton(dlg, IDC_FO_OFF_SYNC, BST_CHECKED);
+        CheckDlgButton(dlg, IDC_FO_OFF_REMIND, BST_CHECKED);
+        SetDlgItemTextA(dlg, IDC_FO_OFF_MINUTES, "60");
+        SendMessageA(GetDlgItem(dlg, IDC_FO_OFF_SPACE), TBM_SETRANGE, TRUE,
+                     MAKELPARAM(0, 100));
+        SendMessageA(GetDlgItem(dlg, IDC_FO_OFF_SPACE), TBM_SETPOS, TRUE, 10);
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_FO_OFF_DELETE:
+        case IDC_FO_OFF_VIEW:
+        case IDC_FO_OFF_ADVANCED:
+            MessageBoxA(dlg,
+                        "This example browses the file system it is running "
+                        "on.\nThere is no network behind these.",
+                        "Offline Files", MB_OK | MB_ICONINFORMATION);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    default:
+        break;
+    }
+    return FALSE;
+}
+
+static void folder_options(HWND owner)
+{
+    static unsigned char t_gen[4000], t_view[3000], t_types[3000],
+        t_off[3000];
+    dlg_item items[40];
+    int n;
+    PROPSHEETPAGEA pages[4];
+    PROPSHEETHEADERA hdr;
+
+#define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                                   do {                                                                               items[n].style = (st) | WS_CHILD | WS_VISIBLE;                                 items[n].x = (short)(ix);                                                      items[n].y = (short)(iy);                                                      items[n].cx = (short)(iw);                                                     items[n].cy = (short)(ih);                                                     items[n].id = (WORD)(iid);                                                     items[n].cls = (WORD)(icls);                                                   items[n].text = (itx);                                                         items[n].clsname = NULL;                                                       n++;                                                                       } while (0)
+#define GROUP(ix, iy, iw, ih, itx) ITEM(BS_GROUPBOX, ix, iy, iw, ih, 0, ATOM_BUTTON, itx)
+#define RADIO(ix, iy, iw, iid, itx)                                                ITEM(BS_AUTORADIOBUTTON | WS_TABSTOP, ix, iy, iw, 10, iid, ATOM_BUTTON, itx)
+#define RADIO2(ix, iy, iw, iid, itx)                                               ITEM(BS_AUTORADIOBUTTON, ix, iy, iw, 10, iid, ATOM_BUTTON, itx)
+#define PUSH(ix, iy, iw, ih, iid, itx)                                             ITEM(BS_PUSHBUTTON | WS_TABSTOP, ix, iy, iw, ih, iid, ATOM_BUTTON, itx)
+#define LABEL(ix, iy, iw, ih, iid, itx)                                            ITEM(0, ix, iy, iw, ih, iid, ATOM_STATIC, itx)
+
+    /* ---- General ---- */
+    n = 0;
+    memset(items, 0, sizeof(items));
+    GROUP(7, 7, 232, 33, "Active Desktop");
+    RADIO(46, 18, 186, IDC_FO_WEB_DESKTOP, "&Enable Web content on my desktop");
+    RADIO2(46, 29, 186, IDC_FO_CLASSIC_DESKTOP, "Use Windows &classic desktop");
+    GROUP(7, 46, 232, 33, "Web View");
+    RADIO(46, 57, 186, IDC_FO_WEB_FOLDERS, "Enable &Web content in folders");
+    RADIO2(46, 68, 186, IDC_FO_CLASSIC_FOLDERS, "Use Windows classic &folders");
+    GROUP(7, 85, 232, 33, "Browse Folders");
+    RADIO(46, 96, 186, IDC_FO_SAME_WINDOW,
+          "Open each folder in the same window");
+    RADIO2(46, 107, 186, IDC_FO_OWN_WINDOW,
+           "Open each folder in its own window");
+    GROUP(7, 124, 232, 62, "Click items as follows");
+    RADIO(46, 135, 186, IDC_FO_SINGLE,
+          "&Single-click to open an item (point to select)");
+    RADIO2(57, 148, 175, IDC_FO_UNDERLINE_ALWAYS,
+           "Underline icon titles consistent with my browser");
+    RADIO2(57, 161, 175, IDC_FO_UNDERLINE_POINT,
+           "Underline icon titles only when I point at them");
+    RADIO2(46, 174, 186, IDC_FO_DOUBLE,
+           "&Double-click to open an item (single-click to select)");
+    PUSH(160, 194, 79, 14, IDC_FO_DEFAULTS, "&Restore Defaults");
+    build_dialog_template(t_gen, sizeof(t_gen), WS_CHILD | DS_SETFONT, 243,
+                          232, "", items, n);
+
+    /* ---- View ---- */
+    n = 0;
+    memset(items, 0, sizeof(items));
+    GROUP(7, 7, 232, 47, "Folder views");
+    LABEL(46, 18, 186, 9, 0, "You can set all of your folders to the same view.");
+    PUSH(46, 31, 86, 14, IDC_FO_LIKE, "&Like Current Folder");
+    PUSH(140, 31, 86, 14, IDC_FO_RESET_ALL, "&Reset All Folders");
+    LABEL(7, 62, 100, 9, 0, "&Advanced settings:");
+    ITEM(WS_TABSTOP | WS_BORDER | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
+             LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS,
+         7, 73, 232, 121, IDC_FO_ADVANCED, 0, NULL);
+    items[n - 1].clsname = WC_LISTVIEWA;
+    PUSH(160, 199, 79, 14, IDC_FO_VDEFAULTS, "R&estore Defaults");
+    build_dialog_template(t_view, sizeof(t_view), WS_CHILD | DS_SETFONT, 243,
+                          232, "", items, n);
+
+    /* ---- File Types ---- */
+    n = 0;
+    memset(items, 0, sizeof(items));
+    LABEL(7, 7, 120, 9, 0, "&Registered file types:");
+    ITEM(WS_TABSTOP | WS_BORDER | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
+             LVS_SHOWSELALWAYS,
+         7, 18, 232, 87, IDC_FO_TYPES, 0, NULL);
+    items[n - 1].clsname = WC_LISTVIEWA;
+    PUSH(129, 110, 52, 14, IDC_FO_NEW, "&New");
+    PUSH(187, 110, 52, 14, IDC_FO_DELETE, "&Delete");
+    GROUP(7, 132, 232, 76, "Details for extension");
+    items[n - 1].id = IDC_FO_DETAILS;
+    LABEL(14, 148, 44, 9, 0, "Opens with:");
+    LABEL(74, 148, 90, 9, IDC_FO_OPENS, "");
+    PUSH(174, 145, 58, 14, IDC_FO_CHANGE, "&Change...");
+    LABEL(14, 166, 218, 26, IDC_FO_DETAIL_TEXT, "");
+    PUSH(174, 189, 58, 14, IDC_FO_TYPE_ADVANCED, "Ad&vanced");
+    build_dialog_template(t_types, sizeof(t_types), WS_CHILD | DS_SETFONT, 243,
+                          232, "", items, n);
+
+    /* ---- Offline Files ---- */
+    n = 0;
+    memset(items, 0, sizeof(items));
+    LABEL(38, 7, 201, 26, 0,
+          "Set up your computer so that files stored on the network are "
+          "available when working offline (disconnected from the network).");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 40, 200, 10, IDC_FO_OFF_ENABLE,
+         ATOM_BUTTON, "&Enable Offline Files");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 56, 200, 10, IDC_FO_OFF_SYNC,
+         ATOM_BUTTON, "&Synchronize all offline files before logging off");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 72, 200, 10, IDC_FO_OFF_REMIND,
+         ATOM_BUTTON, "Enable &reminders");
+    LABEL(28, 89, 110, 9, 0, "Display reminder balloon every");
+    ITEM(WS_TABSTOP | WS_BORDER | ES_RIGHT, 140, 87, 26, 12,
+         IDC_FO_OFF_MINUTES, ATOM_EDIT, "60");
+    LABEL(172, 89, 40, 9, 0, "minutes.");
+    ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 105, 220, 10, IDC_FO_OFF_SHORTCUT,
+         ATOM_BUTTON, "&Place shortcut to Offline Files folder on the desktop");
+    LABEL(14, 124, 220, 9, 0,
+          "Amount of disk space to use for temporary offline files:");
+    ITEM(WS_TABSTOP | TBS_HORZ, 14, 135, 110, 20, IDC_FO_OFF_SPACE, 0, NULL);
+    items[n - 1].clsname = TRACKBAR_CLASSA;
+    LABEL(132, 140, 100, 9, 0, "104 MB (10% of drive)");
+    PUSH(48, 165, 48, 14, IDC_FO_OFF_DELETE, "De&lete Files...");
+    PUSH(108, 165, 48, 14, IDC_FO_OFF_VIEW, "&View Files");
+    PUSH(168, 165, 48, 14, IDC_FO_OFF_ADVANCED, "Ad&vanced");
+    build_dialog_template(t_off, sizeof(t_off), WS_CHILD | DS_SETFONT, 243, 232,
+                          "", items, n);
+#undef LABEL
+#undef PUSH
+#undef RADIO2
+#undef RADIO
+#undef GROUP
+#undef ITEM
+
+    g_opt_edit = g_opt;
+
+    memset(pages, 0, sizeof(pages));
+    for (int i = 0; i < 4; i++) {
+        pages[i].dwSize = sizeof(pages[i]);
+        pages[i].dwFlags = PSP_DLGINDIRECT | PSP_USETITLE;
+    }
+    pages[0].pResource = (LPCDLGTEMPLATEA)t_gen;
+    pages[0].pszTitle = "General";
+    pages[0].pfnDlgProc = fo_general;
+    pages[1].pResource = (LPCDLGTEMPLATEA)t_view;
+    pages[1].pszTitle = "View";
+    pages[1].pfnDlgProc = fo_view;
+    pages[2].pResource = (LPCDLGTEMPLATEA)t_types;
+    pages[2].pszTitle = "File Types";
+    pages[2].pfnDlgProc = fo_filetypes;
+    pages[3].pResource = (LPCDLGTEMPLATEA)t_off;
+    pages[3].pszTitle = "Offline Files";
+    pages[3].pfnDlgProc = fo_offline;
+
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.dwSize = sizeof(hdr);
+    hdr.dwFlags = PSH_PROPSHEETPAGE;
+    hdr.hwndParent = owner;
+    hdr.pszCaption = "Folder Options";
+    hdr.nPages = 4;
+    hdr.ppsp = pages;
+    PropertySheetA(&hdr);
 }
 
 /* Select All, and its opposite. */
@@ -2326,7 +2884,9 @@ static void show_directory(const char *path)
         return;
     }
     while (fs_next(&d, &e)) {
-        if (e.name[0] == '.') /* the shell hides these, and so do we */
+        /* A dot file is the hidden one on this side, and Folder Options says
+         * whether hidden files are shown. */
+        if (e.name[0] == '.' && !g_opt.show_hidden)
             continue;
         if (g_entries == cap) {
             int grown = cap ? cap * 2 : 64;
@@ -3966,6 +4526,18 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 g_crossing = 0;
             }
             status_for_selection(sel);
+        } else if (nm->code == NM_CLICK && nm->hwndFrom == g_list &&
+                   g_opt.single_click) {
+            /* one click opens, when Folder Options says a click is what
+             * opening takes */
+            int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                        LVNI_SELECTED);
+            if (sel >= 0 && sel < g_entries && g_entry[sel].is_dir) {
+                char path[1400];
+                snprintf(path, sizeof(path), "%s%s%s", g_path,
+                         strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
+                show_directory(path);
+            }
         } else if (nm->code == NM_DBLCLK && nm->hwndFrom == g_list) {
             /* opening a folder is what a double click does in a shell — in
              * the list. The tree answers its own double click by opening the
@@ -4388,6 +4960,8 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             choose_columns(w);
             return 0;
         case IDM_FOLDER_OPTIONS:
+            folder_options(w);
+            return 0;
         case IDM_CUSTOMIZE_FOLDER:
         case IDM_TOOLBAR_CUSTOMIZE:
             MessageBoxA(w,
