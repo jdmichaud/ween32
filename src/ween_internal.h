@@ -511,6 +511,8 @@ HWND ween_top_level(HWND wnd);
 int ween_frame_width(const struct ween_wnd *w); /* scaled, per style */
 /* Whether the window carries a caption — and so draws WS_BORDER as frame. */
 int ween_has_caption(const struct ween_wnd *w);
+/* Whether a push button draws the default ring: the keyboard takes it. */
+int ween_button_is_default(const struct ween_wnd *w);
 HWND ween_focus_get(void);
 /* The next/previous focusable (WS_TABSTOP) child of `dlg`, wrapping. */
 HWND ween_tab_next(HWND dlg, HWND cur, int forward);

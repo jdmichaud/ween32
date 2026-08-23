@@ -2951,10 +2951,40 @@ static int label_height(const struct ween_wnd *w)
     return f->cell_h ? f->cell_h : f->ascent - f->descent;
 }
 
+/* Whether a push button wears the black ring. The one the template marked
+ * wears it until the keyboard reaches another: in win32 the focus takes the
+ * default with it, so a dialog whose focus is on a page's button draws the
+ * ring there and not around OK — which is what the machine's Folder Options
+ * shows. Enter follows the same rule; see ween_dialog_key. */
+/* Whether a window is a push button — which has to be asked of its class as
+ * well as its style, since BS_PUSHBUTTON is zero and every other control's
+ * style has those bits clear too. */
+static int is_push_button(const struct ween_wnd *w)
+{
+    UINT kind;
+    if (!w || !w->cls || !w->cls->name || strcmp(w->cls->name, "BUTTON"))
+        return 0;
+    kind = button_type(w);
+    return kind == BS_PUSHBUTTON || kind == BS_DEFPUSHBUTTON;
+}
+
+int ween_button_is_default(const struct ween_wnd *w)
+{
+    HWND focus = ween_focus_get();
+    if (!is_push_button(w))
+        return 0;
+    if (focus == w)
+        return 1;
+    if (focus && is_push_button(focus) &&
+        ween_top_level(focus) == ween_top_level((struct ween_wnd *)w))
+        return 0; /* another button has it */
+    return button_type(w) == BS_DEFPUSHBUTTON;
+}
+
 static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     RECT r = ps->rcPaint;
-    if (button_type(wnd) == BS_DEFPUSHBUTTON) {
+    if (ween_button_is_default(wnd)) {
         /* the default ring: 1px black outline, button inset within */
         struct ween_wnd *top = ween_top_level(wnd);
         int ox, oy;
@@ -2981,7 +3011,7 @@ static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         struct ween_wnd *top = ween_top_level(wnd);
         int ox, oy;
         ween_client_origin(wnd, &ox, &oy);
-        int in = button_type(wnd) == BS_DEFPUSHBUTTON ? 4 : 3;
+        int in = ween_button_is_default(wnd) ? 4 : 3;
         ween_surface_focus_rect_in(&top->surface, ox + in, oy + in,
                                    wnd->w - 2 * in, wnd->h - 2 * in,
                                    WEEN_BLACK);

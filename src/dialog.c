@@ -424,11 +424,26 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
         SendMessageA(nx, BM_CLICK, 0, 0);
         return TRUE;
     }
-    case VK_RETURN:
-        if (dlg->defid)
+    case VK_RETURN: {
+        /* The keyboard carries the default with it: Enter presses the button
+         * the focus is on, and the template's default only when the focus is
+         * somewhere else. That is the same rule the black ring is drawn by. */
+        HWND focus = ween_focus_get();
+        int inside = 0;
+        for (HWND p = focus; p; p = p->parent)
+            if (p == dlg) {
+                inside = 1;
+                break;
+            }
+        if (focus && inside && ween_button_is_default(focus))
+            SendMessageA(dlg, WM_COMMAND,
+                         MAKEWPARAM((WORD)focus->id, BN_CLICKED),
+                         (LPARAM)focus);
+        else if (dlg->defid)
             SendMessageA(dlg, WM_COMMAND, MAKEWPARAM((WORD)dlg->defid, BN_CLICKED),
                          (LPARAM)GetDlgItem(dlg, (int)dlg->defid));
         return TRUE;
+    }
     case VK_ESCAPE:
         SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED), 0);
         return TRUE;
