@@ -170,12 +170,30 @@ What does not:
 | | how far off | why |
 | --- | --- | --- |
 | a wide line at a shallow angle | ~60 px of 400 | GDI sweeps the pen as a region; ween32 stamps it along a four-connected walk, and the two round the ends of that region differently |
-| an ellipse | ~86 px of an 80x60 outline | GDI's ellipse comes out flatter across the top than the mathematically inscribed one ween32 draws |
+| an ellipse | ~86 px of an 80x60 outline | see below |
 | a rounded rectangle | the same, in its corners | the same arithmetic |
 | the dialogs' text | every glyph | Windows dialogs are set in MS Sans Serif; ween32 has only Tahoma |
 | a free-form selection round a *diagonal* | its edge, by a pixel a row | the machine's lasso is the points its mouse driver delivered, walked in twos; ours is the path we sent. The two polygons are genuinely different |
 
 The first three are ween32's rasteriser, not Paint's drawing code.
+
+The ellipse was measured further, since it is the largest of them. GDI's is
+not the mathematically inscribed one ween32 draws, and it is not a Bresenham
+ellipse either: on a ten by eleven box the machine draws
+
+```
+    ..####..        rows 4..5, then 2..7, then 1..8 twice, then 0..9 three
+    ..#....#.       times -- and each row holds exactly the pixels of its
+    .#......#.      span that the rows above and below do not cover
+```
+
+which is the *boundary of a filled region*, not a stroked curve. The spans of
+that region are tighter than the inscribed ellipse's at some rows and equal
+at others — on the ten by eleven, half-widths of 9, 9, 7, 7, 5, 1 where the
+inscribed one gives 9, 9, 9, 7, 5, 3 — and the sequence of steps down the
+side is not monotone, which no single Bresenham pass produces. Whatever
+generates it, it is worth knowing that the outline follows from the region:
+get the spans right and the outline comes with them.
 
 ## On a display
 

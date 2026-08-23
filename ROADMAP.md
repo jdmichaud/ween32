@@ -29,10 +29,12 @@ that no application has asked for:
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
 - [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
-  one; GDI's comes out flatter across the top, and a wide line at a shallow
-  angle differs at its ends because GDI sweeps the pen as a region rather
-  than stamping it along a walk. Both are measured in
-  [docs/mspaint.md](docs/mspaint.md).
+  one. GDI's is the boundary of a filled *region* whose spans are tighter
+  than that at some rows — measured on the machine, and written down in
+  [docs/mspaint.md](docs/mspaint.md), which is where a next attempt should
+  start. A wide line at a shallow angle differs at its ends for the same
+  kind of reason: GDI sweeps the pen as a region rather than stamping it
+  along a walk.
 
 - [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
   is the arrangement a shell uses, but a shell also puts a fixed-width band
