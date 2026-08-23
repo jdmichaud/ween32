@@ -3303,7 +3303,7 @@ static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_client_origin(wnd, &ox, &oy);
         int in = ween_button_is_default(wnd) ? 4 : 3;
         ween_surface_focus_rect_in(&top->surface, ox + in, oy + in,
-                                   wnd->w - 2 * in, wnd->h - 2 * in,
+                                   wnd->w - 2 * in, wnd->h - 2 * in, ox, oy,
                                    WEEN_BLACK);
     }
 }
@@ -3378,7 +3378,8 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_client_origin(wnd, &ox, &oy);
         ween_surface_focus_rect_in(&top->surface, ox + rtext.left - 1,
                                    oy + client.top, tw + 2,
-                                   client.bottom - client.top, WEEN_BLACK);
+                                   client.bottom - client.top, ox, oy,
+                                   WEEN_BLACK);
     }
 }
 

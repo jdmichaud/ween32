@@ -163,23 +163,32 @@ void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h)
  * machine's dots are black, where inverting that face would leave a dark
  * blue-grey. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
-                                ween_color c)
+                                int ox, int oy, ween_color c)
 {
     int r = x + w - 1, b = y + h - 1;
     if (w <= 0 || h <= 0)
         return;
+    /* The dots are laid out from the corner of the window that is drawing
+     * them, not from the corner of the screen: win32 hangs the pattern on the
+     * device context's brush origin, which for a control is its own client
+     * corner. Two tick boxes at different places on the screen then dot their
+     * rectangles the same way — off the screen's corner one of them comes out
+     * the other way round, which is what the machine's Properties page showed
+     * against ours. */
+#define DOT(px, py) (((px) - ox + (py) - oy) & 1)
     for (int i = x; i <= r; i++) {
-        if (!((i + y) & 1))
+        if (DOT(i, y))
             ween_surface_pixel(s, i, y, c);
-        if (!((i + b) & 1))
+        if (DOT(i, b))
             ween_surface_pixel(s, i, b, c);
     }
     for (int j = y + 1; j < b; j++) {
-        if (!((x + j) & 1))
+        if (DOT(x, j))
             ween_surface_pixel(s, x, j, c);
-        if (!((r + j) & 1))
+        if (DOT(r, j))
             ween_surface_pixel(s, r, j, c);
     }
+#undef DOT
 }
 
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c)
