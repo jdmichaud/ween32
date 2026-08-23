@@ -272,7 +272,9 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         WORD id = rd_w(b, p + 16);
         p += 18;
         WORD cls_ord;
-        char cls_str[32], itext[64];
+        /* Room for a paragraph: a label in a dialog is often one, and the
+         * shell's are. */
+        char cls_str[32], itext[512];
         p = parse_sz(b, p, &cls_ord, cls_str, sizeof cls_str);
         p = parse_sz(b, p, NULL, itext, sizeof itext);
         WORD cdata = rd_w(b, p);
@@ -284,8 +286,11 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
                         MX(ix + icx) - px, MY(iy + icy) - py, dlg,
                         (HMENU)(UINT_PTR)id, inst, NULL);
         /* The first BS_DEFPUSHBUTTON in the template is the dialog's default
-         * command, which is what Enter presses. */
-        if (!dlg->defid && (istyle & BS_DEFPUSHBUTTON) == BS_DEFPUSHBUTTON)
+         * command, which is what Enter presses — and only a button can be
+         * one. The style bit it lives in is bit zero, which every class uses
+         * for something else: a list view's LVS_REPORT is the same bit. */
+        if (!dlg->defid && cls && !strcmp(cls, "BUTTON") &&
+            (istyle & BS_DEFPUSHBUTTON) == BS_DEFPUSHBUTTON)
             dlg->defid = id;
     }
 

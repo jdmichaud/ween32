@@ -31,7 +31,14 @@ typedef struct {
      * a time_t or a FILETIME, because those are the two sides' own shapes and
      * this is the one place that has to agree */
     char modified[40]; /* "12/31/2038 12:59 PM" and room to spare */
+    char created[40];  /* the same, for the other two dates a shell offers */
+    char accessed[40];
+    char attributes[8]; /* "RHSA", in that order, of whatever is set */
 } fs_entry;
+
+/* One of the three dates, written the way a shell writes them. Shared so the
+ * three cannot drift apart. */
+#define FS_STAMP(out, mo, dy, yr, hh, mi)                                          snprintf((out), sizeof(out), "%d/%d/%d %d:%02d %s", (mo), (dy), (yr),                   (hh) % 12 ? (hh) % 12 : 12, (mi), (hh) < 12 ? "AM" : "PM")
 
 #ifdef _WIN32
 
@@ -64,12 +71,29 @@ static int fs_next(fs_dir *d, fs_entry *e)
     {
         SYSTEMTIME st;
         FILETIME local;
+        DWORD a = d->fd.dwFileAttributes;
+        int n = 0;
         FileTimeToLocalFileTime(&d->fd.ftLastWriteTime, &local);
         FileTimeToSystemTime(&local, &st);
-        snprintf(e->modified, sizeof(e->modified), "%d/%d/%d %d:%02d %s",
-                 st.wMonth, st.wDay, st.wYear,
-                 st.wHour % 12 ? st.wHour % 12 : 12, st.wMinute,
-                 st.wHour < 12 ? "AM" : "PM");
+        FS_STAMP(e->modified, st.wMonth, st.wDay, st.wYear, st.wHour,
+                 st.wMinute);
+        FileTimeToLocalFileTime(&d->fd.ftCreationTime, &local);
+        FileTimeToSystemTime(&local, &st);
+        FS_STAMP(e->created, st.wMonth, st.wDay, st.wYear, st.wHour,
+                 st.wMinute);
+        FileTimeToLocalFileTime(&d->fd.ftLastAccessTime, &local);
+        FileTimeToSystemTime(&local, &st);
+        FS_STAMP(e->accessed, st.wMonth, st.wDay, st.wYear, st.wHour,
+                 st.wMinute);
+        if (a & FILE_ATTRIBUTE_READONLY)
+            e->attributes[n++] = 'R';
+        if (a & FILE_ATTRIBUTE_HIDDEN)
+            e->attributes[n++] = 'H';
+        if (a & FILE_ATTRIBUTE_SYSTEM)
+            e->attributes[n++] = 'S';
+        if (a & FILE_ATTRIBUTE_ARCHIVE)
+            e->attributes[n++] = 'A';
+        e->attributes[n] = 0;
     }
     return 1;
 }
@@ -154,15 +178,26 @@ static int fs_next(fs_dir *d, fs_entry *e)
         e->is_dir = S_ISDIR(st.st_mode) != 0;
         e->size = (unsigned long)st.st_size;
         {
-            struct tm *tm = localtime(&st.st_mtime);
-            if (tm)
-                snprintf(e->modified, sizeof(e->modified),
-                         "%d/%d/%d %d:%02d %s", tm->tm_mon + 1, tm->tm_mday,
-                         tm->tm_year + 1900,
-                         tm->tm_hour % 12 ? tm->tm_hour % 12 : 12, tm->tm_min,
-                         tm->tm_hour < 12 ? "AM" : "PM");
-            else
-                e->modified[0] = 0;
+            /* the three dates a shell offers, and the attributes it can show
+             * of the ones this side has: a dot file is the hidden one, and a
+             * file with no write bit is the read-only one */
+            struct tm *tm;
+            int n = 0;
+            e->modified[0] = e->created[0] = e->accessed[0] = 0;
+            if ((tm = localtime(&st.st_mtime)) != NULL)
+                FS_STAMP(e->modified, tm->tm_mon + 1, tm->tm_mday,
+                         tm->tm_year + 1900, tm->tm_hour, tm->tm_min);
+            if ((tm = localtime(&st.st_ctime)) != NULL)
+                FS_STAMP(e->created, tm->tm_mon + 1, tm->tm_mday,
+                         tm->tm_year + 1900, tm->tm_hour, tm->tm_min);
+            if ((tm = localtime(&st.st_atime)) != NULL)
+                FS_STAMP(e->accessed, tm->tm_mon + 1, tm->tm_mday,
+                         tm->tm_year + 1900, tm->tm_hour, tm->tm_min);
+            if (!(st.st_mode & S_IWUSR))
+                e->attributes[n++] = 'R';
+            if (ent->d_name[0] == '.')
+                e->attributes[n++] = 'H';
+            e->attributes[n] = 0;
         }
         return 1;
     }

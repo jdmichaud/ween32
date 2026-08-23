@@ -22,8 +22,10 @@ typedef struct {
     DWORD style;
     short x, y, cx, cy; /* dialog units */
     WORD id;
-    WORD cls;           /* ATOM_BUTTON / ATOM_STATIC */
+    WORD cls;              /* ATOM_BUTTON / ATOM_STATIC / ... */
     const char *text;
+    const char *clsname;   /* or a class by name, for one with no ordinal:
+                            * a template may hold any registered class */
 } dlg_item;
 
 typedef struct {
@@ -100,8 +102,12 @@ static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
         db_w(&b, (WORD)items[i].cx);
         db_w(&b, (WORD)items[i].cy);
         db_w(&b, items[i].id);
-        db_w(&b, 0xFFFF); /* class given as an ordinal atom ... */
-        db_w(&b, items[i].cls);
+        if (items[i].clsname) {
+            db_wsz(&b, items[i].clsname);
+        } else {
+            db_w(&b, 0xFFFF); /* class given as an ordinal atom ... */
+            db_w(&b, items[i].cls);
+        }
         db_wsz(&b, items[i].text);
         db_w(&b, 0); /* no creation data */
     }

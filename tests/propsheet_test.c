@@ -108,6 +108,8 @@ int main(void)
 
     setenv("WEEN32_DPI", "96", 1);
     ween_active_backend = ween_backend_headless();
+    memset(a, 0, sizeof(a)); /* a field nobody sets is not a stray */
+    memset(b, 0, sizeof(b));
 
     a[na].style = WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP;
     a[na].x = 7;

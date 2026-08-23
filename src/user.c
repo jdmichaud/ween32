@@ -2909,7 +2909,14 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc = BeginPaint(wnd, &ps);
         FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
-        UINT fmt = DT_SINGLELINE;
+        /* A label wraps at its own width unless it was made not to, which is
+         * what SS_LEFT means in win32 and what a paragraph in a dialog needs.
+         * SS_SIMPLE and SS_LEFTNOWORDWRAP are the ones that stay on one
+         * line. */
+        DWORD kind = wnd->style & 0x1F;
+        UINT fmt = (kind == SS_SIMPLE || kind == SS_LEFTNOWORDWRAP)
+                       ? DT_SINGLELINE
+                       : DT_WORDBREAK;
         switch (wnd->style & 0x03) {
         case SS_CENTER:
             fmt |= DT_CENTER;

@@ -445,6 +445,46 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     int tw = ween_strike_text_extent(f, text, len);
     int th = f->cell_h ? f->cell_h : f->ascent - f->descent;
 
+    /* More than the rectangle is wide, and told to break: each line is drawn
+     * on its own, aligned the same way, and the answer is how tall the lot
+     * came out. A word too long for the rectangle takes a line of its own
+     * rather than being cut mid-way. */
+    if ((format & DT_WORDBREAK) && !(format & DT_SINGLELINE) &&
+        rect->right > rect->left && tw > rect->right - rect->left) {
+        int avail = rect->right - rect->left;
+        int at = 0, line = 0;
+        RECT one = *rect;
+        while (at < len) {
+            int take = 0, last_space = -1, i;
+            for (i = at; i < len; i++) {
+                if (text[i] == '\n') {
+                    last_space = i;
+                    break;
+                }
+                if (ween_strike_text_extent(f, text + at, i - at + 1) > avail)
+                    break;
+                if (text[i] == ' ')
+                    last_space = i;
+            }
+            take = i >= len            ? len - at
+                   : last_space > at   ? last_space - at
+                                       : (i > at ? i - at : 1);
+            one.top = rect->top + line * th;
+            one.bottom = one.top + th;
+            if (!(format & DT_CALCRECT))
+                DrawTextA(dc, text + at, take, &one,
+                          (format & ~DT_WORDBREAK) | DT_SINGLELINE |
+                              DT_NOPREFIX);
+            at += take;
+            while (at < len && (text[at] == ' ' || text[at] == '\n'))
+                at++;
+            line++;
+        }
+        if (format & DT_CALCRECT)
+            rect->bottom = rect->top + line * th;
+        return line * th;
+    }
+
     LONG x = rect->left;
     if (format & DT_CENTER)
         x = rect->left + ((rect->right - rect->left) - tw) / 2;

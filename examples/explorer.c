@@ -925,6 +925,89 @@ static void mark_sorted_column(void)
 }
 
 /* Put what was read into the list, in whatever order the columns are in. */
+/* ---- the columns ----------------------------------------------------------
+ *
+ * Which of them are shown, in which order and how wide, is what View > Choose
+ * Columns settles. The shell offers more than it shows and remembers the rest
+ * unticked, so the set is a table with a flag rather than a list.
+ */
+enum { COL_NAME, COL_SIZE, COL_TYPE, COL_MODIFIED, COL_ATTRIBUTES,
+       COL_COMMENT, COL_CREATED, COL_ACCESSED, COL_KINDS };
+
+static struct {
+    const char *title;
+    int width;
+    int fmt;
+    int on;
+} g_col[COL_KINDS] = {
+    /* the machine's widths, off its header's dividers; a size goes on the
+     * right of its column, as the shell puts it */
+    { "Name", 120, LVCFMT_LEFT, 1 },
+    { "Size", 96, LVCFMT_RIGHT, 1 },
+    { "Type", 120, LVCFMT_LEFT, 1 },
+    { "Modified", 120, LVCFMT_LEFT, 1 },
+    { "Attributes", 80, LVCFMT_LEFT, 0 },
+    { "Comment", 120, LVCFMT_LEFT, 0 },
+    { "Created", 120, LVCFMT_LEFT, 0 },
+    { "Accessed", 120, LVCFMT_LEFT, 0 },
+};
+/* the order they are offered and shown in, which Move Up and Move Down change */
+static int g_col_order[COL_KINDS] = { COL_NAME,     COL_SIZE,     COL_TYPE,
+                                      COL_MODIFIED, COL_ATTRIBUTES, COL_COMMENT,
+                                      COL_CREATED,  COL_ACCESSED };
+
+/* What one column has to say about one entry. */
+static const char *cell_text(const fs_entry *e, int kind, char *buf,
+                             size_t cap)
+{
+    switch (kind) {
+    case COL_NAME:
+        return e->name;
+    case COL_SIZE:
+        if (e->is_dir)
+            return "";
+        snprintf(buf, cap, "%lu KB", (e->size + 1023) / 1024);
+        return buf;
+    case COL_TYPE:
+        return type_of(e);
+    case COL_MODIFIED:
+        return e->modified;
+    case COL_ATTRIBUTES:
+        return e->attributes;
+    case COL_CREATED:
+        return e->created;
+    case COL_ACCESSED:
+        return e->accessed;
+    default: /* a comment is a thing a folder is given, and none has one */
+        return "";
+    }
+}
+
+/* Put the columns the list view is to show into it, in the order they are in
+ * now. Called again whenever that changes. */
+static void apply_columns(void)
+{
+    int had = (int)SendMessageA(g_list, LVM_GETCOLUMNWIDTH, 0, 0);
+    int shown = 0;
+    LVCOLUMNA col;
+    (void)had;
+    /* take them all out first: which are shown, and in what order, may both
+     * have changed, and a column's number is its place */
+    while (SendMessageA(g_list, LVM_DELETECOLUMN, 0, 0))
+        ;
+    for (int i = 0; i < COL_KINDS; i++) {
+        int k = g_col_order[i];
+        if (!g_col[k].on)
+            continue;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
+        col.pszText = (char *)g_col[k].title;
+        col.cx = g_col[k].width;
+        col.fmt = g_col[k].fmt;
+        SendMessageA(g_list, LVM_INSERTCOLUMNA, (WPARAM)shown++, (LPARAM)&col);
+    }
+}
+
 static void fill_list(void)
 {
     SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
@@ -933,21 +1016,26 @@ static void fill_list(void)
     for (int row = 0; row < g_entries; row++) {
         const fs_entry *e = &g_entry[row];
         LVITEMA it;
-        char size[32];
+        char size[64];
         memset(&it, 0, sizeof(it));
         it.mask = LVIF_TEXT | LVIF_IMAGE;
         it.iItem = row;
         it.pszText = (char *)e->name;
         it.iImage = e->is_dir ? IMG_FOLDER : IMG_FILE;
         SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
-        if (e->is_dir) {
-            set_cell(g_list, row, 1, "");
-        } else {
-            snprintf(size, sizeof(size), "%lu KB", (e->size + 1023) / 1024);
-            set_cell(g_list, row, 1, size);
+        {   /* every column that is shown, in the order it is shown in; the
+             * first is the name, which went in with the row */
+            int at = 0;
+            for (int i = 0; i < COL_KINDS; i++) {
+                int k = g_col_order[i];
+                if (!g_col[k].on)
+                    continue;
+                if (at)
+                    set_cell(g_list, row, at, cell_text(e, k, size,
+                                                        sizeof(size)));
+                at++;
+            }
         }
-        set_cell(g_list, row, 2, type_of(e));
-        set_cell(g_list, row, 3, e->modified);
     }
     focus_first_row();
     mark_sorted_column();
@@ -1844,6 +1932,7 @@ static void show_properties(HWND owner)
     UINT_PTR len;
     dlg_item items[16];
     int n = 0;
+    memset(items, 0, sizeof(items)); /* a field nobody sets is not a stray */
     if (row < 0 && g_ctx_row >= 0)
         row = g_ctx_row;
     if (row < 0 || row >= g_entries) {
@@ -1908,6 +1997,236 @@ static void show_properties(HWND owner)
                                 200, 164, title, items, n);
     if (len <= sizeof(buf))
         DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, prop_proc, 0);
+}
+
+/* ---- View > Choose Columns -------------------------------------------------
+ *
+ * "Column Settings" on the machine: every column it can show, ticked or not,
+ * in the order they come, with the width of whichever is picked. Move Up and
+ * Move Down reorder, Show and Hide tick and untick, and the box is the same
+ * thing the tick is — the shell offers both because the buttons say what the
+ * tick means.
+ */
+enum {
+    IDC_CC_LIST = 1400,
+    IDC_CC_UP,
+    IDC_CC_DOWN,
+    IDC_CC_SHOW,
+    IDC_CC_HIDE,
+    IDC_CC_WIDTH
+};
+
+/* What the dialog is working on: a copy, so Cancel leaves the real one be. */
+static struct {
+    int order[COL_KINDS];
+    int on[COL_KINDS];
+    int width[COL_KINDS];
+} g_cc;
+
+static void cc_fill(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_CC_LIST);
+    int sel = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    SendMessageA(list, LVM_DELETEALLITEMS, 0, 0);
+    for (int i = 0; i < COL_KINDS; i++) {
+        LVITEMA it;
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT;
+        it.iItem = i;
+        it.pszText = (char *)g_col[g_cc.order[i]].title;
+        SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        ListView_SetCheckState(list, i, g_cc.on[g_cc.order[i]]);
+    }
+    if (sel < 0)
+        sel = 0;
+    ListView_SetItemState(list, sel, LVIS_SELECTED | LVIS_FOCUSED,
+                          LVIS_SELECTED | LVIS_FOCUSED);
+}
+
+/* Which row is picked, and what the buttons and the width box say about it. */
+static void cc_sync(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_CC_LIST);
+    int at = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED);
+    int kind = at >= 0 ? g_cc.order[at] : -1;
+    int on = kind >= 0 && g_cc.on[kind];
+    char w[16];
+    /* The name is always shown, so its Hide is greyed; it can still be moved,
+     * which is what the machine allows. */
+    int first = kind == COL_NAME;
+    EnableWindow(GetDlgItem(dlg, IDC_CC_UP), at > 0);
+    EnableWindow(GetDlgItem(dlg, IDC_CC_DOWN), at >= 0 && at < COL_KINDS - 1);
+    EnableWindow(GetDlgItem(dlg, IDC_CC_SHOW), kind >= 0 && !on);
+    EnableWindow(GetDlgItem(dlg, IDC_CC_HIDE), kind >= 0 && on && !first);
+    EnableWindow(GetDlgItem(dlg, IDC_CC_WIDTH), kind >= 0);
+    if (kind >= 0) {
+        snprintf(w, sizeof(w), "%d", g_cc.width[kind]);
+        SetDlgItemTextA(dlg, IDC_CC_WIDTH, w);
+    }
+}
+
+/* Take whatever is in the width box for the row that is picked. */
+static void cc_take_width(HWND dlg)
+{
+    HWND list = GetDlgItem(dlg, IDC_CC_LIST);
+    int at = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED);
+    char w[16];
+    if (at < 0)
+        return;
+    GetDlgItemTextA(dlg, IDC_CC_WIDTH, w, (int)sizeof(w));
+    if (w[0] >= '0' && w[0] <= '9') {
+        int v = atoi(w);
+        if (v >= 10 && v <= 1000)
+            g_cc.width[g_cc.order[at]] = v;
+    }
+}
+
+static void cc_move(HWND dlg, int by)
+{
+    HWND list = GetDlgItem(dlg, IDC_CC_LIST);
+    int at = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                               LVNI_SELECTED);
+    int to = at + by, keep;
+    if (at < 0 || to < 0 || to >= COL_KINDS)
+        return;
+    cc_take_width(dlg);
+    keep = g_cc.order[at];
+
+    g_cc.order[at] = g_cc.order[to];
+    g_cc.order[to] = keep;
+    cc_fill(dlg);
+    ListView_SetItemState(list, to, LVIS_SELECTED | LVIS_FOCUSED,
+                          LVIS_SELECTED | LVIS_FOCUSED);
+    cc_sync(dlg);
+}
+
+static INT_PTR CALLBACK cc_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    HWND list = GetDlgItem(dlg, IDC_CC_LIST);
+    switch (msg) {
+    case WM_INITDIALOG: {
+        LVCOLUMNA col;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_WIDTH;
+        col.cx = 200;
+        SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                     LVS_EX_CHECKBOXES);
+        cc_fill(dlg);
+        cc_sync(dlg);
+        return TRUE;
+    }
+    case WM_NOTIFY: {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (nm && nm->hwndFrom == list && nm->code == LVN_ITEMCHANGED) {
+            /* a tick is the same thing the Show and Hide buttons do */
+            for (int i = 0; i < COL_KINDS; i++)
+                g_cc.on[g_cc.order[i]] = ListView_GetCheckState(list, i) > 0;
+            g_cc.on[COL_NAME] = 1; /* the name cannot be put away */
+            cc_sync(dlg);
+        }
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDC_CC_UP:
+            cc_move(dlg, -1);
+            return TRUE;
+        case IDC_CC_DOWN:
+            cc_move(dlg, 1);
+            return TRUE;
+        case IDC_CC_SHOW:
+        case IDC_CC_HIDE: {
+            int at = (int)SendMessageA(list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                       LVNI_SELECTED);
+            if (at >= 0) {
+                int on = LOWORD(wp) == IDC_CC_SHOW;
+                g_cc.on[g_cc.order[at]] = on;
+                ListView_SetCheckState(list, at, on);
+                cc_sync(dlg);
+            }
+            return TRUE;
+        }
+        case IDOK:
+            cc_take_width(dlg);
+            for (int i = 0; i < COL_KINDS; i++) {
+                g_col_order[i] = g_cc.order[i];
+                g_col[i].on = g_cc.on[i];
+                g_col[i].width = g_cc.width[i];
+            }
+            g_col[COL_NAME].on = 1;
+            apply_columns();
+            refresh_view();
+            EndDialog(dlg, 1);
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(dlg, 0);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    default:
+        break;
+    }
+    return FALSE;
+}
+
+static void choose_columns(HWND owner)
+{
+    unsigned char buf[3000];
+    dlg_item items[16];
+    int n = 0;
+    memset(items, 0, sizeof(items)); /* a field nobody sets is not a stray */
+    UINT_PTR len;
+
+    for (int i = 0; i < COL_KINDS; i++) {
+        g_cc.order[i] = g_col_order[i];
+        g_cc.on[i] = g_col[i].on;
+        g_cc.width[i] = g_col[i].width;
+    }
+
+#define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                                   do {                                                                               items[n].style = (st);                                                         items[n].x = (short)(ix);                                                      items[n].y = (short)(iy);                                                      items[n].cx = (short)(iw);                                                     items[n].cy = (short)(ih);                                                     items[n].id = (WORD)(iid);                                                     items[n].cls = (WORD)(icls);                                                   items[n].text = (itx);                                                         n++;                                                                       } while (0)
+    /* Every rectangle here is the machine's, measured off its own dialog and
+     * turned into dialog units: four to the character cell across and eight
+     * down. */
+    ITEM(WS_CHILD | WS_VISIBLE, 7, 6, 209, 24, 0, ATOM_STATIC,
+         "Check the columns that you would like to make visible in this "
+         "folder.  Use the Move Up and Move Down buttons to reorder the "
+         "columns.");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | WS_VSCROLL |
+             LVS_REPORT | LVS_SINGLESEL | LVS_NOCOLUMNHEADER |
+             LVS_SHOWSELALWAYS,
+         7, 39, 145, 81, IDC_CC_LIST, 0, NULL);
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 39, 50, 14, IDC_CC_UP,
+         ATOM_BUTTON, "Move &Up");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 57, 50, 14, IDC_CC_DOWN,
+         ATOM_BUTTON, "Move &Down");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 74, 50, 14, IDC_CC_SHOW,
+         ATOM_BUTTON, "&Show");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 90, 50, 14, IDC_CC_HIDE,
+         ATOM_BUTTON, "&Hide");
+    ITEM(WS_CHILD | WS_VISIBLE, 5, 132, 103, 9, 0, ATOM_STATIC,
+         "The selected column should be");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 110, 130, 19, 12,
+         IDC_CC_WIDTH, ATOM_EDIT, "");
+    ITEM(WS_CHILD | WS_VISIBLE, 131, 132, 45, 9, 0, ATOM_STATIC,
+         "pixels wide.");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 103, 156, 49,
+         14, IDOK, ATOM_BUTTON, "OK");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 156, 50, 14, IDCANCEL,
+         ATOM_BUTTON, "Cancel");
+#undef ITEM
+    /* a list view has no ordinal in a template, so it goes by name */
+    items[1].clsname = WC_LISTVIEWA;
+    len = build_dialog_template(buf, sizeof(buf),
+                                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+                                216, 178, "Column Settings", items, n);
+    if (len <= sizeof(buf))
+        DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, cc_proc, 0);
 }
 
 /* Select All, and its opposite. */
@@ -3396,19 +3715,6 @@ static void build_bands(HWND w)
 
 static void build_views(HWND w)
 {
-    static const struct {
-        const char *title;
-        int width;
-        int fmt;
-    } columns[] = {
-        /* the machine's, off its header's dividers; a size goes on the right
-         * of its column, as the shell puts it */
-        { "Name", 120, LVCFMT_LEFT },
-        { "Size", 96, LVCFMT_RIGHT },
-        { "Type", 120, LVCFMT_LEFT },
-        { "Modified", 120, LVCFMT_LEFT }
-    };
-
     /* A tab stop for the cross in it, which the machine's ring holds between
      * the address bar and the tree. */
     g_panehead = CreateWindowA("explorerpane", "",
@@ -3445,15 +3751,7 @@ static void build_views(HWND w)
     SendMessageA(g_tree, WM_SETFONT, (WPARAM)g_font, TRUE);
     SendMessageA(g_list, WM_SETFONT, (WPARAM)g_font, TRUE);
 
-    for (int i = 0; i < 4; i++) {
-        LVCOLUMNA col;
-        memset(&col, 0, sizeof(col));
-        col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
-        col.pszText = (char *)columns[i].title;
-        col.cx = columns[i].width;
-        col.fmt = columns[i].fmt;
-        SendMessageA(g_list, LVM_INSERTCOLUMNA, (WPARAM)i, (LPARAM)&col);
-    }
+    apply_columns();
 
     /* Left to put itself along the bottom and to be as tall as its font
      * wants, which is what a status bar is for. */
@@ -4086,8 +4384,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                         "on.\nThere are no network drives to map.",
                         "Map Network Drive", MB_OK | MB_ICONINFORMATION);
             return 0;
-        case IDM_FOLDER_OPTIONS:
         case IDM_CHOOSE_COLUMNS:
+            choose_columns(w);
+            return 0;
+        case IDM_FOLDER_OPTIONS:
         case IDM_CUSTOMIZE_FOLDER:
         case IDM_TOOLBAR_CUSTOMIZE:
             MessageBoxA(w,

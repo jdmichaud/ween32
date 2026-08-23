@@ -3016,23 +3016,35 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * A header of raised buttons over rows of text, one column per header item. */
 
 #define WEEN_LV_HEADER_H 17
+
+/* How tall the heading strip is on this view: none, when it was told to do
+ * without one. */
+static int lv_header_h(HWND wnd)
+{
+    return (wnd->style & LVS_NOCOLUMNHEADER) ? 0 : WEEN_LV_HEADER_H;
+}
 /* The two rows of window a list keeps between its header and its first item.
  * Windows leaves them; without them every row sits two pixels high. */
 #define WEEN_LV_ROW_TOP 2
 
+/* How many columns a list view will hold. Windows has no such cap; this is
+ * one, and it is here so that raising it is one number. */
+#define WEEN_LV_COLS 8
+
 typedef struct {
-    char *text[4];
+    char *text[WEEN_LV_COLS];
     int image;    /* index into the view's image list, -1 for none */
     int cut;      /* LVIS_CUT: drawn ghosted, which is how a hidden file looks */
     int selected; /* LVIS_SELECTED, per row: a list without LVS_SINGLESEL can
                    * have any number of them, which is what Select All is for */
+    int checked;  /* the row's state picture, when the view has check boxes */
 } ween_lvrow;
 
 typedef struct {
     HIMAGELIST images; /* the small ones, which every view but one draws */
     HIMAGELIST big;    /* and the big ones the icon view draws */
-    char *col[4];
-    int width[4], fmt[4], ncol;
+    char *col[WEEN_LV_COLS];
+    int width[WEEN_LV_COLS], fmt[WEEN_LV_COLS], ncol;
     ween_lvrow *row;
     int nrow, caprow;
     int sel;      /* 1-based: the row last picked, which a shell shows in its
@@ -3050,7 +3062,18 @@ typedef struct {
     HWND header;  /* the header control, once something has asked for it */
     HWND edit;    /* the box a label is being typed over in, or NULL */
     int editing;  /* which row that is */
+    DWORD exstyle; /* LVS_EX_*: what it was asked for after it was made */
 } ween_list;
+
+/* The box drawn before a row when the view has check boxes, and the room it
+ * takes. Thirteen is what a check box is everywhere else. */
+#define WEEN_LV_CHECK 13
+#define WEEN_LV_CHECK_W 16
+
+static int lv_check_w(const ween_list *l)
+{
+    return l && (l->exstyle & LVS_EX_CHECKBOXES) ? WEEN_LV_CHECK_W : 0;
+}
 
 /* How near a header divider counts as being on it. Windows uses about this,
  * and it has to be wide enough to hit without being so wide that clicking the
@@ -3147,10 +3170,10 @@ static int lv_selected_count(const ween_list *l)
 static void list_ctl_free(void *p)
 {
     ween_list *l = p;
-    for (int c = 0; c < 4; c++)
+    for (int c = 0; c < WEEN_LV_COLS; c++)
         free(l->col[c]);
     for (int i = 0; i < l->nrow; i++)
-        for (int c = 0; c < 4; c++)
+        for (int c = 0; c < WEEN_LV_COLS; c++)
             free(l->row[i].text[c]);
     free(l->row);
     free(l);
@@ -3205,7 +3228,7 @@ static void lv_cell_rect(HWND wnd, const ween_list *l, int row, RECT *out)
     if (mode == LVS_REPORT) {
         int ih = lv_item_h(wnd, l);
         out->left = 0;
-        out->top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + row * ih;
+        out->top = lv_header_h(wnd) + WEEN_LV_ROW_TOP + row * ih;
         out->right = lv_content_w(l);
         out->bottom = out->top + ih;
         return;
@@ -3264,7 +3287,7 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     RECT cr;
     int sb = ween_scroll_metric(), content = lv_content_w(l);
     int ih = lv_item_h(wnd, l);
-    int rows_h = (l ? l->nrow : 0) * ih + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP;
+    int rows_h = (l ? l->nrow : 0) * ih + lv_header_h(wnd) + WEEN_LV_ROW_TOP;
 
     GetClientRect(wnd, &cr);
     g.hbar = content > cr.right;
@@ -3272,7 +3295,7 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     g.hbar = content > cr.right - (g.vbar ? sb : 0);
     g.view_w = cr.right - (g.vbar ? sb : 0);
     g.view_h = cr.bottom - (g.hbar ? sb : 0);
-    g.visible = (g.view_h - WEEN_LV_HEADER_H - WEEN_LV_ROW_TOP) / ih;
+    g.visible = (g.view_h - lv_header_h(wnd) - WEEN_LV_ROW_TOP) / ih;
     if (g.visible < 1)
         g.visible = 1;
     return g;
@@ -3323,8 +3346,7 @@ static void lv_scroll_to(HWND wnd, ween_list *l, int top)
 static int lv_divider_at(const ween_list *l, int x, int y)
 {
     int edge = 0;
-    if (y >= WEEN_LV_HEADER_H)
-        return -1;
+    (void)y; /* the caller has already said this is in the heading strip */
     for (int c = 0; c < l->ncol; c++) {
         edge += l->width[c];
         if (x >= edge - WEEN_LV_DIVIDER && x <= edge + WEEN_LV_DIVIDER)
@@ -3432,10 +3454,10 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
         return -1;
     }
     g = lv_layout(wnd, l);
-    if (y < WEEN_LV_HEADER_H || (g.vbar && x >= g.view_w) ||
+    if (y < lv_header_h(wnd) || (g.vbar && x >= g.view_w) ||
         (g.hbar && y >= g.view_h))
         return -1;
-    row = (y - WEEN_LV_HEADER_H - WEEN_LV_ROW_TOP) / lv_item_h(wnd, l) +
+    row = (y - lv_header_h(wnd) - WEEN_LV_ROW_TOP) / lv_item_h(wnd, l) +
           l->top;
     if (row < 0 || row >= l->nrow)
         return -1;
@@ -3445,7 +3467,16 @@ static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
     x += l->scroll_x;
     if (x < 2)
         return -1;
-    if (indent && x < 2 + icon_w) {
+    if (lv_check_w(l)) { /* the box before everything else */
+        if (x < 2 + WEEN_LV_CHECK) {
+            if (flags)
+                *flags = LVHT_ONITEMSTATEICON;
+            return row;
+        }
+        indent += lv_check_w(l);
+    }
+    if (l->images && l->row[row].image >= 0 &&
+        x < 2 + lv_check_w(l) + icon_w) {
         if (flags)
             *flags = LVHT_ONITEMICON;
         return row;
@@ -3640,7 +3671,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                           clip.top);
 
     x = 0;
-    for (int c = 0; c < l->ncol; c++) {
+    for (int c = 0; lv_header_h(wnd) && c < l->ncol; c++) {
         int down = c == l->pressed;
         int cx = ox + x - sx;
         ween_classic_edge(&top->surface, cx, oy, l->width[c], WEEN_LV_HEADER_H,
@@ -3675,14 +3706,22 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                     : (wnd->style & LVS_SHOWSELALWAYS) ? 1
                                                        : 0;
     for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
-        int y = oy + WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + (i - l->top) * ih;
+        int y = oy + lv_header_h(wnd) + WEEN_LV_ROW_TOP + (i - l->top) * ih;
         int selected = l->row[i].selected && sel_state;
         /* The caret is drawn on the row the arrows would move from, selected
          * or not — but only once the keyboard has been used, which is the same
          * rule that keeps a menu's underlines hidden until then. */
         int caret = ween_ui_focus_cues && focused && i == l->focus - 1;
-        int indent = (l->images && l->row[i].image >= 0) ? icon_w + 2 : 0;
+        int box = lv_check_w(l);
+        int has_image = l->images && l->row[i].image >= 0;
+        int indent = has_image ? box + icon_w + 2 : box;
         x = 0;
+        if (box) {
+            int by = y + (ih - WEEN_LV_CHECK) / 2;
+            ween_classic_check(&top->surface, ox - sx + 2, by, WEEN_LV_CHECK,
+                               WEEN_LV_CHECK,
+                               l->row[i].checked ? DFCS_CHECKED : 0);
+        }
         if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
@@ -3693,7 +3732,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             if (caret)
                 ween_surface_focus_rect(&top->surface, lx, y, lw, ih);
         }
-        if (indent) {
+        if (has_image) {
             /* a picked row's picture goes blue with it, half way to the
              * highlight — the row is what is selected, not the text in it */
             /* A picked row's picture goes blue with it; a cut one — which is
@@ -3701,18 +3740,18 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * window's own colour instead. */
             if ((selected && sel_state == 2) || l->row[i].cut)
                 ween_imagelist_draw_blend(
-                    l->images, l->row[i].image, &top->surface, ox - sx + 2,
+                    l->images, l->row[i].image, &top->surface, ox - sx + 2 + box,
                     y + (ih - icon_h) / 2,
                     selected ? WEEN_CAP_LEFT : WEEN_WHITE);
             else
                 ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
-                                    ox - sx + 2, y + (ih - icon_h) / 2);
+                                    ox - sx + 2 + box, y + (ih - icon_h) / 2);
         }
         for (int c = 0; c < l->ncol; c++) {
             /* the first column leaves room for an icon; the rest sit closer */
             /* the name sits two past its box, which starts where the icon
              * ends; the other cells sit closer to their own column */
-            int lead = c ? 6 : (indent ? indent + 2 : 7);
+            int lead = c ? 6 : (has_image ? indent + 2 : indent + 7);
             if (f && l->row[i].text[c]) {
                 int len;
                 const char *t = fit_text(f, l->row[i].text[c],
@@ -3836,7 +3875,7 @@ static HWND lv_begin_edit(HWND wnd, ween_list *l, int row)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
     indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
     r.left = lv_label_x(indent) - l->scroll_x - 2;
-    r.top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP +
+    r.top = lv_header_h(wnd) + WEEN_LV_ROW_TOP +
             (row - l->top) * lv_item_h(wnd, l) - 1;
     r.right = r.left + lv_label_w(wnd, l, row, indent) + 24;
     r.bottom = r.top + lv_item_h(wnd, l) + 2;
@@ -3897,6 +3936,15 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* An arrow starts from the caret rather than from the selection: a
          * click on a row's size cell drops the selection but leaves the caret
          * on that row, and the next arrow moves from there. */
+        if (wp == VK_SPACE && (l->exstyle & LVS_EX_CHECKBOXES) && l->focus) {
+            /* Space turns the box on the row the caret is on, which is how a
+             * list of things to tick is worked without the mouse. */
+            int i = l->focus - 1;
+            l->row[i].checked = !l->row[i].checked;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, LVN_ITEMCHANGED);
+            return 0;
+        }
         {
         int anchor = l->sel ? l->sel : l->focus;
         l->sel = l->focus;
@@ -3991,7 +4039,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         mx += l->scroll_x;
         /* a press on a header divider drags the column's width instead of
          * pressing the column, which is what a divider is for */
-        if (my < WEEN_LV_HEADER_H) {
+        if (my < lv_header_h(wnd)) {
             int d = lv_divider_at(l, mx, my);
             if (d >= 0) {
                 l->sizing = d;
@@ -4003,7 +4051,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         /* a press on the header: it goes down, and the app hears about it on
          * the release, which is how a column is sorted */
-        if (my < WEEN_LV_HEADER_H) {
+        if (my < lv_header_h(wnd)) {
             int x = 0;
             for (int c = 0; c < l->ncol; c++) {
                 if (mx >= x && mx < x + l->width[c]) {
@@ -4021,6 +4069,17 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (ween_ui_focus_cues) {
             ween_ui_focus_cues = 0;
             InvalidateRect(wnd, NULL, FALSE);
+        }
+        {   /* a press on the box before a row turns it over, and does
+             * nothing else: it is not a way of picking the row */
+            UINT where = 0;
+            int on = lv_item_hit(wnd, l, mx - l->scroll_x, my, &where);
+            if (on >= 0 && (where & LVHT_ONITEMSTATEICON)) {
+                l->row[on].checked = !l->row[on].checked;
+                InvalidateRect(wnd, NULL, FALSE);
+                notify_parent(wnd, LVN_ITEMCHANGED);
+                return 0;
+            }
         }
         i = lv_item_hit(wnd, l, mx - l->scroll_x, my, NULL);
         if (i >= 0) {
@@ -4056,7 +4115,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!l)
             return 0;
         g = lv_layout(wnd, l);
-        if (my < WEEN_LV_HEADER_H) {
+        if (my < lv_header_h(wnd)) {
             /* A divider double-clicked sizes the column to the left of it to
              * fit what is in it — the header's own gesture, which comctl32
              * turns into an autosize on the view. */
@@ -4085,7 +4144,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!out || !l || i < 0 || i >= l->nrow)
             return FALSE;
         code = (int)out->left; /* win32 passes the code in on left */
-        out->top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP +
+        out->top = lv_header_h(wnd) + WEEN_LV_ROW_TOP +
                    (i - l->top) * lv_item_h(wnd, l);
         out->bottom = out->top + lv_item_h(wnd, l);
         if (code == LVIR_BOUNDS) {
@@ -4218,7 +4277,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         const LVCOLUMNA *col = (const LVCOLUMNA *)lp;
         int i = (int)wp;
         l = list_of(wnd);
-        if (!l || !col || i < 0 || i >= 4)
+        if (!l || !col || i < 0 || i >= WEEN_LV_COLS)
             return -1;
         l->col[i] = dup_str(col->pszText);
         l->width[i] = (col->mask & LVCF_WIDTH) ? col->cx : 50;
@@ -4232,6 +4291,31 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->ncol = i + 1;
         InvalidateRect(wnd, NULL, FALSE);
         return i;
+    }
+    case LVM_DELETECOLUMN: {
+        /* Its number is its place, so everything past it shifts down. The
+         * cells shift with it: a row's third column is the third one there
+         * is, not the third one there ever was. */
+        int i = (int)wp;
+        l = list_of(wnd);
+        if (!l || i < 0 || i >= l->ncol)
+            return FALSE;
+        free(l->col[i]);
+        for (int c = i; c + 1 < l->ncol; c++) {
+            l->col[c] = l->col[c + 1];
+            l->width[c] = l->width[c + 1];
+            l->fmt[c] = l->fmt[c + 1];
+        }
+        l->col[l->ncol - 1] = NULL;
+        for (int r = 0; r < l->nrow; r++) {
+            free(l->row[r].text[i]);
+            for (int c = i; c + 1 < l->ncol; c++)
+                l->row[r].text[c] = l->row[r].text[c + 1];
+            l->row[r].text[l->ncol - 1] = NULL;
+        }
+        l->ncol--;
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
     }
     case LVM_INSERTITEMA: {
         const LVITEMA *item = (const LVITEMA *)lp;
@@ -4265,12 +4349,44 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         const LVITEMA *item = (const LVITEMA *)lp;
         int i = (int)wp;
         l = list_of(wnd);
-        if (!l || !item || i < 0 || i >= l->nrow || item->iSubItem >= 4)
+        if (!l || !item || i < 0 || i >= l->nrow || item->iSubItem >= WEEN_LV_COLS)
             return FALSE;
         free(l->row[i].text[item->iSubItem]);
         l->row[i].text[item->iSubItem] = dup_str(item->pszText);
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
+    }
+    case LVM_SETEXTENDEDLISTVIEWSTYLE: {
+        /* wp names which bits are being spoken about; zero means all of them,
+         * which is how the message is nearly always sent. */
+        DWORD mask = wp ? (DWORD)wp : 0xFFFFFFFFu;
+        l = list_of(wnd);
+        if (l) {
+            DWORD was = l->exstyle;
+            l->exstyle = (l->exstyle & ~mask) | ((DWORD)lp & mask);
+            InvalidateRect(wnd, NULL, FALSE);
+            return (LRESULT)was;
+        }
+        return 0;
+    }
+    case LVM_GETEXTENDEDLISTVIEWSTYLE:
+        l = list_of(wnd);
+        return l ? (LRESULT)l->exstyle : 0;
+    case LVM_GETITEMSTATE: {
+        int i = (int)wp;
+        UINT want = (UINT)lp, state = 0;
+        l = list_of(wnd);
+        if (!l || i < 0 || i >= l->nrow)
+            return 0;
+        if (l->row[i].selected)
+            state |= LVIS_SELECTED;
+        if (l->row[i].cut)
+            state |= LVIS_CUT;
+        if (l->focus == i + 1)
+            state |= LVIS_FOCUSED;
+        if (l->exstyle & LVS_EX_CHECKBOXES)
+            state |= INDEXTOSTATEIMAGEMASK(l->row[i].checked ? 2 : 1);
+        return state & want;
     }
     case LVM_SETITEMSTATE: {
         /* -1 means every row, which is how Select All is asked for and how a
@@ -4304,6 +4420,15 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     l->row[i].cut = (item->state & LVIS_CUT) != 0;
             InvalidateRect(wnd, NULL, FALSE);
         }
+        if (item->stateMask & LVIS_STATEIMAGEMASK) {
+            /* the state picture: two is ticked, one is not */
+            int on = (item->state & LVIS_STATEIMAGEMASK) ==
+                     INDEXTOSTATEIMAGEMASK(2);
+            for (int i = from; i <= to && i < l->nrow; i++)
+                if (i >= 0)
+                    l->row[i].checked = on;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         return TRUE;
     }
     case LVM_DELETEALLITEMS:
@@ -4311,7 +4436,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (l) {
             for (int i = 0; i < l->nrow; i++)
-                for (int c = 0; c < 4; c++) {
+                for (int c = 0; c < WEEN_LV_COLS; c++) {
                     free(l->row[i].text[c]);
                     l->row[i].text[c] = NULL;
                 }

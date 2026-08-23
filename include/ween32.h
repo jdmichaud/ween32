@@ -578,6 +578,9 @@ typedef struct tagTVHITTESTINFO {
 /* A row's label can be typed over in place — which is what Rename is, and
  * what a folder just made is left in. */
 #define LVS_EDITLABELS 0x0200L
+/* No heading strip: the columns are there but nothing names them, which is
+ * what a list used as a plain roll of items wants. */
+#define LVS_NOCOLUMNHEADER 0x4000
 #define LVIF_TEXT 0x0001
 #define LVIF_IMAGE 0x0002
 #define LVIF_STATE 0x0008
@@ -586,6 +589,10 @@ typedef struct tagTVHITTESTINFO {
 #define LVSIL_NORMAL 0
 #define LVSIL_SMALL 1
 #define LVIS_FOCUSED 0x0001
+/* The picture drawn before a row, as a number in the top nibble: a list view
+ * with check boxes uses 1 for cleared and 2 for ticked, and 0 for none. */
+#define LVIS_STATEIMAGEMASK 0xF000
+#define INDEXTOSTATEIMAGEMASK(i) ((i) << 12)
 /* A cut item, drawn ghosted: the shell marks a hidden file this way too, and
  * what it comes to is the icon blended half way into the background. */
 #define LVIS_CUT 0x0004
@@ -654,6 +661,9 @@ typedef struct {
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
 #define LVM_GETHEADER (LVM_FIRST + 31)
 #define LVM_GETCOLUMNWIDTH (LVM_FIRST + 29)
+/* Take a column out. Its number is its place, so the ones past it shift down
+ * — which is what lets a program put a different set in by emptying first. */
+#define LVM_DELETECOLUMN (LVM_FIRST + 28)
 #define LVM_SETCOLUMNWIDTH (LVM_FIRST + 30)
 /* Widths a column can be asked for instead of a number: fit what is in it,
  * or fit that and the heading too. */
@@ -685,6 +695,12 @@ typedef struct tagLVHITTESTINFO {
 } LVHITTESTINFO;
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
+#define LVM_GETITEMSTATE (LVM_FIRST + 44)
+/* Extras a list view can be asked for after it is made. */
+#define LVM_SETEXTENDEDLISTVIEWSTYLE (LVM_FIRST + 54)
+#define LVM_GETEXTENDEDLISTVIEWSTYLE (LVM_FIRST + 55)
+#define LVS_EX_CHECKBOXES 0x00000004
+#define LVS_EX_FULLROWSELECT 0x00000020
 
 typedef struct tagLVCOLUMNA {
     UINT mask;
@@ -708,6 +724,10 @@ typedef struct tagLVITEMA {
         lv_.stateMask = (mask);                                                \
         SendMessageA((w), LVM_SETITEMSTATE, (WPARAM)(i), (LPARAM)&lv_);        \
     } while (0)
+/* Whether a row's box is ticked, and ticking it. A list view keeps this as
+ * the row's state picture, which is why it reads so roundaboutly. */
+#define ListView_GetCheckState(w, i)                                               ((((UINT)SendMessageA((w), LVM_GETITEMSTATE, (WPARAM)(i),                                             LVIS_STATEIMAGEMASK)) >>                                   12) -                                                                         1)
+#define ListView_SetCheckState(w, i, on)                                           ListView_SetItemState(w, i, INDEXTOSTATEIMAGEMASK((on) ? 2 : 1),                                     LVIS_STATEIMAGEMASK)
 
 /* tab control (comctl32) */
 #define WC_TABCONTROLA "SysTabControl32"
@@ -983,6 +1003,9 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define SS_LEFT 0x00000000L
 #define SS_CENTER 0x00000001L
 #define SS_RIGHT 0x00000002L
+/* The two that stay on one line; every other kind wraps at its own width. */
+#define SS_SIMPLE 0x0000000BL
+#define SS_LEFTNOWORDWRAP 0x0000000CL
 
 /* button notifications */
 #define BN_CLICKED 0
@@ -1138,7 +1161,9 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DT_CENTER 0x00000001
 #define DT_RIGHT 0x00000002
 #define DT_VCENTER 0x00000004
+#define DT_WORDBREAK 0x00000010
 #define DT_SINGLELINE 0x00000020
+#define DT_CALCRECT 0x00000400
 #define DT_NOCLIP 0x00000100
 #define DT_NOPREFIX 0x00000800
 /* Draw the label without the '&' and without the underline under the letter
