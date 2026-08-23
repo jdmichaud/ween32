@@ -172,6 +172,21 @@ static LRESULT dlg_class_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_CLOSE:
+        /* A dialog's close box is its Cancel button. win32's DefDlgProc
+         * turns it into WM_COMMAND with IDCANCEL and leaves the rest to the
+         * dialog procedure, which is where a program decides whether it may
+         * close at all — so a box that ignores IDCANCEL stays up, there and
+         * here.
+         *
+         * What must not happen is DefWindowProc's answer, which is to
+         * destroy the window: a modal dialog's loop waits on the window it
+         * was given, and destroying that out from under it leaves the loop
+         * spinning on freed memory with the owner still disabled. The
+         * program looks hung, because it is. */
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED),
+                     (LPARAM)GetDlgItem(dlg, IDCANCEL));
+        return 0;
     case WM_PAINT:
         if (dlg->msgbox_icon) { /* the picture beside the message */
             PAINTSTRUCT ps;

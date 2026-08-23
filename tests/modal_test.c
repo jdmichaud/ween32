@@ -31,6 +31,10 @@ static HWND g_owner;
 static int g_owner_disabled_during = -1;
 static int g_init_seen;
 static int g_dlg_x, g_dlg_y;
+/* The close-box case: the dialog asks to be closed the way its caption
+ * would, and counts the Cancel command that should come back. */
+static int g_close_case;
+static int g_cancel_commands;
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -50,9 +54,13 @@ static INT_PTR CALLBACK dlg_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         g_owner_disabled_during = (g_owner->style & WS_DISABLED) != 0;
         g_dlg_x = dlg->x;
         g_dlg_y = dlg->y;
+        if (g_close_case) /* as pressing the caption's close box does */
+            PostMessageA(dlg, WM_CLOSE, 0, 0);
         return TRUE;
     }
     if (msg == WM_COMMAND) {
+        if (LOWORD(wp) == IDCANCEL)
+            g_cancel_commands++;
         EndDialog(dlg, (INT_PTR)LOWORD(wp));
         return TRUE;
     }
@@ -148,6 +156,24 @@ int main(void)
     CHECK(mb == IDOK, "the message box came back with its button's id");
     CHECK((g_owner->style & WS_DISABLED) == 0,
           "and left the owner usable again");
+
+    /* The caption's close box. DefDlgProc turns WM_CLOSE into a Cancel
+     * command and leaves the rest to the dialog procedure; DefWindowProc's
+     * answer — destroy the window — would leave the modal loop waiting on a
+     * window that no longer exists, with the owner still disabled, which is
+     * a hung program. The Escape is only a way out if that happens, so a
+     * regression fails here rather than hanging. */
+    g_close_case = 1;
+    g_cancel_commands = 0;
+    key(VK_ESCAPE);
+    r = DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, g_owner, dlg_proc,
+                                0);
+    CHECK(r == IDCANCEL, "the close box ends a modal dialog as a Cancel");
+    CHECK(g_cancel_commands == 1,
+          "and the dialog procedure heard it as one, not as a destroyed window");
+    CHECK((g_owner->style & WS_DISABLED) == 0,
+          "the owner is usable again after a dialog is closed that way");
+    g_close_case = 0;
 
     DestroyWindow(g_owner);
 
