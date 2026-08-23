@@ -5190,7 +5190,12 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 int tl = selected ? l - 2 : l;
                 int tr = selected ? l + w + 2 : l + w;
                 int ty = selected ? 0 : 2;
-                int tb = body + (selected ? 1 : 0);
+                /* Every tab reaches the frame below it, and the one in front
+                 * covers the frame's own top line — which is what makes it
+                 * look joined to the page. The machine's leaves no white
+                 * under the tab it has picked and none under the others
+                 * either. */
+                int tb = body + (selected ? 2 : 1);
                 ween_surface_fill(&top->surface, ox + tl, oy + ty, tr - tl,
                                   tb - ty, WEEN_FACE);
                 tab_shape(&top->surface, ox, oy + ty, ox + tl, ox + tr,
@@ -5201,7 +5206,8 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                      * tab is given go below its text, not around it. */
                     int visible = tabh;
                     ween_strike_draw(f, &top->surface, ox + l + 6,
-                                     oy + ty + (visible - th) / 2, it->item[i],
+                                     oy + ty + (visible - th) / 2 + 1,
+                                     it->item[i],
                                      (int)strlen(it->item[i]), WEEN_BLACK);
                 }
             }

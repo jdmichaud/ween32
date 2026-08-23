@@ -180,6 +180,14 @@ static void sheet_show(ps_sheet *ps, int want)
     ShowWindow(ps->page[want], SW_SHOW);
     SendMessageA(ps->tabs, TCM_SETCURSEL, (WPARAM)want, 0);
     page_notify(ps, want, PSN_SETACTIVE);
+    {   /* The page that comes to the front takes the keyboard with it: what
+         * the machine shows is a focus rectangle on the new page's first
+         * item, not on the tabs that were clicked. A group of option buttons
+         * hands the stop to whichever of them is set. */
+        HWND first = ween_tab_next(ps->page[want], NULL, 1);
+        if (first)
+            SetFocus(first);
+    }
 }
 
 /* The sheet's procedure is a dialog's, so what it *answers* goes in
@@ -473,7 +481,6 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
         i = 0;
     sheet_show(&ps, i);
     ShowWindow(ps.sheet, SW_SHOW); /* now it is worth looking at */
-    SetFocus(ween_tab_next(ps.sheet, NULL, 1));
 
     {   /* the owner goes down for as long as the sheet is up */
         int off = header->hwndParent &&

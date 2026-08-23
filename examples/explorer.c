@@ -2490,20 +2490,20 @@ static const fo_place g_fo_view_at[] = {
 /* The Offline Files page. */
 static const fo_place g_fo_offline_at[] = {
     { IDC_FO_I6, 14, 12, 32, 32 },
-    { IDC_FO_OS1, 57, 12, 285, 42 },
-    { IDC_FO_OFF_ENABLE, 24, 72, 250, 16 },
-    { IDC_FO_OFF_SYNC, 24, 98, 250, 16 },
-    { IDC_FO_OFF_REMIND, 24, 124, 250, 16 },
-    { IDC_FO_OS2, 42, 149, 145, 14 },
+    { IDC_FO_OS1, 56, 12, 285, 42 },
+    { IDC_FO_OFF_ENABLE, 24, 71, 250, 16 },
+    { IDC_FO_OFF_SYNC, 24, 97, 250, 16 },
+    { IDC_FO_OFF_REMIND, 24, 123, 250, 16 },
+    { IDC_FO_OS2, 41, 149, 145, 14 },
     { IDC_FO_OFF_MINUTES, 201, 146, 53, 20 },
-    { IDC_FO_OS3, 262, 149, 50, 14 },
-    { IDC_FO_OFF_SHORTCUT, 24, 179, 285, 16 },
+    { IDC_FO_OS3, 261, 149, 50, 14 },
+    { IDC_FO_OFF_SHORTCUT, 24, 178, 285, 16 },
     { IDC_FO_OS4, 24, 206, 300, 14 },
     { IDC_FO_OFF_SPACE, 24, 218, 176, 37 },
-    { IDC_FO_OS5, 193, 237, 120, 14 },
-    { IDC_FO_OFF_DELETE, 77, 282, 83, 23 },
-    { IDC_FO_OFF_VIEW, 168, 282, 83, 23 },
-    { IDC_FO_OFF_ADVANCED, 258, 282, 83, 23 },
+    { IDC_FO_OS5, 192, 237, 120, 14 },
+    { IDC_FO_OFF_DELETE, 78, 282, 83, 23 },
+    { IDC_FO_OFF_VIEW, 169, 282, 83, 23 },
+    { IDC_FO_OFF_ADVANCED, 259, 282, 83, 23 },
 };
 
 /* ---- the General page ---- */
@@ -2813,7 +2813,12 @@ static void folder_options(HWND owner)
     PROPSHEETHEADERA hdr;
 
 #define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                                   do {                                                                               items[n].style = (st) | WS_CHILD | WS_VISIBLE;                                 items[n].x = (short)(ix);                                                      items[n].y = (short)(iy);                                                      items[n].cx = (short)(iw);                                                     items[n].cy = (short)(ih);                                                     items[n].id = (WORD)(iid);                                                     items[n].cls = (WORD)(icls);                                                   items[n].text = (itx);                                                         items[n].clsname = NULL;                                                       n++;                                                                       } while (0)
-#define GROUP(ix, iy, iw, ih, itx) ITEM(BS_GROUPBOX, ix, iy, iw, ih, 0, ATOM_BUTTON, itx)
+/* WS_GROUP on the frame is what makes the option buttons inside it a group of
+ * their own: the run between two WS_GROUP marks is one set, one tab stop and
+ * one arrow ring. Without it every option button on the page is in the same
+ * set, and setting one clears the other three groups. */
+#define GROUP(ix, iy, iw, ih, itx)                                             \
+    ITEM(BS_GROUPBOX | WS_GROUP, ix, iy, iw, ih, 0, ATOM_BUTTON, itx)
 #define RADIO(ix, iy, iw, iid, itx)                                                ITEM(BS_AUTORADIOBUTTON | WS_TABSTOP, ix, iy, iw, 10, iid, ATOM_BUTTON, itx)
 #define RADIO2(ix, iy, iw, iid, itx)                                               ITEM(BS_AUTORADIOBUTTON, ix, iy, iw, 10, iid, ATOM_BUTTON, itx)
 #define PUSH(ix, iy, iw, ih, iid, itx)                                             ITEM(BS_PUSHBUTTON | WS_TABSTOP, ix, iy, iw, ih, iid, ATOM_BUTTON, itx)
@@ -2842,10 +2847,12 @@ static void folder_options(HWND owner)
           "&Single-click to open an item (point to select)");
     RADIO2(57, 148, 175, IDC_FO_UNDERLINE_ALWAYS,
            "Underline icon titles consistent with my browser");
+    items[n - 1].style |= WS_GROUP; /* the two underline options are their own */
     RADIO2(57, 161, 175, IDC_FO_UNDERLINE_POINT,
            "Underline icon titles only when I point at them");
     RADIO2(46, 174, 186, IDC_FO_DOUBLE,
            "&Double-click to open an item (single-click to select)");
+    items[n - 1].style |= WS_GROUP; /* and single/double picks up again here */
     PUSH(160, 194, 79, 14, IDC_FO_DEFAULTS, "&Restore Defaults");
     /* the pictures, after the boxes they sit on so they are painted over */
     ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I1, ATOM_STATIC, "");

@@ -968,6 +968,37 @@ HWND ween_mnemonic_target(HWND parent, unsigned ch)
 
 static UINT button_type(const struct ween_wnd *w); /* defined with BUTTON */
 
+/* A group of option buttons is one tab stop, and it is the *checked* button
+ * that holds it: Tab into the group lands on what is set, not on whatever
+ * happens to be first. Win32 does this by moving WS_TABSTOP as the selection
+ * moves, and so does this — which is why the machine's Folder Options shows
+ * its focus rectangle around "Use Windows classic desktop" rather than around
+ * the button above it. */
+static void radio_take_tabstop(struct ween_wnd *w)
+{
+    struct ween_wnd *c, *start;
+    if (!w || !w->parent)
+        return;
+    start = w->parent->first_child;
+    for (c = w->parent->first_child; c; c = c->next_sibling) {
+        if (c->style & WS_GROUP)
+            start = c;
+        if (c == w)
+            break;
+    }
+    for (c = start; c; c = c->next_sibling) {
+        if (c != start && (c->style & WS_GROUP))
+            break;
+        if (button_type(c) != BS_AUTORADIOBUTTON &&
+            button_type(c) != BS_RADIOBUTTON)
+            continue;
+        if (c == w)
+            c->style |= WS_TABSTOP;
+        else
+            c->style &= ~(DWORD)WS_TABSTOP;
+    }
+}
+
 /* Arrow keys inside a group of auto-radio buttons move the selection, as they
  * do on Windows: the group is the run between WS_GROUP markers. */
 HWND ween_radio_step(HWND cur, int forward)
@@ -2892,6 +2923,26 @@ static void button_label(HWND wnd, HDC dc, RECT *r, UINT fmt)
 }
 
 /* The cell a label is centred within: the strike's, not the outline's. */
+/* How wide a control's label draws: what is between the '&' markers, which
+ * are what tells a letter to be underlined rather than characters to draw. */
+static int label_width(const struct ween_wnd *w)
+{
+    const ween_strike *f = w->font ? w->font : ween_gui_font();
+    int tw = 0;
+    if (!f || !w->text)
+        return 0;
+    for (const char *p = w->text; *p; p++) {
+        if (*p == '&') {
+            if (p[1] == '&')
+                p++; /* a literal one: drawn, so measured */
+            else
+                continue;
+        }
+        tw += ween_strike_char_extent(f, (unsigned char)*p);
+    }
+    return tw;
+}
+
 static int label_height(const struct ween_wnd *w)
 {
     const ween_strike *f = w->font ? w->font : ween_gui_font();
@@ -2944,12 +2995,20 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     RECT client = ps->rcPaint, rbox = client, rtext = client;
     int box = MulDiv(12, ween_render_dpi(), 96) + 1;
     int offset = f ? ween_strike_char_advance(f, '0') / 2 : 3;
+    /* A tick box keeps one column more between itself and its label than an
+     * option button does. Both glyphs are the same thirteen pixels and both
+     * sit at the control's left edge, but the machine's Folder Options puts
+     * "Synchronize all offline files..." one pixel further right than it puts
+     * "Use Windows classic desktop" — measured on both pages. Wine gives the
+     * two the same offset. */
+    int tick = !(button_type(wnd) == BS_RADIOBUTTON ||
+                 button_type(wnd) == BS_AUTORADIOBUTTON);
     int lh = label_height(wnd), delta;
     UINT flags;
 
     FillRect(dc, &client, GetSysColorBrush(COLOR_BTNFACE));
 
-    rtext.left += box + offset;
+    rtext.left += box + offset + (tick ? 1 : 0);
     rbox.right = rbox.left + box;
 
     /* the label is vertically centred, and the box follows it */
@@ -2987,17 +3046,18 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     rtext.right++;
     button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
-        /* Wine's CB_Paint puts the rectangle round the label, not the box */
-        const ween_strike *lf = wnd->font ? wnd->font : ween_gui_font();
-        int tw = lf ? ween_strike_text_extent(lf, wnd->text,
-                                              (int)strlen(wnd->text))
-                    : 0;
+        /* The rectangle goes round the label, not the box: as tall as the
+         * label's own rectangle — which is the control's client height, the
+         * text sitting centred in it — and one pixel either side of the text.
+         * The marker in "Use Windows &classic desktop" is not measured: it is
+         * not drawn either. */
         struct ween_wnd *top = ween_top_level(wnd);
+        int tw = label_width(wnd);
         int ox, oy;
         ween_client_origin(wnd, &ox, &oy);
-        int ty = rtext.top + ((rtext.bottom - rtext.top) - lh) / 2;
-        ween_surface_focus_rect(&top->surface, ox + rtext.left - 1, oy + ty - 1,
-                                tw + 2, lh + 2);
+        ween_surface_focus_rect(&top->surface, ox + rtext.left - 1,
+                                oy + client.top, tw + 2,
+                                client.bottom - client.top);
     }
 }
 
@@ -3070,6 +3130,7 @@ static void button_click(HWND wnd)
             ween_top_level(wnd)->dirty = 1;
         }
         wnd->check = BST_CHECKED;
+        radio_take_tabstop(wnd);
         break;
     default:
         break;
@@ -3141,6 +3202,11 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return (LRESULT)wnd->check;
     case BM_SETCHECK:
         wnd->check = (UINT)wp;
+        /* the tab stop follows the selection, as it does when it is clicked */
+        if (wnd->check == BST_CHECKED &&
+            (button_type(wnd) == BS_AUTORADIOBUTTON ||
+             button_type(wnd) == BS_RADIOBUTTON))
+            radio_take_tabstop(wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case BM_GETSTATE:
