@@ -247,8 +247,11 @@ int main(void)
         CHECK(g_dropped[0] == 1 && g_dropped[1] == 1,
               "a title opens on the press, and the bar goes on to the one the "
               "tracker asks for");
-        CHECK(SendMessageA(bar, TB_GETHOTITEM, 0, 0) == 1,
-              "which is the one left under the keyboard");
+        /* And with the menus closed the bar is flat again: a title is lit
+         * only while its menu is up or the pointer is on it, and here the
+         * pointer never went there — the presses were sent, not pointed. */
+        CHECK(SendMessageA(bar, TB_GETHOTITEM, 0, 0) == -1,
+              "and with them closed the bar is lit by nothing");
         g_menu_bar = NULL;
         DestroyWindow(bar);
     }

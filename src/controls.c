@@ -6467,6 +6467,16 @@ static void toolbar_dropdown(HWND wnd, ween_toolbar *tb, int i, int keyed)
         keyed = 0;
     }
     tb->pressed = -1;
+    {   /* The title is not held any more, and it is lit only if the pointer
+         * is still on it: a menu closed by key leaves the bar flat, which is
+         * what the machine's does. */
+        POINT at;
+        int over = -1;
+        if (GetCursorPos(&at) && ScreenToClient(wnd, &at))
+            over = toolbar_hit(wnd, tb, (int)at.x, (int)at.y, NULL);
+        tb->keyed = 0;
+        toolbar_set_hot(wnd, tb, over);
+    }
     InvalidateRect(wnd, NULL, FALSE);
 }
 
@@ -6985,6 +6995,12 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_rbband *b = &rb->band[i];
         int by = oy + b->y;
         int inner = b->h - ween_ncm(WEEN_RB_EDGE_H);
+        /* A band that is not shown draws nothing: it has no height to draw
+         * in, and its name would come out above the band below it — which is
+         * what left "Address" showing through the toolbar's bottom edge after
+         * View > Toolbars > Address Bar had put that bar away. */
+        if (b->style & RBBS_HIDDEN)
+            continue;
         if (i) { /* the rebar's own top edge is the first band's */
             int e = ween_ncm(WEEN_RB_EDGE_H);
             ween_surface_hline(&top->surface, ox + e, by, r.right - 2 * e,

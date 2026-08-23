@@ -349,6 +349,12 @@ Shortcuts the current code takes deliberately; each is a candidate task.
   `WM_QUIT` is final. (`SetWindowLongPtrA`/`CallWindowProcA`, `PostMessageA`
   and `GetDC`/`ReleaseDC` are all there now, and the explorer subclasses both
   a list view's label editor and a combo box's field.)
+- **The keyboard cues are one flag for the process, not one per window.**
+  Win32 keeps UISF_HIDEACCEL per window and passes it down the tree, so a
+  menu bar can put its underlines away when its menu closes while a dialog
+  opened during that keyboard navigation keeps them. The machine does exactly
+  that; ween32's single flag cannot, so the explorer's menu bar keeps its
+  underlines after a menu closes — about 130 pixels of that band.
 - **The View page's tree is the machine's rows, not the machine's list.** The
   twelve it shows are the ones the capture shows, in that order, and the
   settings this example has no field for are remembered and nothing else. The

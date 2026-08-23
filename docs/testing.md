@@ -392,6 +392,24 @@ the lists by the arrows, a box by Space, and OK by Enter — which only works
 because the sheet's tab ring goes tabs, page, buttons, so it is worth
 checking that a Tab from the tab control lands on the page.
 
+#### The bars that can be put away
+
+View > Toolbars turns each band off and on. With the address bar off the
+toolbar's band ends and the panes begin straight under it — no strip of what
+was there before:
+
+```sh
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/ab%d.bmp WEEN32_SCRIPT="w:300 k:18 w:150 t:vta w:800" \
+  ./examples/explorer
+```
+
+Beside the machine doing the same — its own View > Toolbars > Address Bar —
+the two bands agree everywhere but the menu's underlines: ours keeps them out
+after the menu closes and the machine puts them away again, while a dialog
+opened the same way keeps them on both. The state win32 keeps per window is
+one flag here; see the roadmap.
+
 #### Moving a column
 
 A heading dragged sideways carries its column, cells and all — the shell's
