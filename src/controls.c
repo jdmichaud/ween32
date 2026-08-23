@@ -1011,6 +1011,19 @@ static void draw_item(HWND w, HDC dc, const char *text, int x, int y, int width,
 
 /* ---- the LISTBOX class ---------------------------------------------------- */
 
+/* Whether the bar is there at all: a list box with WS_VSCROLL shows one only
+ * when it has more in it than it can show, unless it was told to keep it. */
+static int lb_has_bar(HWND wnd, int client_h)
+{
+    const ween_items *it = wnd->ctl;
+    int ih = item_height(wnd);
+    if (!(wnd->style & WS_VSCROLL))
+        return 0;
+    if (wnd->style & LBS_DISABLENOSCROLL)
+        return 1;
+    return it && ih && it->count > client_h / ih;
+}
+
 /* How much of the list box's height its bar gets. Something standing in the
  * corner takes the foot of it: a corner to drag the window bigger by is put
  * there as a child of the box it belongs to, and the machine draws the bar
@@ -1030,7 +1043,7 @@ static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     RECT r = ps->rcPaint;
     int ih = item_height(wnd), ox, oy;
-    int sb = (wnd->style & WS_VSCROLL) ? ween_scroll_metric() : 0;
+    int sb = lb_has_bar(wnd, r.bottom - r.top) ? ween_scroll_metric() : 0;
     int width = r.right - sb;
 
     ween_client_origin(wnd, &ox, &oy);
@@ -1102,7 +1115,7 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         it = items_of(wnd);
         GetClientRect(wnd, &cr);
         SetFocus(wnd);
-        if ((wnd->style & WS_VSCROLL) && it &&
+        if (lb_has_bar(wnd, cr.bottom) && it &&
             GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
             int visible = cr.bottom / (ih ? ih : 1);
             int bar = lb_bar_h(wnd, cr.bottom);

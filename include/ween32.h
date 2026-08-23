@@ -369,6 +369,9 @@ HCURSOR SetCursor(HCURSOR cursor);
 /* LISTBOX and COMBOBOX styles, messages and classes */
 #define LBS_NOTIFY 0x0001L
 #define LBS_SORT 0x0002L
+/* Keep the bar there, greyed, when everything fits. Without it a list box
+ * that has nothing to scroll shows no bar at all. */
+#define LBS_DISABLENOSCROLL 0x1000L
 #define LB_ADDSTRING 0x0180
 #define LB_INSERTSTRING 0x0181
 #define LB_DELETESTRING 0x0182

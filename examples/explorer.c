@@ -1334,6 +1334,7 @@ static const char *command_help(UINT id)
  * address bar's list.
  */
 static HWND g_sugg, g_sugg_list, g_sugg_grip;
+static int g_sugg_dragged; /* the height the corner was let go at, if it was */
 #define SUGG_ROWS 7 /* what it shows before it needs its bar, as the shell has it */
 #define SUGG_MIN_H 40 /* not to be dragged shut, only smaller */
 
@@ -1373,15 +1374,24 @@ static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE: {
         /* The list fills it, and the corner stands at the foot of the list's
          * own bar rather than in a strip below it — which is where the
-         * machine puts it, and why its bar stops short of the bottom. */
-        RECT cr;
+         * machine puts it, and why its bar stops short of the bottom. With
+         * everything in view there is no bar, and no corner either: the
+         * machine's box is white right up to the border. */
+        RECT cr, lr;
         int sb = GetSystemMetrics(SM_CXVSCROLL);
+        int rows, ih;
         GetClientRect(w, &cr);
-        if (g_sugg_list)
-            MoveWindow(g_sugg_list, 1, 1, cr.right - 2, cr.bottom - 2, TRUE);
+        if (!g_sugg_list)
+            return 0;
+        MoveWindow(g_sugg_list, 0, 0, cr.right, cr.bottom, TRUE);
+        GetClientRect(g_sugg_list, &lr);
+        ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
+        rows = ih ? lr.bottom / ih : 0;
         if (g_sugg_grip) {
-            RECT lr;
-            GetClientRect(g_sugg_list, &lr);
+            ShowWindow(g_sugg_grip,
+                       SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0) > rows
+                           ? SW_SHOW
+                           : SW_HIDE);
             MoveWindow(g_sugg_grip, lr.right - sb, lr.bottom - sb, sb, sb,
                        TRUE);
         }
@@ -1408,6 +1418,7 @@ static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             h = was_h + (at.y - from_y);
             if (h < SUGG_MIN_H)
                 h = SUGG_MIN_H;
+            g_sugg_dragged = h;
             MoveWindow(w, wr.left, wr.top, wr.right - wr.left, h, TRUE);
         }
         return 0;
@@ -1476,8 +1487,10 @@ static LRESULT CALLBACK address_field_proc(HWND box, UINT msg, WPARAM wp,
 
 /* Put it under the field, as wide as the bar, and no taller than the rows it
  * is allowed: past that the list box's own bar takes over and the corner is
- * there for anyone who wants to see more at once. A box already dragged
- * taller is left at the height it was dragged to. */
+ * there for anyone who wants to see more at once. A box the corner has been
+ * dragged on keeps the height it was dragged to — but only that one: a box
+ * that was tall because the last thing typed matched more must come back
+ * down when the next thing matches fewer. */
 static void suggest_show(int count)
 {
     HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0,
@@ -1497,12 +1510,8 @@ static void suggest_show(int count)
      * machine's starts at the foot of the box the path is typed in, inside
      * the bar's own border, and runs its width. */
     GetWindowRect(field, &band);
-    if (IsWindowVisible(g_sugg)) {
-        RECT was;
-        GetWindowRect(g_sugg, &was);
-        if (was.bottom - was.top > h)
-            h = was.bottom - was.top;
-    }
+    if (g_sugg_dragged > h)
+        h = g_sugg_dragged;
     MoveWindow(g_sugg, band.left, band.bottom, band.right - band.left, h,
                TRUE);
     ShowWindow(g_sugg, SW_SHOW);
@@ -3289,7 +3298,7 @@ static void build_views(HWND w)
         g_sugg_list = CreateWindowExA(0, "LISTBOX", "",
                                       WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                           LBS_NOTIFY,
-                                      1, 1, 198, 98, g_sugg, NULL, NULL,
+                                      0, 0, 198, 98, g_sugg, NULL, NULL,
                                       NULL);
         /* inside the list, so it stands at the foot of the list's bar and
          * the list draws the bar short of it */

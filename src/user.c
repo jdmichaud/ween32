@@ -250,6 +250,15 @@ static int has_caption(const struct ween_wnd *w)
     return !w->parent && (w->style & WS_CAPTION) == WS_CAPTION;
 }
 
+/* A window of its own with WS_BORDER and no caption is bordered the way a
+ * combo box's dropped list is: one pixel of COLOR_WINDOWFRAME, flat black,
+ * rather than the raised edge a menu wears. The client area starts inside
+ * it, so what is put at the origin does not sit on the line. */
+static int has_flat_border(const struct ween_wnd *w)
+{
+    return !w->parent && !has_caption(w) && (w->style & WS_BORDER);
+}
+
 /* A window with a sizing border has a wider frame than a fixed one. */
 int ween_frame_width(const struct ween_wnd *w)
 {
@@ -273,8 +282,8 @@ static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
         *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION) +
               ween_menu_bar_height(w);
     } else {
-        *ox = ween_ex_edge(w);
-        *oy = ween_ex_edge(w);
+        *ox = ween_ex_edge(w) + (has_flat_border(w) ? 1 : 0);
+        *oy = ween_ex_edge(w) + (has_flat_border(w) ? 1 : 0);
     }
 }
 
@@ -425,7 +434,9 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    int trail = has_caption(wnd) ? ween_frame_width(wnd) : ween_ex_edge(wnd);
+    int trail = has_caption(wnd)
+                    ? ween_frame_width(wnd)
+                    : ween_ex_edge(wnd) + (has_flat_border(wnd) ? 1 : 0);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
     (void)0;
@@ -1675,10 +1686,15 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 static void resize_top(struct ween_wnd *top, int w, int h)
 {
     RECT cr;
-    if (w < 120)
-        w = 120;
-    if (h < 60)
-        h = 60;
+    /* A person dragging a frame cannot pull it down to nothing; a program
+     * saying what size it wants is taken at its word, since a menu or a box
+     * with two names in it is smaller than any floor worth having. */
+    if (top->style & WS_THICKFRAME) {
+        if (w < 120)
+            w = 120;
+        if (h < 60)
+            h = 60;
+    }
     if (w == top->w && h == top->h)
         return;
     top->w = w;
@@ -2383,6 +2399,15 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (wnd->parent)
             return 0;
         ween_surface *s = &wnd->surface;
+        if (has_flat_border(wnd)) {
+            /* one line of COLOR_WINDOWFRAME and nothing else; what is inside
+             * it is the client area's own business */
+            ween_surface_fill(s, 0, 0, wnd->w, 1, WEEN_BLACK);
+            ween_surface_fill(s, 0, wnd->h - 1, wnd->w, 1, WEEN_BLACK);
+            ween_surface_fill(s, 0, 0, 1, wnd->h, WEEN_BLACK);
+            ween_surface_fill(s, wnd->w - 1, 0, 1, wnd->h, WEEN_BLACK);
+            return 0;
+        }
         /* raised frame + face border */
         ween_surface_clear(s, WEEN_FACE);
         /* A window frame is the plain EDGE_RAISED: its outer line is

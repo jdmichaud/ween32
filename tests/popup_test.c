@@ -183,8 +183,12 @@ int main(void)
         HWND grip = CreateWindowExA(0, "SCROLLBAR", "",
                                     WS_CHILD | WS_VISIBLE | SBS_SIZEGRIP, 180,
                                     84, 16, 16, g_pop, NULL, NULL, NULL);
+        POINT at;
+        at.x = 8;
+        at.y = 8;
+        ClientToScreen(grip, &at);
         SendMessageA(grip, WM_LBUTTONDOWN, 0, MAKELPARAM(8, 8));
-        CHECK(g_sized == 60 + 84 + 8,
+        CHECK(g_sized == at.y,
               "the corner says where the pointer is on the screen");
     }
 
