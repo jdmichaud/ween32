@@ -236,6 +236,16 @@ The one-name box settled two more:
 Every rectangle in both is measured off those, so a change that moves one
 shows up beside them:
 
+**Column Settings** differs by **1148 of 103290**, 1.1%. Its scroll bar is
+718 of that and is content, not drawing: the machine's shell offers some
+fifty columns where this example has eight, so its thumb is a fifteenth of
+the trough and ours five sixths of it. Another 252 is the caption's bold
+title. What is left is 58 pixels where wine's MS Sans Serif draws a `k` or a
+`v` a pixel off the machine's, and 77 where a bordered edit box starts its
+text: the machine's begins two further in with that font, and the rule that
+gives both that and Tahoma's three — wine's, half the average character
+width — has not been found.
+
 Each of Folder Options' four pages is counted against its own capture. The
 tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
@@ -255,7 +265,8 @@ column — a folder for a heading, a check box, an option button — which is
 what ween32's tree view would need before the page could be counted properly.
 
 ```sh
-# View > Choose Columns — the 330x313 frame is the dialog
+# View > Choose Columns — the 330x313 frame is the dialog. Opened by key, so
+# the mnemonics are underlined, which is how the capture has them.
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/cc%d.bmp \
   WEEN32_SCRIPT="w:300 k:18 w:200 t:vc w:800" ./examples/explorer /tmp/many
 
