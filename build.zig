@@ -91,22 +91,18 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
             .root_source_file = b.path("examples/paint/main.zig"),
             .target = target,
             .optimize = optimize,
-            // On Windows it carries no C runtime at all: it reads and
-            // writes a .bmp with CreateFile and ReadFile like any other win32
-            // program, and the runtime a modern toolchain would link is the
-            // UCRT, which Windows 2000 has never heard of and will not start
-            // a program that asks for. Everywhere else the library it links
-            // is C and wants one.
+            // On Windows it carries no C runtime: it reads and writes a
+            // .bmp with CreateFile and ReadFile, as a win32 program does,
+            // and has nothing else to ask one for. Everywhere else the
+            // library it links against is C and wants one.
             .link_libc = target.result.os.tag != .windows,
         }),
     });
     paint.root_module.addImport("ween32", mod);
     // A program with windows, not a console one: without this the loader
     // opens a console beside it.
-    if (target.result.os.tag == .windows) {
+    if (target.result.os.tag == .windows)
         paint.subsystem = .Windows;
-        paint.entry = .{ .symbol_name = "paintStartup" };
-    }
     b.installArtifact(paint);
     const step = b.step("paint", "Build Paint");
     step.dependOn(&b.addInstallArtifact(paint, .{}).step);

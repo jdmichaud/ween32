@@ -178,7 +178,7 @@ fn optionAt(x: i32, y: i32) ?u8 {
     return null;
 }
 
-fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(w.winapi_cc) w.LRESULT {
+fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {
     switch (msg) {
         w.WM_PAINT => {
             paint(hwnd);

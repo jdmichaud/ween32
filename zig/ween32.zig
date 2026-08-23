@@ -14,16 +14,6 @@
 
 const std = @import("std");
 
-/// How a win32 function is called.
-///
-/// On 32-bit Windows that is stdcall, and getting it wrong there corrupts the
-/// stack at the first call. Everywhere else — including when these names
-/// resolve to ween32 rather than to user32 — it is the platform's own C
-/// convention: Zig's `.winapi` is chosen by the *architecture*, so on a
-/// 64-bit Linux it would ask for the Microsoft register order and hand the
-/// library its arguments in the wrong ones.
-pub const winapi_cc: std.builtin.CallingConvention =
-    if (@import("builtin").target.os.tag == .windows) .winapi else .c;
 
 // ---- fundamental types (LLP64-faithful) ---------------------------------
 
@@ -75,9 +65,9 @@ pub const MSG = extern struct {
     pt: POINT,
 };
 
-pub const WNDPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(winapi_cc) LRESULT;
-pub const DLGPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(winapi_cc) INT_PTR;
-pub const TIMERPROC = *const fn (HWND, UINT, UINT_PTR, DWORD) callconv(winapi_cc) void;
+pub const WNDPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) LRESULT;
+pub const DLGPROC = *const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR;
+pub const TIMERPROC = *const fn (HWND, UINT, UINT_PTR, DWORD) callconv(.c) void;
 
 pub const WNDCLASSA = extern struct {
     style: UINT = 0,
@@ -293,40 +283,40 @@ pub const IDC_HAND = MAKEINTRESOURCE(32649);
 
 // ---- USER32: windows and messages ---------------------------------------
 
-pub extern fn RegisterClassA(wc: *const WNDCLASSA) callconv(winapi_cc) ATOM;
-pub extern fn CreateWindowExA(ex_style: DWORD, class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) callconv(winapi_cc) ?HWND;
+pub extern fn RegisterClassA(wc: *const WNDCLASSA) callconv(.c) ATOM;
+pub extern fn CreateWindowExA(ex_style: DWORD, class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) callconv(.c) ?HWND;
 pub fn CreateWindowA(class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) ?HWND {
     return CreateWindowExA(0, class_name, window_name, style, x, y, w, h, parent, menu, inst, param);
 }
-pub extern fn DestroyWindow(wnd: HWND) callconv(winapi_cc) BOOL;
-pub extern fn ShowWindow(wnd: HWND, cmd: c_int) callconv(winapi_cc) BOOL;
-pub extern fn SetWindowTextA(wnd: HWND, text: LPCSTR) callconv(winapi_cc) BOOL;
-pub extern fn GetWindowTextA(wnd: HWND, out: LPSTR, max: c_int) callconv(winapi_cc) c_int;
-pub extern fn GetClientRect(wnd: HWND, rect: *RECT) callconv(winapi_cc) BOOL;
-pub extern fn GetWindowRect(wnd: HWND, rect: *RECT) callconv(winapi_cc) BOOL;
-pub extern fn AdjustWindowRect(rect: *RECT, style: DWORD, menu: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn AdjustWindowRectEx(rect: *RECT, style: DWORD, menu: BOOL, ex_style: DWORD) callconv(winapi_cc) BOOL;
-pub extern fn GetDpiForSystem() callconv(winapi_cc) UINT;
-pub extern fn MoveWindow(wnd: HWND, x: c_int, y: c_int, w: c_int, h: c_int, repaint: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn InvalidateRect(wnd: HWND, rect: ?*const RECT, erase: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn UpdateWindow(wnd: HWND) callconv(winapi_cc) BOOL;
-pub extern fn GetDlgItem(dlg: HWND, id: c_int) callconv(winapi_cc) ?HWND;
-pub extern fn GetDlgCtrlID(wnd: HWND) callconv(winapi_cc) c_int;
-pub extern fn GetDlgItemTextA(dlg: HWND, id: c_int, out: LPSTR, max: c_int) callconv(winapi_cc) UINT;
-pub extern fn SetDlgItemTextA(dlg: HWND, id: c_int, text: LPCSTR) callconv(winapi_cc) BOOL;
-pub extern fn SetFocus(wnd: ?HWND) callconv(winapi_cc) ?HWND;
-pub extern fn GetFocus() callconv(winapi_cc) ?HWND;
-pub extern fn SetCapture(wnd: HWND) callconv(winapi_cc) ?HWND;
-pub extern fn ReleaseCapture() callconv(winapi_cc) BOOL;
-pub extern fn GetCapture() callconv(winapi_cc) ?HWND;
-pub extern fn GetParent(wnd: HWND) callconv(winapi_cc) ?HWND;
-pub extern fn EnableWindow(wnd: HWND, enable: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn IsWindowEnabled(wnd: HWND) callconv(winapi_cc) BOOL;
-pub extern fn CheckDlgButton(dlg: HWND, id: c_int, check: UINT) callconv(winapi_cc) BOOL;
-pub extern fn IsDlgButtonChecked(dlg: HWND, id: c_int) callconv(winapi_cc) UINT;
-pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_int) callconv(winapi_cc) BOOL;
-pub extern fn GetSystemMetrics(index: c_int) callconv(winapi_cc) c_int;
-pub extern fn GetCommandLineA() callconv(winapi_cc) LPSTR;
+pub extern fn DestroyWindow(wnd: HWND) callconv(.c) BOOL;
+pub extern fn ShowWindow(wnd: HWND, cmd: c_int) callconv(.c) BOOL;
+pub extern fn SetWindowTextA(wnd: HWND, text: LPCSTR) callconv(.c) BOOL;
+pub extern fn GetWindowTextA(wnd: HWND, out: LPSTR, max: c_int) callconv(.c) c_int;
+pub extern fn GetClientRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn GetWindowRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn AdjustWindowRect(rect: *RECT, style: DWORD, menu: BOOL) callconv(.c) BOOL;
+pub extern fn AdjustWindowRectEx(rect: *RECT, style: DWORD, menu: BOOL, ex_style: DWORD) callconv(.c) BOOL;
+pub extern fn GetDpiForSystem() callconv(.c) UINT;
+pub extern fn MoveWindow(wnd: HWND, x: c_int, y: c_int, w: c_int, h: c_int, repaint: BOOL) callconv(.c) BOOL;
+pub extern fn InvalidateRect(wnd: HWND, rect: ?*const RECT, erase: BOOL) callconv(.c) BOOL;
+pub extern fn UpdateWindow(wnd: HWND) callconv(.c) BOOL;
+pub extern fn GetDlgItem(dlg: HWND, id: c_int) callconv(.c) ?HWND;
+pub extern fn GetDlgCtrlID(wnd: HWND) callconv(.c) c_int;
+pub extern fn GetDlgItemTextA(dlg: HWND, id: c_int, out: LPSTR, max: c_int) callconv(.c) UINT;
+pub extern fn SetDlgItemTextA(dlg: HWND, id: c_int, text: LPCSTR) callconv(.c) BOOL;
+pub extern fn SetFocus(wnd: ?HWND) callconv(.c) ?HWND;
+pub extern fn GetFocus() callconv(.c) ?HWND;
+pub extern fn SetCapture(wnd: HWND) callconv(.c) ?HWND;
+pub extern fn ReleaseCapture() callconv(.c) BOOL;
+pub extern fn GetCapture() callconv(.c) ?HWND;
+pub extern fn GetParent(wnd: HWND) callconv(.c) ?HWND;
+pub extern fn EnableWindow(wnd: HWND, enable: BOOL) callconv(.c) BOOL;
+pub extern fn IsWindowEnabled(wnd: HWND) callconv(.c) BOOL;
+pub extern fn CheckDlgButton(dlg: HWND, id: c_int, check: UINT) callconv(.c) BOOL;
+pub extern fn IsDlgButtonChecked(dlg: HWND, id: c_int) callconv(.c) UINT;
+pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_int) callconv(.c) BOOL;
+pub extern fn GetSystemMetrics(index: c_int) callconv(.c) c_int;
+pub extern fn GetCommandLineA() callconv(.c) LPSTR;
 
 pub const MEMORYSTATUS = extern struct {
     dwLength: DWORD = @sizeOf(MEMORYSTATUS),
@@ -338,10 +328,10 @@ pub const MEMORYSTATUS = extern struct {
     dwTotalVirtual: DWORD = 0,
     dwAvailVirtual: DWORD = 0,
 };
-pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) callconv(winapi_cc) void;
-pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) callconv(winapi_cc) BOOL;
-pub extern fn ScreenToClient(wnd: HWND, pt: *POINT) callconv(winapi_cc) BOOL;
-pub extern fn GetCursorPos(pt: *POINT) callconv(winapi_cc) BOOL;
+pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) callconv(.c) void;
+pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) callconv(.c) BOOL;
+pub extern fn ScreenToClient(wnd: HWND, pt: *POINT) callconv(.c) BOOL;
+pub extern fn GetCursorPos(pt: *POINT) callconv(.c) BOOL;
 
 // ---- files ----------------------------------------------------------------
 // What a win32 program reads and writes a file with. Going through these
@@ -361,84 +351,83 @@ pub const FILE_CURRENT: u32 = 1;
 pub const FILE_END: u32 = 2;
 pub const INVALID_SET_FILE_POINTER: u32 = 0xFFFFFFFF;
 pub const INVALID_FILE_SIZE: u32 = 0xFFFFFFFF;
-pub extern fn CreateFileA(name: [*:0]const u8, access: u32, share: u32, security: ?*anyopaque, disposition: u32, flags: u32, template: HANDLE) callconv(winapi_cc) HANDLE;
-pub extern fn ReadFile(file: HANDLE, buf: [*]u8, to_read: u32, read: *u32, ovl: ?*anyopaque) callconv(winapi_cc) BOOL;
-pub extern fn WriteFile(file: HANDLE, buf: [*]const u8, to_write: u32, written: *u32, ovl: ?*anyopaque) callconv(winapi_cc) BOOL;
-pub extern fn SetFilePointer(file: HANDLE, distance: i32, high: ?*i32, method: u32) callconv(winapi_cc) u32;
-pub extern fn GetFileSize(file: HANDLE, high: ?*u32) callconv(winapi_cc) u32;
-pub extern fn CloseHandle(h: HANDLE) callconv(winapi_cc) BOOL;
-pub extern fn ExitProcess(code: u32) callconv(winapi_cc) noreturn;
-pub extern fn GetWindowLongA(wnd: HWND, index: c_int) callconv(winapi_cc) LONG;
-pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) callconv(winapi_cc) LONG;
-pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) callconv(winapi_cc) BOOL;
-pub extern fn GetKeyState(vk: c_int) callconv(winapi_cc) SHORT;
-pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) callconv(winapi_cc) UINT_PTR;
-pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) callconv(winapi_cc) BOOL;
-pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) callconv(winapi_cc) HCURSOR;
-pub extern fn SetCursor(cursor: HCURSOR) callconv(winapi_cc) HCURSOR;
-pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) callconv(winapi_cc) HCURSOR;
-pub extern fn DestroyCursor(cursor: HCURSOR) callconv(winapi_cc) BOOL;
-pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) callconv(winapi_cc) HANDLE;
-pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) callconv(winapi_cc) c_int;
+pub extern fn CreateFileA(name: [*:0]const u8, access: u32, share: u32, security: ?*anyopaque, disposition: u32, flags: u32, template: HANDLE) callconv(.c) HANDLE;
+pub extern fn ReadFile(file: HANDLE, buf: [*]u8, to_read: u32, read: *u32, ovl: ?*anyopaque) callconv(.c) BOOL;
+pub extern fn WriteFile(file: HANDLE, buf: [*]const u8, to_write: u32, written: *u32, ovl: ?*anyopaque) callconv(.c) BOOL;
+pub extern fn SetFilePointer(file: HANDLE, distance: i32, high: ?*i32, method: u32) callconv(.c) u32;
+pub extern fn GetFileSize(file: HANDLE, high: ?*u32) callconv(.c) u32;
+pub extern fn CloseHandle(h: HANDLE) callconv(.c) BOOL;
+pub extern fn GetWindowLongA(wnd: HWND, index: c_int) callconv(.c) LONG;
+pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) callconv(.c) LONG;
+pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) callconv(.c) BOOL;
+pub extern fn GetKeyState(vk: c_int) callconv(.c) SHORT;
+pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) callconv(.c) UINT_PTR;
+pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) callconv(.c) BOOL;
+pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) callconv(.c) HCURSOR;
+pub extern fn SetCursor(cursor: HCURSOR) callconv(.c) HCURSOR;
+pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) callconv(.c) HCURSOR;
+pub extern fn DestroyCursor(cursor: HCURSOR) callconv(.c) BOOL;
+pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) callconv(.c) HANDLE;
+pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) callconv(.c) c_int;
 
-pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) callconv(winapi_cc) BOOL;
-pub extern fn TranslateMessage(msg: *const MSG) callconv(winapi_cc) BOOL;
-pub extern fn DispatchMessageA(msg: *const MSG) callconv(winapi_cc) LRESULT;
-pub extern fn PostQuitMessage(code: c_int) callconv(winapi_cc) void;
-pub extern fn SendMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(winapi_cc) LRESULT;
-pub extern fn PostMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(winapi_cc) BOOL;
-pub extern fn DefWindowProcA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(winapi_cc) LRESULT;
+pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) callconv(.c) BOOL;
+pub extern fn TranslateMessage(msg: *const MSG) callconv(.c) BOOL;
+pub extern fn DispatchMessageA(msg: *const MSG) callconv(.c) LRESULT;
+pub extern fn PostQuitMessage(code: c_int) callconv(.c) void;
+pub extern fn SendMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
+pub extern fn PostMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) BOOL;
+pub extern fn DefWindowProcA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
 
 // ---- USER32: menus -------------------------------------------------------
 
-pub extern fn CreateMenu() callconv(winapi_cc) HMENU;
-pub extern fn CreatePopupMenu() callconv(winapi_cc) HMENU;
-pub extern fn DestroyMenu(menu: HMENU) callconv(winapi_cc) BOOL;
-pub extern fn AppendMenuA(menu: HMENU, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(winapi_cc) BOOL;
-pub extern fn SetMenu(wnd: HWND, menu: HMENU) callconv(winapi_cc) BOOL;
-pub extern fn GetMenu(wnd: HWND) callconv(winapi_cc) HMENU;
-pub extern fn GetSubMenu(menu: HMENU, pos: c_int) callconv(winapi_cc) HMENU;
-pub extern fn GetMenuItemCount(menu: HMENU) callconv(winapi_cc) c_int;
-pub extern fn InsertMenuA(menu: HMENU, before: UINT, flags: UINT, id: usize, text: ?LPCSTR) callconv(winapi_cc) BOOL;
-pub extern fn DeleteMenu(menu: HMENU, item: UINT, flags: UINT) callconv(winapi_cc) BOOL;
-pub extern fn CheckMenuItem(menu: HMENU, id: UINT, check: UINT) callconv(winapi_cc) DWORD;
-pub extern fn CheckMenuRadioItem(menu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) callconv(winapi_cc) BOOL;
-pub extern fn EnableMenuItem(menu: HMENU, id: UINT, enable: UINT) callconv(winapi_cc) BOOL;
-pub extern fn ModifyMenuA(menu: HMENU, item: UINT, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(winapi_cc) BOOL;
-pub extern fn TrackPopupMenu(menu: HMENU, flags: UINT, x: c_int, y: c_int, reserved: c_int, owner: HWND, rect: ?*const RECT) callconv(winapi_cc) BOOL;
+pub extern fn CreateMenu() callconv(.c) HMENU;
+pub extern fn CreatePopupMenu() callconv(.c) HMENU;
+pub extern fn DestroyMenu(menu: HMENU) callconv(.c) BOOL;
+pub extern fn AppendMenuA(menu: HMENU, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn SetMenu(wnd: HWND, menu: HMENU) callconv(.c) BOOL;
+pub extern fn GetMenu(wnd: HWND) callconv(.c) HMENU;
+pub extern fn GetSubMenu(menu: HMENU, pos: c_int) callconv(.c) HMENU;
+pub extern fn GetMenuItemCount(menu: HMENU) callconv(.c) c_int;
+pub extern fn InsertMenuA(menu: HMENU, before: UINT, flags: UINT, id: usize, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn DeleteMenu(menu: HMENU, item: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn CheckMenuItem(menu: HMENU, id: UINT, check: UINT) callconv(.c) DWORD;
+pub extern fn CheckMenuRadioItem(menu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn EnableMenuItem(menu: HMENU, id: UINT, enable: UINT) callconv(.c) BOOL;
+pub extern fn ModifyMenuA(menu: HMENU, item: UINT, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn TrackPopupMenu(menu: HMENU, flags: UINT, x: c_int, y: c_int, reserved: c_int, owner: HWND, rect: ?*const RECT) callconv(.c) BOOL;
 
 // ---- USER32: accelerators, clipboard, dialogs ----------------------------
 
-pub extern fn CreateAcceleratorTableA(accels: [*]const ACCEL, count: c_int) callconv(winapi_cc) HACCEL;
-pub extern fn DestroyAcceleratorTable(table: HACCEL) callconv(winapi_cc) BOOL;
-pub extern fn TranslateAcceleratorA(wnd: HWND, table: HACCEL, msg: *MSG) callconv(winapi_cc) c_int;
+pub extern fn CreateAcceleratorTableA(accels: [*]const ACCEL, count: c_int) callconv(.c) HACCEL;
+pub extern fn DestroyAcceleratorTable(table: HACCEL) callconv(.c) BOOL;
+pub extern fn TranslateAcceleratorA(wnd: HWND, table: HACCEL, msg: *MSG) callconv(.c) c_int;
 
-pub extern fn OpenClipboard(owner: ?HWND) callconv(winapi_cc) BOOL;
-pub extern fn CloseClipboard() callconv(winapi_cc) BOOL;
-pub extern fn EmptyClipboard() callconv(winapi_cc) BOOL;
-pub extern fn SetClipboardData(format: UINT, data: HANDLE) callconv(winapi_cc) HANDLE;
-pub extern fn GetClipboardData(format: UINT) callconv(winapi_cc) HANDLE;
-pub extern fn IsClipboardFormatAvailable(format: UINT) callconv(winapi_cc) BOOL;
+pub extern fn OpenClipboard(owner: ?HWND) callconv(.c) BOOL;
+pub extern fn CloseClipboard() callconv(.c) BOOL;
+pub extern fn EmptyClipboard() callconv(.c) BOOL;
+pub extern fn SetClipboardData(format: UINT, data: HANDLE) callconv(.c) HANDLE;
+pub extern fn GetClipboardData(format: UINT) callconv(.c) HANDLE;
+pub extern fn IsClipboardFormatAvailable(format: UINT) callconv(.c) BOOL;
 
-pub extern fn GetDialogBaseUnits() callconv(winapi_cc) LONG;
-pub extern fn MapDialogRect(dlg: ?HWND, rect: *RECT) callconv(winapi_cc) BOOL;
-pub extern fn MulDiv(number: c_int, numerator: c_int, denominator: c_int) callconv(winapi_cc) c_int;
-pub extern fn IsDialogMessageA(dlg: HWND, msg: *MSG) callconv(winapi_cc) BOOL;
-pub extern fn DefDlgProcA(dlg: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(winapi_cc) LRESULT;
-pub extern fn EndDialog(dlg: HWND, result: INT_PTR) callconv(winapi_cc) BOOL;
-pub extern fn CreateDialogIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, parent: ?HWND, proc: DLGPROC, param: LPARAM) callconv(winapi_cc) ?HWND;
-pub extern fn DialogBoxIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, owner: ?HWND, proc: DLGPROC, param: LPARAM) callconv(winapi_cc) INT_PTR;
+pub extern fn GetDialogBaseUnits() callconv(.c) LONG;
+pub extern fn MapDialogRect(dlg: ?HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn MulDiv(number: c_int, numerator: c_int, denominator: c_int) callconv(.c) c_int;
+pub extern fn IsDialogMessageA(dlg: HWND, msg: *MSG) callconv(.c) BOOL;
+pub extern fn DefDlgProcA(dlg: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
+pub extern fn EndDialog(dlg: HWND, result: INT_PTR) callconv(.c) BOOL;
+pub extern fn CreateDialogIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, parent: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) ?HWND;
+pub extern fn DialogBoxIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, owner: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) INT_PTR;
 
 // ---- USER32: a window's own scroll bars ---------------------------------
 
-pub extern fn SetScrollInfo(wnd: HWND, bar: c_int, info: *const SCROLLINFO, redraw: BOOL) callconv(winapi_cc) c_int;
-pub extern fn GetScrollInfo(wnd: HWND, bar: c_int, info: *SCROLLINFO) callconv(winapi_cc) BOOL;
-pub extern fn SetScrollPos(wnd: HWND, bar: c_int, pos: c_int, redraw: BOOL) callconv(winapi_cc) c_int;
-pub extern fn GetScrollPos(wnd: HWND, bar: c_int) callconv(winapi_cc) c_int;
-pub extern fn SetScrollRange(wnd: HWND, bar: c_int, min: c_int, max: c_int, redraw: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn GetScrollRange(wnd: HWND, bar: c_int, min: *c_int, max: *c_int) callconv(winapi_cc) BOOL;
-pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) callconv(winapi_cc) BOOL;
-pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) callconv(winapi_cc) BOOL;
+pub extern fn SetScrollInfo(wnd: HWND, bar: c_int, info: *const SCROLLINFO, redraw: BOOL) callconv(.c) c_int;
+pub extern fn GetScrollInfo(wnd: HWND, bar: c_int, info: *SCROLLINFO) callconv(.c) BOOL;
+pub extern fn SetScrollPos(wnd: HWND, bar: c_int, pos: c_int, redraw: BOOL) callconv(.c) c_int;
+pub extern fn GetScrollPos(wnd: HWND, bar: c_int) callconv(.c) c_int;
+pub extern fn SetScrollRange(wnd: HWND, bar: c_int, min: c_int, max: c_int, redraw: BOOL) callconv(.c) BOOL;
+pub extern fn GetScrollRange(wnd: HWND, bar: c_int, min: *c_int, max: *c_int) callconv(.c) BOOL;
+pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) callconv(.c) BOOL;
+pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) callconv(.c) BOOL;
 
 // ---- COMDLG32 ------------------------------------------------------------
 
@@ -464,7 +453,7 @@ pub const OPENFILENAMEA = extern struct {
     /// Offered every message before the dialog sees it, when the flags say
     /// CC_ENABLEHOOK: what an application gives the system's colour box a
     /// title of its own with.
-    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(winapi_cc) INT_PTR = null,
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
     lpTemplateName: ?LPCSTR = null,
 };
 
@@ -479,84 +468,84 @@ pub const CHOOSECOLORA = extern struct {
     /// Offered every message before the dialog sees it, when the flags say
     /// CC_ENABLEHOOK: what an application gives the system's colour box a
     /// title of its own with.
-    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(winapi_cc) INT_PTR = null,
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
     lpTemplateName: ?LPCSTR = null,
 };
 
-pub extern fn GetOpenFileNameA(ofn: *OPENFILENAMEA) callconv(winapi_cc) BOOL;
-pub extern fn GetSaveFileNameA(ofn: *OPENFILENAMEA) callconv(winapi_cc) BOOL;
-pub extern fn ChooseColorA(cc: *CHOOSECOLORA) callconv(winapi_cc) BOOL;
+pub extern fn GetOpenFileNameA(ofn: *OPENFILENAMEA) callconv(.c) BOOL;
+pub extern fn GetSaveFileNameA(ofn: *OPENFILENAMEA) callconv(.c) BOOL;
+pub extern fn ChooseColorA(cc: *CHOOSECOLORA) callconv(.c) BOOL;
 
 // ---- COMCTL32 ------------------------------------------------------------
 
-pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) callconv(winapi_cc) BOOL;
-pub extern fn InitCommonControls() callconv(winapi_cc) void;
-pub extern fn ImageList_Create(cx: c_int, cy: c_int, flags: UINT, initial: c_int, grow: c_int) callconv(winapi_cc) HIMAGELIST;
-pub extern fn ImageList_Destroy(il: HIMAGELIST) callconv(winapi_cc) BOOL;
-pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) callconv(winapi_cc) c_int;
-pub extern fn ImageList_AddMasked(il: HIMAGELIST, image: HBITMAP, transparent: COLORREF) callconv(winapi_cc) c_int;
-pub extern fn ImageList_Draw(il: HIMAGELIST, index: c_int, dc: HDC, x: c_int, y: c_int, style: UINT) callconv(winapi_cc) BOOL;
+pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) callconv(.c) BOOL;
+pub extern fn InitCommonControls() callconv(.c) void;
+pub extern fn ImageList_Create(cx: c_int, cy: c_int, flags: UINT, initial: c_int, grow: c_int) callconv(.c) HIMAGELIST;
+pub extern fn ImageList_Destroy(il: HIMAGELIST) callconv(.c) BOOL;
+pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) callconv(.c) c_int;
+pub extern fn ImageList_AddMasked(il: HIMAGELIST, image: HBITMAP, transparent: COLORREF) callconv(.c) c_int;
+pub extern fn ImageList_Draw(il: HIMAGELIST, index: c_int, dc: HDC, x: c_int, y: c_int, style: UINT) callconv(.c) BOOL;
 
 // ---- GDI: contexts, objects and text ------------------------------------
 
-pub extern fn BeginPaint(wnd: HWND, ps: *PAINTSTRUCT) callconv(winapi_cc) ?HDC;
-pub extern fn EndPaint(wnd: HWND, ps: *const PAINTSTRUCT) callconv(winapi_cc) BOOL;
-pub extern fn GetDC(wnd: ?HWND) callconv(winapi_cc) ?HDC;
-pub extern fn ReleaseDC(wnd: ?HWND, dc: HDC) callconv(winapi_cc) c_int;
-pub extern fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(winapi_cc) BOOL;
-pub extern fn FrameRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(winapi_cc) c_int;
-pub extern fn DrawEdge(dc: HDC, rect: *RECT, edge: UINT, flags: UINT) callconv(winapi_cc) BOOL;
-pub extern fn DrawFrameControl(dc: HDC, rect: *RECT, kind: UINT, state: UINT) callconv(winapi_cc) BOOL;
-pub extern fn TextOutA(dc: HDC, x: c_int, y: c_int, text: [*]const u8, len: c_int) callconv(winapi_cc) BOOL;
-pub extern fn DrawTextA(dc: HDC, text: [*]const u8, len: c_int, rect: *RECT, format: UINT) callconv(winapi_cc) c_int;
-pub extern fn GetTextExtentPoint32A(dc: HDC, text: [*]const u8, len: c_int, size: *SIZE) callconv(winapi_cc) BOOL;
-pub extern fn SetTextColor(dc: HDC, color: COLORREF) callconv(winapi_cc) COLORREF;
-pub extern fn SetBkMode(dc: HDC, mode: c_int) callconv(winapi_cc) c_int;
-pub extern fn SetBkColor(dc: HDC, color: COLORREF) callconv(winapi_cc) COLORREF;
-pub extern fn GetBkColor(dc: HDC) callconv(winapi_cc) COLORREF;
-pub extern fn GetSysColor(index: c_int) callconv(winapi_cc) DWORD;
-pub extern fn GetSysColorBrush(index: c_int) callconv(winapi_cc) ?HBRUSH;
-pub extern fn CreateSolidBrush(color: COLORREF) callconv(winapi_cc) ?HBRUSH;
-pub extern fn CreateFontA(height: c_int, width: c_int, escapement: c_int, orientation: c_int, weight: c_int, italic: DWORD, underline: DWORD, strike_out: DWORD, charset: DWORD, out_precision: DWORD, clip_precision: DWORD, quality: DWORD, pitch_and_family: DWORD, face_name: LPCSTR) callconv(winapi_cc) ?HFONT;
-pub extern fn DeleteObject(obj: HGDIOBJ) callconv(winapi_cc) BOOL;
-pub extern fn GetStockObject(what: c_int) callconv(winapi_cc) ?HGDIOBJ;
-pub extern fn SelectObject(dc: HDC, obj: HGDIOBJ) callconv(winapi_cc) ?HGDIOBJ;
-pub extern fn CreateBitmap(w: c_int, h: c_int, planes: UINT, bpp: UINT, bits: ?*const anyopaque) callconv(winapi_cc) ?HBITMAP;
-pub extern fn CreateIcon(inst: HINSTANCE, w_: c_int, h_: c_int, planes: BYTE, bpp: BYTE, and_bits: [*]const BYTE, xor_bits: [*]const BYTE) callconv(winapi_cc) HICON;
-pub extern fn DestroyIcon(icon: HICON) callconv(winapi_cc) void;
-pub extern fn DrawIconEx(dc: HDC, x: c_int, y: c_int, icon: HICON, cx: c_int, cy: c_int, frame: UINT, flicker: ?HBRUSH, flags: UINT) callconv(winapi_cc) BOOL;
+pub extern fn BeginPaint(wnd: HWND, ps: *PAINTSTRUCT) callconv(.c) ?HDC;
+pub extern fn EndPaint(wnd: HWND, ps: *const PAINTSTRUCT) callconv(.c) BOOL;
+pub extern fn GetDC(wnd: ?HWND) callconv(.c) ?HDC;
+pub extern fn ReleaseDC(wnd: ?HWND, dc: HDC) callconv(.c) c_int;
+pub extern fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) BOOL;
+pub extern fn FrameRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) c_int;
+pub extern fn DrawEdge(dc: HDC, rect: *RECT, edge: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn DrawFrameControl(dc: HDC, rect: *RECT, kind: UINT, state: UINT) callconv(.c) BOOL;
+pub extern fn TextOutA(dc: HDC, x: c_int, y: c_int, text: [*]const u8, len: c_int) callconv(.c) BOOL;
+pub extern fn DrawTextA(dc: HDC, text: [*]const u8, len: c_int, rect: *RECT, format: UINT) callconv(.c) c_int;
+pub extern fn GetTextExtentPoint32A(dc: HDC, text: [*]const u8, len: c_int, size: *SIZE) callconv(.c) BOOL;
+pub extern fn SetTextColor(dc: HDC, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn SetBkMode(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn SetBkColor(dc: HDC, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn GetBkColor(dc: HDC) callconv(.c) COLORREF;
+pub extern fn GetSysColor(index: c_int) callconv(.c) DWORD;
+pub extern fn GetSysColorBrush(index: c_int) callconv(.c) ?HBRUSH;
+pub extern fn CreateSolidBrush(color: COLORREF) callconv(.c) ?HBRUSH;
+pub extern fn CreateFontA(height: c_int, width: c_int, escapement: c_int, orientation: c_int, weight: c_int, italic: DWORD, underline: DWORD, strike_out: DWORD, charset: DWORD, out_precision: DWORD, clip_precision: DWORD, quality: DWORD, pitch_and_family: DWORD, face_name: LPCSTR) callconv(.c) ?HFONT;
+pub extern fn DeleteObject(obj: HGDIOBJ) callconv(.c) BOOL;
+pub extern fn GetStockObject(what: c_int) callconv(.c) ?HGDIOBJ;
+pub extern fn SelectObject(dc: HDC, obj: HGDIOBJ) callconv(.c) ?HGDIOBJ;
+pub extern fn CreateBitmap(w: c_int, h: c_int, planes: UINT, bpp: UINT, bits: ?*const anyopaque) callconv(.c) ?HBITMAP;
+pub extern fn CreateIcon(inst: HINSTANCE, w_: c_int, h_: c_int, planes: BYTE, bpp: BYTE, and_bits: [*]const BYTE, xor_bits: [*]const BYTE) callconv(.c) HICON;
+pub extern fn DestroyIcon(icon: HICON) callconv(.c) void;
+pub extern fn DrawIconEx(dc: HDC, x: c_int, y: c_int, icon: HICON, cx: c_int, cy: c_int, frame: UINT, flicker: ?HBRUSH, flags: UINT) callconv(.c) BOOL;
 
 // ---- GDI: the drawing half ----------------------------------------------
 
-pub extern fn CreateCompatibleDC(dc: ?HDC) callconv(winapi_cc) ?HDC;
-pub extern fn DeleteDC(dc: HDC) callconv(winapi_cc) BOOL;
-pub extern fn CreateCompatibleBitmap(dc: HDC, w: c_int, h: c_int) callconv(winapi_cc) ?HBITMAP;
-pub extern fn GetObjectA(obj: HGDIOBJ, size: c_int, out: ?*anyopaque) callconv(winapi_cc) c_int;
-pub extern fn CreatePen(style: c_int, width: c_int, color: COLORREF) callconv(winapi_cc) ?HPEN;
-pub extern fn SetROP2(dc: HDC, mode: c_int) callconv(winapi_cc) c_int;
-pub extern fn GetROP2(dc: HDC) callconv(winapi_cc) c_int;
-pub extern fn SetStretchBltMode(dc: HDC, mode: c_int) callconv(winapi_cc) c_int;
-pub extern fn SetViewportOrgEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(winapi_cc) BOOL;
-pub extern fn GetViewportOrgEx(dc: HDC, pt: *POINT) callconv(winapi_cc) BOOL;
-pub extern fn MoveToEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(winapi_cc) BOOL;
-pub extern fn LineTo(dc: HDC, x: c_int, y: c_int) callconv(winapi_cc) BOOL;
-pub extern fn Polyline(dc: HDC, pts: [*]const POINT, count: c_int) callconv(winapi_cc) BOOL;
-pub extern fn PolyBezier(dc: HDC, pts: [*]const POINT, count: DWORD) callconv(winapi_cc) BOOL;
-pub extern fn Polygon(dc: HDC, pts: [*]const POINT, count: c_int) callconv(winapi_cc) BOOL;
-pub extern fn Rectangle(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(winapi_cc) BOOL;
-pub extern fn Ellipse(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(winapi_cc) BOOL;
-pub extern fn RoundRect(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int, ew: c_int, eh: c_int) callconv(winapi_cc) BOOL;
-pub extern fn SetPixel(dc: HDC, x: c_int, y: c_int, color: COLORREF) callconv(winapi_cc) COLORREF;
-pub extern fn GetPixel(dc: HDC, x: c_int, y: c_int) callconv(winapi_cc) COLORREF;
-pub extern fn ExtFloodFill(dc: HDC, x: c_int, y: c_int, color: COLORREF, kind: UINT) callconv(winapi_cc) BOOL;
-pub extern fn BitBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, rop: DWORD) callconv(winapi_cc) BOOL;
-pub extern fn StretchBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, sw: c_int, sh: c_int, rop: DWORD) callconv(winapi_cc) BOOL;
-pub extern fn PatBlt(dc: HDC, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) callconv(winapi_cc) BOOL;
-pub extern fn InvertRect(dc: HDC, rect: *const RECT) callconv(winapi_cc) BOOL;
-pub extern fn DrawFocusRect(dc: HDC, rect: *const RECT) callconv(winapi_cc) BOOL;
-pub extern fn IntersectClipRect(dc: HDC, left: i32, top: i32, right: i32, bottom: i32) callconv(winapi_cc) i32;
-pub extern fn GetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: ?*anyopaque, info: *BITMAPINFO, usage: UINT) callconv(winapi_cc) c_int;
-pub extern fn SetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: *const anyopaque, info: *const BITMAPINFO, usage: UINT) callconv(winapi_cc) c_int;
+pub extern fn CreateCompatibleDC(dc: ?HDC) callconv(.c) ?HDC;
+pub extern fn DeleteDC(dc: HDC) callconv(.c) BOOL;
+pub extern fn CreateCompatibleBitmap(dc: HDC, w: c_int, h: c_int) callconv(.c) ?HBITMAP;
+pub extern fn GetObjectA(obj: HGDIOBJ, size: c_int, out: ?*anyopaque) callconv(.c) c_int;
+pub extern fn CreatePen(style: c_int, width: c_int, color: COLORREF) callconv(.c) ?HPEN;
+pub extern fn SetROP2(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn GetROP2(dc: HDC) callconv(.c) c_int;
+pub extern fn SetStretchBltMode(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn SetViewportOrgEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(.c) BOOL;
+pub extern fn GetViewportOrgEx(dc: HDC, pt: *POINT) callconv(.c) BOOL;
+pub extern fn MoveToEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(.c) BOOL;
+pub extern fn LineTo(dc: HDC, x: c_int, y: c_int) callconv(.c) BOOL;
+pub extern fn Polyline(dc: HDC, pts: [*]const POINT, count: c_int) callconv(.c) BOOL;
+pub extern fn PolyBezier(dc: HDC, pts: [*]const POINT, count: DWORD) callconv(.c) BOOL;
+pub extern fn Polygon(dc: HDC, pts: [*]const POINT, count: c_int) callconv(.c) BOOL;
+pub extern fn Rectangle(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(.c) BOOL;
+pub extern fn Ellipse(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(.c) BOOL;
+pub extern fn RoundRect(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int, ew: c_int, eh: c_int) callconv(.c) BOOL;
+pub extern fn SetPixel(dc: HDC, x: c_int, y: c_int, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn GetPixel(dc: HDC, x: c_int, y: c_int) callconv(.c) COLORREF;
+pub extern fn ExtFloodFill(dc: HDC, x: c_int, y: c_int, color: COLORREF, kind: UINT) callconv(.c) BOOL;
+pub extern fn BitBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn StretchBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, sw: c_int, sh: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn PatBlt(dc: HDC, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn InvertRect(dc: HDC, rect: *const RECT) callconv(.c) BOOL;
+pub extern fn DrawFocusRect(dc: HDC, rect: *const RECT) callconv(.c) BOOL;
+pub extern fn IntersectClipRect(dc: HDC, left: i32, top: i32, right: i32, bottom: i32) callconv(.c) i32;
+pub extern fn GetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: ?*anyopaque, info: *BITMAPINFO, usage: UINT) callconv(.c) c_int;
+pub extern fn SetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: *const anyopaque, info: *const BITMAPINFO, usage: UINT) callconv(.c) c_int;
 
 // ---- constants (generated: see the note at the top) ----------------------
 // >>> genconsts

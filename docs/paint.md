@@ -331,10 +331,12 @@ answers.
 The things this side of the port cannot check are what to look at there.
 Attributes opens with the width already selected, which is user32's dialog
 manager doing what ween32 was taught to; the page's corner handle drags out a
-dotted rectangle and the picture becomes it; and a shape dragged out past the
-left of the picture stops at the picture's edge rather than crossing the tool
-box. XTEST drives all three from a script — press, move, screenshot, release
-— and the pixels say the same thing on both sides.
+dotted rectangle and the picture becomes it; a shape dragged out past the left
+of the picture stops at the picture's edge rather than crossing the tool box;
+and Save As followed by File > Open writes a .bmp and reads it back with the
+file calls Windows has, no C runtime in it anywhere. XTEST drives all of that
+from a script — press, move, screenshot, release — and the pixels say the
+same thing on both sides.
 
 One difference worth knowing, since it is the sort of thing a comparison
 against wine would otherwise "fix": wine's `DrawFocusRect` puts its dots on
@@ -342,53 +344,35 @@ the other chequer from the machine's. Both leave the corner the top and the
 left share blank, and both step every other pixel; they simply start on
 opposite ones. The machine is what ween32 follows.
 
-## On the machine itself
+## What the win32 build is
 
-```sh
-zig build paint -Dtarget=x86-windows-gnu     # thirty-two bits: NT is not 64
-python3 tools/vm/pe2k.py zig-out/bin/paint.exe
-cp zig-out/bin/paint.exe ~/paintshare/
-# in the guest: Z:\paint.exe
-```
+`paint.exe` is a 64-bit Windows program with windows rather than a console —
+`subsystem = .Windows`, or the loader opens one beside it — and it carries no
+C runtime at all. It reads and writes its .bmp with `CreateFile`, `ReadFile`
+and `WriteFile` like any other win32 program, which is the only thing it ever
+wanted a runtime for, so what it imports is USER32, GDI32, COMCTL32,
+COMDLG32, and from KERNEL32 the six file calls and `GetCommandLineA` and
+`GlobalMemoryStatus`. `make win32` builds it, so it cannot quietly stop
+building.
 
-It runs there. Not "compiles for", not "runs under wine" — the same
-`paint.exe` on the Windows 2000 in the emulator, beside the Paint it is a
-copy of, drawing with that machine's own USER32 and GDI32.
+It was worth finding out how far that goes, and the answer is: the same
+source runs on the Windows 2000 in the emulator, beside the Paint it is a
+copy of — drawing with that machine's own USER32 and GDI32, sizing its page
+by the handles, saving a .bmp to a share and opening it again. That needed
+three things this repository does not keep, because none of them is about
+being a faithful win32 program and each of them is a tax on every line that
+calls one: a 32-bit build (NT is not 64-bit) and with it stdcall on every
+declaration; a PE stamped NT 4.0, which `tools/vm/pe2k.py` does; and an entry
+point of its own, because Zig's start-up leaves through ntdll's
+`RtlExitUserProcess`, which arrived with XP — a program that so much as names
+a procedure ntdll has not got is refused by the loader before a line of it
+runs.
 
-Four things had to be true for that, and none of them is about the drawing:
-
-- **Thirty-two bits, and the stdcall that comes with them.** A win32 function
-  on x86 is `__stdcall`, so every declaration says which convention it is —
-  and says it in a way that is still right on the other side, where these
-  names are ween32's and the convention is the platform's own C. Zig's
-  `.winapi` is chosen by the *architecture*, not the system, so writing that
-  on a 64-bit Linux asks for the Microsoft register order and hands the
-  library its arguments in the wrong ones. It segfaults on the first call.
-- **A PE that says NT 4.0.** Modern toolchains stamp 6.0 into the version
-  fields and NT 5.0 refuses anything newer, before a line of the program runs
-  (`tools/vm/pe2k.py`).
-- **No C runtime.** The one a modern toolchain links is the UCRT, whose
-  `api-ms-win-crt-*` this machine has never heard of. Paint reads and writes
-  its .bmp with `CreateFile`, `ReadFile` and `WriteFile` instead — which is
-  what a win32 program does anyway — and links no libc on Windows at all.
-- **A way in and a way out that this machine has.** Zig's own start-up leaves
-  through ntdll's `RtlExitUserProcess`, which arrived with XP; a program that
-  so much as names it is refused by the loader. Paint enters at its own
-  symbol and leaves through `ExitProcess`, and answers the ntdll name itself
-  so that nothing is ever looked up.
-
-What is left is eight KERNEL32 calls, two from ntdll that Windows 2000 does
-have (`NtAllocateVirtualMemory`, `NtFreeVirtualMemory`), and USER32, GDI32,
-COMCTL32 and COMDLG32 — sixty-six, thirty-three, four and three of them, all
-present since NT 4.0.
-
-Checked on it, by hand and by script: the menus and their status-bar lines,
-Attributes with the width already selected, the handles round the page
-dragging out a rubber band and sizing the picture, a rectangle dragged past
-the left of the page stopping at the page's edge, Colors > Edit Colors coming
-up as the system's own box, Save As writing a .bmp to the share — 182x145, the
-size the drag made — and the same file opened back with the picture in it and
-its name in the title bar.
+The one thing to know if it is ever tried again: Zig's `.winapi` calling
+convention is chosen by the *architecture*, not by the system. Writing it on
+a 64-bit Linux, where these names are ween32's rather than user32's, asks for
+the Microsoft register order and the first call into the library takes its
+arguments from the wrong registers.
 
 ## What is not there
 

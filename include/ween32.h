@@ -2053,7 +2053,6 @@ BOOL WriteFile(HANDLE file, const void *buf, DWORD to_write, DWORD *written,
 DWORD SetFilePointer(HANDLE file, LONG distance, LONG *high, DWORD method);
 DWORD GetFileSize(HANDLE file, DWORD *high);
 BOOL CloseHandle(HANDLE h);
-void ExitProcess(UINT code);
 #define CF_TEXT 1
 #define CF_BITMAP 2
 #define WM_CUT 0x0300
