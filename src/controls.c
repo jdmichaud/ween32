@@ -315,6 +315,7 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * are equal when nothing is selected), and whether the caret is showing this
  * half of its blink. */
 typedef struct {
+    int left_margin, right_margin; /* -1 until the app says otherwise */
     int caret, anchor;
     int caret_on;
 } ween_edit;
@@ -326,8 +327,12 @@ typedef struct {
 
 static ween_edit *edit_state(HWND w)
 {
-    if (!w->ctl)
-        w->ctl = calloc(1, sizeof(ween_edit));
+    if (!w->ctl) {
+        ween_edit *e = calloc(1, sizeof(ween_edit));
+        if (e) /* no margin of its own until the application says */
+            e->left_margin = e->right_margin = -1;
+        w->ctl = e;
+    }
     return w->ctl;
 }
 
@@ -414,6 +419,11 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         for (int i = 0; i < 52; i++)
             sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
         margin = ((sum + 26) / 52) / 2;
+    }
+    {   /* unless the application said what the margin is */
+        ween_edit *m = edit_state(wnd);
+        if (m && m->left_margin >= 0)
+            margin = m->left_margin;
     }
     int tx = inset + margin;
     int ty = inset;
@@ -560,6 +570,15 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     int len = (int)strlen(wnd->text);
 
     switch (msg) {
+    case EM_SETMARGINS:
+        if (e) {
+            if (wp & EC_LEFTMARGIN)
+                e->left_margin = (int)(short)LOWORD(lp);
+            if (wp & EC_RIGHTMARGIN)
+                e->right_margin = (int)(short)HIWORD(lp);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
     case EM_SETSEL:
         if (e) {
             int to = (int)lp < 0 ? len : (int)lp;
@@ -577,6 +596,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_LBUTTONDOWN: {
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        int had = ween_focus_get() == wnd;
         if (wnd->style & WS_DISABLED)
             return 0;
         SetFocus(wnd);
@@ -586,6 +606,13 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             edit_show_caret(wnd, e);
             SetCapture(wnd);
         }
+        /* The parent hears about the click that brought the keyboard here,
+         * after the caret has been placed rather than before — so a combo box
+         * that takes everything in its field on the way in is not undone by
+         * the very click that arrived. */
+        if (!had && wnd->parent)
+            SendMessageA(wnd->parent, WM_COMMAND,
+                         MAKEWPARAM((WORD)wnd->id, EN_SETFOCUS), (LPARAM)wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -654,12 +681,20 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             e->caret_on = 1; /* a caret appears the moment it is placed */
             SetTimer(wnd, WEEN_CARET_TIMER, WEEN_CARET_BLINK_MS, NULL);
         }
+        /* the parent hears it too, which is how a combo box knows to take
+         * everything in its field when the keyboard arrives */
+        if (wnd->parent)
+            SendMessageA(wnd->parent, WM_COMMAND,
+                         MAKEWPARAM((WORD)wnd->id, EN_SETFOCUS), (LPARAM)wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case WM_KILLFOCUS:
         KillTimer(wnd, WEEN_CARET_TIMER);
         if (e)
             e->caret_on = 0;
+        if (wnd->parent)
+            SendMessageA(wnd->parent, WM_COMMAND,
+                         MAKEWPARAM((WORD)wnd->id, EN_KILLFOCUS), (LPARAM)wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case WM_TIMER:
@@ -825,6 +860,9 @@ typedef struct {
     int count, cap, cursel, top;
     int track;  /* combo box: the item the pointer is over, -1 for none */
     int opened; /* combo box: this press is the one that opened the list */
+    HWND edit;  /* combo box: the field, when its style says it can be typed
+                 * in — which is what an address bar is */
+    char was[260]; /* and what was in it when the typing started */
 } ween_items;
 
 static ween_items *items_of(HWND w)
@@ -1113,6 +1151,8 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * button. Opening the list needs a popup window, which the core cannot do
  * yet — see ROADMAP.md. */
 
+static int combo_text_is_sel(ween_items *it);
+
 static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
@@ -1126,6 +1166,17 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
      * down arrow uses */
     ween_classic_scroll_arrow(&top->surface, ox + r.right - btn, oy, btn,
                               r.bottom - r.top, 1, 0, 0);
+    if (it && it->edit) {
+        /* a field that can be typed in draws its own text: what is left for
+         * the combo is the picture that stands beside it, and only while what
+         * is in the field is still that item */
+        if (it->images && combo_text_is_sel(it) &&
+            it->image[it->cursel] >= 0)
+            ween_imagelist_draw(it->images, it->image[it->cursel],
+                                &top->surface, ox + 1,
+                                oy + (r.bottom - r.top - WEEN_CBEX_IMAGE) / 2);
+        return;
+    }
     if (it && it->cursel >= 0 && it->cursel < it->count) {
         int tx = 2;
         /* The field shows the item's image but not its indent: it is what
@@ -1229,16 +1280,167 @@ HWND ween_popup_hit(int x, int y)
     return NULL;
 }
 
+/* Whether this combo's field can be typed in. CBS_DROPDOWNLIST is
+ * CBS_DROPDOWN with another bit, so the test is for the whole value. */
+static int combo_editable(const struct ween_wnd *wnd)
+{
+    return (wnd->style & CBS_DROPDOWNLIST) == CBS_DROPDOWN;
+}
+
+/* Whether the field still shows the item that is picked. While it does, the
+ * item's picture stands beside it; type something else and the picture goes,
+ * because what is in the field is no longer that item. */
+static int combo_text_is_sel(ween_items *it)
+{
+    char now[260];
+    if (!it || !it->edit || it->cursel < 0 || it->cursel >= it->count)
+        return 0;
+    GetWindowTextA(it->edit, now, (int)sizeof(now));
+    return strcmp(now, it->item[it->cursel]) == 0;
+}
+
+/* Where the field starts: past the picture when there is one to stand
+ * beside. */
+static int combo_edit_x(HWND wnd, ween_items *it)
+{
+    /* Where the text goes, which with no margin is where the field goes: four
+     * past the picture, or two in when there is none — the two places the
+     * combo's own painting used to put it. */
+    if (it && it->images && combo_text_is_sel(it) && it->cursel >= 0 &&
+        it->image[it->cursel] >= 0)
+        return 1 + WEEN_CBEX_IMAGE + 4;
+    (void)wnd;
+    return 2;
+}
+
+/* The field of an editable combo: an EDIT over everything but the button and
+ * whatever picture stands before it. */
+static HWND combo_edit(HWND wnd)
+{
+    ween_items *it = items_of(wnd);
+    RECT cr;
+    int btn = ween_scroll_metric(), x;
+    if (!it || !combo_editable(wnd))
+        return NULL;
+    GetClientRect(wnd, &cr);
+    if (!it->edit) {
+        it->edit = CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE, 2, 1,
+                                   cr.right - btn - 3, cr.bottom - 2, wnd,
+                                   NULL, NULL, NULL);
+        if (it->edit) {
+            SendMessageA(it->edit, WM_SETFONT, (WPARAM)0, FALSE);
+            /* no margin of its own: where the field is put is where the text
+             * starts, which is what lines it up with the picture beside it */
+            SendMessageA(it->edit, EM_SETMARGINS,
+                         EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
+        }
+    }
+    /* One row down and one shorter than the field: what the box draws then
+     * lands exactly where the combo's own painting used to put it, which is
+     * where the machine has it. */
+    x = combo_edit_x(wnd, it);
+    if (it->edit)
+        MoveWindow(it->edit, x, 3, cr.right - btn - x - 1, cr.bottom - 4,
+                   FALSE);
+    return it->edit;
+}
+
+/* Say the typing is over, and why. An application answers this by going
+ * where the text says — which is what an address bar is for. */
+static void combo_end_edit(HWND wnd, ween_items *it, int why, int sel)
+{
+    NMCBEENDEDITA nm;
+    if (!it || !it->edit || !wnd->parent)
+        return;
+    memset(&nm, 0, sizeof(nm));
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = wnd->id;
+    nm.hdr.code = CBEN_ENDEDITA;
+    GetWindowTextA(it->edit, nm.szText, (int)sizeof(nm.szText));
+    nm.fChanged = strcmp(nm.szText, it->was) != 0;
+    nm.iNewSelection = sel;
+    nm.iWhy = why;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
+/* What the field shows: the item that is picked, as text. */
+static HWND combo_edit(HWND wnd);
+
+static void combo_show_sel(HWND wnd, ween_items *it)
+{
+    const char *t;
+    if (!it || !it->edit)
+        return;
+    t = it->cursel >= 0 && it->cursel < it->count ? it->item[it->cursel] : "";
+    SetWindowTextA(it->edit, t);
+    strncpy(it->was, t, sizeof(it->was) - 1);
+    it->was[sizeof(it->was) - 1] = 0;
+    combo_edit(wnd); /* the picture is back, so the field starts past it */
+}
+
 static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_items *it;
     switch (msg) {
+    case WM_SIZE:
+        combo_edit(wnd); /* made, or moved to fit the new size */
+        return 0;
+    case CBEM_GETEDITCONTROL:
+        return (LRESULT)(INT_PTR)combo_edit(wnd);
+    case WM_COMMAND:
+        /* the field says the typing is over */
+        it = items_of(wnd);
+        if (it && it->edit && (HWND)lp == it->edit) {
+            if (HIWORD(wp) == EN_SETFOCUS) {
+                /* everything in it, ready to be typed over — which is what
+                 * clicking into an address bar does */
+                SendMessageA(it->edit, EM_SETSEL, 0, -1);
+                GetWindowTextA(it->edit, it->was, (int)sizeof(it->was));
+            } else if (HIWORD(wp) == EN_KILLFOCUS)
+                combo_end_edit(wnd, it, CBENF_KILLFOCUS, -1);
+            else if (HIWORD(wp) == EN_ENTER)
+                combo_end_edit(wnd, it, CBENF_RETURN, -1);
+            else if (HIWORD(wp) == EN_ESCAPE) {
+                combo_show_sel(wnd, it); /* back to what it was */
+                combo_end_edit(wnd, it, CBENF_ESCAPE, -1);
+            } else if (HIWORD(wp) == EN_CHANGE) {
+                combo_edit(wnd); /* the picture comes and goes with the text */
+                InvalidateRect(wnd, NULL, FALSE);
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_COMMAND,
+                                 MAKEWPARAM((WORD)wnd->id, CBN_EDITCHANGE),
+                                 (LPARAM)wnd);
+            }
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+    case WM_SETFOCUS:
+        /* the keyboard reaching the combo reaches its field, and everything
+         * in it is picked — as it is when you click into an address bar */
+        it = items_of(wnd);
+        if (it && combo_edit(wnd)) {
+            SetFocus(it->edit);
+            SendMessageA(it->edit, EM_SETSEL, 0, -1);
+        }
+        return 0;
     /* The item the pointer is over, or -1. Points arrive relative to our own
      * client area; the list hangs below it. */
     case WM_LBUTTONDOWN: {
         int ox, oy, px, py, pw, ph;
         int sy, ih = item_height(wnd);
         it = items_of(wnd);
+        if (it && it->edit && g_dropped != wnd) {
+            /* Only the button drops the list: a press in the field is the
+             * field's, and it takes everything in it — which is what clicking
+             * into an address bar does. */
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            if (GET_X_LPARAM(lp) < cr.right - ween_scroll_metric()) {
+                SetFocus(it->edit);
+                SendMessageA(it->edit, EM_SETSEL, 0, -1);
+                return 0;
+            }
+        }
         SetFocus(wnd);
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
@@ -1304,6 +1506,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int at = sy / (ih ? ih : 1);
             if (at >= 0 && at < it->count) {
                 it->cursel = at;
+                combo_show_sel(wnd, it); /* the field shows what was picked */
                 if (wnd->parent)
                     SendMessageA(wnd->parent, WM_COMMAND,
                                  MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE),
@@ -1339,6 +1542,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * however high the app asked for. */
         wnd->ex_style |= WS_EX_CLIENTEDGE;
         wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
+        combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -1382,13 +1586,16 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * rather than keeping the item that was there. An app that refills a
          * combo — an address bar, say — otherwise piles new entries behind
          * the first one and goes on showing that one for ever. */
-        {   /* the items go; the image list is the control's, and stays */
+        {   /* The items go. The image list and the field are the control's
+             * rather than the list's, and stay: emptying an address bar to
+             * refill it must not take away the box the path is typed in. */
             HIMAGELIST keep = wnd->ctl ? ((ween_items *)wnd->ctl)->images : NULL;
+            HWND field = wnd->ctl ? ((ween_items *)wnd->ctl)->edit : NULL;
             ween_controls_free(wnd);
-            if (keep) {
-                it = items_of(wnd);
-                if (it)
-                    it->images = keep;
+            it = items_of(wnd);
+            if (it) {
+                it->images = keep;
+                it->edit = field;
             }
         }
         if (g_dropped == wnd)
@@ -1397,8 +1604,10 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case CB_SETCURSEL:
         it = items_of(wnd);
-        if (it)
+        if (it) {
             it->cursel = (int)wp;
+            combo_show_sel(wnd, it);
+        }
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)wp;
     case CB_GETCURSEL:

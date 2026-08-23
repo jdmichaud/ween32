@@ -419,6 +419,32 @@ typedef struct tagCOMBOBOXEXITEMA {
 } COMBOBOXEXITEMA;
 #define CB_SETCURSEL 0x014E
 #define CBN_SELCHANGE 1
+#define CBN_EDITCHANGE 5
+#define CBN_DROPDOWN 7
+
+/* A ComboBoxEx whose field can be typed in says when the typing is over, and
+ * why: Enter, Escape, the focus going elsewhere, or the list being dropped.
+ * An address bar is this — the path you are looking at, there to be edited. */
+#define CBEN_FIRST (0U - 800U)
+#define CBEN_ENDEDITA (CBEN_FIRST - 5)
+#define CBENF_KILLFOCUS 1
+#define CBENF_RETURN 2
+#define CBENF_ESCAPE 3
+#define CBENF_DROPDOWN 4
+#define CBEMAXSTRLEN 260
+
+typedef struct {
+    NMHDR hdr;
+    BOOL fChanged;      /* whether the text is not what it was */
+    int iNewSelection;  /* the item picked from the list, or -1 */
+    char szText[CBEMAXSTRLEN];
+    int iWhy;           /* one of the CBENF_ above */
+} NMCBEENDEDITA;
+
+/* The field itself, for an application that wants to reach into it. */
+#define CBEM_GETEDITCONTROL (WM_USER + 7)
+#define EN_SETFOCUS 0x0100
+#define EN_KILLFOCUS 0x0200
 #define EN_CHANGE 0x0300
 #define EN_UPDATE 0x0400
 /* Not win32's — there Enter and Escape in a single-line edit go to the
@@ -429,6 +455,12 @@ typedef struct tagCOMBOBOXEXITEMA {
 /* Select a run of the text: wParam is where it starts, lParam where it ends,
  * and -1 for the end means all of it. */
 #define EM_SETSEL 0x00B1
+/* What an edit leaves before and after its text. It works one out from the
+ * font by default; a control that puts an edit inside itself says otherwise,
+ * which is how a combo box lines its field up with what it draws beside it. */
+#define EM_SETMARGINS 0x00D3
+#define EC_LEFTMARGIN 0x0001
+#define EC_RIGHTMARGIN 0x0002
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"

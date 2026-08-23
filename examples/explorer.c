@@ -2797,9 +2797,11 @@ static void build_bands(HWND w)
     g_addrband = CreateWindowExA(WS_EX_CONTROLPARENT, "exploreraddr", "",
                                  WS_CHILD | WS_VISIBLE, 0, 0, 300, 22, g_rebar,
                                  (HMENU)(UINT_PTR)ID_ADDRBAND, NULL, NULL);
+    /* CBS_DROPDOWN, not the list-only kind: the path you are looking at is
+     * there to be typed over, which is what an address bar is. */
     g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
-                                    CBS_DROPDOWNLIST, 0, 0,
+                                    CBS_DROPDOWN, 0, 0,
                                 300, 21, g_addrband,
                                 (HMENU)(UINT_PTR)ID_ADDRESS, NULL, NULL);
     g_go = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
@@ -3177,6 +3179,30 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                     SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0),
                                  0);
             }
+        } else if (nm->code == CBEN_ENDEDITA) {
+            /* A path typed into the address bar. Enter goes there; anything
+             * else puts back what it was showing. */
+            const NMCBEENDEDITA *ed = (const NMCBEENDEDITA *)lp;
+            if (ed->iWhy == CBENF_RETURN && ed->szText[0]) {
+                char where[PATH_MAX_LEN];
+                snprintf(where, sizeof(where), "%s", ed->szText);
+                if (!fs_exists(where)) {
+                    char msg[PATH_MAX_LEN + 120];
+                    snprintf(msg, sizeof(msg),
+                             "%s\n\nWindows cannot find this folder. Check "
+                             "the spelling and try again.",
+                             where);
+                    MessageBoxA(w, msg, "Explorer",
+                                MB_OK | MB_ICONEXCLAMATION);
+                    fill_address(g_path); /* back to where we are */
+                } else {
+                    show_directory(where);
+                    SetFocus(g_list);
+                }
+            } else if (ed->iWhy != CBENF_DROPDOWN) {
+                fill_address(g_path);
+            }
+            return 0;
         } else if (nm->code == LVN_ENDLABELEDITA) {
             const NMLVDISPINFOA *di = (const NMLVDISPINFOA *)lp;
             return end_rename(di->item.iItem, di->item.pszText);
@@ -3688,13 +3714,21 @@ int main(int argc, char **argv)
          * they are the editor's: Enter takes the name and Escape drops it, and
          * an application must keep IsDialogMessage off them while that box is
          * up, which is what LVM_GETEDITCONTROL is for. */
-        HWND editing =
+        /* Two boxes take Enter and Escape for themselves: the one a name is
+         * typed over in, and the address bar's field. While the keyboard is
+         * in either, the dialog manager must keep its hands off — Enter
+         * belongs to the box, and IsDialogMessage would take it. */
+        HWND focus = GetFocus();
+        HWND label_box =
             (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETEDITCONTROL, 0, 0);
-        /* the shortcuts first, and not while a name is being typed: Ctrl+C
+        HWND addr_box =
+            (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0, 0);
+        int typing = label_box || (addr_box && focus == addr_box);
+        /* the shortcuts first, and not while something is being typed: Ctrl+C
          * there belongs to the box */
-        if (!editing && TranslateAcceleratorA(w, g_accel, &msg))
+        if (!typing && TranslateAcceleratorA(w, g_accel, &msg))
             continue;
-        if (GetFocus() != g_menubar && !editing && IsDialogMessageA(w, &msg))
+        if (focus != g_menubar && !typing && IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);

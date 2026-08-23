@@ -424,6 +424,36 @@ int main(void)
               "and a press away from one still sorts the column");
     }
 
+    /* A combo box whose style says CBS_DROPDOWN can be typed in: it keeps a
+     * field of its own, the field says when the typing is over and why, and
+     * emptying the list to refill it does not take the field away. */
+    {
+        HWND cb = CreateWindowExA(0, "COMBOBOX", "",
+                                  WS_CHILD | WS_VISIBLE | CBS_DROPDOWN, 10,
+                                  200, 160, 21, w, NULL, NULL, NULL);
+        HWND list_only = CreateWindowExA(0, "COMBOBOX", "",
+                                         WS_CHILD | WS_VISIBLE |
+                                             CBS_DROPDOWNLIST,
+                                         180, 200, 160, 21, w, NULL, NULL,
+                                         NULL);
+        HWND field = (HWND)(INT_PTR)SendMessageA(cb, CBEM_GETEDITCONTROL, 0, 0);
+        char got[64];
+        CHECK(field != NULL, "an editable combo box keeps a field");
+        CHECK(SendMessageA(list_only, CBEM_GETEDITCONTROL, 0, 0) == 0,
+              "and a list-only one does not");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "one");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "two");
+        SendMessageA(cb, CB_SETCURSEL, 1, 0);
+        GetWindowTextA(field, got, (int)sizeof(got));
+        CHECK(!strcmp(got, "two"), "the field shows what is picked");
+        SendMessageA(cb, CB_RESETCONTENT, 0, 0);
+        CHECK((HWND)(INT_PTR)SendMessageA(cb, CBEM_GETEDITCONTROL, 0, 0) ==
+                  field,
+              "and emptying the list leaves the field where it was");
+        DestroyWindow(cb);
+        DestroyWindow(list_only);
+    }
+
     /* Cursors: a class carries one, and a control can override it over part
      * of itself — which is what a splitter needs. */
     {
