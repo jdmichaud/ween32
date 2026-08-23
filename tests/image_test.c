@@ -248,8 +248,7 @@ int main(void)
 
         /* Selecting it swaps in the other image, which is how a shell shows
          * an open folder for the one you are looking at. The tree is given
-         * the focus first: a tree that has not got it draws no highlight, so
-         * there would be nothing for the picture to be blended into. */
+         * the focus first, so the row it is on is highlighted. */
         SetFocus(tv);
         SendMessageA(tv, TVM_SELECTITEM, TVGN_CARET, (LPARAM)item);
         InvalidateRect(w, NULL, TRUE);
@@ -257,23 +256,17 @@ int main(void)
         s = ween_headless_surface();
         int green_px = 0;
         red = 0;
-        /* A selected item's picture is drawn half way to the highlight — it
-         * goes blue with the row rather than sitting on it in its own
-         * colours — so what is on screen is that blend, not the pure green. */
-        ween_color want = 0;
-        for (int sh = 0; sh < 24; sh += 8) {
-            unsigned a = (WEEN_RGBX(0, 0xff, 0) >> sh) & 0xff;
-            unsigned b = (WEEN_CAP_LEFT >> sh) & 0xff;
-            want |= ((a + b) / 2) << sh;
-        }
+        /* A picked item's picture is drawn in its own colours over the
+         * highlight: the machine washes nothing into it, in a tree or in a
+         * list, so what is on screen is the pure green. */
         for (int i = 0; s && i < s->w * s->h; i++) {
-            if ((s->px[i] & 0xffffff) == (want & 0xffffff))
+            if ((s->px[i] & 0xffffff) == WEEN_RGBX(0, 0xff, 0))
                 green_px++;
             else if ((s->px[i] & 0xffffff) == WEEN_RGBX(0xff, 0, 0))
                 red++;
         }
         CHECK(green_px == 16 && red == 0,
-              "and a selected item wears the image it named for that, blended");
+              "and a selected item wears the image it named for that");
         DestroyWindow(w);
     }
 

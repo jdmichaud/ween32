@@ -220,7 +220,7 @@ so Name is 119 in that dialog.
 
 With a tree item picked — click "Local Disk (C:)" in the tree on both sides,
 which is the state the shell leaves after the Folders pane is opened — the
-window differs by 3243 of 355776 pixels, 0.9%:
+window differs by 3221 of 355776 pixels, 0.9%:
 
 ```sh
 WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
@@ -229,20 +229,19 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
 tools/vm/grab.py /tmp/machine.png 132 132 654 544
 ```
 
-2576 of those 3243 are ours quantised to 5-5-5 — the machine draws every icon
+Most of those 3221 are ours quantised to 5-5-5 — the machine draws every icon
 through a sixteen bit image list, so its pixel is ours with the low three bits
-of each channel dropped and the top bits shifted back in. What is left over is
-667:
+of each channel dropped and the top bits shifted back in:
 
-| band | differing | left over | what it is |
-| --- | --- | --- | --- |
-| menu band | 228 | 228 | the animation the shell plays at its right |
-| list pane | 947 | 183 | two file icons whose art has a near-white where ours has white, and six pixels of a date |
-| caption | 118 | 118 | the bold title — wine's Tahoma Bold is not the machine's |
-| left pane | 1835 | 137 | the picked drive's icon: ween32 blends a selected icon halfway into the highlight and the machine does not |
-| status bar | 1 | 1 | one pixel of a letter |
-| toolbar band | 0 | 0 | |
-| address band | 114 | 0 | |
+| band | differing | what it is |
+| --- | --- | --- |
+| left pane | 1813 | the tree's icons, quantised |
+| list pane | 947 | the same, and two file icons whose art has a near-white where ours has white, and six pixels of a date |
+| caption | 176 | the bold title — wine's Tahoma Bold is not the machine's |
+| menu band | 170 | the animation the shell plays at its right |
+| address band | 114 | quantisation |
+| status bar | 1 | one pixel of a letter |
+| toolbar band | 0 | |
 
 The tree pane is window-relative x 4..203, y 100..519. Everything in it
 matches but the icons, and every icon difference but the picked one is the
@@ -332,14 +331,16 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 | --- | --- | --- | --- |
 | General | 1228 | 0.7% | the machine's own mouse pointer in the shot, the caption's bold title |
 | View | 1411 | 0.8% | the same two, the folder a heading wears, the scroll bar |
-| File Types | 9562 | 5.3% | the list's contents |
+| File Types | 9719 | 5.4% | the list's contents |
 | Offline Files | 1041 | 0.6% | the same two, and the arrows' bevel |
 
 Only **File Types** cannot close: the machine's list is its own registry — a
 hundred extensions this example has never heard of — while ours is what
 `type_of` knows. The page's frame, its columns, its buttons, its wording and
 the seventeen-pixel pitch of its rows all match; the rows themselves never
-can, and about 7000 of that 9562 is them.
+can, and about 7000 of that 9719 is them. Every kind of file wears the
+picture registered for it — a batch file is not drawn like a bitmap — so the
+rows differ by their art as well as their words.
 
 **View**'s Advanced settings is a tree, as the machine's is: rows indented by
 level, a folder on a heading, and a tick box or an option button in the state

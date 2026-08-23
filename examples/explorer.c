@@ -135,7 +135,10 @@ enum { IMG_FOLDER, IMG_FOLDER_OPEN, IMG_FILE, IMG_COMPUTER, IMG_DRIVE,
        IMG_SHELL_DESKTOP, IMG_SHELL_MYDOCS, IMG_SHELL_COMPUTER,
        IMG_SHELL_DISK, IMG_SHELL_CPANEL, IMG_SHELL_NETWORK, IMG_SHELL_BIN,
        IMG_SHELL_IE, IMG_SHELL_CFG, IMG_SHELL_BAT, IMG_SHELL_SYS,
-       IMG_COUNT };
+       /* one per kind of file the example knows, in g_types' order, so a
+        * file wears the picture its extension is registered with */
+       IMG_TYPE0,
+       IMG_COUNT = IMG_TYPE0 + 11 };
 
 /* The toolbar's images, taken a pixel at a time off a Windows 2000 machine.
  * They were never icons — one bitmap strip held the lot — so there is nothing
@@ -668,19 +671,37 @@ static const struct {
     const char *ext; /* without the dot, as a shell shows it */
     const char *desc;
     const char *opens;
+    const char *icon; /* the picture a file of that kind wears */
+    const char *app;  /* and the one the program that opens it wears */
 } g_types[] = {
-    { "AVI", "Video Clip", "Windows Media Player" },
-    { "BAT", "MS-DOS Batch File", "Command Prompt" },
-    { "BMP", "Bitmap Image", "Paint" },
-    { "DLL", "Application Extension", "" },
-    { "EXE", "Application", "" },
-    { "HTT", "HyperText Template", "Notepad" },
-    { "INI", "Configuration Settings", "Notepad" },
-    { "LOG", "Text Document", "Notepad" },
-    { "PIF", "Shortcut to MS-DOS Program", "" },
-    { "SYS", "System file", "" },
-    { "TXT", "Text Document", "Notepad" },
+    { "AVI", "Video Clip", "Windows Media Player", "video", "video" },
+    { "BAT", "MS-DOS Batch File", "Command Prompt", "153", "msdos" },
+    { "BMP", "Bitmap Image", "Paint", "bitmap", "paint" },
+    { "DLL", "Application Extension", "", "154", NULL },
+    { "EXE", "Application", "", "3", NULL },
+    { "HTT", "HyperText Template", "Notepad", "htmldoc", "notepad" },
+    { "INI", "Configuration Settings", "Notepad", "151", "notepad" },
+    { "LOG", "Text Document", "Notepad", "152", "notepad" },
+    { "PIF", "Shortcut to MS-DOS Program", "", "msdos", NULL },
+    { "SYS", "System file", "", "154", NULL },
+    { "TXT", "Text Document", "Notepad", "152", "notepad" },
 };
+
+/* The picture a file wears: the one its extension is registered with, or the
+ * plain page for a kind the example does not know. */
+static int type_image(const fs_entry *e)
+{
+    const char *dot;
+    if (e->is_dir)
+        return IMG_FOLDER;
+    dot = strrchr(e->name, '.');
+    if (!dot || !dot[1])
+        return IMG_FILE;
+    for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
+        if (!lstrcmpiA(dot + 1, g_types[i].ext))
+            return IMG_TYPE0 + (int)i;
+    return IMG_FILE;
+}
 
 static const char *type_of(const fs_entry *e)
 {
@@ -1075,7 +1096,7 @@ static void fill_list(void)
         it.mask = LVIF_TEXT | LVIF_IMAGE;
         it.iItem = row;
         it.pszText = (char *)e->name;
-        it.iImage = e->is_dir ? IMG_FOLDER : IMG_FILE;
+        it.iImage = type_image(e);
         SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&it);
         {   /* every column that is shown, in the order it is shown in; the
              * first is the name, which went in with the row */
@@ -2604,7 +2625,7 @@ static const fo_place g_fo_types_at[] = {
     { IDC_FO_DETAILS, 14, 222, 335, 141 },
     { IDC_FO_TS2, 24, 246, 60, 14 },
     { IDC_FO_TS3, 98, 245, 16, 16 },
-    { IDC_FO_OPENS, 109, 246, 150, 14 },
+    { IDC_FO_OPENS, 127, 246, 190, 14 },
     { IDC_FO_CHANGE, 263, 242, 75, 24 },
     { IDC_FO_DETAIL_TEXT, 24, 277, 316, 40 },
     { IDC_FO_TYPE_ADVANCED, 263, 328, 75, 24 },
@@ -2872,6 +2893,35 @@ static INT_PTR CALLBACK fo_view(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 /* ---- the File Types page ---- */
+/* One of the icons kept beside the example, by name. */
+static HICON load_icon_named(const char *name, int size)
+{
+    char path[600];
+    snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), name);
+    return (HICON)LoadImageA(NULL, path, IMAGE_ICON, size, size,
+                             LR_LOADFROMFILE);
+}
+
+/* The picture each kind of file wears, one per row of the File Types list and
+ * in its order, so a row names its own by index. */
+static HIMAGELIST fo_types_images(void)
+{
+    int n = (int)(sizeof(g_types) / sizeof(*g_types));
+    HIMAGELIST il = ImageList_Create(16, 16, ILC_MASK, n, 0);
+    if (!il)
+        return NULL;
+    for (int i = 0; i < n; i++) {
+        HICON icon = load_icon_named(g_types[i].icon, 16);
+        if (icon) {
+            ImageList_AddIcon(il, icon);
+            DestroyIcon(icon);
+        } else {
+            ImageList_AddIcon(il, NULL); /* keep the indices lined up */
+        }
+    }
+    return il;
+}
+
 static void fo_types_detail(HWND dlg)
 {
     HWND list = GetDlgItem(dlg, IDC_FO_TYPES);
@@ -2886,12 +2936,24 @@ static void fo_types_detail(HWND dlg)
     SetDlgItemTextA(dlg, IDC_FO_DETAILS, group);
     SetDlgItemTextA(dlg, IDC_FO_OPENS,
                     g_types[at].opens[0] ? g_types[at].opens : "(unknown)");
+    {   /* the program's own picture beside its name, as the machine has it */
+        HWND pic = GetDlgItem(dlg, IDC_FO_TS3);
+        HICON icon = g_types[at].app ? load_icon_named(g_types[at].app, 16)
+                                     : NULL;
+        if (pic) {
+            HICON was = (HICON)SendMessageA(pic, STM_SETICON, (WPARAM)icon, 0);
+            if (was)
+                DestroyIcon(was);
+        }
+    }
     snprintf(line, sizeof(line),
              "Files with extension '%s' are of type '%s'.  To change "
              "settings that affect all '%s' files, click Advanced.",
              g_types[at].ext, g_types[at].desc, g_types[at].desc);
     SetDlgItemTextA(dlg, IDC_FO_DETAIL_TEXT, line);
 }
+
+static HIMAGELIST g_types_images;
 
 static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -2921,7 +2983,7 @@ static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
             memset(&it, 0, sizeof(it));
             it.mask = LVIF_TEXT | LVIF_IMAGE;
             it.iItem = i;
-            it.iImage = IMG_FILE;
+            it.iImage = i; /* the list is in the table's order */
             it.pszText = (char *)g_types[i].ext;
             SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
             set_cell(list, i, 1, g_types[i].desc);
@@ -2932,17 +2994,10 @@ static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
          * rows on the same seventeen-pixel pitch */
         SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                      LVS_EX_FULLROWSELECT);
-        SendMessageA(list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
-        {   /* the picture of whatever opens the kind that is picked */
-            HWND pic = GetDlgItem(dlg, IDC_FO_TS3);
-            char path[600];
-            HICON icon;
-            snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), ICON_FILE);
-            icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
-                                     LR_LOADFROMFILE);
-            if (pic && icon)
-                SendMessageA(pic, STM_SETICON, (WPARAM)icon, 0);
-        }
+        if (!g_types_images)
+            g_types_images = fo_types_images();
+        SendMessageA(list, LVM_SETIMAGELIST, LVSIL_SMALL,
+                     (LPARAM)g_types_images);
         ListView_SetItemState(list, 0, LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
         fo_types_detail(dlg);
@@ -4409,6 +4464,23 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
             }
         }
     }
+    /* And one per kind of file, which is what a shell shows against a name:
+     * a batch file is not drawn like a bitmap. */
+    for (int i = 0; i < (int)(sizeof(g_types) / sizeof(*g_types)); i++) {
+        char path[600];
+        HICON icon;
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(),
+                 g_types[i].icon);
+        icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
+                                 LR_LOADFROMFILE);
+        if (icon) {
+            ImageList_AddIcon(il, icon);
+            DestroyIcon(icon);
+        } else {
+            add_blank(il);
+            (*missing)++;
+        }
+    }
     return il;
 }
 
@@ -4433,6 +4505,31 @@ static HIMAGELIST build_big_images(void)
             DestroyIcon(icon);
         } else {
             ImageList_Add(il, NULL, NULL); /* a hole, so the numbers agree */
+        }
+    }
+    /* The same kinds a size up, for the Icons view. The holes before them
+     * keep every index the same as in the small list. */
+    {
+        unsigned char bits[32 * 32 * 4];
+        memset(bits, 0, sizeof(bits));
+        while (ImageList_GetImageCount(il) < IMG_TYPE0) {
+            HBITMAP blank = CreateBitmap(32, 32, 1, 32, bits);
+            ImageList_AddMasked(il, blank, RGB(0, 0, 0));
+            DeleteObject(blank);
+        }
+    }
+    for (int i = 0; i < (int)(sizeof(g_types) / sizeof(*g_types)); i++) {
+        char path[600];
+        HICON icon;
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(),
+                 g_types[i].icon);
+        icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 32, 32,
+                                 LR_LOADFROMFILE);
+        if (icon) {
+            ImageList_AddIcon(il, icon);
+            DestroyIcon(icon);
+        } else {
+            ImageList_Add(il, NULL, NULL);
         }
     }
     return il;

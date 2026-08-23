@@ -2797,15 +2797,12 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             /* the icon goes between the button and the label, and the label
              * moves over to make room for it. A selected item may wear a
              * different one — an open folder, which is what a shell does. */
+            /* A picked item's picture is drawn as it is, over the highlight
+             * — the machine washes nothing into it, in a tree or in a list. */
             int img = (it == sel && it->sel_image >= 0) ? it->sel_image
                                                         : it->image;
-            if (it == sel && sel_state == 2)
-                ween_imagelist_draw_blend(images, img, s, tx,
-                                          y + (WEEN_TV_ITEM_H - icon_h) / 2,
-                                          WEEN_CAP_LEFT);
-            else
-                ween_imagelist_draw(images, img, s, tx,
-                                    y + (WEEN_TV_ITEM_H - icon_h) / 2);
+            ween_imagelist_draw(images, img, s, tx,
+                                y + (WEEN_TV_ITEM_H - icon_h) / 2);
             tx += icon_w + 5;
         }
         if (f && it->text) {
@@ -3989,15 +3986,9 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
             int iy = oy + c.top + WEEN_LV_ICON_TOP;
             int ty = iy + icon_h + WEEN_LV_ICON_GAP;
             int room = WEEN_LV_ICON_W - 8, used = 0, line = 0;
-            if (images && l->row[i].image >= 0) {
-                if (selected && sel_state == 2)
-                    ween_imagelist_draw_blend(images, l->row[i].image,
-                                              &top->surface, ix, iy,
-                                              WEEN_CAP_LEFT);
-                else
-                    ween_imagelist_draw(images, l->row[i].image, &top->surface,
-                                        ix, iy);
-            }
+            if (images && l->row[i].image >= 0)
+                ween_imagelist_draw(images, l->row[i].image, &top->surface, ix,
+                                    iy);
             while (used < len && line < 2 && f) {
                 int fit = len - used, w;
                 while (fit > 0 &&
@@ -4033,15 +4024,9 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
             int ix = ox + c.left, iy = oy + c.top + (WEEN_LV_FLOW_H - icon_h) / 2;
             int tx = ix + icon_w + 2;
             int ty = oy + c.top + (WEEN_LV_FLOW_H - th) / 2;
-            if (images && l->row[i].image >= 0) {
-                if (selected && sel_state == 2)
-                    ween_imagelist_draw_blend(images, l->row[i].image,
-                                              &top->surface, ix, iy,
-                                              WEEN_CAP_LEFT);
-                else
-                    ween_imagelist_draw(images, l->row[i].image, &top->surface,
-                                        ix, iy);
-            }
+            if (images && l->row[i].image >= 0)
+                ween_imagelist_draw(images, l->row[i].image, &top->surface, ix,
+                                    iy);
             if (selected)
                 ween_surface_fill(&top->surface, tx - 1, ty, tw + 3, th, bar);
             if (f)
@@ -4191,16 +4176,13 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_focus_rect(&top->surface, lx, y, lw, ih);
         }
         if (has_image) {
-            /* a picked row's picture goes blue with it, half way to the
-             * highlight — the row is what is selected, not the text in it */
-            /* A picked row's picture goes blue with it; a cut one — which is
-             * how the shell shows a hidden file — goes half way into the
-             * window's own colour instead. */
-            if ((selected && sel_state == 2) || l->row[i].cut)
-                ween_imagelist_draw_blend(
-                    l->images, l->row[i].image, &top->surface, ox - sx + 2 + box,
-                    y + (ih - icon_h) / 2,
-                    selected ? WEEN_CAP_LEFT : WEEN_WHITE);
+            /* A picked row's picture is drawn as it is — the machine washes
+             * nothing into it. A cut one — which is how the shell shows a
+             * hidden file — goes half way into the window's own colour. */
+            if (l->row[i].cut)
+                ween_imagelist_draw_blend(l->images, l->row[i].image,
+                                          &top->surface, ox - sx + 2 + box,
+                                          y + (ih - icon_h) / 2, WEEN_WHITE);
             else
                 ween_imagelist_draw(l->images, l->row[i].image, &top->surface,
                                     ox - sx + 2 + box, y + (ih - icon_h) / 2);
