@@ -614,11 +614,32 @@ static void spans_draw(HDC dc, const ween_gdiobj *pen, const ween_gdiobj *brush,
         if (pen->is_null)
             continue;
         {
-            /* how far this row's edges moved from the last: the outline has
-             * to bridge the gap, or a shallow arc comes out as dots */
+            /* How far this row's edges moved from the last: the outline has
+             * to bridge the gap, or a shallow arc comes out as dots. It has
+             * to bridge it whichever way the edge went — out, on the half of
+             * the curve that is widening, and back in on the half that is
+             * closing again. Bridging only the widening half drew the top of
+             * an ellipse and left the bottom in pieces. */
             int p0 = i > 0 ? x0s[i - 1] : x0, p1 = i > 0 ? x1s[i - 1] : x1;
-            int l0 = x0, l1 = (i > 0 && p0 - 1 > x0) ? p0 - 1 : x0;
-            int r0 = (i > 0 && p1 + 1 < x1) ? p1 + 1 : x1, r1 = x1;
+            int l0, l1, r0, r1;
+            if (i == 0 || x0 == p0) {
+                l0 = l1 = x0;
+            } else if (x0 < p0) { /* widening: out to where it was */
+                l0 = x0;
+                l1 = p0 - 1;
+            } else { /* closing: back from where it was */
+                l0 = p0 + 1;
+                l1 = x0;
+            }
+            if (i == 0 || x1 == p1) {
+                r0 = r1 = x1;
+            } else if (x1 > p1) {
+                r0 = p1 + 1;
+                r1 = x1;
+            } else {
+                r0 = x1;
+                r1 = p1 - 1;
+            }
             if (i == 0 || i == rows - 1) {
                 l1 = x1;
                 r0 = x0;

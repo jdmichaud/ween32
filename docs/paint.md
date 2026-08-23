@@ -234,6 +234,13 @@ side is not monotone, which no single Bresenham pass produces. Whatever
 generates it, it is worth knowing that the outline follows from the region:
 get the spans right and the outline comes with them.
 
+Drawing that outline from the spans has one trap, and ween32 fell into it: a
+row's ends have to be joined to the row above whether the shape is widening or
+closing. Bridging only the widening side leaves the whole lower half of an
+ellipse as an unconnected dot per row — the shape's top drawn solid and its
+bottom barely visible — since below the waist each row is *narrower* than the
+one before it and the gap is on the other side.
+
 ## On a display
 
 Everything above is measured headless, which is how it can be counted. It
