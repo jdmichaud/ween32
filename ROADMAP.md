@@ -183,8 +183,13 @@ registration so they do not wear both.
 `ChooseColorA`, in `comdlg.c`: the dialogs that belong to the system rather
 than to the application, built from templates out of the controls ween32
 already has. The file one lists directories and files against the caller's
-filter; the colour one has the forty-eight basic colours, the custom row,
-the hue-and-saturation field, the brightness bar and the six numbers.
+filter; the colour one is the machine's own, on its own dialog units — the
+forty-eight basic colours, the custom row, and a definition half that is
+there from the start and outside the window until "Define Custom Colors"
+widens it. Its field is banded as the machine bands it, sixty steps of hue by
+thirty of saturation, and comes out pixel for pixel. `CC_ENABLEHOOK` lets the
+application see every message first, which is how a program gives the box a
+title of its own.
 
 **Dialogs** — `CreateDialogIndirectParamA` (+ `CreateDialogIndirectA`) builds a
 dialog from a `DLGTEMPLATE`/`DLGITEMTEMPLATE`, instantiating each control and

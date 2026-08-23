@@ -47,6 +47,11 @@ text and greyed states included, and the line each item puts in the status
 bar is the machine's own — checked against it by hovering and reading the
 bar back.
 
+Colors > Edit Colors is the *system's* box rather than Paint's, and it is
+measured the same way: `tools/refcapture/paint/dlg-colors.png` shut and
+`dlg-colors-open.png` open. Its hue-and-saturation field is drawn in sixty
+blocks by thirty, which is what the machine draws, and matches it exactly.
+
 **The dialogs.** The probe dumps a dialog's controls the same way, and
 `tools/mspaint/dlu.py` runs the dialog manager backwards over that dump:
 
@@ -215,5 +220,5 @@ answers.
 - **Set As Wallpaper**, which writes a registry key on a machine that has
   one. Both items are greyed until the picture is saved, which is where they
   start.
-- **The web-safe palette** Edit Colors offers on top of the forty-eight basic
-  ones, which is the common dialog's and not Paint's.
+- **A picture larger than the view can scroll to**: the view scrolls, but
+  Paint's own scroll-to-cursor while drawing past the edge is not there.
