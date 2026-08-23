@@ -3209,9 +3209,22 @@ static int label_width(const struct ween_wnd *w)
             else
                 continue;
         }
-        tw += ween_strike_char_extent(f, (unsigned char)*p);
+        /* what the glyphs take, which is what the rectangle round them is
+         * measured off: the machine's Properties page draws "Read-only" its
+         * forty-nine wide and the focus rectangle one pixel either side */
+        tw += ween_strike_char_advance(f, (unsigned char)*p);
     }
     return tw;
+}
+
+/* How tall a line of text is: the ascent, the descent, and the row that
+ * separates one line from the next. It is what the machine centres a button's
+ * label by — not the strike's own cell, which is a row taller than this in the
+ * dialog face and a row shorter in the shell's, and either would put a label a
+ * pixel out of where the machine has it. */
+static int label_line(const ween_strike *f)
+{
+    return f ? f->ascent - f->descent + 1 : 14;
 }
 
 static int label_height(const struct ween_wnd *w)
@@ -3269,13 +3282,19 @@ static void pb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
     DrawEdge(dc, &r, wnd->pressed ? EDGE_SUNKEN : EDGE_RAISED, BF_RECT | BF_SOFT);
     RECT tr = r;
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int lh = label_line(f);
     if (wnd->pressed) {
         tr.left += 1;
         tr.top += 1;
         tr.right += 1;
         tr.bottom += 1;
     }
-    button_label(wnd, dc, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    /* The label sits in a line of its own, centred in the button: placed
+     * rather than centred again, since a strike's cell is not the line. */
+    tr.top += ((tr.bottom - tr.top) - lh) / 2;
+    tr.bottom = tr.top + lh;
+    button_label(wnd, dc, &tr, DT_CENTER | DT_SINGLELINE);
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
         /* Wine's PB_Paint: the focus rectangle is the face, inset past the
          * bevel — how a keyboard user sees where they are. */
@@ -3305,7 +3324,7 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
      * two the same offset. */
     int tick = !(button_type(wnd) == BS_RADIOBUTTON ||
                  button_type(wnd) == BS_AUTORADIOBUTTON);
-    int lh = label_height(wnd), delta;
+    int lh = label_line(f), delta;
     UINT flags;
 
     FillRect(dc, &client, GetSysColorBrush(COLOR_BTNFACE));
@@ -3346,7 +3365,7 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
      * from its edge, to leave room for the focus rectangle. */
     rtext.left++;
     rtext.right++;
-    button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+    button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE);
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
         /* The rectangle goes round the label, not the box: as tall as the
          * label's own rectangle — which is the control's client height, the

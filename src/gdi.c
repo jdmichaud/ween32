@@ -504,9 +504,12 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             underline = -1; /* the '&' goes, the line under it never comes */
     }
 
-    /* Alignment is done with the *measured* width and cell height; the glyphs
-     * are then drawn with the strike's own advances. */
-    int tw = ween_strike_text_extent(f, text, len);
+    /* Alignment is by the width the glyphs will actually take, not by what
+     * the face measures: for a bitmap strike the two are the same, but the
+     * shell's face is measured off its outline and comes out wider than it
+     * draws — which would put a centred label a pixel to the left of where
+     * the machine has it. */
+    int tw = ween_strike_text_width(f, text, len);
     int th = f->cell_h ? f->cell_h : f->ascent - f->descent;
 
     /* More than the rectangle is wide, and told to break: each line is drawn

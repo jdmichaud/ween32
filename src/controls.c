@@ -5564,17 +5564,24 @@ static int tab_min_width(const ween_strike *f)
         return 54;
     /* The average character width the font reports. A bitmap face carries it
      * in its header and it is the 'x' advance; a scalable one is averaged
-     * across the alphabet, which is how wine arrives at Tahoma's seven. */
+     * across the alphabet — over what the glyphs draw at, which gives Tahoma
+     * the six that is also its dialog unit. Wine averages the outline instead
+     * and arrives at seven, which is a tab five pixels wider than any the
+     * machine draws. */
     if (f->bitmap_only)
         return ween_strike_char_advance(f, 'x') * 6 + 12;
     for (int i = 0; i < 52; i++)
-        sum += ween_strike_char_extent(f, (unsigned char)alpha[i]);
+        sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
     return ((sum + 26) / 52) * 6 + 12;
 }
 
 static int tab_width(const ween_strike *f, const char *text, int min)
 {
-    int w = f ? ween_strike_text_extent(f, text, (int)strlen(text)) + 12 : min;
+    /* As wide as the label draws, not as wide as a scalable face measures:
+     * the machine's Properties sheet, whose tabs are set in the shell's face,
+     * has "General" in forty-nine — its drawn width and the twelve either
+     * side. */
+    int w = f ? ween_strike_text_width(f, text, (int)strlen(text)) + 12 : min;
     return w < min ? min : w;
 }
 
