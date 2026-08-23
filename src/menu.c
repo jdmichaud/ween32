@@ -257,6 +257,39 @@ BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable)
     return TRUE;
 }
 
+/* Change an item's text, which is how a command that names what it would do
+ * — "Undo Delete" — comes to say so. */
+BOOL ModifyMenuA(HMENU menu, UINT item, UINT flags, UINT_PTR id, LPCSTR text)
+{
+    ween_menuitem *it;
+    if (flags & MF_BYPOSITION) {
+        if (!menu || (int)item >= menu->count)
+            return FALSE;
+        it = &menu->item[item];
+    } else {
+        it = find_id(menu, item);
+    }
+    if (!it)
+        return FALSE;
+    /* MF_STRING is zero, so what says the item carries text is that text was
+     * given and the flags do not say it is something else. */
+    if (text && !(flags & (MF_SEPARATOR | MF_POPUP))) {
+        char *copy = NULL;
+        if (text) {
+            size_t n = strlen(text) + 1;
+            copy = malloc(n);
+            if (!copy)
+                return FALSE;
+            memcpy(copy, text, n);
+        }
+        free(it->text);
+        it->text = copy;
+        it->w = 0; /* it will be measured again */
+    }
+    it->id = (UINT)id;
+    return TRUE;
+}
+
 /* ---- measuring ----------------------------------------------------------- */
 
 /* An item's text is "label\taccelerator": the tab splits the two, and the
@@ -737,6 +770,7 @@ static void level_open_cascade(menu_session *s, int depth)
 static void level_set_hot(menu_session *s, int depth, int hot)
 {
     menu_level *l = &s->level[depth];
+    ween_menuitem *it;
     if (l->hot == hot)
         return;
     l->hot = hot;
@@ -744,6 +778,15 @@ static void level_set_hot(menu_session *s, int depth, int hot)
     l->wnd->dirty = 1;
     /* anything opened under the old item goes with it */
     level_close_to(s, depth + 1);
+    /* and the owner is told what the highlight is on, which is how a shell
+     * comes to describe the item in its status bar */
+    it = hot >= 0 ? ween_menu_item(l->menu, hot) : NULL;
+    if (s->owner)
+        SendMessageA(s->owner, WM_MENUSELECT,
+                     it ? MAKEWPARAM(it->popup ? (WORD)hot : (WORD)it->id,
+                                     (WORD)it->flags)
+                        : MAKEWPARAM(0xffff, 0xffff),
+                     (LPARAM)(it ? l->menu : NULL));
 }
 
 /* Step the highlight through a popup, skipping what cannot be chosen. */
@@ -1028,6 +1071,8 @@ static void session_run(menu_session *s)
     }
 
     level_close_to(s, 0);
+    if (s->owner) /* the menu has gone: nothing is highlighted any more */
+        SendMessageA(s->owner, WM_MENUSELECT, MAKEWPARAM(0xffff, 0xffff), 0);
     if (s->bar_wnd) {
         s->bar_wnd->menu_hot = -1;
         s->bar_wnd->dirty = 1;

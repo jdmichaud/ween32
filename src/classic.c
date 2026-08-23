@@ -455,6 +455,74 @@ void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h)
                                ((px + py) & 1) ? WEEN_WHITE : WEEN_FACE);
 }
 
+/* ---- the pictures a message box puts beside its message -------------------
+ *
+ * Four of them, and win32 draws each at 32 by 32: a hand (an error), a
+ * question, an exclamation and an asterisk (a notice). These are drawn rather
+ * than carried as art, because the shapes are simple and the palette is the
+ * scheme's.
+ */
+static void disc(ween_surface *s, int cx, int cy, int r, ween_color c)
+{
+    for (int y = -r; y <= r; y++)
+        for (int x = -r; x <= r; x++)
+            if (x * x + y * y <= r * r)
+                ween_surface_pixel(s, cx + x, cy + y, c);
+}
+
+/* The glyph in the middle of one, in a 5x9 cell: a '?', an 'i' or a '!'. */
+static void icon_mark(ween_surface *s, int x, int y, char which, ween_color c)
+{
+    static const unsigned char q[9] = { 0x0e, 0x11, 0x11, 0x02, 0x04,
+                                        0x04, 0x00, 0x04, 0x04 };
+    static const unsigned char i[9] = { 0x04, 0x04, 0x00, 0x0c, 0x04,
+                                        0x04, 0x04, 0x04, 0x0e };
+    static const unsigned char bang[9] = { 0x04, 0x04, 0x04, 0x04, 0x04,
+                                           0x04, 0x00, 0x04, 0x04 };
+    const unsigned char *rows = which == '?' ? q : which == 'i' ? i : bang;
+    for (int r = 0; r < 9; r++)
+        for (int b = 0; b < 5; b++)
+            if (rows[r] & (1 << (4 - b)))
+                ween_surface_pixel(s, x + b, y + r, c);
+}
+
+void ween_classic_msgbox_icon(ween_surface *s, int x, int y, unsigned which)
+{
+    int cx = x + 16, cy = y + 16;
+    switch (which) {
+    case WEEN_MB_ICON_ERROR: /* a red disc with a white bar across it */
+        disc(s, cx, cy, 15, WEEN_RGBX(0x80, 0, 0));
+        disc(s, cx, cy, 14, WEEN_RGBX(0xff, 0, 0));
+        ween_surface_fill(s, cx - 9, cy - 2, 18, 5, WEEN_WHITE);
+        break;
+    case WEEN_MB_ICON_QUESTION:
+        disc(s, cx, cy, 15, WEEN_RGBX(0, 0, 0x80));
+        disc(s, cx, cy, 14, WEEN_RGBX(0, 0, 0xff));
+        icon_mark(s, cx - 2, cy - 5, '?', WEEN_WHITE);
+        break;
+    case WEEN_MB_ICON_WARNING: { /* a yellow triangle with a black mark */
+        for (int r = 0; r < 28; r++) {
+            int half = r / 2 + 1;
+            ween_surface_hline(s, cx - half, y + 2 + r, half * 2,
+                               WEEN_RGBX(0xff, 0xff, 0));
+        }
+        for (int r = 0; r < 28; r++) { /* the edge, a shade darker */
+            int half = r / 2 + 1;
+            ween_surface_pixel(s, cx - half, y + 2 + r, WEEN_BLACK);
+            ween_surface_pixel(s, cx + half - 1, y + 2 + r, WEEN_BLACK);
+        }
+        ween_surface_hline(s, cx - 15, y + 29, 30, WEEN_BLACK);
+        icon_mark(s, cx - 2, cy - 2, '!', WEEN_BLACK);
+        break;
+    }
+    default: /* the notice: a blue disc with an i in it */
+        disc(s, cx, cy, 15, WEEN_RGBX(0, 0, 0x80));
+        disc(s, cx, cy, 14, WEEN_RGBX(0, 0, 0xff));
+        icon_mark(s, cx - 2, cy - 5, 'i', WEEN_WHITE);
+        break;
+    }
+}
+
 /* A polygon drawn the way GDI does with a pen and brush of one colour: the
  * interior plus the outline, which is a pixel wider than the fill alone. */
 static void draw_polygon(ween_surface *s, const POINT *pt, int n, ween_color c)

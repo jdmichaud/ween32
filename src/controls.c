@@ -560,6 +560,14 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     int len = (int)strlen(wnd->text);
 
     switch (msg) {
+    case EM_SETSEL:
+        if (e) {
+            int to = (int)lp < 0 ? len : (int)lp;
+            e->anchor = (int)wp < 0 ? len : (int)wp;
+            e->caret = to > len ? len : to;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
@@ -697,6 +705,16 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int moved = 1;
         if (!e)
             return 0;
+        /* Enter and Escape are the two answers a box asked for one name
+         * takes: what to do about them is the parent's, not the box's. */
+        if (wp == VK_RETURN || wp == VK_ESCAPE) {
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_COMMAND,
+                             MAKEWPARAM((WORD)wnd->id,
+                                        wp == VK_RETURN ? EN_ENTER : EN_ESCAPE),
+                             (LPARAM)wnd);
+            return 0;
+        }
         if (ctrl) { /* the clipboard shortcuts, and select-all */
             switch (wp) {
             case 'C':
@@ -765,6 +783,23 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 static HWND g_dropped;
 
 /* Tell the parent something happened, the way a common control does. */
+/* A notification that carries a row and its text — which is what the two ends
+ * of a label edit are. Returns what the application said. */
+static LRESULT notify_disp(HWND wnd, UINT code, int row, char *text)
+{
+    NMLVDISPINFOA nm;
+    if (!wnd->parent)
+        return 0;
+    memset(&nm, 0, sizeof(nm));
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = wnd->id;
+    nm.hdr.code = code;
+    nm.item.mask = LVIF_TEXT;
+    nm.item.iItem = row;
+    nm.item.pszText = text;
+    return SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
 static void notify_parent(HWND wnd, UINT code)
 {
     NMHDR nm;
@@ -2255,6 +2290,8 @@ typedef struct {
     int size_w0;
     int scroll_x; /* how far the columns are scrolled left, in pixels */
     HWND header;  /* the header control, once something has asked for it */
+    HWND edit;    /* the box a label is being typed over in, or NULL */
+    int editing;  /* which row that is */
 } ween_list;
 
 /* How near a header divider counts as being on it. Windows uses about this,
@@ -2741,10 +2778,87 @@ void ween_listview_view(HWND w, ween_lv_view *out)
     out->max_top = lv_max_top(w, l);
 }
 
+/* ---- typing over a label --------------------------------------------------
+ *
+ * A row's label is edited in place: an EDIT is put exactly where the label is
+ * drawn, with the name in it and selected. Enter takes it, Escape drops it,
+ * and clicking away takes it as well. The application hears LVN_ENDLABELEDIT
+ * and can refuse.
+ */
+static void lv_end_edit(HWND wnd, ween_list *l, int keep)
+{
+    char text[260];
+    HWND box = l->edit;
+    int row = l->editing;
+    if (!box)
+        return;
+    l->edit = NULL; /* cleared first: destroying the box comes back through */
+    l->editing = -1;
+    GetWindowTextA(box, text, (int)sizeof(text));
+    DestroyWindow(box);
+    if (keep && text[0] && row >= 0 && row < l->nrow) {
+        if (notify_disp(wnd, LVN_ENDLABELEDITA, row, text)) {
+            free(l->row[row].text[0]);
+            l->row[row].text[0] = dup_str(text);
+        }
+    } else {
+        notify_disp(wnd, LVN_ENDLABELEDITA, row, NULL); /* abandoned */
+    }
+    InvalidateRect(wnd, NULL, FALSE);
+    SetFocus(wnd);
+}
+
+static HWND lv_begin_edit(HWND wnd, ween_list *l, int row)
+{
+    RECT r;
+    int icon_w = 0, icon_h = 0, indent;
+    if (row < 0 || row >= l->nrow)
+        return NULL;
+    lv_end_edit(wnd, l, 1); /* one at a time */
+    if (notify_disp(wnd, LVN_BEGINLABELEDITA, row, l->row[row].text[0]))
+        return NULL; /* the application said no */
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
+    r.left = lv_label_x(indent) - l->scroll_x - 2;
+    r.top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP +
+            (row - l->top) * lv_item_h(wnd, l) - 1;
+    r.right = r.left + lv_label_w(wnd, l, row, indent) + 24;
+    r.bottom = r.top + lv_item_h(wnd, l) + 2;
+    l->edit = CreateWindowExA(0, "EDIT", l->row[row].text[0] ? l->row[row].text[0] : "",
+                              WS_CHILD | WS_VISIBLE | WS_BORDER, r.left, r.top,
+                              r.right - r.left, r.bottom - r.top, wnd, NULL,
+                              NULL, NULL);
+    if (!l->edit)
+        return NULL;
+    l->editing = row;
+    SendMessageA(l->edit, WM_SETFONT, (WPARAM)0, FALSE);
+    SendMessageA(l->edit, EM_SETSEL, 0, -1); /* all of it, ready to type over */
+    SetFocus(l->edit);
+    return l->edit;
+}
+
 static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_list *l;
     switch (msg) {
+    case LVM_EDITLABELA:
+        l = list_of(wnd);
+        return l ? (LRESULT)(INT_PTR)lv_begin_edit(wnd, l, (int)wp) : 0;
+    case LVM_GETEDITCONTROL:
+        l = list_of(wnd);
+        return l ? (LRESULT)(INT_PTR)l->edit : 0;
+    case WM_COMMAND:
+        /* the box says it is done: Enter takes the name, Escape drops it */
+        l = list_of(wnd);
+        if (l && l->edit && (HWND)lp == l->edit) {
+            if (HIWORD(wp) == EN_ENTER)
+                lv_end_edit(wnd, l, 1);
+            else if (HIWORD(wp) == EN_ESCAPE)
+                lv_end_edit(wnd, l, 0);
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_SIZE:
         /* the header stands across the band, so it follows the width */
         l = list_of(wnd);
@@ -2830,6 +2944,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int i, mx = GET_X_LPARAM(lp), my = GET_Y_LPARAM(lp);
         ween_lv_layout g;
         l = list_of(wnd);
+        if (l && l->edit)
+            lv_end_edit(wnd, l, 1); /* clicking away takes the name */
         SetFocus(wnd);
         if (!l)
             return 0;

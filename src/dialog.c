@@ -134,6 +134,12 @@ static const char *class_from_ord(WORD ord)
 
 /* The dialog frame's window proc ("#32770"): give the app's DLGPROC first
  * refusal, then fall back to the default dialog processing. */
+/* A message box's own metrics. Declared here because the box's paint wants
+ * them as much as its layout does. */
+#define MB_MARGIN 12   /* text inset from the client edge */
+#define MB_ICON_W 32   /* the picture beside the message, and what follows it */
+#define MB_ICON_GAP 12
+
 static LRESULT dlg_class_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (w->dlgproc) {
@@ -147,6 +153,20 @@ static LRESULT dlg_class_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_PAINT:
+        if (dlg->msgbox_icon) { /* the picture beside the message */
+            PAINTSTRUCT ps;
+            struct ween_wnd *top = ween_top_level(dlg);
+            int ox, oy;
+            BeginPaint(dlg, &ps);
+            ween_client_origin(dlg, &ox, &oy);
+            ween_classic_msgbox_icon(&top->surface, ox + MB_MARGIN,
+                                     oy + MB_MARGIN,
+                                     (unsigned)dlg->msgbox_icon);
+            EndPaint(dlg, &ps);
+            return 0;
+        }
+        return DefWindowProcA(dlg, msg, wp, lp);
     case DM_SETDEFID:
         dlg->defid = (UINT)wp;
         return TRUE;
@@ -468,10 +488,45 @@ int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg)
  * and sizes the box around it, then centres the buttons under it.
  */
 
-#define MB_MARGIN 12   /* text inset from the client edge */
 #define MB_BTN_W 75    /* the classic 50x14 DLU button, in pixels at 96 dpi */
 #define MB_BTN_H 23
 #define MB_BTN_GAP 6
+
+/* Break the message where it will not fit. win32 wraps a message box's text
+ * at a width it works out from the screen; this takes a maximum and breaks at
+ * the last space before it, which is the same thing for anything a program
+ * actually says. The caller's own newlines are kept. */
+#define MB_WRAP_W 340
+static void wrap_text(const char *text, const ween_strike *f, char *out,
+                      size_t max)
+{
+    size_t n = 0;
+    const char *line = text;   /* where the line being built started */
+    const char *space = NULL;  /* the last place it could be broken */
+    for (const char *p = text;; p++) {
+        if (*p == ' ')
+            space = p;
+        if (*p && *p != '\n' &&
+            ween_strike_text_extent(f, line, (int)(p - line + 1)) <= MB_WRAP_W)
+            continue;
+        if (*p && *p != '\n' && space && space > line) {
+            p = space; /* back up to the space and break there */
+        } else if (*p && *p != '\n') {
+            /* one word longer than the line: let it run over */
+            while (*p && *p != ' ' && *p != '\n')
+                p++;
+        }
+        for (const char *q = line; q < p && n < max - 2; q++)
+            out[n++] = *q;
+        if (!*p)
+            break;
+        if (n < max - 2)
+            out[n++] = '\n';
+        line = p + 1;
+        space = NULL;
+    }
+    out[n] = 0;
+}
 
 static int line_count(const char *text, const ween_strike *f, int *widest)
 {
@@ -519,8 +574,29 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
     int ids[2] = { IDOK, IDCANCEL };
     const char *labels[2] = { "OK", "Cancel" };
 
+    char wrapped[2048];
+    int icon = 0;
+    switch (type & MB_ICONMASK) {
+    case MB_ICONHAND:
+        icon = WEEN_MB_ICON_ERROR;
+        break;
+    case MB_ICONQUESTION:
+        icon = WEEN_MB_ICON_QUESTION;
+        break;
+    case MB_ICONEXCLAMATION:
+        icon = WEEN_MB_ICON_WARNING;
+        break;
+    case MB_ICONASTERISK:
+        icon = WEEN_MB_ICON_INFO;
+        break;
+    default:
+        break;
+    }
+
     if (!text)
         text = "";
+    wrap_text(text, f, wrapped, sizeof(wrapped));
+    text = wrapped;
     lines = line_count(text, f, &widest);
     if ((type & MB_YESNO) == MB_YESNO) {
         nbuttons = 2;
@@ -530,11 +606,16 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
         labels[1] = "&No";
     }
 
+    /* The picture, when there is one, stands at the left and the message is
+     * inset past it — and the box is at least as tall as the picture. */
+    int gutter = icon ? MB_ICON_W + MB_ICON_GAP : 0;
     int text_h = lines * (cell + 2);
     int buttons_w = nbuttons * MB_BTN_W + (nbuttons - 1) * MB_BTN_GAP;
-    int client_w = widest + 2 * MB_MARGIN;
+    int client_w = gutter + widest + 2 * MB_MARGIN;
     if (client_w < buttons_w + 2 * MB_MARGIN)
         client_w = buttons_w + 2 * MB_MARGIN;
+    if (icon && text_h < MB_ICON_W)
+        text_h = MB_ICON_W;
     int client_h = MB_MARGIN + text_h + MB_MARGIN + MB_BTN_H + MB_MARGIN;
 
     RECT wr = { 0, 0, client_w, client_h };
@@ -575,8 +656,9 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
                 n = (int)sizeof(line) - 1;
             memcpy(line, start, (size_t)n);
             line[n] = 0;
-            CreateWindowExA(0, "STATIC", line, WS_CHILD | WS_VISIBLE, MB_MARGIN,
-                            ly, widest + 2, cell + 2, box, NULL, NULL, NULL);
+            CreateWindowExA(0, "STATIC", line, WS_CHILD | WS_VISIBLE,
+                            MB_MARGIN + gutter, ly, widest + 2, cell + 2, box,
+                            NULL, NULL, NULL);
             ly += cell + 2;
             if (!*p)
                 break;
@@ -596,6 +678,7 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
         bx += MB_BTN_W + MB_BTN_GAP;
     }
     box->defid = (UINT)ids[0];
+    box->msgbox_icon = icon; /* drawn by the box's own paint */
 
     int reenable = owner && !(owner->style & WS_DISABLED);
     if (reenable)

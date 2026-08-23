@@ -82,6 +82,14 @@ void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c)
 void ween_classic_menu_bullet(ween_surface *s, int x, int y, ween_color c);
 void ween_classic_menu_check(ween_surface *s, int x, int y, ween_color c);
 void ween_classic_sort_arrow(ween_surface *s, int x, int y, int up);
+/* The 32x32 picture a message box puts beside its message. */
+enum {
+    WEEN_MB_ICON_ERROR = 1,
+    WEEN_MB_ICON_QUESTION,
+    WEEN_MB_ICON_WARNING,
+    WEEN_MB_ICON_INFO
+};
+void ween_classic_msgbox_icon(ween_surface *s, int x, int y, unsigned which);
 void ween_classic_arrow_down(ween_surface *s, int x, int y, int w,
                              ween_color c);
 void ween_classic_checkmark(ween_surface *s, int x, int y, int w, int h,
@@ -299,6 +307,7 @@ struct ween_wnd {
     /* dialog frame (created by CreateDialogIndirect) */
     DLGPROC dlgproc;
     int is_dialog;
+    int msgbox_icon; /* WEEN_MB_ICON_*, for a message box that has one */
     int is_modal;          /* DialogBox is running a loop over it */
     int dlg_ended;         /* EndDialog was called: the modal loop stops */
     INT_PTR dlg_result;    /* and this is what DialogBox returns */

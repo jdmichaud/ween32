@@ -241,6 +241,11 @@ typedef struct tagCREATESTRUCTA {
 #define WM_SYSCOMMAND 0x0112
 #define WM_INITMENU 0x0116
 #define WM_INITMENUPOPUP 0x0117
+/* Which item of an open menu the highlight is on, so an application can say
+ * what it does — the line a shell writes in its status bar. wParam is the
+ * item's id, or its position when it is a submenu; the high word carries the
+ * MF_ flags, and MF_POPUP marks a submenu. Both words are 0xffff and lParam
+ * NULL when the menu closes. */
 #define WM_MENUSELECT 0x011F
 #define SC_KEYMENU 0xF100
 #define WM_NOTIFY 0x004E
@@ -416,6 +421,14 @@ typedef struct tagCOMBOBOXEXITEMA {
 #define CBN_SELCHANGE 1
 #define EN_CHANGE 0x0300
 #define EN_UPDATE 0x0400
+/* Not win32's — there Enter and Escape in a single-line edit go to the
+ * dialog. A list view's in-place editor is not in a dialog, so the box says
+ * so itself. */
+#define EN_ENTER 0x1300
+#define EN_ESCAPE 0x1301
+/* Select a run of the text: wParam is where it starts, lParam where it ends,
+ * and -1 for the end means all of it. */
+#define EM_SETSEL 0x00B1
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"
@@ -498,6 +511,9 @@ typedef struct tagTVHITTESTINFO {
 #define LVS_REPORT 0x0001L
 #define LVS_SINGLESEL 0x0004L
 #define LVS_SHOWSELALWAYS 0x0008L
+/* A row's label can be typed over in place — which is what Rename is, and
+ * what a folder just made is left in. */
+#define LVS_EDITLABELS 0x0200L
 #define LVIF_TEXT 0x0001
 #define LVIF_IMAGE 0x0002
 #define LVIF_STATE 0x0008
@@ -562,6 +578,11 @@ typedef struct {
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
 #define LVM_GETITEMCOUNT (LVM_FIRST + 4)
 #define LVM_GETSELECTEDCOUNT (LVM_FIRST + 50)
+/* Start typing over a row's label, and reach the box while it is up. The view
+ * says LVN_BEGINLABELEDIT when it starts and LVN_ENDLABELEDIT when it is
+ * done; the app answers that one with zero to keep the old name. */
+#define LVM_EDITLABELA (LVM_FIRST + 23)
+#define LVM_GETEDITCONTROL (LVM_FIRST + 24)
 #define LVM_GETNEXTITEM (LVM_FIRST + 12)
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
 #define LVM_GETHEADER (LVM_FIRST + 31)
@@ -649,6 +670,17 @@ typedef struct tagNMTREEVIEWA {
 #define NM_DBLCLK (0U - 3U)
 #define LVN_ITEMCHANGED (0U - 101U)
 #define LVN_COLUMNCLICK (0U - 108U)
+/* A row's label is being typed over, and has been. The app answers the end
+ * with non-zero to take the new name and zero to keep the old one; pszText is
+ * NULL when the edit was abandoned. */
+#define LVN_BEGINLABELEDITA (0U - 105U)
+#define LVN_ENDLABELEDITA (0U - 106U)
+
+/* What both carry: the row, and the text it now has. */
+typedef struct tagNMLVDISPINFOA {
+    NMHDR hdr;
+    LVITEMA item;
+} NMLVDISPINFOA;
 
 /* What a list view sends with LVN_COLUMNCLICK: iSubItem is the column, which
  * is what an app sorts on. */
@@ -1243,6 +1275,9 @@ DWORD CheckMenuItem(HMENU menu, UINT id, UINT check);
 BOOL CheckMenuRadioItem(HMENU menu, UINT first, UINT last, UINT check,
                         UINT flags);
 BOOL EnableMenuItem(HMENU menu, UINT id, UINT enable);
+/* An item's text, changed after the fact: what a command that names what it
+ * would undo needs. */
+BOOL ModifyMenuA(HMENU menu, UINT item, UINT flags, UINT_PTR id, LPCSTR text);
 BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
                     HWND owner, const RECT *unused);
 
@@ -1378,6 +1413,19 @@ LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp);
 #define MB_OK 0x00000000
 #define MB_OKCANCEL 0x00000001
 #define MB_YESNO 0x00000004
+/* The picture beside the message, which says what kind of message it is. A
+ * box without one is a plain notice; the four here are what win32 draws. */
+#define MB_ICONHAND 0x00000010
+#define MB_ICONQUESTION 0x00000020
+#define MB_ICONEXCLAMATION 0x00000030
+#define MB_ICONASTERISK 0x00000040
+#define MB_ICONERROR MB_ICONHAND
+#define MB_ICONSTOP MB_ICONHAND
+#define MB_ICONWARNING MB_ICONEXCLAMATION
+#define MB_ICONINFORMATION MB_ICONASTERISK
+#define MB_ICONMASK 0x000000f0
+#define MB_DEFBUTTON1 0x00000000
+#define MB_DEFBUTTON2 0x00000100
 #define IDYES 6
 #define IDNO 7
 int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type);

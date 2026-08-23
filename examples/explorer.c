@@ -526,6 +526,19 @@ static char g_path[1024] = "/";
 static char g_hist[HIST_MAX][sizeof(g_path)];
 static int g_hist_n, g_hist_at = -1;
 static int g_navigating; /* set while Back or Forward is doing the walking */
+static int g_show_status = 1; /* View > Status Bar */
+/* The folder to open in, when the command line named one. */
+static char g_start[512];
+
+/* Where Home goes: the top of the tree the explorer is showing. */
+static const char *home_path(void)
+{
+#ifdef _WIN32
+    return "C:\\";
+#else
+    return "/";
+#endif
+}
 
 /* The directory the list is showing, kept rather than re-read: sorting it is
  * a matter of ordering what is already here, and opening a row means knowing
@@ -569,7 +582,7 @@ static void pane_frame(const RECT *cr, RECT *out)
     out->left = 0;
     out->top = rebar_height() + 3;
     out->right = pane_width(cr) - 3;
-    out->bottom = cr->bottom - STATUS_H;
+    out->bottom = cr->bottom - (g_show_status ? STATUS_H : 0);
 }
 
 static void layout(HWND w)
@@ -578,7 +591,7 @@ static void layout(HWND w)
     int top, bottom, left_w;
     GetClientRect(w, &cr);
     top = rebar_height();
-    bottom = cr.bottom - STATUS_H;
+    bottom = cr.bottom - (g_show_status ? STATUS_H : 0);
     left_w = pane_width(&cr);
 
     if (g_rebar) {
@@ -944,6 +957,391 @@ static void fill_fixture_list(void)
     SetWindowTextA(g_main, "Local Disk (C:)");
 }
 
+/* ---- what the File and Edit menus do -------------------------------------
+ *
+ * The commands themselves. Everything here works on the list's selection,
+ * which is a set rather than a row: Select All picks the lot, and Cut, Copy,
+ * Delete and the rest take whatever is picked.
+ */
+
+/* Long enough for the folder, a separator and a name — every path a command
+ * puts together is one of those. */
+#define PATH_MAX_LEN (sizeof(g_path) + sizeof(g_entry->name) + 2)
+
+/* The full path of a row, which is the folder and the name in it. */
+static void path_of_row(int row, char *out, size_t max)
+{
+    const char *sep = g_path[strlen(g_path) - 1] == FS_SEP ? "" : NULL;
+    char one[2] = { FS_SEP, 0 };
+    if (row < 0 || row >= g_entries) {
+        out[0] = 0;
+        return;
+    }
+    snprintf(out, max, "%s%s%s", g_path, sep ? sep : one, g_entry[row].name);
+}
+
+/* The rows that are picked, in order. Returns how many. */
+#define SEL_MAX 512
+static int selected_rows(int *out, int max)
+{
+    int n = 0, i = -1;
+    while (n < max &&
+           (i = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)i,
+                                  LVNI_SELECTED)) >= 0)
+        out[n++] = i;
+    return n;
+}
+
+/* What the last command did, so Edit can offer to undo it and name itself
+ * after it — "Undo Delete", which is what the shell's menu says. */
+static struct {
+    const char *what;             /* "Delete", "Rename", ... or NULL for none */
+    char from[SEL_MAX][260];      /* where each thing was */
+    char to[SEL_MAX][260];        /* and where it went */
+    int count;
+} g_undo;
+
+static void undo_clear(void)
+{
+    g_undo.what = NULL;
+    g_undo.count = 0;
+}
+
+static void undo_add(const char *what, const char *from, const char *to)
+{
+    if (g_undo.what != what)
+        undo_clear();
+    if (g_undo.count >= SEL_MAX)
+        return;
+    g_undo.what = what;
+    snprintf(g_undo.from[g_undo.count], sizeof(g_undo.from[0]), "%s", from);
+    snprintf(g_undo.to[g_undo.count], sizeof(g_undo.to[0]), "%s", to);
+    g_undo.count++;
+}
+
+/* Where a deleted thing goes, so that deleting it is not the end of it: the
+ * shell has a Recycle Bin and this has a folder of its own beside the
+ * program. Undo Delete brings a thing back out of it. */
+static const char *recycle_dir(void)
+{
+    static char dir[600];
+    if (!dir[0]) {
+        const char *tmp = getenv("TEMP");
+        if (!tmp)
+            tmp = getenv("TMP");
+        if (!tmp)
+            tmp = "/tmp";
+        snprintf(dir, sizeof(dir), "%s%cween32-recycled", tmp, FS_SEP);
+        fs_mkdir(dir); /* already there is fine */
+    }
+    return dir;
+}
+
+/* The clipboard, as a shell keeps it: the paths, and whether they were cut
+ * rather than copied — a cut file is drawn ghosted until the paste. */
+/* one path each, long enough for the longest the app can build */
+static char g_clip[SEL_MAX][PATH_MAX_LEN];
+static int g_clip_n, g_clip_cut;
+
+static void show_directory(const char *path);
+
+/* Read this folder again, keeping where we are: what a command has changed
+ * on disk shows up because the list is filled from disk again. */
+static void refresh_view(void)
+{
+    char here[sizeof(g_path)];
+    snprintf(here, sizeof(here), "%s", g_path);
+    g_navigating = 1; /* re-reading where we are is not a step in the walk */
+    show_directory(here);
+    g_navigating = 0;
+}
+
+/* Cut and Copy: remember what is picked, and ghost it if it was cut. */
+static void do_clip(int cut)
+{
+    int rows[SEL_MAX];
+    int n = selected_rows(rows, SEL_MAX);
+    LVITEMA st;
+    if (!n)
+        return;
+    memset(&st, 0, sizeof(st));
+    st.mask = LVIF_STATE;
+    st.stateMask = LVIS_CUT;
+    SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+    g_clip_n = 0;
+    g_clip_cut = cut;
+    for (int i = 0; i < n; i++) {
+        path_of_row(rows[i], g_clip[g_clip_n], sizeof(g_clip[0]));
+        if (g_clip[g_clip_n][0])
+            g_clip_n++;
+        if (cut) {
+            st.state = LVIS_CUT;
+            SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)rows[i],
+                         (LPARAM)&st);
+        }
+    }
+}
+
+/* Paste: copy what is on the clipboard into this folder, and take the
+ * originals away if they were cut. */
+static void do_paste(void)
+{
+    int moved = 0;
+    if (!g_clip_n)
+        return;
+    undo_clear();
+    for (int i = 0; i < g_clip_n; i++) {
+        const char *from = g_clip[i];
+        const char *leaf = strrchr(from, FS_SEP);
+        char to[PATH_MAX_LEN];
+        size_t n, len;
+        leaf = leaf ? leaf + 1 : from;
+        /* the folder, a separator and the name, as far as the buffer goes */
+        n = (size_t)snprintf(to, sizeof(to), "%s%c", g_path, FS_SEP);
+        len = strlen(leaf);
+        if (n < sizeof(to) - 1) {
+            if (len > sizeof(to) - n - 1)
+                len = sizeof(to) - n - 1;
+            memcpy(to + n, leaf, len);
+            to[n + len] = 0;
+        }
+        if (!strcmp(to, from))
+            continue; /* into the folder it is already in */
+        if (g_clip_cut) {
+            if (fs_rename(from, to)) {
+                undo_add("Move", from, to);
+                moved++;
+            }
+        } else if (fs_copy(from, to)) {
+            undo_add("Copy", from, to);
+            moved++;
+        }
+    }
+    if (g_clip_cut && moved)
+        g_clip_n = 0; /* a cut is spent once it has been pasted */
+    refresh_view();
+}
+
+/* Delete: the shell asks first, and says what it is about to do. */
+static void do_delete(void)
+{
+    int rows[SEL_MAX];
+    int n = selected_rows(rows, SEL_MAX);
+    char question[600];
+    char path[PATH_MAX_LEN], to[PATH_MAX_LEN];
+    if (!n)
+        return;
+    if (n == 1) {
+        int dir = g_entry[rows[0]].is_dir;
+        snprintf(question, sizeof(question),
+                 dir ? "Are you sure you want to remove the folder '%s' and "
+                       "move all its contents to the Recycle Bin?"
+                     : "Are you sure you want to send '%s' to the Recycle Bin?",
+                 g_entry[rows[0]].name);
+        if (MessageBoxA(g_main, question,
+                        dir ? "Confirm Folder Delete" : "Confirm File Delete",
+                        MB_YESNO | MB_ICONQUESTION) != IDYES)
+            return;
+    } else {
+        snprintf(question, sizeof(question),
+                 "Are you sure you want to send these %d items to the "
+                 "Recycle Bin?", n);
+        if (MessageBoxA(g_main, question, "Confirm Multiple File Delete",
+                        MB_YESNO | MB_ICONQUESTION) != IDYES)
+            return;
+    }
+    undo_clear();
+    for (int i = 0; i < n; i++) {
+        path_of_row(rows[i], path, sizeof(path));
+        snprintf(to, sizeof(to), "%s%c%s", recycle_dir(), FS_SEP,
+                 g_entry[rows[i]].name);
+        if (fs_rename(path, to))
+            undo_add("Delete", path, to); /* from where it was, to the bin */
+    }
+    refresh_view();
+}
+
+/* Undo: put back what the last command did, in reverse. */
+static void do_undo(void)
+{
+    if (!g_undo.what)
+        return;
+    for (int i = g_undo.count - 1; i >= 0; i--) {
+        if (!strcmp(g_undo.what, "Copy"))
+            fs_delete(g_undo.to[i], 0); /* the copy goes away again */
+        else
+            fs_rename(g_undo.to[i], g_undo.from[i]); /* back where it was */
+    }
+    undo_clear();
+    refresh_view();
+}
+
+/* Rename: the name is typed over where it is drawn. Given a name, the row
+ * with that name is the one — which is how a folder just made is left ready
+ * to be named. Given none, whatever is picked. */
+static void begin_rename_of(const char *name)
+{
+    int row = -1;
+    if (name) {
+        for (int i = 0; i < g_entries; i++)
+            if (!strcmp(g_entry[i].name, name)) {
+                row = i;
+                break;
+            }
+    } else {
+        row = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    }
+    if (row < 0)
+        return;
+    {   /* pick it first, as the shell does, so what is being named shows */
+        LVITEMA st;
+        memset(&st, 0, sizeof(st));
+        st.mask = LVIF_STATE;
+        st.state = LVIS_SELECTED | LVIS_FOCUSED;
+        st.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
+        SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+        st.state = 0;
+        SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+        st.state = LVIS_SELECTED | LVIS_FOCUSED;
+        SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)row, (LPARAM)&st);
+    }
+    SetFocus(g_list);
+    SendMessageA(g_list, LVM_EDITLABELA, (WPARAM)row, 0);
+}
+
+/* And what to do when the typing is done: the file is renamed, and the view
+ * read again so it lands in its new place in the order. */
+static int end_rename(int row, const char *name)
+{
+    char from[PATH_MAX_LEN], to[PATH_MAX_LEN];
+    if (row < 0 || row >= g_entries || !name || !name[0])
+        return 0;
+    if (!strcmp(name, g_entry[row].name))
+        return 0; /* the same name is no rename at all */
+    path_of_row(row, from, sizeof(from));
+    snprintf(to, sizeof(to), "%s%c%s", g_path, FS_SEP, name);
+    if (fs_exists(to)) {
+        char msg[PATH_MAX_LEN + 200];
+        snprintf(msg, sizeof(msg),
+                 "Cannot rename %s: A file with the name you specified "
+                 "already exists. Specify a different file name.",
+                 g_entry[row].name);
+        MessageBoxA(g_main, msg, "Error Renaming File or Folder",
+                    MB_OK | MB_ICONEXCLAMATION);
+        return 0;
+    }
+    if (!fs_rename(from, to))
+        return 0;
+    undo_clear();
+    undo_add("Rename", from, to);
+    refresh_view();
+    return 0; /* the view is filled again, so the row's own text is stale */
+}
+
+/* What each command does, in the words the machine's status bar uses. The
+ * shell keeps these in its resources; this keeps them in a table. */
+static const char *command_help(UINT id)
+{
+    switch (id) {
+    case IDM_NEW_FOLDER:
+        return "Creates a new, empty folder.";
+    case IDM_NEW_SHORTCUT:
+        return "Creates a shortcut to an item.";
+    case IDM_CREATE_SHORTCUT:
+        return "Creates a shortcut to the selected items.";
+    case IDM_DELETE:
+        return "Deletes the selected items.";
+    case IDM_RENAME:
+        return "Renames the selected item.";
+    case IDM_CTX_PROPERTIES:
+        return "Displays the properties of the selected items.";
+    case IDM_CLOSE:
+        return "Closes the window.";
+    case IDM_UNDO:
+        return "Undoes the last action.";
+    case IDM_CUT:
+        return "Removes the selected items and copies them onto the "
+               "Clipboard.";
+    case IDM_COPY:
+        return "Copies the selected items to the Clipboard.";
+    case IDM_PASTE:
+        return "Inserts the items you have copied or cut into the selected "
+               "location.";
+    case IDM_PASTE_SHORTCUT:
+        return "Inserts shortcuts to the items you have copied or cut.";
+    case IDM_COPYTO:
+        return "Copies the selected items to a folder you choose.";
+    case IDM_MOVETO:
+        return "Moves the selected items to a folder you choose.";
+    case IDM_SELECT_ALL:
+        return "Selects all items in the window.";
+    case IDM_INVERT:
+        return "Reverses which items are selected and which are not.";
+    case IDM_STATUSBAR:
+        return "Shows or hides the status bar.";
+    case IDM_VIEW_LARGE:
+        return "Displays items by using large icons.";
+    case IDM_VIEW_SMALL:
+        return "Displays items by using small icons.";
+    case IDM_VIEW_LIST:
+        return "Displays items in a list.";
+    case IDM_VIEW_DETAILS:
+        return "Displays information about each item in the window.";
+    case IDM_VIEW_THUMBS:
+        return "Displays items by using thumbnails.";
+    case IDM_REFRESH:
+    case IDM_CTX_REFRESH:
+        return "Refreshes the contents of the window.";
+    case IDM_FOLDERS:
+        return "Shows or hides the Folders bar.";
+    case IDM_BACK:
+        return "Goes to the previous page.";
+    case IDM_FORWARD:
+        return "Goes to the next page.";
+    case IDM_UP:
+        return "Goes up one level.";
+    case IDM_HOME:
+        return "Goes to your Home page.";
+    case IDM_ABOUT:
+        return "Displays program information, version number, and copyright.";
+    case IDM_HELP_TOPICS:
+        return "Displays Help topics.";
+    case IDM_FOLDER_OPTIONS:
+        return "Changes the appearance and behavior of files and folders.";
+    default:
+        return NULL;
+    }
+}
+
+/* Select All, and its opposite. */
+static void do_select_all(int invert)
+{
+    int n = (int)SendMessageA(g_list, LVM_GETITEMCOUNT, 0, 0);
+    LVITEMA st;
+    memset(&st, 0, sizeof(st));
+    st.mask = LVIF_STATE;
+    st.stateMask = LVIS_SELECTED;
+    if (!invert) {
+        st.state = LVIS_SELECTED;
+        SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&st);
+    } else {
+        char picked[SEL_MAX];
+        int rows[SEL_MAX];
+        int m = selected_rows(rows, SEL_MAX);
+        memset(picked, 0, sizeof(picked));
+        for (int i = 0; i < m; i++)
+            if (rows[i] < SEL_MAX)
+                picked[rows[i]] = 1;
+        for (int i = 0; i < n && i < SEL_MAX; i++) {
+            st.state = picked[i] ? 0 : LVIS_SELECTED;
+            SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)i, (LPARAM)&st);
+        }
+    }
+    SetFocus(g_list);
+    status_for_selection(-1);
+}
+
 /* Fill the list from a directory, and say in the status bar what is in it. */
 /* The arrows are lit by where in the walk we are, which is the only thing
  * that says whether there is anywhere to go. */
@@ -970,8 +1368,6 @@ static void history_push(const char *path)
     g_hist_n = g_hist_at + 1;
     history_buttons();
 }
-
-static void show_directory(const char *path);
 
 static void history_go(int step)
 {
@@ -2345,7 +2741,7 @@ static void build_views(HWND w)
      * which is how the machine moves between them. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT |
-                                 LVS_SHOWSELALWAYS,
+                                 LVS_SHOWSELALWAYS | LVS_EDITLABELS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 
@@ -2406,7 +2802,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             HTREEITEM root = add_node(NULL, "/", IMG_COMPUTER, IMG_COMPUTER, 1);
             SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)root);
         }
-        show_directory("/");
+        show_directory(g_start[0] ? g_start : home_path());
         return 0;
 
     case WM_SIZE:
@@ -2562,6 +2958,9 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
              * The bar keeps the button pushed in and slides to the next one
              * by itself; all this has to do is put the menu under it. */
             menubar_drop(((const NMTOOLBAR *)lp)->iItem - IDM_MENU_FIRST);
+        } else if (nm->code == LVN_ENDLABELEDITA) {
+            const NMLVDISPINFOA *di = (const NMLVDISPINFOA *)lp;
+            return end_rename(di->item.iItem, di->item.pszText);
         } else if (nm->code == TVN_ITEMEXPANDINGA) {
             /* read the level being opened, so it is there to be drawn */
             const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
@@ -2571,6 +2970,66 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                 fill_children(tv->itemNew.hItem, path);
             }
         }
+        return 0;
+    }
+
+    case WM_INITMENU:
+    case WM_INITMENUPOPUP: {
+        /* What can be done depends on what is picked, and a menu says so
+         * before it is shown. Undo carries the name of what it would undo,
+         * which is what the shell's "Undo Delete" is. A bar sends the first
+         * of these and one drop-down the second; either way what arrives is
+         * a menu to go through, and an item that is not in it is not
+         * disturbed. */
+        HMENU bar = (HMENU)wp;
+        int picked = (int)SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0);
+        UINT on = MF_BYCOMMAND | MF_ENABLED, off = MF_BYCOMMAND | MF_GRAYED;
+        char undo[64];
+        if (!bar)
+            return 0;
+        EnableMenuItem(bar, IDM_DELETE, picked ? on : off);
+        EnableMenuItem(bar, IDM_RENAME, picked == 1 ? on : off);
+        EnableMenuItem(bar, IDM_CREATE_SHORTCUT, picked ? on : off);
+        EnableMenuItem(bar, IDM_CTX_PROPERTIES, picked ? on : off);
+        EnableMenuItem(bar, IDM_CUT, picked ? on : off);
+        EnableMenuItem(bar, IDM_COPY, picked ? on : off);
+        EnableMenuItem(bar, IDM_COPYTO, picked ? on : off);
+        EnableMenuItem(bar, IDM_MOVETO, picked ? on : off);
+        EnableMenuItem(bar, IDM_PASTE, g_clip_n ? on : off);
+        EnableMenuItem(bar, IDM_PASTE_SHORTCUT, off);
+        EnableMenuItem(bar, IDM_UNDO, g_undo.what ? on : off);
+        EnableMenuItem(bar, IDM_BACK, g_hist_at > 0 ? on : off);
+        EnableMenuItem(bar, IDM_FORWARD,
+                       g_hist_at >= 0 && g_hist_at < g_hist_n - 1 ? on : off);
+        snprintf(undo, sizeof(undo), "&Undo%s%s\tCtrl+Z",
+                 g_undo.what ? " " : "", g_undo.what ? g_undo.what : "");
+        ModifyMenuA(bar, IDM_UNDO, MF_BYCOMMAND | MF_STRING, IDM_UNDO, undo);
+        /* and the view it is in carries the bullet */
+        CheckMenuRadioItem(bar, IDM_VIEW_LARGE, IDM_VIEW_THUMBS,
+                           IDM_VIEW_DETAILS, MF_BYCOMMAND);
+        return 0;
+    }
+    case WM_MENUSELECT: {
+        /* The status bar says what the highlighted item does, which is what
+         * the first part of a shell's status bar is for while a menu is up. */
+        UINT id = LOWORD(wp), flags = HIWORD(wp);
+        const char *help = NULL;
+        if (!g_status)
+            return 0;
+        if (id == 0xffff && flags == 0xffff) {
+            status_for_selection(
+                (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                  LVNI_SELECTED));
+            return 0;
+        }
+        if (flags & MF_POPUP)
+            help = "Contains commands for working with the selected items.";
+        else if (flags & MF_SEPARATOR)
+            help = "";
+        else
+            help = command_help(id);
+        SendMessageA(g_status, SB_SETTEXTA, 0,
+                     (LPARAM)(help ? help : ""));
         return 0;
     }
 
@@ -2606,6 +3065,89 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case IDM_CLOSE:
             DestroyWindow(w);
             return 0;
+
+        /* ---- Edit, and the toolbar buttons that do the same things ---- */
+        case IDM_CUT:
+            do_clip(1);
+            return 0;
+        case IDM_COPY:
+            do_clip(0);
+            return 0;
+        case IDM_PASTE:
+            do_paste();
+            return 0;
+        case IDM_UNDO:
+            do_undo();
+            return 0;
+        case IDM_SELECT_ALL:
+            do_select_all(0);
+            return 0;
+        case IDM_INVERT:
+            do_select_all(1);
+            return 0;
+        case IDM_DELETE:
+            do_delete();
+            return 0;
+        case IDM_MOVETO:
+        case IDM_COPYTO:
+            /* The shell puts up a folder picker for these. Until there is
+             * one, they are the clipboard pair with the paste left to the
+             * folder you go to — which is what they amount to. */
+            do_clip(LOWORD(wp) == IDM_MOVETO);
+            return 0;
+
+        /* ---- File ---- */
+        case IDM_NEW_FOLDER: {
+            /* "New Folder", or "New Folder (2)" when that is taken, and then
+             * its name is there to be typed over — which is what the shell
+             * leaves you with. */
+            char name[64] = "New Folder", full[PATH_MAX_LEN];
+            for (int n = 2; n < 100; n++) {
+                snprintf(full, sizeof(full), "%s%c%s", g_path, FS_SEP, name);
+                if (!fs_exists(full))
+                    break;
+                snprintf(name, sizeof(name), "New Folder (%d)", n);
+            }
+            if (fs_mkdir(full)) {
+                undo_clear();
+                undo_add("New", full, full);
+                refresh_view();
+                begin_rename_of(name);
+            }
+            return 0;
+        }
+        case IDM_RENAME:
+            begin_rename_of(NULL);
+            return 0;
+
+        /* ---- View ---- */
+        case IDM_REFRESH:
+        case IDM_CTX_REFRESH:
+            refresh_view();
+            return 0;
+        case IDM_STATUSBAR:
+            g_show_status = !g_show_status;
+            ShowWindow(g_status, g_show_status ? SW_SHOW : SW_HIDE);
+            CheckMenuItem(GetSubMenu(g_menu, 2), IDM_STATUSBAR,
+                          g_show_status ? MF_CHECKED : MF_UNCHECKED);
+            layout(w);
+            InvalidateRect(w, NULL, TRUE);
+            return 0;
+        case IDM_HOME:
+            show_directory(home_path());
+            return 0;
+        case IDM_ARRANGE_NAME:
+        case IDM_ARRANGE_TYPE:
+        case IDM_ARRANGE_SIZE:
+        case IDM_ARRANGE_DATE: {
+            /* the four orders are the four columns, in the same order */
+            static const int col[] = { 0, 2, 1, 3 };
+            g_sort_col = col[LOWORD(wp) - IDM_ARRANGE_NAME];
+            g_sort_down = 0;
+            mark_sorted_column();
+            fill_list();
+            return 0;
+        }
         case IDM_FOLDERS:
             /* the toolbar's Folders button, View > Explorer Bar > Folders and
              * the cross in the pane's own bar all come here, as they all do on
@@ -2686,6 +3228,8 @@ int main(int argc, char **argv)
 
     if (argc > 0 && argv[0])
         snprintf(g_argv0, sizeof(g_argv0), "%s", argv[0]);
+    if (argc > 1 && argv[1]) /* a folder to open in, as a shell takes one */
+        snprintf(g_start, sizeof(g_start), "%s", argv[1]);
     /* the fixed listing, for putting this window beside a screenshot of the
      * machine it is a reimplementation of */
     g_fixture = getenv("WEEN32_EXPLORER_FIXTURE") != NULL;
@@ -2765,10 +3309,15 @@ int main(int argc, char **argv)
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
         /* The dialog manager's keys — Tab between the panes, Escape, the
-         * arrows within a group — are not wanted while the menu bar has the
-         * keyboard: there they belong to the bar, which walks its titles with
-         * them and leaves on Escape. */
-        if (GetFocus() != g_menubar && IsDialogMessageA(w, &msg))
+         * arrows within a group — belong elsewhere twice over. While the menu
+         * bar has the keyboard they are the bar's, which walks its titles with
+         * them and leaves on Escape. And while a label is being typed over
+         * they are the editor's: Enter takes the name and Escape drops it, and
+         * an application must keep IsDialogMessage off them while that box is
+         * up, which is what LVM_GETEDITCONTROL is for. */
+        HWND editing =
+            (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETEDITCONTROL, 0, 0);
+        if (GetFocus() != g_menubar && !editing && IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
