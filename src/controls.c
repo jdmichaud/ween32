@@ -263,9 +263,16 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case WM_NCHITTEST:
             return HTBOTTOMRIGHT; /* the corner, so a frame resizes from it */
         case WM_LBUTTONDOWN:
-            if (wnd->parent) /* the window it is in does the following */
+            if (wnd->parent) { /* the window it is in does the following */
+                /* where the pointer is on the screen, which is what a window
+                 * being sized needs: it is about to follow it, and the
+                 * corner it started from is moving underneath it */
+                POINT at = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+                ClientToScreen(wnd, &at);
                 SendMessageA(wnd->parent, WM_SYSCOMMAND,
-                             SC_SIZE | WMSZ_BOTTOMRIGHT, lp);
+                             SC_SIZE | WMSZ_BOTTOMRIGHT,
+                             MAKELPARAM(at.x, at.y));
+            }
             return 0;
         default:
             return DefWindowProcA(wnd, msg, wp, lp);
@@ -1028,25 +1035,44 @@ static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
+/* A list box shows whole items only: it trims its height by whatever is left
+ * over, so it never ends in half a name. */
+static void lb_whole_items(HWND wnd)
+{
+    int ih = item_height(wnd);
+    int client = wnd->h - 2 * ween_ex_edge(wnd);
+    int rem = ih ? client % ih : 0;
+    if (wnd->h > ih && rem)
+        wnd->h -= rem;
+}
+
+/* Being made is the one time it trims twice: once against the height it was
+ * asked for and once against the client area left after the field border
+ * comes off. That is what wine settles on, so a 62px box with 13px items ends
+ * up 43, showing three of them and scrolling for the fourth. Trimming is
+ * idempotent afterwards — a box already showing whole names keeps its size —
+ * which is why only this one place does it twice. */
+static void lb_whole_items_at_birth(HWND wnd)
+{
+    int ih = item_height(wnd);
+    int rem = ih ? wnd->h % ih : 0;
+    if (wnd->h > ih && rem)
+        wnd->h -= rem;
+    lb_whole_items(wnd);
+}
+
 static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_items *it;
     switch (msg) {
-    case WM_CREATE: {
-        /* A list box shows whole items only: it trims its height by whatever
-         * is left over. Wine settles on this after two passes — the first
-         * before the field border comes off the client area, the second
-         * after — so a 62px box with 13px items ends up 43, showing three of
-         * them and scrolling for the fourth. */
-        int ih = item_height(wnd), edge = 2 * ween_ex_edge(wnd);
-        for (int pass = 0; pass < 2; pass++) {
-            int client = pass ? wnd->h - edge : wnd->h;
-            int rem = ih ? client % ih : 0;
-            if (wnd->h > ih && rem)
-                wnd->h -= rem;
-        }
+    case WM_CREATE:
+        lb_whole_items_at_birth(wnd);
         return 0;
-    }
+    case WM_SIZE:
+        /* and it goes on showing whole ones when it is made a different size:
+         * a box dragged taller snaps to the row below */
+        lb_whole_items(wnd);
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
@@ -1156,6 +1182,33 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case LB_GETCURSEL:
         it = items_of(wnd);
         return it ? it->cursel : -1;
+    case LB_GETTEXT: {
+        /* One item's text, into the caller's buffer, returning its length —
+         * the only way a program reads back what it put in. */
+        int i = (int)wp;
+        char *out = (char *)lp;
+        it = items_of(wnd);
+        if (!out || !it || i < 0 || i >= it->count) {
+            if (out)
+                out[0] = 0;
+            return LB_ERR;
+        }
+        {
+            size_t n = strlen(it->item[i]);
+            memcpy(out, it->item[i], n + 1);
+            return (LRESULT)n;
+        }
+    }
+    case LB_GETTEXTLEN:
+        it = items_of(wnd);
+        return it && (int)wp >= 0 && (int)wp < it->count
+                   ? (LRESULT)strlen(it->item[(int)wp])
+                   : LB_ERR;
+    case LB_GETITEMHEIGHT:
+        /* How tall one row is, which is what a program sizing a list box to
+         * whole rows has to ask: the height comes from the font it was
+         * given, so only the box itself knows it. */
+        return item_height(wnd);
     case LB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;

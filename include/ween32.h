@@ -376,8 +376,12 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define LB_SETCURSEL 0x0186
 #define LB_GETCURSEL 0x0188
 #define LB_GETTEXT 0x0189
+#define LB_GETTEXTLEN 0x018A
+/* What a list box says when it is asked about an item it has not got. */
+#define LB_ERR (-1)
 #define LB_GETCOUNT 0x018B
 #define LB_GETTOPINDEX 0x018E
+#define LB_GETITEMHEIGHT 0x01A1
 #define LB_SETTOPINDEX 0x0197
 #define LBN_SELCHANGE 1
 #define LBN_DBLCLK 2
@@ -1303,6 +1307,8 @@ int lstrcmpiA(LPCSTR a, LPCSTR b);
 int lstrlenA(LPCSTR s);
 BOOL EnableWindow(HWND wnd, BOOL enable);
 BOOL IsWindowEnabled(HWND wnd);
+/* Whether a window is shown, which a program asks about one it put up. */
+BOOL IsWindowVisible(HWND wnd);
 BOOL CheckDlgButton(HWND dlg, int id, UINT check);
 UINT IsDlgButtonChecked(HWND dlg, int id);
 BOOL CheckRadioButton(HWND dlg, int first, int last, int check);

@@ -107,7 +107,9 @@ static void inject_script(const char *script)
 typedef struct {
     ween_letterbox box;
     int open;
-    int cursor; /* the shape last asked for, so a test can see it */
+    int cursor;    /* the shape last asked for, so a test can see it */
+    int unmanaged; /* placed by the application rather than by the manager */
+    int x, y;      /* and, if it is, where it was placed */
 } hl_win;
 
 static hl_win g_wins[MAX_WINDOWS];
@@ -143,7 +145,8 @@ static void *hl_open(int x, int y, int w, int h, const char *title,
     (void)w;
     (void)h;
     (void)title;
-    if (flags & WEEN_WIN_UNMANAGED) {
+    int unmanaged = (flags & WEEN_WIN_UNMANAGED) != 0;
+    if (unmanaged) {
         g_unmanaged_x = x;
         g_unmanaged_y = y;
     }
@@ -163,6 +166,9 @@ static void *hl_open(int x, int y, int w, int h, const char *title,
             continue;
         memset(&g_wins[i], 0, sizeof(g_wins[i]));
         g_wins[i].open = 1;
+        g_wins[i].unmanaged = unmanaged;
+        g_wins[i].x = x;
+        g_wins[i].y = y;
         ween_letterbox_window(&g_wins[i].box, g_win_w ? g_win_w : w * ween_zoom(),
                               g_win_h ? g_win_h : h * ween_zoom());
         return &g_wins[i];
@@ -241,15 +247,20 @@ static void hl_origin(void *win, int *x, int *y)
     hl_win *w = win;
     int ox = 0, oy = 0;
     ween_letterbox_origin(&w->box, &ox, &oy);
-    *x = g_win_x + ox;
-    *y = g_win_y + oy;
+    /* A window the manager placed is wherever the manager decided; one that
+     * asked for a place — a menu, a box under a field — got it, and knowing
+     * where it is is what lets a press over it be found. */
+    *x = (w->unmanaged ? w->x : g_win_x) + ox;
+    *y = (w->unmanaged ? w->y : g_win_y) + oy;
 }
 
 static void hl_move_by(void *win, int dx, int dy)
 {
-    (void)win;
-    (void)dx;
-    (void)dy;
+    hl_win *w = win;
+    if (w && w->unmanaged) {
+        w->x += dx;
+        w->y += dy;
+    }
 }
 
 static ween_event hl_next_event(void *win, int timeout_ms)

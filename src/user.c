@@ -693,6 +693,13 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
 {
     if (!wnd)
         return FALSE;
+    /* A window of its own has to be moved on the screen, not only in the
+     * bookkeeping: the window system is the thing that knows where it is,
+     * and a popup put up once and moved afterwards — a box under a field
+     * that follows it — would otherwise stay where it was made. */
+    if (!wnd->parent && (x != wnd->x || y != wnd->y) && wnd->backend_win &&
+        ween_active_backend && ween_active_backend->move_by)
+        ween_active_backend->move_by(wnd->backend_win, x - wnd->x, y - wnd->y);
     wnd->x = x;
     wnd->y = y;
     if (!wnd->parent && (w != wnd->w || h != wnd->h)) {
@@ -899,6 +906,16 @@ BOOL IsWindowEnabled(HWND wnd)
     return wnd && !(wnd->style & WS_DISABLED);
 }
 
+BOOL IsWindowVisible(HWND wnd)
+{
+    /* and every window above it, since one inside a hidden window is not
+     * shown either */
+    for (const struct ween_wnd *w = wnd; w; w = w->parent)
+        if (!w->visible)
+            return FALSE;
+    return wnd != NULL;
+}
+
 BOOL CheckDlgButton(HWND dlg, int id, UINT check)
 {
     HWND c = GetDlgItem(dlg, id);
@@ -1034,6 +1051,12 @@ HWND SetFocus(HWND wnd)
 {
     HWND prev = g_focus;
     if (prev == wnd)
+        return prev;
+    /* A window that was made not to be activated does not take the keyboard
+     * either: that is the whole of what the style is for. Menus and the boxes
+     * that drop under a field are put up this way, so that a press in one is
+     * a press on the thing it belongs to and the caret stays where it was. */
+    if (wnd && (ween_top_level(wnd)->ex_style & WS_EX_NOACTIVATE))
         return prev;
     if (prev)
         SendMessageA(prev, WM_KILLFOCUS, (WPARAM)wnd, 0);
@@ -1616,6 +1639,20 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
     if (msg == WM_LBUTTONDOWN && g_dblclk && dst->cls &&
         (dst->cls->style & CS_DBLCLKS))
         msg = WM_LBUTTONDBLCLK;
+    /* x,y arrived measured against the window the pointer was in. What they
+     * are being delivered to may be in another one — a drag that started on a
+     * popup keeps the pointer while it wanders off the popup — so they are
+     * moved into that window's own frame first. */
+    {
+        struct ween_wnd *dtop = ween_top_level(dst);
+        if (dtop != top) {
+            int tx, ty, dx, dy;
+            ween_window_origin(top, &tx, &ty);
+            ween_window_origin(dtop, &dx, &dy);
+            x += tx - dx;
+            y += ty - dy;
+        }
+    }
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
     post_msg(dst, msg, (WPARAM)g_mods,
@@ -1948,6 +1985,37 @@ void ween_mark_exposed(const ween_event *ev)
         target->dirty = 1;
 }
 
+/* Which window a pointer event happened in, and the event moved into that
+ * window's coordinates. Events arrive measured against the active window; a
+ * popup standing over it takes any that land on it, without becoming active
+ * — a menu and a drop-down are put up precisely so as not to.
+ */
+static struct ween_wnd *pointer_over(struct ween_wnd *active, ween_event *ev)
+{
+    int ax, ay, sx, sy;
+    if (!active || (ev->kind != WEEN_EV_MOUSE_DOWN &&
+                    ev->kind != WEEN_EV_MOUSE_UP &&
+                    ev->kind != WEEN_EV_MOUSE_MOVE && ev->kind != WEEN_EV_WHEEL))
+        return active;
+    if (g_capture) /* a drag holds on to the pointer wherever it goes */
+        return active;
+    ween_window_origin(active, &ax, &ay);
+    sx = ax + ev->x;
+    sy = ay + ev->y;
+    for (struct ween_wnd *t = g_tops; t; t = t->next_top) {
+        int ox, oy;
+        if (t == active || !t->visible || !(t->style & WS_POPUP))
+            continue;
+        ween_window_origin(t, &ox, &oy);
+        if (sx >= ox && sy >= oy && sx < ox + t->w && sy < oy + t->h) {
+            ev->x = sx - ox;
+            ev->y = sy - oy;
+            return t;
+        }
+    }
+    return active;
+}
+
 /* Translate one backend event into posted messages. */
 static void pump_event(struct ween_wnd *top, const ween_event *ev)
 {
@@ -2149,10 +2217,24 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
             for (struct ween_wnd *t = g_tops; t; t = t->next_top)
                 if (t->backend_win == ev.win)
                     target = t;
+            if (!target)
+                continue;
+            g_active = target;
+        } else {
+            /* A backend that does not say which window an event was in —
+             * the headless one — leaves it to be worked out from where the
+             * pointer is, which is what a window system does anyway. A press
+             * over a popup belongs to the popup even though the popup is not
+             * the active window; that is how a menu, or a box of suggestions
+             * under a field, is reached at all. */
+            struct ween_wnd *over = pointer_over(target, &ev);
+            if (!target)
+                continue;
+            if (over != target) {
+                pump_event(over, &ev);
+                continue;
+            }
         }
-        if (!target)
-            continue;
-        g_active = target;
         pump_event(target, &ev);
     }
 }
