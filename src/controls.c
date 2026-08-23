@@ -3130,6 +3130,12 @@ static int lv_item_h(HWND wnd, const ween_list *l)
     int icon_w = 0, icon_h = 0;
     if (l && l->images)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    /* A view with boxes keeps a sixteen-square cell for the state picture,
+     * the way comctl32's state image list is sixteen square with the
+     * thirteen-pixel box in the middle of it. That is what makes the
+     * machine's rows seventeen where a row of plain text would be fifteen. */
+    if (l && (l->exstyle & LVS_EX_CHECKBOXES) && icon_h < WEEN_LV_CHECK_W)
+        icon_h = WEEN_LV_CHECK_W;
     return (icon_h > th ? icon_h : th) + 1;
 }
 
@@ -3720,9 +3726,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         x = 0;
         if (box && l->row[i].state_img) {
             int by = y + (ih - WEEN_LV_CHECK) / 2;
-            ween_classic_check(&top->surface, ox - sx + 2, by, WEEN_LV_CHECK,
-                               WEEN_LV_CHECK,
-                               l->row[i].state_img == 2 ? DFCS_CHECKED : 0);
+            ween_classic_check_flat(&top->surface, ox - sx + 4, by,
+                                    l->row[i].state_img == 2);
         }
         if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */

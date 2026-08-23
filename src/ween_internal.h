@@ -73,6 +73,8 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
 #define WEEN_NC_SMICON 16 /* SM_CXSMICON: the caption icon, and its gradient stop */
 /* DrawFrameControl's DFC_BUTTON glyphs (DFCS_* flags as in the SDK). */
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
+/* The flat one a list view puts before a row, which is thirteen square. */
+void ween_classic_check_flat(ween_surface *s, int x, int y, int on);
 /* Scroll-bar parts: the dithered track, and one arrow button (dir: 0 up,
  * 1 down, 2 left, 3 right). */
 void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h);

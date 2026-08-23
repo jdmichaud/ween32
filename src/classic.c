@@ -439,6 +439,33 @@ static int radio_art(ween_surface *s, int x, int y, int d, unsigned flags)
     return 1;
 }
 
+/* The box a list view puts before a row, which is not the box a control
+ * wears: flat, two pixels of black around white, with a black tick. comctl32
+ * keeps these in a state image list rather than drawing them the way a check
+ * box control is drawn, and the two do not look alike. Read off the machine's
+ * Column Settings. */
+static const char *const lvcheck13[13] = {
+    "KKKKKKKKKKKKK", "KKKKKKKKKKKKK", "KKWWWWWWWWWKK", "KKWWWWWWWWWKK",
+    "KKWWWWWWWWWKK", "KKWWWWWWWWWKK", "KKWWWWWWWWWKK", "KKWWWWWWWWWKK",
+    "KKWWWWWWWWWKK", "KKWWWWWWWWWKK", "KKWWWWWWWWWKK", "KKKKKKKKKKKKK",
+    "KKKKKKKKKKKKK",
+};
+static const char *const lvcheck13_on[13] = {
+    "KKKKKKKKKKKKK", "KKKKKKKKKKKKK", "KKWWWWWWWWWKK", "KKWWWWWWWKWKK",
+    "KKWWWWWWKKWKK", "KKWKWWWKKKWKK", "KKWKKWKKKWWKK", "KKWKKKKKWWWKK",
+    "KKWWKKKWWWWKK", "KKWWWKWWWWWKK", "KKWWWWWWWWWKK", "KKKKKKKKKKKKK",
+    "KKKKKKKKKKKKK",
+};
+
+void ween_classic_check_flat(ween_surface *s, int x, int y, int on)
+{
+    const char *const *art = on ? lvcheck13_on : lvcheck13;
+    for (int r = 0; r < 13; r++)
+        for (int c = 0; c < 13; c++)
+            ween_surface_pixel(s, x + c, y + r,
+                               art[r][c] == 'K' ? WEEN_BLACK : WEEN_WINDOWBG);
+}
+
 /* DFCS_BUTTONRADIO: two half-discs for the rim, a white face, and the dot. */
 void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags)
 {

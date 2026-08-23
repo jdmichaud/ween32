@@ -1019,6 +1019,11 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 /* A picture instead of a line of text: the icon the control is given with
  * STM_SETICON, drawn at its top-left corner. */
 #define SS_ICON 0x00000003L
+/* A rule across the dialog: two pixels, shadow over white. What a dialog puts
+ * between what it asks and the buttons that answer. */
+#define SS_ETCHEDHORZ 0x00000010L
+#define SS_ETCHEDVERT 0x00000011L
+#define SS_ETCHEDFRAME 0x00000012L
 #define STM_SETICON 0x0170
 #define STM_GETICON 0x0171
 /* The two that stay on one line; every other kind wraps at its own width. */
