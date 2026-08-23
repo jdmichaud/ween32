@@ -10,6 +10,7 @@
 
 #define _POSIX_C_SOURCE 200112L /* clock_gettime */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -391,6 +392,42 @@ BOOL ScreenToClient(HWND wnd, POINT *pt)
     pt->x -= zero.x;
     pt->y -= zero.y;
     return TRUE;
+}
+
+/* The command line, as one string with the program name first: what win32
+ * hands over, rebuilt here from what this machine keeps instead. An
+ * argument with a space in it is quoted, as the caller will expect. */
+LPSTR GetCommandLineA(void)
+{
+    static char line[4096];
+    static int built;
+    if (built)
+        return line;
+    built = 1;
+    FILE *f = fopen("/proc/self/cmdline", "rb");
+    if (f) {
+        char buf[4096];
+        size_t n = fread(buf, 1, sizeof buf, f);
+        size_t at = 0;
+        fclose(f);
+        for (size_t i = 0; i < n;) {
+            size_t len = strlen(buf + i);
+            int quote = strchr(buf + i, ' ') != NULL;
+            if (at && at + 1 < sizeof line)
+                line[at++] = ' ';
+            if (quote && at + 1 < sizeof line)
+                line[at++] = '"';
+            if (at + len < sizeof line) {
+                memcpy(line + at, buf + i, len);
+                at += len;
+            }
+            if (quote && at + 1 < sizeof line)
+                line[at++] = '"';
+            i += len + 1;
+        }
+        line[at < sizeof line ? at : sizeof line - 1] = 0;
+    }
+    return line;
 }
 
 /* What the machine has, read where this machine keeps it. On Windows this

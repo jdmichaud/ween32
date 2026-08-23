@@ -1891,6 +1891,12 @@ BOOL SetMenu(HWND wnd, HMENU menu);
 HMENU GetMenu(HWND wnd);
 HMENU GetSubMenu(HMENU menu, int pos);
 int GetMenuItemCount(HMENU menu);
+/* A menu whose items change while the program runs: the four files it was
+ * last asked to open, say. InsertMenuA puts one ahead of another named by
+ * position or by command; DeleteMenu takes one out, and any submenu with
+ * it. */
+BOOL InsertMenuA(HMENU menu, UINT before, UINT flags, UINT_PTR id, LPCSTR text);
+BOOL DeleteMenu(HMENU menu, UINT item, UINT flags);
 /* MF_BYPOSITION only: an application walking a menu bar to draw it itself —
  * which is what hosting one in a rebar band comes to — asks by position. */
 int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags);
@@ -1922,6 +1928,11 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
 #define SM_CYHSCROLL 3
 #define SM_CXMENUCHECK 71
 #define SM_CYMENUCHECK 72
+/* The whole command line as one string, program name first, the way win32
+ * hands it over -- so an application takes its arguments the same way here
+ * and there. */
+LPSTR GetCommandLineA(void);
+
 int GetSystemMetrics(int index);
 
 /* How much memory the machine has, which is the one thing an About box says

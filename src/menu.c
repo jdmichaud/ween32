@@ -137,6 +137,85 @@ BOOL AppendMenuA(HMENU menu, UINT flags, UINT_PTR id, LPCSTR text)
     return TRUE;
 }
 
+/* Which item a caller means: a position, or the command it carries. */
+static int menu_index(HMENU menu, UINT item, UINT flags)
+{
+    if (flags & MF_BYPOSITION)
+        return (int)item;
+    for (int i = 0; i < menu->count; i++)
+        if (!(menu->item[i].flags & MF_POPUP) && menu->item[i].id == item)
+            return i;
+    return -1;
+}
+
+/* Room for one more, wherever it is going. */
+static BOOL menu_grow(HMENU menu)
+{
+    int cap;
+    ween_menuitem *grown;
+    if (menu->count < menu->cap)
+        return TRUE;
+    cap = menu->cap ? menu->cap * 2 : 8;
+    grown = realloc(menu->item, (size_t)cap * sizeof *grown);
+    if (!grown)
+        return FALSE;
+    menu->item = grown;
+    menu->cap = cap;
+    return TRUE;
+}
+
+/* Put an item in ahead of another, which is how a list that changes -- the
+ * files a program was last asked to open, say -- is kept in a menu. */
+BOOL InsertMenuA(HMENU menu, UINT before, UINT flags, UINT_PTR id, LPCSTR text)
+{
+    int at;
+    ween_menuitem *it;
+    if (!menu || !menu_grow(menu))
+        return FALSE;
+    at = menu_index(menu, before, flags);
+    if (at < 0 || at > menu->count)
+        at = menu->count; /* win32 appends when the mark is not found */
+    memmove(&menu->item[at + 1], &menu->item[at],
+            (size_t)(menu->count - at) * sizeof *menu->item);
+    it = &menu->item[at];
+    memset(it, 0, sizeof(*it));
+    it->flags = flags & ~(UINT)MF_BYPOSITION;
+    if (flags & MF_POPUP)
+        it->popup = (HMENU)id;
+    else
+        it->id = (UINT)id;
+    if (text && !(flags & MF_SEPARATOR)) {
+        size_t n = strlen(text) + 1;
+        it->text = malloc(n);
+        if (!it->text) {
+            menu->count++; /* the hole is filled either way */
+            return FALSE;
+        }
+        memcpy(it->text, text, n);
+    }
+    menu->count++;
+    return TRUE;
+}
+
+/* Take one out. A submenu hanging off it is destroyed with it, as
+ * DeleteMenu does and RemoveMenu does not. */
+BOOL DeleteMenu(HMENU menu, UINT item, UINT flags)
+{
+    int at;
+    if (!menu)
+        return FALSE;
+    at = menu_index(menu, item, flags);
+    if (at < 0 || at >= menu->count)
+        return FALSE;
+    free(menu->item[at].text);
+    if (menu->item[at].popup)
+        DestroyMenu(menu->item[at].popup);
+    memmove(&menu->item[at], &menu->item[at + 1],
+            (size_t)(menu->count - at - 1) * sizeof *menu->item);
+    menu->count--;
+    return TRUE;
+}
+
 int ween_menu_count(HMENU menu)
 {
     return menu ? menu->count : 0;

@@ -315,6 +315,7 @@ pub extern fn CheckDlgButton(dlg: HWND, id: c_int, check: UINT) BOOL;
 pub extern fn IsDlgButtonChecked(dlg: HWND, id: c_int) UINT;
 pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_int) BOOL;
 pub extern fn GetSystemMetrics(index: c_int) c_int;
+pub extern fn GetCommandLineA() LPSTR;
 
 pub const MEMORYSTATUS = extern struct {
     dwLength: DWORD = @sizeOf(MEMORYSTATUS),
@@ -360,6 +361,8 @@ pub extern fn SetMenu(wnd: HWND, menu: HMENU) BOOL;
 pub extern fn GetMenu(wnd: HWND) HMENU;
 pub extern fn GetSubMenu(menu: HMENU, pos: c_int) HMENU;
 pub extern fn GetMenuItemCount(menu: HMENU) c_int;
+pub extern fn InsertMenuA(menu: HMENU, before: UINT, flags: UINT, id: usize, text: ?LPCSTR) BOOL;
+pub extern fn DeleteMenu(menu: HMENU, item: UINT, flags: UINT) BOOL;
 pub extern fn CheckMenuItem(menu: HMENU, id: UINT, check: UINT) DWORD;
 pub extern fn CheckMenuRadioItem(menu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) BOOL;
 pub extern fn EnableMenuItem(menu: HMENU, id: UINT, enable: UINT) BOOL;

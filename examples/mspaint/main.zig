@@ -349,6 +349,22 @@ fn command(id: u16) void {
         },
         ID.file_save => save(hasPath()),
         ID.file_save_as => save(false),
+        ID.file_recent...ID.file_recent + recent_max - 1 => {
+            // one of the four at the foot of the File menu
+            const i = id - ID.file_recent;
+            if (i >= recent_n) return;
+            if (!askToSave()) return;
+            var keep: [300]u8 = @splat(0);
+            const path = recentPath(i);
+            @memcpy(keep[0..path.len], path);
+            bmp.open(keep[0..path.len]) catch {
+                _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
+                return;
+            };
+            undo.forget();
+            setPath(keep[0..path.len]);
+            refresh();
+        },
         ID.file_open => {
             if (!askToSave()) return;
             var buf: [300]u8 = @splat(0);
@@ -507,7 +523,9 @@ pub fn updateMenus() void {
 /// program asks.
 fn askToSave() bool {
     if (!app.dirty) return true;
-    const answer = w.MessageBoxA(app.frame, "Save changes to untitled?", "Paint", w.MB_YESNOCANCEL | w.MB_ICONQUESTION);
+    var ask: [340]u8 = undefined;
+    const q = std.fmt.bufPrintSentinel(&ask, "Save changes to {s}?", .{displayName(savePathOrNone())}, 0) catch return true;
+    const answer = w.MessageBoxA(app.frame, q.ptr, "Paint", w.MB_YESNOCANCEL | w.MB_ICONQUESTION);
     if (answer == w.IDCANCEL) return false;
     if (answer == w.IDYES) save(hasPath());
     return true;
@@ -557,25 +575,121 @@ fn save(straight: bool) void {
     app.dirty = false;
 }
 
-/// The window's title: the file's name, or "untitled".
+/// What a picture is called: the last part of the path with the extension
+/// taken off, which is what the machine puts in its caption, in its question
+/// before losing changes, and in its list of recent files.
+fn displayName(path: []const u8) []const u8 {
+    if (path.len == 0) return "untitled";
+    var i = path.len;
+    while (i > 0) : (i -= 1) {
+        if (path[i - 1] == '/' or path[i - 1] == '\\') break;
+    }
+    const name = path[i..];
+    var dot = name.len;
+    while (dot > 0) : (dot -= 1) {
+        if (name[dot - 1] == '.') return name[0 .. dot - 1];
+    }
+    return name;
+}
+
+/// The first argument, if there is one. win32 hands the whole command line
+/// over as one string, the program name first, and an argument with a space
+/// in it is quoted.
+fn openArgument() void {
+    const line = std.mem.span(w.GetCommandLineA());
+    var i: usize = 0;
+    if (i < line.len and line[i] == '"') { // step over the program name
+        i += 1;
+        while (i < line.len and line[i] != '"') i += 1;
+        if (i < line.len) i += 1;
+    } else {
+        while (i < line.len and line[i] != ' ') i += 1;
+    }
+    while (i < line.len and line[i] == ' ') i += 1;
+    if (i >= line.len) return;
+    var arg: []const u8 = line[i..];
+    if (arg.len > 1 and arg[0] == '"') {
+        var end: usize = 1;
+        while (end < arg.len and arg[end] != '"') end += 1;
+        arg = arg[1..end];
+    }
+    if (arg.len == 0) return;
+    bmp.open(arg) catch {
+        _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
+        return;
+    };
+    undo.forget();
+    setPath(arg);
+    canvas.updateScroll(app.view);
+    _ = w.InvalidateRect(app.view, null, w.TRUE);
+}
+
+/// The window's title: the picture's name, or "untitled".
 fn setPath(path: []const u8) void {
     @memset(&app.path, 0);
     if (path.len > 0 and path.len < app.path.len)
         @memcpy(app.path[0..path.len], path);
     var title: [300]u8 = undefined;
-    const name = if (path.len == 0) "untitled" else blk: {
-        var i = path.len;
-        while (i > 0) : (i -= 1) {
-            if (path[i - 1] == '/' or path[i - 1] == '\\') break;
-        }
-        break :blk path[i..];
-    };
-    const t = std.fmt.bufPrintSentinel(&title, "{s} - Paint", .{name}, 0) catch return;
+    const t = std.fmt.bufPrintSentinel(&title, "{s} - Paint", .{displayName(path)}, 0) catch return;
     _ = w.SetWindowTextA(app.frame, t.ptr);
+    if (path.len > 0) addRecent(path);
+}
+
+/// The four files at the foot of the File menu. The machine keeps them in
+/// the registry between runs; there is none here, so they last as long as
+/// the program does.
+const recent_max = 4;
+var recent: [recent_max][300]u8 = @splat(@splat(0));
+var recent_n: usize = 0;
+
+fn recentPath(i: usize) []const u8 {
+    var n: usize = 0;
+    while (n < recent[i].len and recent[i][n] != 0) : (n += 1) {}
+    return recent[i][0..n];
+}
+
+fn addRecent(path: []const u8) void {
+    if (path.len == 0 or path.len >= recent[0].len) return;
+    // already there: it moves to the top rather than appearing twice
+    var at: usize = recent_n;
+    for (0..recent_n) |i| {
+        if (std.mem.eql(u8, recentPath(i), path)) at = i;
+    }
+    if (at == recent_n and recent_n < recent_max) recent_n += 1;
+    var i = @min(at, recent_max - 1);
+    while (i > 0) : (i -= 1) recent[i] = recent[i - 1];
+    @memset(&recent[0], 0);
+    @memcpy(recent[0][0..path.len], path);
+    updateRecentMenu();
+}
+
+/// Where the list sits in the File menu: after the wallpaper items and the
+/// separator that follows them, before the separator above Exit.
+const recent_pos = 14;
+
+fn updateRecentMenu() void {
+    const file = w.GetSubMenu(w.GetMenu(app.frame), 0) orelse return;
+    // out with the placeholder or the list that is there — every item that
+    // carries one of the four commands — and in with the list as it stands
+    var id: u32 = ID.file_recent;
+    while (id < ID.file_recent + recent_max) : (id += 1)
+        _ = w.DeleteMenu(file, id, w.MF_BYCOMMAND);
+    var buf: [320]u8 = undefined;
+    for (0..recent_n) |i| {
+        const text = std.fmt.bufPrintSentinel(&buf, "&{d} {s}", .{ i + 1, displayName(recentPath(i)) }, 0) catch continue;
+        _ = w.InsertMenuA(file, @intCast(recent_pos + i), w.MF_BYPOSITION | w.MF_STRING, ID.file_recent + i, text.ptr);
+    }
 }
 
 /// Where the picture is saved: what was opened, or what the command line
 /// named, or a file beside the program.
+/// The path as it stands, or nothing at all — which is "untitled".
+fn savePathOrNone() []const u8 {
+    var i: usize = 0;
+    while (i < app.path.len and app.path[i] != 0) : (i += 1) {}
+    return app.path[0..i];
+}
+
 fn savePath() []const u8 {
     var i: usize = 0;
     while (i < app.path.len and app.path[i] != 0) : (i += 1) {}
@@ -650,6 +764,8 @@ pub fn main() void {
 
     const accel = accelerators();
     updateMenus();
+    // A picture named on the command line, which is how a shell opens one.
+    openArgument();
 
     var msg: w.MSG = undefined;
     while (w.GetMessageA(&msg, null, 0, 0) != 0) {
