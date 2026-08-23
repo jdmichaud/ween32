@@ -31,7 +31,7 @@ that no application has asked for:
 - [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
   one. GDI's is the boundary of a filled *region* whose spans are tighter
   than that at some rows — measured on the machine, and written down in
-  [docs/mspaint.md](docs/mspaint.md), which is where a next attempt should
+  [docs/paint.md](docs/paint.md), which is where a next attempt should
   start. A wide line at a shallow angle differs at its ends for the same
   kind of reason: GDI sweeps the pen as a region rather than stamping it
   along a walk.
@@ -451,7 +451,7 @@ Two more places where wine and the machine disagree, both settled the same
 way and both worth about fifty pixels of the sampler totals: the caption
 gradient steps just *after* the exact point rather than on it, and a scroll
 bar's up arrow sits in the same four rows of its button as the down arrow.
-[docs/mspaint.md](docs/mspaint.md) has the measurements.
+[docs/paint.md](docs/paint.md) has the measurements.
 
 A shell context menu on a folder is 121 x 238 there and 121 x 238 here, with
 every label's ink in the same column and every separator between the same two

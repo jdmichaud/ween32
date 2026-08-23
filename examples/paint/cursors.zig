@@ -1,7 +1,7 @@
 //! Paint's own pointers, one per tool.
 //!
 //! They are cursor resources in the real program. Here they are read off the
-//! machine by `tools/mspaint/grabcursors.py` — the emulator draws the pointer
+//! machine by `tools/paint/grabcursors.py` — the emulator draws the pointer
 //! into its frame buffer, so a screenshot of the screen holds it, and the same
 //! pointer over a white page and over a black one says which of its pixels are
 //! its own and which are the page showing through. `CreateCursor` takes the

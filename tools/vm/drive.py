@@ -16,7 +16,7 @@ than in a chain of separate calls.
     tools/vm/drive.py shot /tmp/win.png 132,132,654,544   # a crop of it
 
 Commands run left to right in one connection, so a whole gesture is one
-invocation. --sock and --shm pick the VM; they default to the mspaint one.
+invocation. --sock and --shm pick the VM; they default to Paint's.
 """
 import os
 import json

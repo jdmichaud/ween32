@@ -121,15 +121,15 @@ machine's list. See the ROADMAP for what was measured.
 
 ### Paint beside the machine
 
-`examples/mspaint` is held up against a Windows 2000 running the real
+`examples/paint` is held up against a Windows 2000 running the real
 program, which is where the numbers above came from. The window differs by
 six pixels of 110,000, and every tool but two draws what the machine draws to
-the pixel. See [mspaint.md](mspaint.md) for how to take the captures, how the
+the pixel. See [paint.md](paint.md) for how to take the captures, how the
 comparison calibrates the guest's relative mouse, and what the two are.
 
 ```sh
-zig build mspaint
-WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/paint-ours.bmp ./zig-out/bin/mspaint
+zig build paint
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/paint-ours.bmp ./zig-out/bin/paint
 magick /tmp/paint-ours.bmp /tmp/paint-ours.png
 tools/refcapture/paintdiff.py               # expect 6 of 110000
 ```
@@ -139,10 +139,10 @@ counting. These four are the ones to run after touching a tool, a selection
 or the rasteriser — each should print zero:
 
 ```sh
-tools/mspaint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87"
-tools/mspaint/compare.py "tool 1" "drag 81,61 141,101" "drag 100,80 130,110"
-tools/mspaint/compare.py "tool 0" "drag 90,70 130,70 130,110 90,110 90,70"
-tools/mspaint/compare.py "color 16" "tool 7" "option 6" "click 90,100" \
+tools/paint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87"
+tools/paint/compare.py "tool 1" "drag 81,61 141,101" "drag 100,80 130,110"
+tools/paint/compare.py "tool 0" "drag 90,70 130,70 130,110 90,110 90,70"
+tools/paint/compare.py "color 16" "tool 7" "option 6" "click 90,100" \
     "color 20" "click 120,100" "color 16" "tool 2" "option 0" \
     "rclick 90,100" "rclick 120,100"
 ```

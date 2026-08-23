@@ -123,7 +123,7 @@ test: $(TESTS)
 ZIGWIN = $(ZIG) cc -target x86_64-windows-gnu -std=c99 -Iinclude
 
 # Which zig. The C half needs nothing but its bundled mingw-w64 headers, so
-# any will do; the package -- and with it examples/mspaint, which is written
+# any will do; the package -- and with it examples/paint, which is written
 # in Zig -- needs the version build.zig.zon asks for, and is skipped rather
 # than failed when the one on PATH is older.
 ZIG ?= zig
@@ -139,9 +139,9 @@ win32:
 	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
 	   /tmp/ween32-consts.c && echo "  win32 constants agree"
 	@case "$$($(ZIG) version)" in \
-	   $(ZIG_NEEDS)*) echo "  win32 examples/mspaint (zig)"; \
-	      $(ZIG) build mspaint -Dtarget=x86_64-windows-gnu || exit 1;; \
-	   *) echo "  win32 examples/mspaint: needs zig $(ZIG_NEEDS), skipped";; \
+	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
+	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1;; \
+	   *) echo "  win32 examples/paint: needs zig $(ZIG_NEEDS), skipped";; \
 	 esac
 
 clean:

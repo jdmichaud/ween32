@@ -72,13 +72,13 @@ pub fn build(b: *std.Build) void {
     addExamples(b, mod, target, optimize);
 }
 
-/// The Zig examples. `zig build mspaint` builds Paint; `zig build` builds it
+/// The Zig examples. `zig build paint` builds Paint; `zig build` builds it
 /// along with the library, on either kind of host.
 fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const paint = b.addExecutable(.{
-        .name = "mspaint",
+        .name = "paint",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/mspaint/main.zig"),
+            .root_source_file = b.path("examples/paint/main.zig"),
             .target = target,
             .optimize = optimize,
             // for the C runtime's file calls, which is how a win32 program
@@ -88,6 +88,6 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
     });
     paint.root_module.addImport("ween32", mod);
     b.installArtifact(paint);
-    const step = b.step("mspaint", "Build Paint");
+    const step = b.step("paint", "Build Paint");
     step.dependOn(&b.addInstallArtifact(paint, .{}).step);
 }

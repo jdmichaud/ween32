@@ -7,7 +7,7 @@ dialog units, through MulDiv(units, base, 4) across and MulDiv(units, base,
 8) down; this runs that backwards, and checks the answer by mapping it
 forward again.
 
-    tools/mspaint/dlu.py ~/paintshare/attr.txt
+    tools/paint/dlu.py ~/paintshare/attr.txt
 
 Prints one line per control, ready to be read into a table of
 dlgtemplate.Item, and says so if any pixel cannot be reached from a whole

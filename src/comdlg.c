@@ -919,7 +919,7 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
     const DWORD child = WS_CHILD | WS_VISIBLE;
     /* Every rectangle here is the machine's, in the dialog units its own
      * resource is written in: the probe walks a running Edit Colors and
-     * tools/mspaint/dlu.py maps the pixels back. The right-hand half is in
+     * tools/paint/dlu.py maps the pixels back. The right-hand half is in
      * the template from the start and simply left outside the window until
      * "Define Custom Colors" widens it, which is how the real one works. */
     const DWORD half = child | WS_DISABLED;

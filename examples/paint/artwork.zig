@@ -1,6 +1,6 @@
 //! Turning the generated pixel tables into the things win32 draws with.
 //!
-//! `tools/mspaint/genart.py` writes each picture as a palette and one
+//! `tools/paint/genart.py` writes each picture as a palette and one
 //! character per pixel. This makes those into a bitmap, an image list or an
 //! icon — the three shapes GDI wants them in — at compile time, so nothing is
 //! parsed at run time and nothing is read off disk.

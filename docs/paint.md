@@ -1,6 +1,6 @@
 # Paint
 
-`examples/mspaint` is Windows 2000's Paint, written to win32 and running on
+`examples/paint` is Windows 2000's Paint, written to win32 and running on
 ween32. It is in Zig — through the `ween32` module the package already
 exposed — and the same source compiles for Windows, where the module's
 declarations are the real USER32, GDI32, COMCTL32 and COMDLG32.
@@ -66,11 +66,11 @@ of a dialog opened by mouse has no underlines in it and one opened by Alt
 does. `a:` in `WEEN32_SCRIPT` holds Alt down over a key for exactly that.
 
 **The dialogs.** The probe dumps a dialog's controls the same way, and
-`tools/mspaint/dlu.py` runs the dialog manager backwards over that dump:
+`tools/paint/dlu.py` runs the dialog manager backwards over that dump:
 
 ```sh
 tools/vm/drive.py key KeyR:OSLeft ... 'Z:\probe.exe "Custom Zoom" Z:\zoom.txt'
-tools/mspaint/dlu.py ~/paintshare/zoom.txt
+tools/paint/dlu.py ~/paintshare/zoom.txt
 ```
 
 ```
@@ -81,15 +81,15 @@ dialog 300x135 px = 200 x 83 du   style=94C820C4
 
 Every control of every box Paint opens lands on a whole number of units,
 which is what says these are the resource's own numbers and not a fit to
-them. `examples/mspaint/dialogs.zig` writes those units and the dialog
+them. `examples/paint/dialogs.zig` writes those units and the dialog
 manager puts them back on the same pixels. The four little pictures in
 Stretch and Skew, and the icon in About, are cut out of the machine's own
 dialogs the way the tool glyphs are.
 
 **The pictures.** The sixteen tool glyphs and the icon in the caption are cut
 out of screenshots of the machine and generated into Zig by
-`tools/mspaint/genart.py`. The settings box is generated too, by
-`tools/mspaint/genoptions.py`, from one screenshot per setting: the pixels
+`tools/paint/genart.py`. The settings box is generated too, by
+`tools/paint/genoptions.py`, from one screenshot per setting: the pixels
 that change when a setting is chosen are that setting's rectangle — which is
 also where a click on it lands — and that rectangle out of its own
 screenshot and out of any other are the two pictures to draw. Nothing is
@@ -99,7 +99,7 @@ interpreted, so a colour picture and a one-bit glyph need no distinction.
 magnifier — and a cursor is not in the window, so the probe cannot ask for it
 and a screenshot of the window does not hold it. The emulator draws the
 pointer into its frame buffer, though, so a screenshot of the *screen* does:
-`tools/mspaint/grabcursors.py` picks each tool in turn and parks the pointer
+`tools/paint/grabcursors.py` picks each tool in turn and parks the pointer
 over a page flooded with the palette's grey, which tells the four kinds of
 pixel apart in one shot — grey is the page showing through, black and white
 are the cursor's own, and the inverse of grey is a pixel that inverts what is
@@ -119,8 +119,8 @@ plus, four and five squares with the corners off.
 ## Checking it
 
 ```sh
-zig build mspaint
-WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/paint.bmp ./zig-out/bin/mspaint
+zig build paint
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/paint.bmp ./zig-out/bin/paint
 ```
 
 `tools/refcapture/paintdiff.py` compares that render with the machine's,
@@ -137,12 +137,12 @@ machine's Paint window taken with `tools/vm/drive.py`. Those captures are
 gitignored: they are pictures of someone else's program, and they can be
 taken again.
 
-`tools/mspaint/compare.py` draws the *same thing* on both and counts the
+`tools/paint/compare.py` draws the *same thing* on both and counts the
 difference:
 
 ```sh
-tools/mspaint/compare.py "tool 12" "drag 76,57 126,87"     # a rectangle
-tools/mspaint/compare.py "tool 7" "option 5" "click 120,100"  # one brush
+tools/paint/compare.py "tool 12" "drag 76,57 126,87"     # a rectangle
+tools/paint/compare.py "tool 7" "option 5" "click 120,100"  # one brush
 ```
 
 It calibrates first. The guest's mouse is relative, and asking for (120,160)
@@ -161,7 +161,7 @@ And the selection, which is most of what Paint is:
 ```sh
 # a rectangle, the page flooded round it, the rectangle selected
 # transparently and dragged onto the flood
-tools/mspaint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87" \
+tools/paint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87" \
     "color 17" "tool 3" "click 200,200" \
     "tool 1" "option 1" "drag 70,50 132,92" "drag 100,70 160,150"
 canvas: 0 differing pixels of 48433
@@ -214,7 +214,7 @@ Everything above is measured headless, which is how it can be counted. It
 also runs on X:
 
 ```sh
-zig build mspaint && ./zig-out/bin/mspaint
+zig build paint && ./zig-out/bin/paint
 ```
 
 The window that comes up is the window in the pictures above, and the pointer
@@ -224,15 +224,15 @@ hot spot and all, with `XFixesGetCursorImage`.
 ## The same source, as win32
 
 ```sh
-zig build mspaint -Dtarget=x86_64-windows-gnu
+zig build paint -Dtarget=x86_64-windows-gnu
 ```
 
 That links the real user32/gdi32/comctl32/comdlg32 and produces
-`zig-out/bin/mspaint.exe`, which runs under wine:
+`zig-out/bin/paint.exe`, which runs under wine:
 
 ```sh
 Xvfb :98 -screen 0 1024x768x24 &
-DISPLAY=:98 wine zig-out/bin/mspaint.exe
+DISPLAY=:98 wine zig-out/bin/paint.exe
 ```
 
 It comes up with its tool box, its colour box, its menu and its status bar,

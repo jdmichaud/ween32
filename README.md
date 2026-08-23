@@ -23,7 +23,7 @@ box, the menu bar and the view:
 
 **This is a work in progress.** See [ROADMAP.md](ROADMAP.md) for what works
 today and what does not, [docs/design.md](docs/design.md) for how it is
-built, [docs/mspaint.md](docs/mspaint.md) for how Paint was measured, and
+built, [docs/paint.md](docs/paint.md) for how Paint was measured, and
 [docs/testing.md](docs/testing.md) for how to check it.
 
 The library code is MIT. The embedded fonts are Wine's redistributable Tahoma,

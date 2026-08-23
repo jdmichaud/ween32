@@ -10,9 +10,9 @@ the palette's grey, which is what tells the four kinds of pixel apart in one
 shot: grey is the page showing through, black and white are the cursor's
 own, and the inverse of grey is a pixel that inverts what is under it.
 
-    tools/mspaint/grabcursors.py                 # writes assets/paint-cursors.png
-    tools/mspaint/grabcursors.py 3 6 8           # only those tools
-    tools/mspaint/grabcursors.py --reuse         # from the shots already taken
+    tools/paint/grabcursors.py                 # writes assets/paint-cursors.png
+    tools/paint/grabcursors.py 3 6 8           # only those tools
+    tools/paint/grabcursors.py --reuse         # from the shots already taken
 
 The hot spot is where the pointer really was, which is measured first by
 leaving a pencil dot at the same place: the ink lands on the hot spot, and

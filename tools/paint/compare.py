@@ -13,8 +13,8 @@ really goes, and *those* coordinates are what our own copy is driven with.
 After that the two are drawing the same shape from the same corners, and any
 difference left is ours.
 
-    tools/mspaint/compare.py "tool 12" "drag 76,57 126,87"
-    tools/mspaint/compare.py --keep "tool 10" "drag 80,120 120,159"
+    tools/paint/compare.py "tool 12" "drag 76,57 126,87"
+    tools/paint/compare.py --keep "tool 10" "drag 80,120 120,159"
 
 Steps: `tool N` picks the Nth tool button, `option N` the Nth setting,
 `click X,Y`, `drag X,Y X,Y ...`, `key NAME`, `color N`/`bgcolor N` for the
@@ -28,7 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 DRIVE = os.path.join(ROOT, "tools/vm/drive.py")
-PAINT = os.path.join(ROOT, "zig-out/bin/mspaint")
+PAINT = os.path.join(ROOT, "zig-out/bin/paint")
 
 # The window is at (0,0) on the machine's screen, so window coordinates and
 # screen coordinates are the same thing.
@@ -60,7 +60,7 @@ GROUP_OF = {
 def option_rects():
     import re
 
-    text = open(os.path.join(ROOT, "examples/mspaint/art_options.zig")).read()
+    text = open(os.path.join(ROOT, "examples/paint/art_options.zig")).read()
     out, name = {}, None
     for line in text.splitlines():
         m = re.match(r"pub const (\w+) = \[_\]Option\{", line)
