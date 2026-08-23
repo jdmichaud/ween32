@@ -1079,6 +1079,9 @@ typedef struct tagTBBUTTONINFOA {
  * under the pointer, which is how the Back arrow comes to be blue. */
 #define TB_SETHOTIMAGELIST (WM_USER + 52)
 #define TB_GETITEMRECT (WM_USER + 29)
+/* Which place in the bar a command's button is in — what a rectangle has to
+ * be asked for by. */
+#define TB_COMMANDTOINDEX (WM_USER + 25)
 #define TB_BUTTONCOUNT (WM_USER + 24)
 #define TB_AUTOSIZE (WM_USER + 33)
 

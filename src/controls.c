@@ -4861,6 +4861,12 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 return (tb->btn[i].state & bit) != 0;
         return FALSE;
     }
+    case TB_COMMANDTOINDEX:
+        tb = toolbar_of(wnd);
+        for (int i = 0; tb && i < tb->count; i++)
+            if (tb->btn[i].id == (int)wp)
+                return i;
+        return -1;
     case TB_GETITEMRECT: {
         RECT *out = (RECT *)lp;
         tb = toolbar_of(wnd);

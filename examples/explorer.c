@@ -109,7 +109,9 @@ enum {
 
     /* one per title of the menu bar, since a toolbar's buttons are known by
      * their command and these are the buttons the bar is made of */
-    IDM_MENU_FIRST = 400
+    IDM_MENU_FIRST = 400,
+    /* one per step of the walk, for the lists Back and Forward drop down */
+    IDM_HIST_FIRST = 500
 };
 
 /* the icons the shell shows, by their number in assets/icons */
@@ -2988,6 +2990,52 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
              * The bar keeps the button pushed in and slides to the next one
              * by itself; all this has to do is put the menu under it. */
             menubar_drop(((const NMTOOLBAR *)lp)->iItem - IDM_MENU_FIRST);
+        } else if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_toolbar) {
+            /* The arrows beside Back, Forward and Views. Views offers the
+             * five the View menu does; the other two offer where they would
+             * go, which is the walk this window has made. */
+            int id = ((const NMTOOLBAR *)lp)->iItem;
+            RECT r;
+            POINT pt;
+            HMENU m = NULL;
+            SendMessageA(g_toolbar, TB_GETITEMRECT,
+                         (WPARAM)SendMessageA(g_toolbar, TB_COMMANDTOINDEX,
+                                              (WPARAM)id, 0),
+                         (LPARAM)&r);
+            pt.x = r.left;
+            pt.y = r.bottom;
+            ClientToScreen(g_toolbar, &pt);
+            if (id == IDM_VIEWS) {
+                static const char *names[] = { "Lar&ge Icons", "S&mall Icons",
+                                               "&List", "&Details",
+                                               "Thu&mbnails" };
+                m = CreatePopupMenu();
+                for (int i = 0; i < 5; i++)
+                    AppendMenuA(m, MF_STRING, (UINT)(IDM_VIEW_LARGE + i),
+                                names[i]);
+                CheckMenuRadioItem(m, 0, 4, (UINT)g_view, MF_BYPOSITION);
+            } else {
+                /* where Back and Forward would take you, most recent first */
+                int from = id == IDM_BACK ? g_hist_at - 1 : g_hist_at + 1;
+                int step = id == IDM_BACK ? -1 : 1;
+                m = CreatePopupMenu();
+                for (int i = from, n = 0; i >= 0 && i < g_hist_n && n < 9;
+                     i += step, n++) {
+                    const char *leaf = strrchr(g_hist[i], FS_SEP);
+                    AppendMenuA(m, MF_STRING, (UINT)(IDM_HIST_FIRST + i),
+                                leaf && leaf[1] ? leaf + 1 : g_hist[i]);
+                }
+                if (!GetMenuItemCount(m))
+                    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "(none)");
+            }
+            {
+                UINT cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_RETURNCMD,
+                                          pt.x, pt.y, 0, g_main, NULL);
+                DestroyMenu(m);
+                if (cmd)
+                    SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0),
+                                 0);
+            }
         } else if (nm->code == LVN_ENDLABELEDITA) {
             const NMLVDISPINFOA *di = (const NMLVDISPINFOA *)lp;
             return end_rename(di->item.iItem, di->item.pszText);
@@ -3163,6 +3211,19 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             layout(w);
             InvalidateRect(w, NULL, TRUE);
             return 0;
+        case IDM_SEARCH:
+        case IDM_BAR_SEARCH:
+        case IDM_BAR_FAVORITES:
+        case IDM_BAR_HISTORY:
+        case IDM_HISTORY:
+            /* The bars a shell can put beside the list. Only one of them is
+             * built — Folders — so the others say so rather than doing
+             * nothing at all. */
+            MessageBoxA(w,
+                        "This Explorer bar is not part of the example.\n"
+                        "Folders, under the same menu, is.",
+                        "Explorer Bar", MB_OK | MB_ICONINFORMATION);
+            return 0;
         case IDM_HOME:
             show_directory(home_path());
             return 0;
@@ -3258,7 +3319,13 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         }
         case IDM_ABOUT:
             MessageBoxA(w, "ween32 — a win32 for the rest of us.",
-                        "About Windows", MB_OK);
+                        "About Windows", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        }
+        /* a step of the walk, picked from Back's or Forward's own list */
+        if (LOWORD(wp) >= IDM_HIST_FIRST &&
+            LOWORD(wp) < IDM_HIST_FIRST + HIST_MAX) {
+            history_go((int)LOWORD(wp) - IDM_HIST_FIRST - g_hist_at);
             return 0;
         }
         return 0;
