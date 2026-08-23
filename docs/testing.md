@@ -251,10 +251,10 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
 | page | differing | of 180648 | what is left |
 | --- | --- | --- | --- |
-| General | 1712 | 0.9% | the caption's bold title, the machine's own mouse pointer in the shot, the focus rectangle it draws |
-| View | 15060 | 8.3% | the Advanced settings list |
-| File Types | 29199 | 16.2% | the list's contents |
-| Offline Files | 9574 | 5.3% | the up-down beside the minutes box, the trackbar's thumb position |
+| General | 1658 | 0.9% | the caption's bold title, the machine's own mouse pointer in the shot, the focus rectangle it draws |
+| View | 15283 | 8.5% | the Advanced settings list |
+| File Types | 29201 | 16.2% | the list's contents |
+| Offline Files | 9384 | 5.2% | the up-down beside the minutes box, the trackbar's thumb position |
 
 Two of those cannot close. The machine's **File Types** list is its own
 registry — a hundred extensions this example has never heard of — while ours
