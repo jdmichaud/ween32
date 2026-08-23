@@ -379,7 +379,8 @@ fn command(id: u16) void {
                 .hwndOwner = app.frame,
                 .rgbResult = app.fg,
                 .lpCustColors = &custom,
-                .Flags = w.CC_RGBINIT | w.CC_FULLOPEN,
+                .Flags = w.CC_RGBINIT | w.CC_ENABLEHOOK,
+                .lpfnHook = colorHook,
             };
             if (w.ChooseColorA(&cc) != 0) {
                 app.fg = cc.rgbResult;
@@ -468,6 +469,16 @@ pub fn refresh() void {
     _ = w.InvalidateRect(app.view, null, w.TRUE);
     _ = w.InvalidateRect(app.colorbox, null, w.FALSE);
     updateMenus();
+}
+
+/// The colour box belongs to the system, and its title is "Color". Paint's
+/// says "Edit Colors", which is what the hook a program hands over with
+/// CC_ENABLEHOOK is for.
+fn colorHook(dlg: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.INT_PTR {
+    _ = wp;
+    _ = lp;
+    if (msg == w.WM_INITDIALOG) _ = w.SetWindowTextA(dlg, "Edit Colors");
+    return 0; // and the dialog carries on with it
 }
 
 fn setZoom(z: i32) void {

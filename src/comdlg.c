@@ -512,7 +512,10 @@ static COLORREF hsl_to_rgb(int h, int s, int l)
 {
     int n1, n2, r, g, b;
     if (!s) {
-        int v = (l * 255 + 120) / 240;
+        /* The grey case truncates where the coloured one rounds, which is
+         * what the classic HLStoRGB does and what the machine's brightness
+         * bar comes out as: luminance 232 is 246, not 247. */
+        int v = l * 255 / 240;
         return RGB(v, v, v);
     }
     n2 = l <= 120 ? (l * (240 + s) + 120) / 240 : l + s - (l * s + 120) / 240;
@@ -525,45 +528,98 @@ static COLORREF hsl_to_rgb(int h, int s, int l)
 
 /* The grid of swatches, and the two pictures beside the sliders, are drawn by
  * the dialog rather than being controls: they are owner-drawn statics. */
+/* One square of a grid of them, measured off the machine: a twenty by
+ * seventeen sunken box three pixels in from the control's corner, on a
+ * pitch of twenty-five across and twenty-two down, with the colour itself
+ * filling the sixteen by thirteen inside the edge. */
+#define SWATCH_W 20
+#define SWATCH_H 17
+#define SWATCH_PITCH_X 25
+#define SWATCH_PITCH_Y 22
+#define SWATCH_INSET 3
+
+static void swatch_cell(int i, int cols, RECT *r)
+{
+    r->left = SWATCH_INSET + (i % cols) * SWATCH_PITCH_X;
+    r->top = SWATCH_INSET + (i / cols) * SWATCH_PITCH_Y;
+    r->right = r->left + SWATCH_W;
+    r->bottom = r->top + SWATCH_H;
+}
+
 static void draw_swatches(HWND dlg, HDC dc, HWND ctl, const COLORREF *colors,
                           int count, int cols, COLORREF picked)
 {
-    RECT r;
-    int ox, oy, cw, ch;
     (void)dlg;
-    GetClientRect(ctl, &r);
-    cw = (r.right + cols - 1) / cols;
-    ch = 14;
-    ween_client_origin(ctl, &ox, &oy);
+    (void)ctl;
     for (int i = 0; i < count; i++) {
-        RECT cell;
+        RECT cell, in;
         HBRUSH br;
-        cell.left = (i % cols) * cw;
-        cell.top = (i / cols) * ch;
-        cell.right = cell.left + cw - 2;
-        cell.bottom = cell.top + ch - 2;
+        swatch_cell(i, cols, &cell);
+        DrawEdge(dc, &cell, EDGE_SUNKEN, BF_RECT);
+        in.left = cell.left + 2;
+        in.top = cell.top + 2;
+        in.right = cell.right - 2;
+        in.bottom = cell.bottom - 2;
         br = CreateSolidBrush(colors[i]);
-        FillRect(dc, &cell, br);
+        FillRect(dc, &in, br);
         DeleteObject(br);
-        FrameRect(dc, &cell, GetSysColorBrush(COLOR_BTNSHADOW));
         if (colors[i] == picked) {
+            /* the one in hand wears a black rectangle outside its edge */
             RECT out = cell;
             out.left--;
             out.top--;
             out.right++;
             out.bottom++;
-            FrameRect(dc, &out, GetSysColorBrush(COLOR_WINDOWTEXT));
+            FrameRect(dc, &out, GetSysColorBrush(COLOR_WINDOWFRAME));
         }
     }
 }
 
 static COLORREF g_custom[16];
 
+/* How wide the dialog is in dialog units, shut and open. The template is
+ * the open one: the definition half is in it from the start and the window
+ * is narrowed over it, which is how the real one hides it. */
+#define COLOR_DLG_SHUT 144
+#define COLOR_DLG_OPEN 298
+
+/* Narrow the dialog to the left half, or widen it back. */
+static void color_show_half(HWND dlg, int open)
+{
+    static const int half_ids[] = {
+        IDC_COLOR_FIELD, IDC_COLOR_LUM,      IDC_COLOR_SAMPLE, IDC_COLOR_HUE,
+        IDC_COLOR_SAT,   IDC_COLOR_LUMEDIT,  IDC_COLOR_RED,    IDC_COLOR_GREEN,
+        IDC_COLOR_BLUE,  IDC_COLOR_ADD,
+    };
+    RECT r = { 0, 0, open ? COLOR_DLG_OPEN : COLOR_DLG_SHUT, 184 };
+    MapDialogRect(dlg, &r);
+    AdjustWindowRect(&r, GetWindowLongA(dlg, GWL_STYLE), FALSE);
+    RECT was;
+    GetWindowRect(dlg, &was);
+    MoveWindow(dlg, was.left, was.top, r.right - r.left, r.bottom - r.top,
+               TRUE);
+    for (size_t i = 0; i < sizeof half_ids / sizeof half_ids[0]; i++)
+        EnableWindow(GetDlgItem(dlg, half_ids[i]), open ? TRUE : FALSE);
+    /* the button that asked goes grey, as it does on the machine */
+    EnableWindow(GetDlgItem(dlg, IDC_COLOR_DEFINE), open ? FALSE : TRUE);
+    InvalidateRect(dlg, NULL, TRUE);
+}
+
 static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
+    /* An application that asked for a hook sees every message before the
+     * dialog does, and saying so ends it there: that is how a program gives
+     * the system's colour box a title of its own. */
+    if (g_cc.cc && (g_cc.cc->Flags & CC_ENABLEHOOK) && g_cc.cc->lpfnHook) {
+        INT_PTR r = g_cc.cc->lpfnHook(dlg, msg, wp, lp);
+        if (r)
+            return r;
+    }
     switch (msg) {
     case WM_INITDIALOG: {
         rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
+        /* CC_FULLOPEN asks for it open; anything else starts it shut. */
+        color_show_half(dlg, (g_cc.cc->Flags & CC_FULLOPEN) != 0);
         return 1;
     }
     case WM_DRAWITEM: {
@@ -585,6 +641,7 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         /* the numbers, which follow whatever was last picked */
         char buf[16];
+        RECT bar;
         snprintf(buf, sizeof buf, "%d", GetRValue(g_cc.chosen));
         SetDlgItemTextA(dlg, IDC_COLOR_RED, buf);
         snprintf(buf, sizeof buf, "%d", GetGValue(g_cc.chosen));
@@ -597,7 +654,34 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         SetDlgItemTextA(dlg, IDC_COLOR_SAT, buf);
         snprintf(buf, sizeof buf, "%d", g_cc.lum);
         SetDlgItemTextA(dlg, IDC_COLOR_LUMEDIT, buf);
-        return FALSE;
+        /* The dialog paints itself, and then the arrow beside the
+         * brightness bar: it points at the luminance in hand from outside
+         * the bar, so it belongs to the dialog rather than to the control. */
+        DefWindowProcA(dlg, WM_PAINT, wp, lp);
+        if (IsWindowEnabled(GetDlgItem(dlg, IDC_COLOR_LUM))) {
+            HWND lum = GetDlgItem(dlg, IDC_COLOR_LUM);
+            HDC dc = GetDC(dlg);
+            HBRUSH ink = GetSysColorBrush(COLOR_WINDOWFRAME);
+            int ox, oy, cox, coy, h;
+            GetClientRect(lum, &bar);
+            ween_client_origin(lum, &ox, &oy);
+            ween_client_origin(dlg, &cox, &coy);
+            ox -= cox;
+            oy -= coy;
+            h = bar.bottom;
+            int ay = oy + ((240 - g_cc.lum) * (h - 1) + 120) / 240;
+            int ax = ox + bar.right + 2;
+            for (int i = 0; i < 5; i++) {
+                RECT c;
+                c.left = ax + i;
+                c.right = ax + i + 1;
+                c.top = ay - i;
+                c.bottom = ay + i + 1;
+                FillRect(dc, &c, ink);
+            }
+            ReleaseDC(dlg, dc);
+        }
+        return TRUE;
     }
     case WM_COMMAND: {
         int id = LOWORD(wp);
@@ -607,6 +691,10 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (id == IDCANCEL) {
             EndDialog(dlg, 0);
+            return TRUE;
+        }
+        if (id == IDC_COLOR_DEFINE) {
+            color_show_half(dlg, 1);
             return TRUE;
         }
         if (id == IDC_COLOR_ADD) {
@@ -633,6 +721,8 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 
 /* The hue-and-saturation field: hue across, saturation up. Clicking in it
  * picks both at once, which is what makes it worth having. */
+#define FIELD_COLS 60
+#define FIELD_ROWS 30
 static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     RECT r;
@@ -641,21 +731,48 @@ static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
         GetClientRect(wnd, &r);
-        for (int y = 0; y < r.bottom; y++) {
-            int sat = 240 - y * 240 / (r.bottom - 1);
-            for (int x = 0; x < r.right; x++) {
-                int hue = x * 239 / (r.right - 1);
-                SetPixel(dc, x, y, hsl_to_rgb(hue, sat, 120));
+        /* Not a pixel at a time: the machine fills it as a grid of sixty
+         * blocks across and thirty down -- hue every four of its two hundred
+         * and forty, saturation every eight -- and the bands are visible, so
+         * a smooth one would be wrong. */
+        for (int j = 0; j < FIELD_ROWS; j++) {
+            for (int i = 0; i < FIELD_COLS; i++) {
+                RECT band;
+                HBRUSH br;
+                band.left = i * r.right / FIELD_COLS;
+                band.right = (i + 1) * r.right / FIELD_COLS;
+                band.top = j * r.bottom / FIELD_ROWS;
+                band.bottom = (j + 1) * r.bottom / FIELD_ROWS;
+                br = CreateSolidBrush(hsl_to_rgb(i * (240 / FIELD_COLS),
+                                                 240 - j * (240 / FIELD_ROWS),
+                                                 120));
+                FillRect(dc, &band, br);
+                DeleteObject(br);
             }
         }
-        {   /* the cross where the colour sits */
-            int cx = g_cc.hue * (r.right - 1) / 239;
-            int cy = (240 - g_cc.sat) * (r.bottom - 1) / 240;
+        {
+            /* Where the colour in hand sits, marked as the machine marks
+             * it: a black cross with the middle left out -- arms four long
+             * starting five away, the upright three thick and the crossbar
+             * two -- so what is under it can still be seen. */
+            int cx = (g_cc.hue * r.right + 120) / 240;
+            int cy = ((240 - g_cc.sat) * r.bottom + 120) / 240;
+            if (cx > r.right - 1)
+                cx = r.right - 1;
+            if (cy > r.bottom - 1)
+                cy = r.bottom - 1;
+            HBRUSH ink = GetSysColorBrush(COLOR_WINDOWFRAME);
             RECT c;
-            c.left = cx - 4; c.right = cx + 5; c.top = cy; c.bottom = cy + 1;
-            InvertRect(dc, &c);
-            c.left = cx; c.right = cx + 1; c.top = cy - 4; c.bottom = cy + 5;
-            InvertRect(dc, &c);
+            c.left = cx - 1; c.right = cx + 2;
+            c.top = cy - 9; c.bottom = cy - 4;
+            FillRect(dc, &c, ink);
+            c.top = cy + 5; c.bottom = cy + 10;
+            FillRect(dc, &c, ink);
+            c.top = cy - 1; c.bottom = cy + 1;
+            c.left = cx - 9; c.right = cx - 4;
+            FillRect(dc, &c, ink);
+            c.left = cx + 5; c.right = cx + 10;
+            FillRect(dc, &c, ink);
         }
         EndPaint(wnd, &ps);
         return 0;
@@ -671,8 +788,8 @@ static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (y < 0) y = 0;
             if (x >= r.right) x = r.right - 1;
             if (y >= r.bottom) y = r.bottom - 1;
-            g_cc.hue = x * 239 / (r.right - 1);
-            g_cc.sat = 240 - y * 240 / (r.bottom - 1);
+            g_cc.hue = x * 240 / r.right;
+            g_cc.sat = 240 - y * 240 / r.bottom;
             g_cc.chosen = hsl_to_rgb(g_cc.hue, g_cc.sat, g_cc.lum);
             InvalidateRect(GetParent(wnd), NULL, FALSE);
         }
@@ -681,6 +798,10 @@ static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return DefWindowProcA(wnd, msg, wp, lp);
     }
 }
+
+/* Where the bar's second band starts: the first is that much shorter than
+ * the rest, on the machine. */
+#define LUM_BAND_TOP 4
 
 /* The brightness bar beside it. */
 static LRESULT CALLBACK lum_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -691,12 +812,19 @@ static LRESULT CALLBACK lum_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
         GetClientRect(wnd, &r);
-        for (int y = 0; y < r.bottom; y++) {
-            int lum = 240 - y * 240 / (r.bottom - 1);
-            COLORREF c = hsl_to_rgb(g_cc.hue, g_cc.sat, lum);
+        /* Banded like the field beside it: thirty-one steps of eight
+         * luminance each, on the same grid as the field's rows but pushed
+         * four pixels down, which is where the machine's bands start. */
+        for (int j = 0; j <= FIELD_ROWS; j++) {
             RECT row;
-            HBRUSH br = CreateSolidBrush(c);
-            row.left = 0; row.right = r.right; row.top = y; row.bottom = y + 1;
+            HBRUSH br = CreateSolidBrush(
+                hsl_to_rgb(g_cc.hue, g_cc.sat, 240 - j * (240 / FIELD_ROWS)));
+            row.left = 0;
+            row.right = r.right;
+            row.top = j ? LUM_BAND_TOP + (j - 1) * r.bottom / FIELD_ROWS : 0;
+            row.bottom = j < FIELD_ROWS
+                             ? LUM_BAND_TOP + j * r.bottom / FIELD_ROWS
+                             : r.bottom;
             FillRect(dc, &row, br);
             DeleteObject(br);
         }
@@ -758,17 +886,23 @@ static LRESULT CALLBACK swatch_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_LBUTTONDOWN: {
-        RECT r;
-        int cols = 8, cw, ch = 14, i;
-        GetClientRect(wnd, &r);
-        cw = (r.right + cols - 1) / cols;
-        i = (GET_Y_LPARAM(lp) / ch) * cols + GET_X_LPARAM(lp) / cw;
-        if (GetDlgCtrlID(wnd) == IDC_COLOR_BASIC) {
-            if (i >= 0 && i < 48)
-                g_cc.chosen = g_basic[i];
-        } else if (i >= 0 && i < 16) {
-            g_cc.chosen = g_custom[i];
+        int cols = 8, count, i;
+        int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+        count = GetDlgCtrlID(wnd) == IDC_COLOR_BASIC ? 48 : 16;
+        i = -1;
+        for (int n = 0; n < count; n++) {
+            RECT cell;
+            swatch_cell(n, cols, &cell);
+            if (x >= cell.left && x < cell.right && y >= cell.top &&
+                y < cell.bottom) {
+                i = n;
+                break;
+            }
         }
+        if (i < 0)
+            return 0;
+        g_cc.chosen = GetDlgCtrlID(wnd) == IDC_COLOR_BASIC ? g_basic[i]
+                                                           : g_custom[i];
         rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
         InvalidateRect(GetParent(wnd), NULL, FALSE);
         return 0;
@@ -783,46 +917,57 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
     static unsigned char buf[4096] __attribute__((aligned(4)));
     static int registered;
     const DWORD child = WS_CHILD | WS_VISIBLE;
+    /* Every rectangle here is the machine's, in the dialog units its own
+     * resource is written in: the probe walks a running Edit Colors and
+     * tools/mspaint/dlu.py maps the pixels back. The right-hand half is in
+     * the template from the start and simply left outside the window until
+     * "Define Custom Colors" widens it, which is how the real one works. */
+    const DWORD half = child | WS_DISABLED;
     dlg_item items[] = {
-        { child | SS_LEFT, 0, 7, 7, 100, 8, 0, ATOM_STATIC, NULL,
+        { child | WS_GROUP | SS_LEFT, 0, 4, 4, 140, 9, 0, ATOM_STATIC, NULL,
           "&Basic colors:" },
-        { child, 0, 7, 18, 137, 112, IDC_COLOR_BASIC, 0, "ween32ColorGrid", "" },
-        { child | SS_LEFT, 0, 7, 136, 100, 8, 0, ATOM_STATIC, NULL,
+        { child | WS_GROUP | WS_TABSTOP, 0, 4, 14, 140, 86, IDC_COLOR_BASIC, 0,
+          "ween32ColorGrid", "" },
+        { child | WS_GROUP | SS_LEFT, 0, 4, 106, 140, 9, 0, ATOM_STATIC, NULL,
           "&Custom colors:" },
-        { child, 0, 7, 147, 137, 28, IDC_COLOR_CUSTOM, 0, "ween32ColorGrid",
-          "" },
-        { child | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0, 205, 180, 50, 14,
+        { child | WS_GROUP | WS_TABSTOP, 0, 4, 116, 140, 28, IDC_COLOR_CUSTOM,
+          0, "ween32ColorGrid", "" },
+        { child | WS_GROUP | WS_TABSTOP | BS_PUSHBUTTON, 0, 4, 150, 140, 14,
+          IDC_COLOR_DEFINE, ATOM_BUTTON, NULL, "&Define Custom Colors >>" },
+        { child | WS_GROUP | WS_TABSTOP | BS_DEFPUSHBUTTON, 0, 4, 166, 44, 14,
           IDOK, ATOM_BUTTON, NULL, "OK" },
-        { child | WS_TABSTOP | BS_PUSHBUTTON, 0, 259, 180, 50, 14, IDCANCEL,
-          ATOM_BUTTON, NULL, "Cancel" },
-        { child | WS_TABSTOP | BS_PUSHBUTTON, 0, 7, 180, 104, 14,
-          IDC_COLOR_ADD, ATOM_BUTTON, NULL, "&Add to Custom Colors" },
-        /* the definition half: the field, the brightness bar beside it, and
-         * the six numbers under them */
-        { child, WS_EX_CLIENTEDGE, 152, 7, 116, 112, IDC_COLOR_FIELD, 0,
+        { child | WS_GROUP | WS_TABSTOP | BS_PUSHBUTTON, 0, 52, 166, 44, 14,
+          IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
+        /* the half that is not there until it is asked for */
+        { half, WS_EX_STATICEDGE, 152, 4, 118, 116, IDC_COLOR_FIELD, 0,
           "ween32ColorField", "" },
-        { child, WS_EX_CLIENTEDGE, 274, 7, 12, 112, IDC_COLOR_LUM, 0,
+        { half, WS_EX_STATICEDGE, 280, 4, 8, 116, IDC_COLOR_LUM, 0,
           "ween32ColorLum", "" },
-        { child, WS_EX_CLIENTEDGE, 152, 126, 40, 20, IDC_COLOR_SAMPLE, 0,
+        { half, WS_EX_STATICEDGE, 152, 124, 40, 26, IDC_COLOR_SAMPLE, 0,
           "ween32ColorSample", "" },
-        { child | SS_RIGHT, 0, 196, 126, 30, 8, 0, ATOM_STATIC, NULL, "Hue:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 228, 124, 24,
-          12, IDC_COLOR_HUE, ATOM_EDIT, NULL, "" },
-        { child | SS_RIGHT, 0, 196, 140, 30, 8, 0, ATOM_STATIC, NULL, "Sat:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 228, 138, 24,
-          12, IDC_COLOR_SAT, ATOM_EDIT, NULL, "" },
-        { child | SS_RIGHT, 0, 196, 154, 30, 8, 0, ATOM_STATIC, NULL, "Lum:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 228, 152, 24,
-          12, IDC_COLOR_LUMEDIT, ATOM_EDIT, NULL, "" },
-        { child | SS_RIGHT, 0, 256, 126, 26, 8, 0, ATOM_STATIC, NULL, "Red:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 284, 124, 24,
-          12, IDC_COLOR_RED, ATOM_EDIT, NULL, "" },
-        { child | SS_RIGHT, 0, 256, 140, 26, 8, 0, ATOM_STATIC, NULL, "Green:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 284, 138, 24,
-          12, IDC_COLOR_GREEN, ATOM_EDIT, NULL, "" },
-        { child | SS_RIGHT, 0, 256, 154, 26, 8, 0, ATOM_STATIC, NULL, "Blue:" },
-        { child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 284, 152, 24,
-          12, IDC_COLOR_BLUE, ATOM_EDIT, NULL, "" },
+        { half | WS_GROUP | SS_RIGHT, 0, 152, 151, 20, 9, 0, ATOM_STATIC, NULL,
+          "Color" },
+        { half | SS_LEFT, 0, 172, 151, 20, 9, 0, ATOM_STATIC, NULL, "|S&olid" },
+        { half | SS_RIGHT, 0, 194, 126, 20, 9, 0, ATOM_STATIC, NULL, "Hu&e:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 216,
+          124, 18, 12, IDC_COLOR_HUE, ATOM_EDIT, NULL, "" },
+        { half | SS_RIGHT, 0, 194, 140, 20, 9, 0, ATOM_STATIC, NULL, "&Sat:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 216,
+          138, 18, 12, IDC_COLOR_SAT, ATOM_EDIT, NULL, "" },
+        { half | SS_RIGHT, 0, 194, 154, 20, 9, 0, ATOM_STATIC, NULL, "&Lum:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 216,
+          152, 18, 12, IDC_COLOR_LUMEDIT, ATOM_EDIT, NULL, "" },
+        { half | SS_RIGHT, 0, 243, 126, 24, 9, 0, ATOM_STATIC, NULL, "&Red:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 269,
+          124, 18, 12, IDC_COLOR_RED, ATOM_EDIT, NULL, "" },
+        { half | SS_RIGHT, 0, 243, 140, 24, 9, 0, ATOM_STATIC, NULL, "&Green:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 269,
+          138, 18, 12, IDC_COLOR_GREEN, ATOM_EDIT, NULL, "" },
+        { half | SS_RIGHT, 0, 243, 154, 24, 9, 0, ATOM_STATIC, NULL, "Bl&ue:" },
+        { half | WS_GROUP | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, 269,
+          152, 18, 12, IDC_COLOR_BLUE, ATOM_EDIT, NULL, "" },
+        { half | WS_GROUP | WS_TABSTOP | BS_PUSHBUTTON, 0, 152, 166, 142, 14,
+          IDC_COLOR_ADD, ATOM_BUTTON, NULL, "&Add to Custom Colors" },
     };
     DLGTEMPLATE *tmpl;
 
@@ -851,10 +996,12 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
     g_cc.cc = cc;
     g_cc.chosen = (cc->Flags & CC_RGBINIT) ? cc->rgbResult : RGB(0, 0, 0);
 
+    /* Wide enough for the definition half, and shrunk to the left half on
+     * the way up; DS_CONTEXTHELP because the machine's wears the mark. */
     tmpl = build(buf,
                  WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME |
-                     DS_SETFONT | DS_3DLOOK,
-                 316, 200, "Color", items,
+                     DS_SETFONT | DS_3DLOOK | DS_CONTEXTHELP,
+                 COLOR_DLG_OPEN, 184, "Color", items,
                  (int)(sizeof items / sizeof items[0]));
     if (DialogBoxIndirectParamA(NULL, tmpl, cc->hwndOwner, color_proc, 0) != 1)
         return FALSE;

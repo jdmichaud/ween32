@@ -420,7 +420,10 @@ pub const OPENFILENAMEA = extern struct {
     nFileExtension: WORD = 0,
     lpstrDefExt: ?LPCSTR = null,
     lCustData: LPARAM = 0,
-    lpfnHook: ?*anyopaque = null,
+    /// Offered every message before the dialog sees it, when the flags say
+    /// CC_ENABLEHOOK: what an application gives the system's colour box a
+    /// title of its own with.
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
     lpTemplateName: ?LPCSTR = null,
 };
 
@@ -432,7 +435,10 @@ pub const CHOOSECOLORA = extern struct {
     lpCustColors: [*]COLORREF,
     Flags: DWORD = 0,
     lCustData: LPARAM = 0,
-    lpfnHook: ?*anyopaque = null,
+    /// Offered every message before the dialog sees it, when the flags say
+    /// CC_ENABLEHOOK: what an application gives the system's colour box a
+    /// title of its own with.
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
     lpTemplateName: ?LPCSTR = null,
 };
 
@@ -877,8 +883,6 @@ pub const SS_CENTERIMAGE = 0x00000200;
 pub const SS_SUNKEN = 0x00001000;
 pub const STM_SETIMAGE = 0x0172;
 pub const STM_GETIMAGE = 0x0173;
-pub const IMAGE_BITMAP = 0;
-pub const IMAGE_ICON = 1;
 pub const BN_CLICKED = 0;
 pub const BM_GETCHECK = 0x00F0;
 pub const BM_CLICK = 0x00F5;
@@ -1114,6 +1118,7 @@ pub const CC_RGBINIT = 0x00000001;
 pub const CC_FULLOPEN = 0x00000002;
 pub const CC_PREVENTFULLOPEN = 0x00000004;
 pub const CC_ANYCOLOR = 0x00000100;
+pub const CC_ENABLEHOOK = 0x00000010;
 pub const WEEN32_HAS_DISABLED = 1;
 pub const WEEN32_HAS_CHECKBOX = 1;
 pub const WEEN32_HAS_RADIO = 1;
@@ -1264,6 +1269,8 @@ pub const WM_CUT = 0x0300;
 pub const WM_COPY = 0x0301;
 pub const WM_PASTE = 0x0302;
 pub const WM_CLEAR = 0x0303;
+pub const IMAGE_BITMAP = 0;
+pub const IMAGE_ICON = 1;
 pub const LR_LOADFROMFILE = 0x0010;
 pub const CLR_NONE = 0xFFFFFFFF;
 pub const ILC_COLOR = 0x0000;

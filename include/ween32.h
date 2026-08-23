@@ -1067,8 +1067,6 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define STM_GETICON 0x0171
 #define STM_SETIMAGE 0x0172
 #define STM_GETIMAGE 0x0173
-#define IMAGE_BITMAP 0
-#define IMAGE_ICON 1
 
 /* button notifications */
 #define BN_CLICKED 0
@@ -1513,7 +1511,9 @@ typedef struct tagCHOOSECOLORA {
     COLORREF *lpCustColors;
     DWORD Flags;
     LPARAM lCustData;
-    void *lpfnHook;
+    /* The hook an application hands over with CC_ENABLEHOOK: it is offered
+     * every message before the dialog sees it. */
+    INT_PTR(CALLBACK *lpfnHook)(HWND, UINT, WPARAM, LPARAM);
     LPCSTR lpTemplateName;
 } CHOOSECOLORA, *LPCHOOSECOLORA;
 
@@ -1521,6 +1521,9 @@ typedef struct tagCHOOSECOLORA {
 #define CC_FULLOPEN 0x00000002
 #define CC_PREVENTFULLOPEN 0x00000004
 #define CC_ANYCOLOR 0x00000100
+/* An application that wants a word in the dialog -- its own title, say --
+ * hands over a procedure that is offered every message first. */
+#define CC_ENABLEHOOK 0x00000010
 
 BOOL ChooseColorA(CHOOSECOLORA *cc);
 

@@ -230,14 +230,14 @@ static void hl_present(void *win, const ween_surface *s)
     ween_surface_write_bmp(s, path);
 }
 
+/* A window that asks to be a different size gets it, unless the fake window
+ * manager is imposing one. A window that changes size after it is up — the
+ * colour dialog does, when it is asked to show its other half — has to say
+ * so, or the pointer goes on being mapped through a letterbox for the size
+ * it was made, and a press lands somewhere other than where it was aimed:
+ * exactly the class of bug the letterbox is here to catch. */
 static void hl_resize(void *win, int w, int h)
 {
-    /* A window that asks to be a different size gets it, unless the fake
-     * window manager is imposing one. Ignoring it left the window the size it
-     * was made and the pointer mapped through a letterbox for a window that
-     * no longer existed — so a press landed somewhere other than where it was
-     * aimed, which is exactly the class of bug the letterbox is here to
-     * catch. */
     hl_win *hw = win;
     if (!hw || g_win_w || g_win_h)
         return;
