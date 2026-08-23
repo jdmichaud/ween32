@@ -833,26 +833,43 @@ static const struct {
 };
 
 static const struct {
-    const char *name;
+    const char *name; /* as it is on the machine's disk, extension and all */
     const char *size;
     const char *type;
     const char *modified;
     int is_dir;
     int image;  /* -1 for the folder or the plain file icon */
     int hidden; /* drawn ghosted, the way the shell draws a hidden file */
+    /* and what the machine's Properties says about the same thing: what it
+     * weighs, what it takes up, the two dates the long way round, and the
+     * attributes of "RHSA" that are set. The seconds are the machine's own
+     * where its Properties was opened and read, and zero where it was not. */
+    unsigned long bytes;
+    unsigned long on_disk;
+    const char *created_long;
+    const char *modified_long;
+    const char *attrs;
 } g_fix_list[] = {
     { "Documents and Settings", "", "File Folder", "7/8/2017 6:26 PM", 1, -1,
-      0 },
-    { "Program Files", "", "File Folder", "7/8/2017 6:27 PM", 1, -1, 0 },
-    { "WINNT", "", "File Folder", "7/8/2017 6:26 PM", 1, -1, 0 },
+      0, 0, 0, "Saturday, July 08, 2017, 6:26:00 PM",
+      "Saturday, July 08, 2017, 6:26:00 PM", "" },
+    { "Program Files", "", "File Folder", "7/8/2017 6:27 PM", 1, -1, 0, 0, 0,
+      "Saturday, July 08, 2017, 6:27:00 PM",
+      "Saturday, July 08, 2017, 6:27:00 PM", "" },
+    { "WINNT", "", "File Folder", "7/8/2017 6:26 PM", 1, -1, 0, 0, 0,
+      "Saturday, July 08, 2017, 6:26:00 PM",
+      "Saturday, July 08, 2017, 6:26:00 PM", "" },
     /* the two hidden ones are drawn ghosted, as the shell draws a hidden
      * file — which is what the machine has here */
-    { "AUTOEXEC", "0 KB", "MS-DOS Batch File", "7/8/2017 6:33 PM", 0,
-      IMG_SHELL_BAT, 1 },
-    { "boot", "1 KB", "Configuration Settings", "7/22/2017 7:37 PM", 0,
-      IMG_SHELL_CFG, 0 },
+    { "AUTOEXEC.BAT", "0 KB", "MS-DOS Batch File", "7/8/2017 6:33 PM", 0,
+      IMG_SHELL_BAT, 1, 0, 0, "Saturday, July 08, 2017, 6:33:00 PM",
+      "Saturday, July 08, 2017, 6:33:00 PM", "HS" },
+    { "boot.ini", "1 KB", "Configuration Settings", "7/22/2017 7:37 PM", 0,
+      IMG_SHELL_CFG, 0, 203, 16384, "Saturday, July 22, 2017, 7:37:22 PM",
+      "Saturday, July 22, 2017, 7:37:22 PM", "A" },
     { "CONFIG.SYS", "0 KB", "System file", "7/8/2017 6:33 PM", 0,
-      IMG_SHELL_SYS, 1 },
+      IMG_SHELL_SYS, 1, 0, 0, "Saturday, July 08, 2017, 6:33:06 PM",
+      "Saturday, July 08, 2017, 6:33:08 PM", "HS" },
 };
 
 /* And what is in a folder, for completing a path typed into the address bar.
@@ -1133,16 +1150,58 @@ static void fill_list(void)
 }
 
 
+/* The fixture's rows as a listing of their own, so what works on a directory
+ * read off the file system — Properties, a rename, the status bar — works on
+ * these too. The dates a Properties page shows are the machine's; the one it
+ * writes as "Today" is today, because a file is accessed by being looked at.
+ */
+static void fixture_entries(void)
+{
+    int n = (int)(sizeof(g_fix_list) / sizeof(*g_fix_list));
+    fs_entry *made = realloc(g_entry, (size_t)n * sizeof(*made));
+    int ty, tm, td;
+    if (!made)
+        return;
+    g_entry = made;
+    fs_today(&ty, &tm, &td);
+    for (int i = 0; i < n; i++) {
+        fs_entry *e = &g_entry[i];
+        memset(e, 0, sizeof(*e));
+        snprintf(e->name, sizeof(e->name), "%s", g_fix_list[i].name);
+        e->is_dir = g_fix_list[i].is_dir;
+        e->size = g_fix_list[i].bytes;
+        e->on_disk = g_fix_list[i].on_disk;
+        snprintf(e->modified, sizeof(e->modified), "%s",
+                 g_fix_list[i].modified);
+        snprintf(e->created, sizeof(e->created), "%s", g_fix_list[i].modified);
+        snprintf(e->accessed, sizeof(e->accessed), "%s",
+                 g_fix_list[i].modified);
+        snprintf(e->created_long, sizeof(e->created_long), "%s",
+                 g_fix_list[i].created_long);
+        snprintf(e->modified_long, sizeof(e->modified_long), "%s",
+                 g_fix_list[i].modified_long);
+        fs_stamp_date(e->accessed_long, sizeof(e->accessed_long), 0, tm, td,
+                      ty);
+        snprintf(e->attributes, sizeof(e->attributes), "%s",
+                 g_fix_list[i].attrs);
+    }
+    g_entries = n;
+}
+
 static void fill_fixture_list(void)
 {
     int n = (int)(sizeof(g_fix_list) / sizeof(*g_fix_list));
+    char shown[260];
+    fixture_entries();
     SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
     for (int row = 0; row < n; row++) {
         LVITEMA it;
         memset(&it, 0, sizeof(it));
         it.mask = LVIF_TEXT | LVIF_IMAGE;
         it.iItem = row;
-        it.pszText = (char *)g_fix_list[row].name;
+        /* the name the shell shows, which for two of these is the name
+         * without its extension */
+        it.pszText = (char *)display_name(&g_entry[row], shown, sizeof(shown));
         it.iImage = g_fix_list[row].image >= 0
                         ? g_fix_list[row].image
                         : (g_fix_list[row].is_dir ? IMG_FOLDER : IMG_FILE);
@@ -3340,6 +3399,9 @@ static void show_directory(const char *path)
 {
     if (g_fixture) {
         COMBOBOXEXITEMA ci;
+        /* the folder the machine is sitting on, which is what its own
+         * Properties writes against Location */
+        snprintf(g_path, sizeof(g_path), "C:\\");
         fill_fixture_list();
         /* the address bar has the folder in it, as the machine's has */
         SendMessageA(g_address, CB_RESETCONTENT, 0, 0);
