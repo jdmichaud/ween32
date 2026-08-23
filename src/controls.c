@@ -3480,6 +3480,11 @@ typedef struct {
                    * leaves the other where it was */
     int top;      /* the first row drawn: a file list has to scroll */
     int pressed;  /* the header column being held down, -1 for none */
+    int drag_col; /* the heading being carried to another place, -1 for none */
+    int drag_x0;  /* where that press landed, to tell a drag from a click */
+    int drag_x;   /* where the pointer is now, so the ghost follows it */
+    int drag_grab; /* how far into the heading it was taken hold of */
+    int drop_at;  /* the place it would go: the column it would sit before */
     int sizing;   /* the divider being dragged, -1 for none */
     int size_x0;  /* where the drag started, and the width it started at */
     int size_w0;
@@ -3500,6 +3505,10 @@ static int lv_check_w(const ween_list *l)
     return l && (l->exstyle & LVS_EX_CHECKBOXES) ? WEEN_LV_CHECK_W : 0;
 }
 
+/* How far a heading must be carried before it is a drag rather than a press:
+ * win32's SM_CXDRAG, which is four. */
+#define WEEN_LV_DRAG 4
+
 /* How near a header divider counts as being on it. Windows uses about this,
  * and it has to be wide enough to hit without being so wide that clicking the
  * column to sort it becomes hard. */
@@ -3515,6 +3524,7 @@ static ween_list *list_of(HWND w)
         if (w->ctl) {
             ((ween_list *)w->ctl)->pressed = -1;
             ((ween_list *)w->ctl)->sizing = -1;
+            ((ween_list *)w->ctl)->drag_col = -1;
         }
     }
     return w->ctl;
@@ -3859,6 +3869,114 @@ static int lv_label_x(int indent)
     return indent ? indent : 2;
 }
 
+/* Where a heading being carried would land: the column it would sit before,
+ * counted in the order they are in now. A point past the last one lands after
+ * it, which is what dragging a column to the far right means. */
+static int lv_drop_at(const ween_list *l, int x)
+{
+    int edge = 0;
+    for (int c = 0; c < l->ncol; c++) {
+        if (x < edge + l->width[c] / 2)
+            return c;
+        edge += l->width[c];
+    }
+    return l->ncol;
+}
+
+/* Move a column, and every row's cell with it: the order the headings are in
+ * is the order the cells are in, so one cannot move without the other. */
+static void lv_move_column(ween_list *l, int from, int to)
+{
+    char *col;
+    int width, fmt;
+    if (from < 0 || from >= l->ncol || to < 0 || to > l->ncol)
+        return;
+    if (to > from)
+        to--; /* it is coming out of the run first, so what follows shifts */
+    if (to == from)
+        return;
+    col = l->col[from];
+    width = l->width[from];
+    fmt = l->fmt[from];
+    if (to < from)
+        for (int c = from; c > to; c--) {
+            l->col[c] = l->col[c - 1];
+            l->width[c] = l->width[c - 1];
+            l->fmt[c] = l->fmt[c - 1];
+        }
+    else
+        for (int c = from; c < to; c++) {
+            l->col[c] = l->col[c + 1];
+            l->width[c] = l->width[c + 1];
+            l->fmt[c] = l->fmt[c + 1];
+        }
+    l->col[to] = col;
+    l->width[to] = width;
+    l->fmt[to] = fmt;
+    for (int r = 0; r < l->nrow; r++) {
+        char *cell = l->row[r].text[from];
+        if (to < from)
+            for (int c = from; c > to; c--)
+                l->row[r].text[c] = l->row[r].text[c - 1];
+        else
+            for (int c = from; c < to; c++)
+                l->row[r].text[c] = l->row[r].text[c + 1];
+        l->row[r].text[to] = cell;
+    }
+}
+
+static const char *fit_text(const ween_strike *f, const char *text, int avail,
+                            char *buf, size_t cap, int *out_len);
+
+/* The bar that says where a carried heading would land: a dark blue, drawn
+ * over everything including the heading being carried — which is where the
+ * machine's shows it, and in this colour. */
+#define WEEN_LV_DROPMARK WEEN_RGBX(64, 64, 191)
+
+/* One heading, in its own place or wherever it is being carried to. */
+static void lv_draw_heading(ween_surface *s, const ween_strike *f,
+                            const ween_list *l, int c, int cx, int oy,
+                            int down)
+{
+    char buf[256];
+    ween_classic_edge(s, cx, oy, l->width[c], WEEN_LV_HEADER_H,
+                      down ? EDGE_SUNKEN : EDGE_RAISED,
+                      BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
+    if (f && l->col[c]) {
+        int len, th = f->ascent - f->descent;
+        const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
+                                 sizeof(buf), &len);
+        int tx = cx + 6;
+        if (l->fmt[c] & LVCFMT_RIGHT) /* the heading follows its cells */
+            tx = cx + l->width[c] - 6 - ween_strike_text_width(f, t, len);
+        ween_strike_draw(f, s, tx + (down ? 1 : 0),
+                         oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0), t,
+                         len, WEEN_BLACK);
+        /* and the sort arrow ten past the end of it */
+        if (l->fmt[c] & (HDF_SORTUP | HDF_SORTDOWN))
+            ween_classic_sort_arrow(
+                s, tx + ween_strike_text_width(f, t, len) + 9 + (down ? 1 : 0),
+                oy + 5 + (down ? 1 : 0), (l->fmt[c] & HDF_SORTUP) != 0);
+    }
+}
+
+/* Half way into the shadow colour, pixel by pixel: what a carried heading
+ * is drawn as, and what its every colour on the machine comes out as. */
+static void lv_shade_rect(ween_surface *s, int x, int y, int w, int h)
+{
+    for (int iy = y; iy < y + h; iy++)
+        for (int ix = x; ix < x + w; ix++) {
+            ween_color p, out = 0;
+            if (ix < s->clip_x || ix >= s->clip_r || iy < s->clip_y ||
+                iy >= s->clip_b)
+                continue;
+            p = s->px[(size_t)iy * s->w + ix];
+            for (int sh = 0; sh < 24; sh += 8)
+                out |= ((((p >> sh) & 0xff) + 128) / 2) << sh;
+            ween_surface_pixel(s, ix, iy, out);
+        }
+}
+
 /* Which row a point picks, and what part of it. A report-view row is only its
  * icon and its label: the cells to the right of the name are background, which
  * is why clicking a file's size clears the selection rather than picking the
@@ -4064,7 +4182,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     RECT r = ps->rcPaint, clip;
-    int ox, oy, th = f ? f->ascent - f->descent : 13, x, sx;
+    int ox, oy, x, sx;
     int icon_w = 0, icon_h = 0, ih;
     ween_lv_layout g;
     char buf[260];
@@ -4103,29 +4221,23 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     x = 0;
     for (int c = 0; lv_header_h(wnd) && c < l->ncol; c++) {
-        int down = c == l->pressed;
-        int cx = ox + x - sx;
-        ween_classic_edge(&top->surface, cx, oy, l->width[c], WEEN_LV_HEADER_H,
-                          down ? EDGE_SUNKEN : EDGE_RAISED,
-                          BF_RECT | BF_SOFT | BF_MIDDLE, NULL);
-        if (f && l->col[c]) {
-            int len;
-            const char *t = fit_text(f, l->col[c], l->width[c] - 12, buf,
-                                     sizeof(buf), &len);
-            int tx = cx + 6;
-            if (l->fmt[c] & LVCFMT_RIGHT) /* the heading follows its cells */
-                tx = cx + l->width[c] - 6 - ween_strike_text_width(f, t, len);
-            ween_strike_draw(f, &top->surface, tx + (down ? 1 : 0),
-                             oy + (WEEN_LV_HEADER_H - th) / 2 + (down ? 1 : 0),
-                             t, len, WEEN_BLACK);
-            /* and the sort arrow ten past the end of it */
-            if (l->fmt[c] & (HDF_SORTUP | HDF_SORTDOWN))
-                ween_classic_sort_arrow(
-                    &top->surface,
-                    tx + ween_strike_text_width(f, t, len) + 9 + (down ? 1 : 0),
-                    oy + 5 + (down ? 1 : 0), (l->fmt[c] & HDF_SORTUP) != 0);
-        }
+        lv_draw_heading(&top->surface, f, l, c, ox + x - sx, oy,
+                        c == l->pressed);
         x += l->width[c];
+    }
+    /* A heading being carried to another place: where it would land, and the
+     * heading itself under the pointer. Both are the machine's — a two-pixel
+     * blue bar at the boundary it would go to, and the heading drawn again
+     * half way into the shadow colour, which is what makes it a ghost. */
+    if (lv_header_h(wnd) && l->drag_col >= 0) {
+        int edge = 0, gx = ox + l->drag_x - sx - l->drag_grab;
+        for (int c = 0; c < l->drop_at && c < l->ncol; c++)
+            edge += l->width[c];
+        lv_draw_heading(&top->surface, f, l, l->drag_col, gx, oy, 0);
+        lv_shade_rect(&top->surface, gx, oy, l->width[l->drag_col],
+                      WEEN_LV_HEADER_H);
+        ween_surface_fill(&top->surface, ox + edge - sx + 1, oy, 2,
+                          WEEN_LV_HEADER_H, WEEN_LV_DROPMARK);
     }
 
     /* A view that has lost the focus keeps its selection, in grey rather than
@@ -4507,6 +4619,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             for (int c = 0; c < l->ncol; c++) {
                 if (mx >= x && mx < x + l->width[c]) {
                     l->pressed = c;
+                    l->drag_col = -1; /* until it is carried far enough */
+                    l->drag_x0 = mx;
                     SetCapture(wnd);
                     InvalidateRect(wnd, NULL, FALSE);
                     break;
@@ -4692,6 +4806,26 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
+        /* A heading held and moved sideways is being carried to another
+         * place: past a few pixels it stops being a press on the column and
+         * becomes a drag, and the view shows where it would land. */
+        if (l && GetCapture() == wnd && l->pressed >= 0) {
+            int mx = GET_X_LPARAM(lp) + l->scroll_x;
+            if (l->drag_col < 0 &&
+                (mx - l->drag_x0 > WEEN_LV_DRAG || l->drag_x0 - mx > WEEN_LV_DRAG)) {
+                int edge = 0;
+                for (int c = 0; c < l->pressed; c++)
+                    edge += l->width[c];
+                l->drag_col = l->pressed;
+                l->drag_grab = l->drag_x0 - edge;
+            }
+            if (l->drag_col >= 0) {
+                l->drag_x = mx;
+                l->drop_at = lv_drop_at(l, mx);
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+            return 0;
+        }
         if (l && GetCapture() == wnd && l->pressed < 0) {
             ween_lv_layout g = lv_layout(wnd, l);
             if (wnd->drag_vertical) {
@@ -4720,6 +4854,26 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (l && GetCapture() == wnd) {
             ReleaseCapture();
+            if (l->drag_col >= 0) {
+                /* it was carried somewhere: the column moves, and the view
+                 * says so afterwards the way comctl32's header does */
+                NMHEADERA nm;
+                int from = l->drag_col, to = l->drop_at;
+                l->drag_col = -1;
+                l->pressed = -1;
+                lv_move_column(l, from, to);
+                InvalidateRect(wnd, NULL, FALSE);
+                memset(&nm, 0, sizeof(nm));
+                nm.hdr.hwndFrom = wnd;
+                nm.hdr.idFrom = (UINT_PTR)wnd->id;
+                nm.hdr.code = HDN_ENDDRAG;
+                nm.iItem = from;
+                nm.iButton = to > from ? to - 1 : to;
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id,
+                                 (LPARAM)&nm);
+                return 0;
+            }
             if (l->pressed >= 0) {
                 /* the column was clicked: the app sorts and says so by
                  * refilling the list */

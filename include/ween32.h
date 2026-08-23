@@ -683,6 +683,18 @@ typedef struct tagTVHITTESTINFO {
 #define HDF_LEFT 0x0000
 #define HDF_RIGHT 0x0001
 #define HDF_CENTER 0x0002
+/* A heading dragged to another place: the column moves with it, cells and
+ * all. The view says so afterwards, the way comctl32's header does, and an
+ * application that keeps its own idea of the order — a shell with a Choose
+ * Columns dialog — puts that idea right from it. */
+#define HDN_FIRST (0U - 300U)
+#define HDN_ENDDRAG (HDN_FIRST - 11)
+typedef struct {
+    NMHDR hdr;
+    int iItem;  /* the column that moved */
+    int iButton;
+    void *pitem;
+} NMHEADERA;
 #define HDF_SORTDOWN 0x0200
 #define HDF_SORTUP 0x0400
 typedef struct {

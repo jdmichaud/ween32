@@ -392,6 +392,30 @@ the lists by the arrows, a box by Space, and OK by Enter — which only works
 because the sheet's tab ring goes tabs, page, buttons, so it is worth
 checking that a Tab from the tab control lands on the page.
 
+#### Moving a column
+
+A heading dragged sideways carries its column, cells and all — the shell's
+Details view does it and so does this. What the machine draws while it is
+being carried was captured mid-drag, with `tools/vm/drive.py`, which is the
+only way to hold a button down and take a picture at the same time:
+
+```sh
+JSLINUX_SOCK=/tmp/jslinux-mcp.sock JSLINUX_SHM=/dev/shm/jslinux-mcp.fb \
+  tools/vm/drive.py press 600,241 holdmove 480,241 holdmove 420,241 \
+  shot /tmp/drag.png release
+```
+
+The heading follows the pointer as a ghost — every one of its colours half
+way to COLOR_3DSHADOW, which is what makes (212,208,200) come out
+(173,173,165) in a 5-5-5 shot — and a two-pixel bar in (64,64,191) stands at
+the boundary it would go to, drawn over the ghost. Headless, the same drag is
+
+```sh
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/hd%d.bmp \
+  WEEN32_SCRIPT="w:300 d:500,105 m:460,105 m:380,105 m:300,105 u:300,105 w:400" \
+  ./examples/explorer /tmp/somefolder
+```
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the

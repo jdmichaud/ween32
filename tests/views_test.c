@@ -38,6 +38,7 @@ static LRESULT CALLBACK sub_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 
 static HWND g_list, g_tree;
 static int g_column_clicked = -1;
+static int g_column_dragged = -1, g_column_dropped = -1;
 /* what the tree said it was about to open, and how many times it said so */
 static HTREEITEM g_expanding;
 static int g_expandings;
@@ -55,6 +56,10 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (nm->code == LVN_COLUMNCLICK)
             g_column_clicked = ((const NMLISTVIEW *)lp)->iSubItem;
+        if (nm->code == HDN_ENDDRAG) {
+            g_column_dragged = ((const NMHEADERA *)lp)->iItem;
+            g_column_dropped = ((const NMHEADERA *)lp)->iButton;
+        }
         if (nm->code == TVN_ITEMEXPANDINGA) {
             const NMTREEVIEWA *tv = (const NMTREEVIEWA *)lp;
             g_expandings++;
@@ -757,6 +762,56 @@ int main(void)
                   "so an arrow moves from there, not from the top");
         }
         DestroyWindow(lw);
+    }
+
+    /* A heading carried to another place takes its column with it, cells and
+     * all: what the shell's Details view does when a column is dragged. A
+     * press that does not travel is still a click, and still sorts. */
+    {
+        HWND mw = CreateWindowExA(0, "weenviews", "move", WS_POPUP | WS_VISIBLE,
+                                  0, 0, 320, 140, NULL, NULL, NULL, NULL);
+        HWND mv = CreateWindowExA(0, WC_LISTVIEWA, "",
+                                  WS_CHILD | WS_VISIBLE | LVS_REPORT, 0, 0,
+                                  300, 120, mw, (HMENU)(UINT_PTR)11, NULL,
+                                  NULL);
+        LVCOLUMNA col;
+        LVITEMA it;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.pszText = (char *)"Name";
+        col.cx = 100;
+        SendMessageA(mv, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        col.pszText = (char *)"Size";
+        col.cx = 80;
+        SendMessageA(mv, LVM_INSERTCOLUMNA, 1, (LPARAM)&col);
+        col.pszText = (char *)"Type";
+        col.cx = 90;
+        SendMessageA(mv, LVM_INSERTCOLUMNA, 2, (LPARAM)&col);
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT;
+        it.pszText = (char *)"a name";
+        SendMessageA(mv, LVM_INSERTITEMA, 0, (LPARAM)&it);
+
+        /* a press that stays put is a click on the column */
+        g_column_clicked = -1;
+        SendMessageA(mv, WM_LBUTTONDOWN, 0, MAKELPARAM(120, 5));
+        SendMessageA(mv, WM_LBUTTONUP, 0, MAKELPARAM(120, 5));
+        CHECK(g_column_clicked == 1,
+              "a press on a heading that stays put is a click");
+
+        /* and one that travels carries the heading: Type before Name */
+        g_column_dragged = g_column_dropped = -1;
+        SendMessageA(mv, WM_LBUTTONDOWN, 0, MAKELPARAM(200, 5));
+        SendMessageA(mv, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(180, 5));
+        SendMessageA(mv, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(20, 5));
+        SendMessageA(mv, WM_LBUTTONUP, 0, MAKELPARAM(20, 5));
+        CHECK(g_column_dragged == 2 && g_column_dropped == 0,
+              "one that travels says which heading went where");
+        CHECK(SendMessageA(mv, LVM_GETCOLUMNWIDTH, 0, 0) == 90 &&
+                  SendMessageA(mv, LVM_GETCOLUMNWIDTH, 1, 0) == 100 &&
+                  SendMessageA(mv, LVM_GETCOLUMNWIDTH, 2, 0) == 80,
+              "and the columns are in the order it left them");
+        DestroyWindow(mw);
     }
 
     /* A view with tick boxes: what Choose Columns is made of. The box stands

@@ -5026,6 +5026,40 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             g_sort_col = col;
             mark_sorted_column();
             fill_list();
+        } else if (nm->code == HDN_ENDDRAG) {
+            /* a heading was carried somewhere else: the view has moved the
+             * column, so the order this keeps — the one Choose Columns shows
+             * and writes back — moves with it */
+            const NMHEADERA *hd = (const NMHEADERA *)lp;
+            int from = hd->iItem, to = hd->iButton, moved;
+            int shown[COL_KINDS], n = 0;
+            for (int i = 0; i < COL_KINDS; i++)
+                if (g_col[g_col_order[i]].on)
+                    shown[n++] = g_col_order[i];
+            if (from >= 0 && from < n && to >= 0 && to < n) {
+                moved = shown[from];
+                for (int i = from; i < to; i++)
+                    shown[i] = shown[i + 1];
+                for (int i = from; i > to; i--)
+                    shown[i] = shown[i - 1];
+                shown[to] = moved;
+                {   /* the hidden ones keep their places at the end */
+                    int order[COL_KINDS], m = 0;
+                    for (int i = 0; i < n; i++)
+                        order[m++] = shown[i];
+                    for (int i = 0; i < COL_KINDS; i++)
+                        if (!g_col[g_col_order[i]].on)
+                            order[m++] = g_col_order[i];
+                    for (int i = 0; i < COL_KINDS; i++)
+                        g_col_order[i] = order[i];
+                }
+                if (g_sort_col == from)
+                    g_sort_col = to;
+                else if (from < g_sort_col && to >= g_sort_col)
+                    g_sort_col--;
+                else if (from > g_sort_col && to <= g_sort_col)
+                    g_sort_col++;
+            }
         } else if (nm->code == LVN_ITEMCHANGED) {
             int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
                                         LVNI_SELECTED);
