@@ -297,14 +297,14 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 | --- | --- | --- | --- |
 | General | 1228 | 0.7% | the machine's own mouse pointer in the shot, the caption's bold title |
 | View | 1411 | 0.8% | the same two, the folder a heading wears, the scroll bar |
-| File Types | 9643 | 5.3% | the list's contents |
+| File Types | 9562 | 5.3% | the list's contents |
 | Offline Files | 1041 | 0.6% | the same two, and the arrows' bevel |
 
 Only **File Types** cannot close: the machine's list is its own registry — a
 hundred extensions this example has never heard of — while ours is what
 `type_of` knows. The page's frame, its columns, its buttons, its wording and
 the seventeen-pixel pitch of its rows all match; the rows themselves never
-can, and about 7000 of that 9643 is them.
+can, and about 7000 of that 9562 is them.
 
 **View**'s Advanced settings is a tree, as the machine's is: rows indented by
 level, a folder on a heading, and a tick box or an option button in the state

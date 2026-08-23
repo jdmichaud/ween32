@@ -2375,6 +2375,7 @@ enum {
     IDC_FO_OS1, IDC_FO_OS2, IDC_FO_OS3, IDC_FO_OS4, IDC_FO_OS5,
     IDC_FO_TS1, /* "Registered file types:" */
     IDC_FO_TS2, /* "Opens with:" */
+    IDC_FO_TS3, /* the picture beside what opens it */
     IDC_FO_OFF_SPIN /* the arrows beside the minutes */
 };
 
@@ -2602,6 +2603,7 @@ static const fo_place g_fo_types_at[] = {
     { IDC_FO_DELETE, 273, 177, 75, 23 },
     { IDC_FO_DETAILS, 14, 222, 335, 141 },
     { IDC_FO_TS2, 24, 246, 60, 14 },
+    { IDC_FO_TS3, 98, 245, 16, 16 },
     { IDC_FO_OPENS, 109, 246, 150, 14 },
     { IDC_FO_CHANGE, 263, 242, 75, 24 },
     { IDC_FO_DETAIL_TEXT, 24, 277, 316, 40 },
@@ -2931,6 +2933,16 @@ static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                      LVS_EX_FULLROWSELECT);
         SendMessageA(list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
+        {   /* the picture of whatever opens the kind that is picked */
+            HWND pic = GetDlgItem(dlg, IDC_FO_TS3);
+            char path[600];
+            HICON icon;
+            snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), ICON_FILE);
+            icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
+                                     LR_LOADFROMFILE);
+            if (pic && icon)
+                SendMessageA(pic, STM_SETICON, (WPARAM)icon, 0);
+        }
         ListView_SetItemState(list, 0, LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
         fo_types_detail(dlg);
@@ -3106,6 +3118,7 @@ static void folder_options(HWND owner)
     GROUP(7, 132, 232, 76, "Details for extension");
     items[n - 1].id = IDC_FO_DETAILS;
     LABEL(14, 148, 44, 9, IDC_FO_TS2, "Opens with:");
+    ITEM(SS_ICON, 66, 145, 11, 11, IDC_FO_TS3, ATOM_STATIC, "");
     LABEL(74, 148, 90, 9, IDC_FO_OPENS, "");
     PUSH(174, 145, 58, 14, IDC_FO_CHANGE, "&Change...");
     LABEL(14, 166, 218, 26, IDC_FO_DETAIL_TEXT, "");
