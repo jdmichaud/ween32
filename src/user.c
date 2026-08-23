@@ -505,6 +505,15 @@ static int nc_has_max(const struct ween_wnd *w)
     return (w->style & WS_MAXIMIZEBOX) != 0;
 }
 
+/* A question mark before the close box, which a window asks for with
+ * WS_EX_CONTEXTHELP. It only appears on one that has neither a minimise nor a
+ * maximise box: the strip is not shared. */
+static int nc_has_help(const struct ween_wnd *w)
+{
+    return (w->ex_style & WS_EX_CONTEXTHELP) && !nc_has_min(w) &&
+           !nc_has_max(w);
+}
+
 /* ---- creation / destruction ------------------------------------------- */
 
 HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
@@ -2462,7 +2471,8 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * close box keeps a single button's width, which is what both
          * reference renders show and what the machine has not been measured
          * with. */
-        int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0);
+        int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0) +
+                   (nc_has_help(wnd) ? 1 : 0);
         int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
         if (nbtn > 1) {
             RECT lb = nc_button_rect(wnd, nbtn - 1);
@@ -2505,6 +2515,13 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             DrawFrameControl(&dc, &c, DFC_CAPTION,
                              DFCS_CAPTIONCLOSE |
                                  (wnd->nc_close_pressed ? DFCS_PUSHED : 0));
+            if (nc_has_help(wnd)) {
+                c = nc_button_rect(wnd, 1);
+                DrawFrameControl(&dc, &c, DFC_CAPTION,
+                                 DFCS_CAPTIONHELP |
+                                     (wnd->nc_button_pressed == 1 ? DFCS_PUSHED
+                                                                  : 0));
+            }
             if (nc_has_max(wnd)) {
                 c = nc_button_rect(wnd, 1);
                 DrawFrameControl(&dc, &c, DFC_CAPTION,

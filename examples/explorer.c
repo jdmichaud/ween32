@@ -2306,6 +2306,7 @@ static void choose_columns(HWND owner)
  * behind them, so what they say is remembered and nothing else.
  */
 enum {
+    IDC_FO_G1 = 1490, IDC_FO_G2, IDC_FO_G3, IDC_FO_G4,
     IDC_FO_WEB_DESKTOP = 1500, IDC_FO_CLASSIC_DESKTOP,
     IDC_FO_WEB_FOLDERS, IDC_FO_CLASSIC_FOLDERS,
     IDC_FO_SAME_WINDOW, IDC_FO_OWN_WINDOW,
@@ -2358,11 +2359,58 @@ static void options_applied(void)
     }
 }
 
+/* Where each control goes, in pixels of the page, measured off the machine's
+ * own dialog.
+ *
+ * A dialog is normally laid out in dialog units and the manager maps them to
+ * pixels; the shell's own numbers cannot be recovered that way, because its
+ * grid does not land where its controls do — two of the four group boxes on
+ * the General page sit at heights no whole number of units maps to. So the
+ * templates put the controls in the right order and the right dialog, and
+ * this puts them in the right place. */
+typedef struct {
+    int id;
+    short x, y, cx, cy;
+} fo_place;
+
+static void fo_layout(HWND dlg, const fo_place *at, int n)
+{
+    for (int i = 0; i < n; i++) {
+        HWND c = GetDlgItem(dlg, at[i].id);
+        if (c)
+            MoveWindow(c, at[i].x, at[i].y, at[i].cx, at[i].cy, FALSE);
+    }
+}
+
+/* The General page. A group box's etched frame is drawn one pixel in from
+ * its rectangle and five below the top, so these are the frames the machine
+ * draws, put back. An option button's circle sits at its left edge and one
+ * below its top. */
+static const fo_place g_fo_general_at[] = {
+    { IDC_FO_G1, 11, 13, 341, 60 },
+    { IDC_FO_WEB_DESKTOP, 66, 29, 282, 16 },
+    { IDC_FO_CLASSIC_DESKTOP, 66, 47, 282, 16 },
+    { IDC_FO_G2, 13, 88, 339, 58 },
+    { IDC_FO_WEB_FOLDERS, 66, 104, 282, 16 },
+    { IDC_FO_CLASSIC_FOLDERS, 66, 122, 282, 16 },
+    { IDC_FO_G3, 13, 160, 339, 60 },
+    { IDC_FO_SAME_WINDOW, 66, 177, 282, 16 },
+    { IDC_FO_OWN_WINDOW, 66, 195, 282, 16 },
+    { IDC_FO_G4, 13, 233, 339, 96 },
+    { IDC_FO_SINGLE, 66, 250, 282, 16 },
+    { IDC_FO_UNDERLINE_ALWAYS, 85, 268, 263, 16 },
+    { IDC_FO_UNDERLINE_POINT, 85, 286, 263, 16 },
+    { IDC_FO_DOUBLE, 66, 304, 282, 16 },
+    { IDC_FO_DEFAULTS, 245, 342, 107, 23 },
+};
+
 /* ---- the General page ---- */
 static INT_PTR CALLBACK fo_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
     case WM_INITDIALOG:
+        fo_layout(dlg, g_fo_general_at,
+                  (int)(sizeof(g_fo_general_at) / sizeof(*g_fo_general_at)));
         CheckRadioButton(dlg, IDC_FO_WEB_DESKTOP, IDC_FO_CLASSIC_DESKTOP,
                          g_opt_edit.classic_desktop ? IDC_FO_CLASSIC_DESKTOP
                                                     : IDC_FO_WEB_DESKTOP);
@@ -2663,17 +2711,21 @@ static void folder_options(HWND owner)
     n = 0;
     memset(items, 0, sizeof(items));
     GROUP(7, 7, 232, 33, "Active Desktop");
+    items[n - 1].id = IDC_FO_G1;
     RADIO(46, 18, 186, IDC_FO_WEB_DESKTOP, "&Enable Web content on my desktop");
     RADIO2(46, 29, 186, IDC_FO_CLASSIC_DESKTOP, "Use Windows &classic desktop");
     GROUP(7, 46, 232, 33, "Web View");
+    items[n - 1].id = IDC_FO_G2;
     RADIO(46, 57, 186, IDC_FO_WEB_FOLDERS, "Enable &Web content in folders");
     RADIO2(46, 68, 186, IDC_FO_CLASSIC_FOLDERS, "Use Windows classic &folders");
     GROUP(7, 85, 232, 33, "Browse Folders");
+    items[n - 1].id = IDC_FO_G3;
     RADIO(46, 96, 186, IDC_FO_SAME_WINDOW,
           "Open each folder in the same window");
     RADIO2(46, 107, 186, IDC_FO_OWN_WINDOW,
            "Open each folder in its own window");
     GROUP(7, 124, 232, 62, "Click items as follows");
+    items[n - 1].id = IDC_FO_G4;
     RADIO(46, 135, 186, IDC_FO_SINGLE,
           "&Single-click to open an item (point to select)");
     RADIO2(57, 148, 175, IDC_FO_UNDERLINE_ALWAYS,

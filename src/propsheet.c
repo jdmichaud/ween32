@@ -10,6 +10,7 @@
  * be written independently and still line up.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,20 +20,23 @@
 #define PS_ATOM_BUTTON 0x0080 /* the BUTTON class's ordinal in a template */
 #define PS_MAX_PAGES 16
 
-/* The frame around a page, in dialog units, measured off the machine's own
- * Folder Options: a 386 by 468 window with a 365 by 377 page in it. The tab
- * control is inset from the frame and the three buttons sit in a band below
- * it, their right edges level with the tab control's. */
-#define PS_MARGIN_X 3 /* frame to tab control, left */
-#define PS_MARGIN_Y 6 /* and top */
-#define PS_RIGHT 4    /* and right */
-#define PS_BOTTOM 4   /* under the buttons */
-#define PS_TAB_PAD 1  /* the tab control's own border, around its page */
-#define PS_TAB_STRIP 12 /* the strip the tabs stand in */
-#define PS_BTN_W 50   /* one of OK / Cancel / Apply */
-#define PS_BTN_H 14
-#define PS_BTN_GAP 5  /* between two of them */
-#define PS_BTN_TOP 4  /* tab control to the button row */
+/* The frame around a page, in *pixels*, measured off the machine's own Folder
+ * Options: a 386 by 468 window whose client holds a 369 by 399 tab control at
+ * (5, 9) with a 365 by 377 page in it, and three 75 by 23 buttons in a band
+ * below, their right edges level with the tab control's.
+ *
+ * Pixels rather than dialog units because a sheet is not laid out by the
+ * dialog manager: comctl32 sizes it to its largest page after the fact, and
+ * so does this. Going through dialog units would round every edge to the
+ * nearest one and a half pixels. */
+#define PS_TAB_X 5    /* client left to tab control */
+#define PS_TAB_Y 8    /* client top to tab control */
+#define PS_RIGHT 6    /* tab control to client right */
+#define PS_BOTTOM 7   /* buttons to client bottom */
+#define PS_BTN_W 75   /* one of OK / Cancel / Apply */
+#define PS_BTN_H 23
+#define PS_BTN_GAP 6  /* between two of them */
+#define PS_BTN_TOP 6  /* tab control to the button row */
 
 typedef struct {
     HWND sheet;
@@ -303,15 +307,20 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     cx = (int)largest.right;
     cy = (int)largest.bottom;
 
-    tab_h = PS_TAB_STRIP + cy + PS_TAB_PAD;
-    sheet_w = PS_MARGIN_X + cx + 2 * PS_TAB_PAD + PS_RIGHT;
-    sheet_h = PS_MARGIN_Y + tab_h + PS_BTN_TOP + PS_BTN_H + PS_BOTTOM;
+    /* A rough template: the frame is laid out in pixels once it exists, so
+     * this only has to be big enough to hold the pieces. */
+    tab_h = cy + 24;
+    sheet_w = cx + 12;
+    sheet_h = tab_h + 40;
 
     b.p = tmpl;
     b.end = tmpl + sizeof(tmpl);
     ps_d(&b, WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE | DS_MODALFRAME |
                  DS_SETFONT);
-    ps_d(&b, 0);
+    /* A sheet wears the question mark unless it was told not to, which is
+     * what comctl32 does and what the machine's Folder Options has. */
+    ps_d(&b, (header->dwFlags & PSH_NOCONTEXTHELP) ? 0
+                                                  : (DWORD)WS_EX_CONTEXTHELP);
     ps_w(&b, (WORD)(1 + 3)); /* the tab control and three buttons */
     ps_w(&b, 0);
     ps_w(&b, 0);
@@ -323,19 +332,16 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     ps_w(&b, 8); /* point size */
     ps_sz(&b, "MS Shell Dlg");
 
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, PS_MARGIN_X, PS_MARGIN_Y,
-            cx + 2 * PS_TAB_PAD, tab_h, PS_TAB, 0, WC_TABCONTROLA, "");
-
-    y = PS_MARGIN_Y + tab_h + PS_BTN_TOP;
-    bx = PS_MARGIN_X + cx + 2 * PS_TAB_PAD - 3 * PS_BTN_W - 2 * PS_BTN_GAP;
+    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, 3, 6, cx + 3, tab_h,
+            PS_TAB, 0, WC_TABCONTROLA, "");
+    y = tab_h + 12;
+    bx = 10;
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, bx, y,
-            PS_BTN_W, PS_BTN_H, IDOK, PS_ATOM_BUTTON, NULL, "OK");
-    bx += PS_BTN_W + PS_BTN_GAP;
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx, y, PS_BTN_W, PS_BTN_H,
+            50, 14, IDOK, PS_ATOM_BUTTON, NULL, "OK");
+    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx + 55, y, 50, 14,
             IDCANCEL, PS_ATOM_BUTTON, NULL, "Cancel");
-    bx += PS_BTN_W + PS_BTN_GAP;
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED, bx, y,
-            PS_BTN_W, PS_BTN_H, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "Apply");
+    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED, bx + 110, y,
+            50, 14, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "Apply");
     if (b.p > b.end)
         return -1;
 
@@ -348,6 +354,57 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     if (!ps.sheet)
         return -1;
     ps.tabs = GetDlgItem(ps.sheet, PS_TAB);
+
+    /* Now the frame, in pixels. The page's own size is what everything else
+     * follows from, so it is asked for in dialog units — the template's own
+     * measure — and turned into pixels the way the dialog manager would. */
+    {
+        RECT page = { 0, 0, cx, cy };
+        RECT tab, cr, wr;
+        int tab_w, tab_h, strip, client_w, client_h, frame_w, frame_h, bx, by;
+        MapDialogRect(ps.sheet, &page);
+
+        /* what the tab control must be to hold a page that size */
+        tab.left = 0;
+        tab.top = 0;
+        tab.right = page.right;
+        tab.bottom = page.bottom;
+        SendMessageA(ps.tabs, TCM_ADJUSTRECT, TRUE, (LPARAM)&tab);
+        tab_w = tab.right - tab.left;
+        tab_h = tab.bottom - tab.top;
+        strip = -tab.top;
+
+        client_w = PS_TAB_X + tab_w + PS_RIGHT;
+        client_h = PS_TAB_Y + tab_h + PS_BTN_TOP + PS_BTN_H + PS_BOTTOM;
+        (void)cr;
+
+        /* the window around that client: what this dialog's frame adds, which
+         * is what AdjustWindowRect is for */
+        GetWindowRect(ps.sheet, &wr);
+        cr.left = 0;
+        cr.top = 0;
+        cr.right = client_w;
+        cr.bottom = client_h;
+        AdjustWindowRect(&cr, (DWORD)GetWindowLongA(ps.sheet, GWL_STYLE),
+                         FALSE);
+        frame_w = cr.right - cr.left;
+        frame_h = cr.bottom - cr.top;
+        MoveWindow(ps.sheet, wr.left, wr.top, frame_w, frame_h, FALSE);
+
+        MoveWindow(ps.tabs, PS_TAB_X, PS_TAB_Y, tab_w, tab_h, FALSE);
+        by = PS_TAB_Y + tab_h + PS_BTN_TOP;
+        bx = PS_TAB_X + tab_w - 3 * PS_BTN_W - 2 * PS_BTN_GAP;
+        MoveWindow(GetDlgItem(ps.sheet, IDOK), bx, by, PS_BTN_W, PS_BTN_H,
+                   FALSE);
+        bx += PS_BTN_W + PS_BTN_GAP;
+        MoveWindow(GetDlgItem(ps.sheet, IDCANCEL), bx, by, PS_BTN_W, PS_BTN_H,
+                   FALSE);
+        bx += PS_BTN_W + PS_BTN_GAP;
+        MoveWindow(GetDlgItem(ps.sheet, IDD_APPLYNOW), bx, by, PS_BTN_W,
+                   PS_BTN_H, FALSE);
+        (void)strip;
+
+    }
 
     for (i = 0; i < n; i++) {
         TCITEMA ti;
@@ -410,6 +467,10 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
         }
     }
 
+    { RECT pr; GetWindowRect(ps.page[0], &pr); RECT tr; GetWindowRect(ps.tabs,&tr);
+      fprintf(stderr, "PS tab %ld,%ld-%ld,%ld page %ld,%ld-%ld,%ld\n",
+        (long)tr.left,(long)tr.top,(long)tr.right,(long)tr.bottom,
+        (long)pr.left,(long)pr.top,(long)pr.right,(long)pr.bottom); }
     i = (int)header->nStartPage;
     if (i < 0 || i >= n)
         i = 0;

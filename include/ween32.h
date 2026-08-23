@@ -248,6 +248,7 @@ typedef struct tagCREATESTRUCTA {
  * NULL when the menu closes. */
 #define WM_MENUSELECT 0x011F
 #define SC_KEYMENU 0xF100
+#define SC_CONTEXTHELP 0xF180
 #define WM_NOTIFY 0x004E
 #define WM_VSCROLL 0x0115
 #define WM_HSCROLL 0x0114
@@ -355,6 +356,9 @@ HCURSOR SetCursor(HCURSOR cursor);
 /* A window that does not take the keyboard when it appears — which is what a
  * menu is: the window under it keeps its focus, and its caret with it. */
 #define WS_EX_NOACTIVATE 0x08000000L
+/* A question mark in the caption, before the close box. A window that has it
+ * has no minimise or maximise box: the three do not share the strip. */
+#define WS_EX_CONTEXTHELP 0x00000400L
 #define WS_EX_STATICEDGE 0x00020000L
 
 /* EDIT styles */
@@ -1150,6 +1154,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DFCS_CAPTIONMIN 0x0001
 #define DFCS_CAPTIONMAX 0x0002
 #define DFCS_CAPTIONRESTORE 0x0003
+#define DFCS_CAPTIONHELP 0x0004
 #define DFCS_PUSHED 0x0200
 
 /* DFC_BUTTON states */

@@ -395,10 +395,56 @@ void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned fl
     }
 }
 
+/* The twelve-pixel circle a dialog's option button wears, read off the
+ * machine's Folder Options. Windows draws this one from a bitmap rather than
+ * from an ellipse, and the two do not land on the same pixels: three rows of
+ * the rim come out differently. The ellipse below is what any other size
+ * gets, since there is no bitmap for those.
+ *
+ *   . face   W white   S shadow   D dark shadow   K black (the dot) */
+static const char *const radio12[12] = {
+    "....SSSS....", "..SSDDDDSS..", ".SDDWWWWDDW.", ".SDWWWWWW.W.",
+    "SDWWWWWWWW.W", "SDWWWWWWWW.W", "SDWWWWWWWW.W", "SDWWWWWWWW.W",
+    ".SDWWWWWW.W.", ".S..WWWW..W.", "..WW....WW..", "....WWWW....",
+};
+static const char *const radio12_on[12] = {
+    "....SSSS....", "..SSDDDDSS..", ".SDDWWWWDDW.", ".SDWWWWWW.W.",
+    "SDWWWKKWWW.W", "SDWWKKKKWW.W", "SDWWKKKKWW.W", "SDWWWKKWWW.W",
+    ".SDWWWWWW.W.", ".S..WWWW..W.", "..WW....WW..", "....WWWW....",
+};
+
+static int radio_art(ween_surface *s, int x, int y, int d, unsigned flags)
+{
+    const char *const *art;
+    if (d < 12 || d > 13)
+        return 0;
+    art = (flags & DFCS_CHECKED) ? radio12_on : radio12;
+    for (int r = 0; r < 12; r++)
+        for (int c = 0; c < 12; c++) {
+            unsigned px;
+            switch (art[r][c]) {
+            case 'W':
+                px = (flags & (DFCS_INACTIVE | DFCS_PUSHED)) ? WEEN_FACE
+                                                             : WEEN_WINDOWBG;
+                break;
+            case 'S': px = WEEN_SHADOW; break;
+            case 'D': px = WEEN_DKSHADOW; break;
+            case 'K':
+                px = (flags & DFCS_INACTIVE) ? WEEN_SHADOW : WEEN_BLACK;
+                break;
+            default: continue;
+            }
+            ween_surface_pixel(s, x + c, y + r, px);
+        }
+    return 1;
+}
+
 /* DFCS_BUTTONRADIO: two half-discs for the rim, a white face, and the dot. */
 void ween_classic_radio(ween_surface *s, int x, int y, int w, int h, unsigned flags)
 {
     int d = make_square(&x, &y, w, h);
+    if (radio_art(s, x, y, d, flags))
+        return;
     int shrink = d / 16 < 1 ? 1 : d / 16;
     int xc = x + d - d / 2, yc = y + d - d / 2;
     int i = 14 * d / 16;

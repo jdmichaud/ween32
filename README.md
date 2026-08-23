@@ -19,5 +19,9 @@ and a list either side of a splitter, and a status bar in three parts:
 today and what does not, [docs/design.md](docs/design.md) for how it is
 built, and [docs/testing.md](docs/testing.md) for how to check it.
 
-The library code is MIT. The embedded fonts are Wine's redistributable Tahoma
-and Marlett replacements and carry their own (LGPL) license.
+The library code is MIT. The embedded fonts are Wine's redistributable Tahoma,
+MS Sans Serif and Marlett replacements and carry their own (LGPL) license.
+MS Sans Serif is there because that is what "MS Shell Dlg" resolves to on this
+Windows, and so what every dialog is lettered in — its capitals are a row
+taller than Tahoma's, which is why a dialog does not look like the rest of the
+shell.

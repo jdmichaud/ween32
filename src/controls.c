@@ -4745,6 +4745,11 @@ static int tab_min_width(const ween_strike *f)
     int sum = 0;
     if (!f)
         return 54;
+    /* The average character width the font reports. A bitmap face carries it
+     * in its header and it is the 'x' advance; a scalable one is averaged
+     * across the alphabet, which is how wine arrives at Tahoma's seven. */
+    if (f->bitmap_only)
+        return ween_strike_char_advance(f, 'x') * 6 + 12;
     for (int i = 0; i < 52; i++)
         sum += ween_strike_char_extent(f, (unsigned char)alpha[i]);
     return ((sum + 26) / 52) * 6 + 12;
@@ -4783,13 +4788,19 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     ween_client_origin(wnd, &ox, &oy);
     FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
 
-    /* the page below the tabs */
+    /* The page below the tabs, in the plain raised edge a window frame wears
+     * — outer line COLOR_3DLIGHT, which is face, and the white one inside it.
+     * The soft edge a button wears would put the white a pixel out, which is
+     * a pixel the machine's tab control does not have. */
     ween_classic_edge(&top->surface, ox, oy + body, r.right, r.bottom - body,
-                      EDGE_RAISED, BF_RECT | BF_SOFT, NULL);
+                      EDGE_RAISED, BF_RECT, NULL);
 
-    /* right to left, so each tab's dark edge covers the next one's white */
+    /* right to left, so each tab's dark edge covers the next one's white.
+     * The first tab starts three in, so the selected one — which is drawn two
+     * wider on each side — begins one pixel inside the control, which is
+     * where the machine's does. */
     for (int pass = 0; pass < 2; pass++) {
-        int l = 2;
+        int l = 3;
         for (int i = 0; it && i < it->count; i++) {
             int w = tab_width(f, it->item[i], min);
             int selected = i == sel;

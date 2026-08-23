@@ -121,6 +121,10 @@ typedef struct {
     int ascent;
     int descent;  /* negative, as in the font */
     int embolden; /* synthetic bold: overstrike 1px (weak bold strikes) */
+    /* A face that stands in for a bitmap-only font. GDI measures one of
+     * those from its glyphs, not from an outline, so measuring and drawing
+     * agree — which they do not for a scalable face like Tahoma. */
+    int bitmap_only;
     /* the logical (outline) metrics GDI reports, as opposed to the strike's */
     int cell_h;   /* the cell labels are centred within (tmHeight) */
     int ppem;
@@ -155,7 +159,10 @@ void ween_marlett_draw(const ween_marlett *m, ween_surface *s, int code,
                        int x, int y, int size, ween_color color);
 
 /* The built-in fonts (Wine's redistributable Tahoma/Marlett, embedded). */
-const ween_strike *ween_gui_font(void);      /* Tahoma 11px — DEFAULT_GUI_FONT */
+const ween_strike *ween_gui_font(void);
+/* What a dialog is lettered in, and how a face name is resolved to a strike. */
+const ween_strike *ween_dialog_font(void);
+const ween_strike *ween_font_by_face(const char *face);      /* Tahoma 11px — DEFAULT_GUI_FONT */
 const ween_strike *ween_gui_font_bold(void); /* Tahoma Bold 11px */
 const ween_marlett *ween_caption_font(void);
 

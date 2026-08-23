@@ -215,7 +215,7 @@ uint32_t ween_strike_char_units(const ween_strike *f, unsigned char c)
 int ween_strike_char_extent(const ween_strike *f, unsigned char c)
 {
     uint32_t units;
-    if (!f->hmtx || !f->upem || !f->nhmtx)
+    if (f->bitmap_only || !f->hmtx || !f->upem || !f->nhmtx)
         return ween_strike_char_advance(f, c);
     units = ween_strike_char_units(f, c);
     return (int)((units * (uint32_t)f->ppem + f->upem - 1) / f->upem);

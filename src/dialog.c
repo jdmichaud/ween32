@@ -215,6 +215,7 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     const unsigned char *b = (const unsigned char *)tmpl;
 
     DWORD style = rd_d(b, 0);
+    DWORD ex_style = rd_d(b, 4); /* the template's own, which was being lost */
     WORD cdit = rd_w(b, 8);
     short dx = (short)rd_w(b, 10), dy = (short)rd_w(b, 12);
     short cx = (short)rd_w(b, 14), cy = (short)rd_w(b, 16);
@@ -224,11 +225,17 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     p = parse_sz(b, p, NULL, NULL, 0);        /* menu */
     p = parse_sz(b, p, NULL, NULL, 0);        /* class (ignored: our own) */
     p = parse_sz(b, p, NULL, title, sizeof title); /* title */
+    char face[64];
+    face[0] = 0;
     if (style & DS_SETFONT) {
-        p += 2;                        /* point size */
-        p = parse_sz(b, p, NULL, NULL, 0); /* typeface */
+        p += 2;                                     /* point size */
+        p = parse_sz(b, p, NULL, face, sizeof face); /* typeface */
     }
 
+    /* A template names the face it was laid out in, and the dialog and
+     * everything in it is lettered in that. Ignoring it left every dialog in
+     * the shell's UI font, which is not what the shell's own dialogs are in. */
+    const ween_strike *dlg_font = ween_font_by_face(face);
     const ween_strike *f = ween_gui_font();
     int bx = 6, by = 13;
     if (f)
@@ -255,18 +262,20 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         py += owner_rect.top + coy;
     }
 
-    HWND dlg = CreateWindowExA(0, "#32770", title, style, px, py, win_w,
+    HWND dlg = CreateWindowExA(ex_style, "#32770", title, style, px, py, win_w,
                                win_h, parent, NULL, inst, NULL);
     if (!dlg)
         return NULL;
     dlg->is_dialog = 1;
     dlg->dlgproc = proc;
+    dlg->font = dlg_font;
 
     /* Instantiate every control, mapping its DLU rect to pixels edge by edge
      * (MapDialogRect semantics) so shared DLU edges land on shared pixels. */
     for (int i = 0; i < cdit; i++) {
         p = (p + 3) & ~(size_t)3; /* items are DWORD-aligned in the stream */
         DWORD istyle = rd_d(b, p);
+        DWORD iex = rd_d(b, p + 4);
         short ix = (short)rd_w(b, p + 8), iy = (short)rd_w(b, p + 10);
         short icx = (short)rd_w(b, p + 12), icy = (short)rd_w(b, p + 14);
         WORD id = rd_w(b, p + 16);
@@ -282,9 +291,14 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
 
         const char *cls = cls_str[0] ? cls_str : class_from_ord(cls_ord);
         int px = MX(ix), py = MY(iy);
-        CreateWindowExA(0, cls, itext, istyle | WS_CHILD, px, py,
-                        MX(ix + icx) - px, MY(iy + icy) - py, dlg,
-                        (HMENU)(UINT_PTR)id, inst, NULL);
+        HWND c = CreateWindowExA(iex, cls, itext, istyle | WS_CHILD, px, py,
+                                 MX(ix + icx) - px, MY(iy + icy) - py, dlg,
+                                 (HMENU)(UINT_PTR)id, inst, NULL);
+        /* The strike straight on, not through WM_SETFONT: that takes an
+         * HFONT, and the face named in a template is the dialog manager's own
+         * business rather than something the program made. */
+        if (c)
+            c->font = dlg_font;
         /* The first BS_DEFPUSHBUTTON in the template is the dialog's default
          * command, which is what Enter presses — and only a button can be
          * one. The style bit it lives in is bit zero, which every class uses

@@ -312,6 +312,9 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
     case DFCS_CAPTIONRESTORE:
         code = 0x32;
         break;
+    case DFCS_CAPTIONHELP:
+        code = 0x73;
+        break;
     default:
         return FALSE;
     }
@@ -333,6 +336,10 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
                                                0x1ff };
         static const unsigned short cross[] = { 0xc3, 0x66, 0x3c, 0x18,
                                                 0x3c, 0x66, 0xc3 };
+        /* The question mark a property sheet wears, read off the machine's:
+         * six wide and nine tall, five in and two down in the button. */
+        static const unsigned short help[] = { 0x1e, 0x33, 0x33, 0x18, 0x0c,
+                                               0x0c, 0x00, 0x0c, 0x0c };
         const unsigned short *art = NULL;
         int aw = 0, ah = 0, ax = 0, ay = 0;
         switch (state & 0x000f) {
@@ -344,6 +351,9 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
             break;
         case DFCS_CAPTIONCLOSE:
             art = cross; aw = 8; ah = 7; ax = 4; ay = 3;
+            break;
+        case DFCS_CAPTIONHELP:
+            art = help; aw = 6; ah = 9; ax = 5; ay = 2;
             break;
         default:
             break;
