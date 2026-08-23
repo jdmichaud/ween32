@@ -1422,6 +1422,11 @@ static void suggest_take(int close)
 #define SUGG_PAD_X 4
 #define SUGG_PAD_Y 3
 #define SUGG_ROW_H 14
+/* What the box is taller than the names it holds: the border, the three rows
+ * they are inset by, and ten more below them. Measured off the machine, whose
+ * box is 29 pixels for one name, 43 for two and 57 for three — and 100 once
+ * there are more than it will show, which is seven rows and the border. */
+#define SUGG_SLACK 15
 
 static void suggest_scroll_to(int top);
 
@@ -1429,22 +1434,27 @@ static void suggest_layout(void)
 {
     RECT cr;
     int sb = GetSystemMetrics(SM_CXVSCROLL);
-    int n, rows, bars;
+    int n, whole, bar;
     if (!g_sugg_list)
         return;
     GetClientRect(g_sugg, &cr);
     n = (int)SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0);
-    rows = (cr.bottom - SUGG_PAD_Y + SUGG_ROW_H - 1) / SUGG_ROW_H;
-    bars = n > cr.bottom / SUGG_ROW_H;
+    whole = (cr.bottom - SUGG_PAD_Y) / SUGG_ROW_H; /* the names shown entire */
+    bar = n > whole;
     MoveWindow(g_sugg_list, SUGG_PAD_X, SUGG_PAD_Y,
-               cr.right - SUGG_PAD_X - (bars ? sb : 0),
+               cr.right - SUGG_PAD_X - (bar ? sb : 0),
                cr.bottom - SUGG_PAD_Y, TRUE);
-    ShowWindow(g_sugg_bar, bars ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_sugg_grip, bars ? SW_SHOW : SW_HIDE);
-    if (bars) {
+    /* The corner is always there — the machine's box has one with a single
+     * name in it and nothing to scroll — and the bar only when there is more
+     * than the box will show. */
+    ShowWindow(g_sugg_bar, bar ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_sugg_grip, SW_SHOW);
+    MoveWindow(g_sugg_grip, cr.right - sb, cr.bottom - sb, sb, sb, TRUE);
+    if (bar) {
+        /* the whole height: the bar itself leaves the corner's square alone,
+         * because the corner is standing in it */
         SCROLLINFO si;
-        MoveWindow(g_sugg_bar, cr.right - sb, 0, sb, cr.bottom - sb, TRUE);
-        MoveWindow(g_sugg_grip, cr.right - sb, cr.bottom - sb, sb, sb, TRUE);
+        MoveWindow(g_sugg_bar, cr.right - sb, 0, sb, cr.bottom, TRUE);
         memset(&si, 0, sizeof(si));
         si.cbSize = sizeof(si);
         si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
@@ -1452,11 +1462,10 @@ static void suggest_layout(void)
         si.nMax = n - 1;
         /* how many whole names show, which is what sizes the thumb: the row
          * the inset pushes past the bottom is not one of them */
-        si.nPage = (UINT)((cr.bottom - SUGG_PAD_Y) / SUGG_ROW_H);
+        si.nPage = (UINT)whole;
         si.nPos = (int)SendMessageA(g_sugg_list, LB_GETTOPINDEX, 0, 0);
         SetScrollInfo(g_sugg_bar, SB_CTL, &si, TRUE);
     }
-    (void)rows;
 }
 
 /* Move the list and the bar together, whichever of them was asked. */
@@ -1641,14 +1650,16 @@ static void suggest_show(int count)
                                              0);
     RECT band;
     int sb = GetSystemMetrics(SM_CXVSCROLL);
-    int rows = count < SUGG_ROWS ? count : SUGG_ROWS;
-    int ih, h;
+    int ih, h, most;
     if (!g_sugg || !field)
         return;
     /* the list box knows how tall a name is; asking it is the only way to
      * end up showing whole ones */
     ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
-    h = rows * ih + 2;
+    h = count * ih + SUGG_SLACK;
+    most = SUGG_ROWS * ih + 2;
+    if (h > most)
+        h = most;
     (void)sb;
     /* It hangs off the field, not off the control the field is in, and its
      * width is the field's *area* — everything the combo box keeps for text,

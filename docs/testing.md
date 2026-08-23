@@ -176,6 +176,12 @@ The box's top-left is the bottom-left of the combo box's `rcItem` — the band
 the text lives on, which is not the client area and not the edit control
 either. Taking it from the client put the box a pixel high.
 
+Its height is `min(14n + 15, 100)` for n names, measured on the machine at
+29, 43 and 57 for one, two and three, and 100 once there are more than it
+will show. `tools/refcapture/suggest-one-machine.png` is the one-name box,
+which is the interesting end: it has a corner with no bar above it, so it is
+the capture that says the corner draws no background of its own.
+
 Getting there settled five things that no other capture could have:
 
 - a scroll bar's up arrow sits a row lower than wine draws it (the sampler
@@ -190,6 +196,14 @@ Getting there settled five things that no other capture could have:
 - and the shell's list is not a stock one: rows of fourteen, inset four
   columns and three rows, and `LBS_NOINTEGRALHEIGHT` so the last row is cut
   by the bottom rather than dropped.
+
+The one-name box settled two more:
+
+- a corner draws its lines and no background, so what is behind it shows —
+  white on a window, face at the foot of a bar, which is where the face in
+  the seven-name box comes from;
+- and a hatch line is four pixels, the last of them face. A status bar's
+  corner fills its square first and so never needed the fourth.
 
 ### The explorer's commands
 

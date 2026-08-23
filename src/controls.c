@@ -50,6 +50,37 @@ int ween_scroll_metric(void)
     return ween_ncm(16); /* SM_CXVSCROLL / SM_CYHSCROLL at 96 dpi */
 }
 
+/* Whether a corner to drag the window by is standing in this window's own
+ * bottom-right — inside it, or beside it and lying over the corner. Anything
+ * that scrolls yields the foot of its bar to one: the machine draws 82 pixels
+ * of bar in a 98 pixel box, with the sixteen below it the corner.
+ *
+ * The corner draws no background of its own, so what the bar leaves is what
+ * shows behind it. */
+int ween_corner_taken(HWND wnd)
+{
+    int mx, my, ox, oy;
+    if (!wnd)
+        return 0;
+    for (struct ween_wnd *c = wnd->first_child; c; c = c->next_sibling)
+        if (c->visible && (c->style & (SBS_SIZEGRIP | SBS_SIZEBOX)))
+            return 1;
+    if (!wnd->parent)
+        return 0;
+    ween_client_origin(wnd, &ox, &oy);
+    mx = ox + wnd->w - 1;
+    my = oy + wnd->h - 1;
+    for (struct ween_wnd *c = wnd->parent->first_child; c; c = c->next_sibling) {
+        int cx, cy;
+        if (c == wnd || !c->visible || !(c->style & (SBS_SIZEGRIP | SBS_SIZEBOX)))
+            continue;
+        ween_client_origin(c, &cx, &cy);
+        if (mx >= cx && mx < cx + c->w && my >= cy && my < cy + c->h)
+            return 1;
+    }
+    return 0;
+}
+
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max)
 {
@@ -277,7 +308,8 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si)
 static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     int vert = (wnd->style & SBS_VERT) != 0;
-    int len = vert ? wnd->h : wnd->w;
+    int len = (vert ? wnd->h : wnd->w) -
+              (ween_corner_taken(wnd) ? ween_scroll_metric() : 0);
     int at = vert ? GET_Y_LPARAM(lp) : GET_X_LPARAM(lp);
     ween_sbstate st = scroll_state(wnd);
 
@@ -295,11 +327,12 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             BeginPaint(wnd, &ps);
             GetClientRect(wnd, &r);
             ween_client_origin(wnd, &ox, &oy);
-            /* a corner of its own fills the square it was given, unlike the
-             * thirteen a status bar tucks into its right-hand end */
+            /* lines only: what is behind shows through, which is white on a
+             * window and face at the foot of a bar */
             ween_classic_sizegrip_size(&top->surface, ox + r.right - 1,
                                        oy + r.bottom - 1,
-                                       r.right < r.bottom ? r.right : r.bottom);
+                                       r.right < r.bottom ? r.right : r.bottom,
+                                       0);
             EndPaint(wnd, &ps);
             return 0;
         }
@@ -373,12 +406,26 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         PAINTSTRUCT ps;
         struct ween_wnd *top = ween_top_level(wnd);
         int ox, oy;
-        BeginPaint(wnd, &ps);
-        ween_client_origin(wnd, &ox, &oy);
-        ween_draw_scrollbar(&top->surface, ox, oy, wnd->w, wnd->h,
-                            (wnd->style & SBS_VERT) != 0, 1, wnd->scroll_pos,
-                            wnd->scroll_page, wnd->scroll_min, wnd->scroll_max);
-        EndPaint(wnd, &ps);
+        {
+            /* A corner standing at the foot of it takes the last sixteen: the
+             * bar is laid out short of them and they are left plain face for
+             * the corner's lines to go over. */
+            int vert = (wnd->style & SBS_VERT) != 0;
+            int corner = ween_corner_taken(wnd) ? ween_scroll_metric() : 0;
+            int bw = wnd->w - (vert ? 0 : corner);
+            int bh = wnd->h - (vert ? corner : 0);
+            BeginPaint(wnd, &ps);
+            ween_client_origin(wnd, &ox, &oy);
+            if (corner)
+                ween_surface_fill(&top->surface, ox + (vert ? 0 : bw),
+                                  oy + (vert ? bh : 0),
+                                  vert ? wnd->w : corner,
+                                  vert ? corner : wnd->h, WEEN_FACE);
+            ween_draw_scrollbar(&top->surface, ox, oy, bw, bh, vert, 1,
+                                wnd->scroll_pos, wnd->scroll_page,
+                                wnd->scroll_min, wnd->scroll_max);
+            EndPaint(wnd, &ps);
+        }
         return 0;
     }
     default:
@@ -1074,17 +1121,9 @@ static int lb_has_bar(HWND wnd, int client_h)
     return it && ih && it->count > client_h / ih;
 }
 
-/* How much of the list box's height its bar gets. Something standing in the
- * corner takes the foot of it: a corner to drag the window bigger by is put
- * there as a child of the box it belongs to, and the machine draws the bar
- * short of it rather than under it — 82 pixels of bar in a 98 pixel list,
- * with the sixteen below it the grip. */
 static int lb_bar_h(HWND wnd, int client_h)
 {
-    for (struct ween_wnd *c = wnd->first_child; c; c = c->next_sibling)
-        if (c->visible && (c->style & (SBS_SIZEGRIP | SBS_SIZEBOX)))
-            return client_h - ween_scroll_metric();
-    return client_h;
+    return ween_corner_taken(wnd) ? client_h - ween_scroll_metric() : client_h;
 }
 
 static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)

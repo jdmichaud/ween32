@@ -651,11 +651,17 @@ void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
  * the machine clears exactly that much and no more, so in a status bar the
  * part's top edge runs on above it and only its right and bottom edges are
  * cut. The diagonals run every four pixels, the last of them two in from the
- * corner, so a bigger square gets another line rather than wider spacing. */
-void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size)
+ * corner, so a bigger square gets another line rather than wider spacing.
+ *
+ * A corner of its own fills nothing: it is lines over whatever is behind it,
+ * which on the machine is white where it stands on a window and face where it
+ * stands at the foot of a scroll bar. */
+void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size,
+                                int fill)
 {
     int x0 = x1 - (size - 1), y0 = y1 - (size - 1);
-    ween_surface_fill(s, x0, y0, size, size, WEEN_FACE);
+    if (fill)
+        ween_surface_fill(s, x0, y0, size, size, WEEN_FACE);
     for (int i = 0; i < size / 4; i++) {
         int line = x1 + y1 - (size - 2) + 4 * i;
         for (int y = y0; y <= y1; y++) {
@@ -667,6 +673,10 @@ void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size)
                 ween_surface_pixel(s, x + 1, y, WEEN_SHADOW);
             if (x + 2 <= x1)
                 ween_surface_pixel(s, x + 2, y, WEEN_SHADOW);
+            /* A line is four wide, the last of them face. Filling first makes
+             * that one free, which is why a status bar's never needed it. */
+            if (x + 3 <= x1)
+                ween_surface_pixel(s, x + 3, y, WEEN_FACE);
         }
     }
 }
