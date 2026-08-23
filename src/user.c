@@ -269,18 +269,13 @@ int ween_has_caption(const struct ween_wnd *w)
     return !w->parent && (w->style & WS_CAPTION) == WS_CAPTION;
 }
 
-static int has_caption(const struct ween_wnd *w)
-{
-    return ween_has_caption(w);
-}
-
 /* A window of its own with WS_BORDER and no caption is bordered the way a
  * combo box's dropped list is: one pixel of COLOR_WINDOWFRAME, flat black,
  * rather than the raised edge a menu wears. Its own frame paints it; a
  * control's is painted with its other borders, in ween_paint_border. */
 static int has_flat_border(const struct ween_wnd *w)
 {
-    return !w->parent && !has_caption(w) && (w->style & WS_BORDER);
+    return !w->parent && !ween_has_caption(w) && (w->style & WS_BORDER);
 }
 
 /* A window with a sizing border has a wider frame than a fixed one. */
@@ -301,7 +296,7 @@ int ween_menu_bar_height(const struct ween_wnd *w)
 /* Client origin within the window's own rectangle. */
 static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
 {
-    if (has_caption(w)) {
+    if (ween_has_caption(w)) {
         *ox = ween_frame_width(w);
         *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION) +
               ween_menu_bar_height(w);
@@ -520,8 +515,8 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
     own_client_origin(wnd, &ox, &oy);
     rect->left = 0;
     rect->top = 0;
-    int trail = has_caption(wnd) ? ween_frame_width(wnd)
-                                 : ween_border_width(wnd);
+    int trail = ween_has_caption(wnd) ? ween_frame_width(wnd)
+                                      : ween_border_width(wnd);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
     /* A window's own scroll bars live outside the client area, which is why
@@ -2630,7 +2625,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_NCHITTEST: {
-        if (!has_caption(wnd))
+        if (!ween_has_caption(wnd))
             return HTCLIENT;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
         RECT c = nc_button_rect(wnd, 0);
@@ -2697,7 +2692,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* A window frame is the plain EDGE_RAISED: its outer line is
          * COLOR_3DLIGHT (face), the white one sits inside it. */
         ween_classic_edge(s, 0, 0, wnd->w, wnd->h, EDGE_RAISED, BF_RECT, NULL);
-        if (!has_caption(wnd))
+        if (!ween_has_caption(wnd))
             return 0;
         /* caption gradient + title (bold, as Win2k captions were) + close */
         int frame = ween_frame_width(wnd);
