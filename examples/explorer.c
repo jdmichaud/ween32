@@ -2314,11 +2314,13 @@ enum {
     IDC_FO_SINGLE, IDC_FO_UNDERLINE_ALWAYS, IDC_FO_UNDERLINE_POINT,
     IDC_FO_DOUBLE, IDC_FO_DEFAULTS,
     IDC_FO_LIKE, IDC_FO_RESET_ALL, IDC_FO_ADVANCED, IDC_FO_VDEFAULTS,
+    IDC_FO_VG1, IDC_FO_VS1, IDC_FO_VS2,
     IDC_FO_TYPES, IDC_FO_NEW, IDC_FO_DELETE, IDC_FO_OPENS, IDC_FO_DETAILS,
     IDC_FO_CHANGE, IDC_FO_TYPE_ADVANCED, IDC_FO_DETAIL_TEXT,
     IDC_FO_OFF_ENABLE, IDC_FO_OFF_SYNC, IDC_FO_OFF_REMIND,
     IDC_FO_OFF_MINUTES, IDC_FO_OFF_SHORTCUT, IDC_FO_OFF_SPACE,
-    IDC_FO_OFF_DELETE, IDC_FO_OFF_VIEW, IDC_FO_OFF_ADVANCED
+    IDC_FO_OFF_DELETE, IDC_FO_OFF_VIEW, IDC_FO_OFF_ADVANCED,
+    IDC_FO_OS1, IDC_FO_OS2, IDC_FO_OS3, IDC_FO_OS4, IDC_FO_OS5
 };
 
 /* The View page's list, which is the one place the advanced settings are
@@ -2444,6 +2446,37 @@ static const fo_place g_fo_general_at[] = {
     { IDC_FO_I4, 24, 251, 32, 32 },
 };
 
+/* The View page, the same way. */
+static const fo_place g_fo_view_at[] = {
+    { IDC_FO_VG1, 18, 9, 330, 89 },
+    { IDC_FO_VS1, 93, 34, 245, 14 },
+    { IDC_FO_LIKE, 93, 58, 113, 24 },
+    { IDC_FO_RESET_ALL, 221, 58, 113, 24 },
+    { IDC_FO_VS2, 18, 115, 120, 14 },
+    { IDC_FO_ADVANCED, 18, 131, 330, 195 },
+    { IDC_FO_VDEFAULTS, 243, 342, 105, 23 },
+    { IDC_FO_I5, 33, 35, 32, 32 },
+};
+
+/* The Offline Files page. */
+static const fo_place g_fo_offline_at[] = {
+    { IDC_FO_I6, 14, 12, 32, 32 },
+    { IDC_FO_OS1, 57, 12, 285, 42 },
+    { IDC_FO_OFF_ENABLE, 24, 72, 250, 16 },
+    { IDC_FO_OFF_SYNC, 24, 98, 250, 16 },
+    { IDC_FO_OFF_REMIND, 24, 124, 250, 16 },
+    { IDC_FO_OS2, 42, 149, 145, 14 },
+    { IDC_FO_OFF_MINUTES, 201, 146, 53, 20 },
+    { IDC_FO_OS3, 262, 149, 50, 14 },
+    { IDC_FO_OFF_SHORTCUT, 24, 179, 285, 16 },
+    { IDC_FO_OS4, 24, 206, 300, 14 },
+    { IDC_FO_OFF_SPACE, 24, 218, 176, 37 },
+    { IDC_FO_OS5, 193, 237, 120, 14 },
+    { IDC_FO_OFF_DELETE, 77, 282, 83, 23 },
+    { IDC_FO_OFF_VIEW, 168, 282, 83, 23 },
+    { IDC_FO_OFF_ADVANCED, 258, 282, 83, 23 },
+};
+
 /* ---- the General page ---- */
 static INT_PTR CALLBACK fo_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -2556,8 +2589,11 @@ static INT_PTR CALLBACK fo_view(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_INITDIALOG: {
         LVCOLUMNA col;
-        memset(&col, 0, sizeof(col));
         RECT cr;
+        fo_layout(dlg, g_fo_view_at,
+                  (int)(sizeof(g_fo_view_at) / sizeof(*g_fo_view_at)));
+        fo_set_icon(dlg, IDC_FO_I5, FOI_VIEWS);
+        memset(&col, 0, sizeof(col));
         GetClientRect(list, &cr);
         col.mask = LVCF_WIDTH;
         col.cx = cr.right - GetSystemMetrics(SM_CXVSCROLL);
@@ -2707,6 +2743,9 @@ static INT_PTR CALLBACK fo_offline(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     (void)lp;
     switch (msg) {
     case WM_INITDIALOG:
+        fo_layout(dlg, g_fo_offline_at,
+                  (int)(sizeof(g_fo_offline_at) / sizeof(*g_fo_offline_at)));
+        fo_set_icon(dlg, IDC_FO_I6, FOI_OFFLINE);
         CheckDlgButton(dlg, IDC_FO_OFF_ENABLE, BST_CHECKED);
         CheckDlgButton(dlg, IDC_FO_OFF_SYNC, BST_CHECKED);
         CheckDlgButton(dlg, IDC_FO_OFF_REMIND, BST_CHECKED);
@@ -2791,15 +2830,18 @@ static void folder_options(HWND owner)
     n = 0;
     memset(items, 0, sizeof(items));
     GROUP(7, 7, 232, 47, "Folder views");
-    LABEL(46, 18, 186, 9, 0, "You can set all of your folders to the same view.");
+    items[n - 1].id = IDC_FO_VG1;
+    LABEL(46, 18, 186, 9, IDC_FO_VS1,
+          "You can set all of your folders to the same view.");
     PUSH(46, 31, 86, 14, IDC_FO_LIKE, "&Like Current Folder");
     PUSH(140, 31, 86, 14, IDC_FO_RESET_ALL, "&Reset All Folders");
-    LABEL(7, 62, 100, 9, 0, "&Advanced settings:");
+    LABEL(7, 62, 100, 9, IDC_FO_VS2, "&Advanced settings:");
     ITEM(WS_TABSTOP | WS_BORDER | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
              LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS,
          7, 73, 232, 121, IDC_FO_ADVANCED, 0, NULL);
     items[n - 1].clsname = WC_LISTVIEWA;
     PUSH(160, 199, 79, 14, IDC_FO_VDEFAULTS, "R&estore Defaults");
+    ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I5, ATOM_STATIC, "");
     build_dialog_template(t_view, sizeof(t_view), WS_CHILD | DS_SETFONT, 243,
                           232, "", items, n);
 
@@ -2826,7 +2868,7 @@ static void folder_options(HWND owner)
     /* ---- Offline Files ---- */
     n = 0;
     memset(items, 0, sizeof(items));
-    LABEL(38, 7, 201, 26, 0,
+    LABEL(38, 7, 201, 26, IDC_FO_OS1,
           "Set up your computer so that files stored on the network are "
           "available when working offline (disconnected from the network).");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 40, 200, 10, IDC_FO_OFF_ENABLE,
@@ -2835,20 +2877,22 @@ static void folder_options(HWND owner)
          ATOM_BUTTON, "&Synchronize all offline files before logging off");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 72, 200, 10, IDC_FO_OFF_REMIND,
          ATOM_BUTTON, "Enable &reminders");
-    LABEL(28, 89, 110, 9, 0, "Display reminder balloon every");
+    LABEL(28, 89, 110, 9, IDC_FO_OS2, "Display reminder balloon every");
     ITEM(WS_TABSTOP | WS_BORDER | ES_RIGHT, 140, 87, 26, 12,
          IDC_FO_OFF_MINUTES, ATOM_EDIT, "60");
-    LABEL(172, 89, 40, 9, 0, "minutes.");
+    LABEL(172, 89, 40, 9, IDC_FO_OS3, "minutes.");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP, 14, 105, 220, 10, IDC_FO_OFF_SHORTCUT,
          ATOM_BUTTON, "&Place shortcut to Offline Files folder on the desktop");
-    LABEL(14, 124, 220, 9, 0,
+    LABEL(14, 124, 220, 9, IDC_FO_OS4,
           "Amount of disk space to use for temporary offline files:");
-    ITEM(WS_TABSTOP | TBS_HORZ, 14, 135, 110, 20, IDC_FO_OFF_SPACE, 0, NULL);
+    ITEM(WS_TABSTOP | TBS_HORZ | TBS_NOTICKS, 14, 135, 110, 20,
+         IDC_FO_OFF_SPACE, 0, NULL);
     items[n - 1].clsname = TRACKBAR_CLASSA;
-    LABEL(132, 140, 100, 9, 0, "104 MB (10% of drive)");
+    LABEL(132, 140, 100, 9, IDC_FO_OS5, "104 MB (10% of drive)");
     PUSH(48, 165, 48, 14, IDC_FO_OFF_DELETE, "De&lete Files...");
     PUSH(108, 165, 48, 14, IDC_FO_OFF_VIEW, "&View Files");
     PUSH(168, 165, 48, 14, IDC_FO_OFF_ADVANCED, "Ad&vanced");
+    ITEM(SS_ICON, 14, 7, 21, 20, IDC_FO_I6, ATOM_STATIC, "");
     build_dialog_template(t_off, sizeof(t_off), WS_CHILD | DS_SETFONT, 243, 232,
                           "", items, n);
 #undef LABEL

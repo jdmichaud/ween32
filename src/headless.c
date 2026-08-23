@@ -227,9 +227,16 @@ static void hl_present(void *win, const ween_surface *s)
 
 static void hl_resize(void *win, int w, int h)
 {
-    (void)win;
-    (void)w;
-    (void)h;
+    /* A window that asks to be a different size gets it, unless the fake
+     * window manager is imposing one. Ignoring it left the window the size it
+     * was made and the pointer mapped through a letterbox for a window that
+     * no longer existed — so a press landed somewhere other than where it was
+     * aimed, which is exactly the class of bug the letterbox is here to
+     * catch. */
+    hl_win *hw = win;
+    if (!hw || g_win_w || g_win_h)
+        return;
+    ween_letterbox_window(&hw->box, w * ween_zoom(), h * ween_zoom());
 }
 
 static void hl_set_resizable(void *win, int resizable)

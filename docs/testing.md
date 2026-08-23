@@ -220,6 +220,24 @@ The one-name box settled two more:
 Every rectangle in both is measured off those, so a change that moves one
 shows up beside them:
 
+Each of Folder Options' four pages is counted against its own capture. The
+tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
+
+| page | differing | of 180648 | what is left |
+| --- | --- | --- | --- |
+| General | 1712 | 0.9% | the caption's bold title, the machine's own mouse pointer in the shot, the focus rectangle it draws |
+| View | 15060 | 8.3% | the Advanced settings list |
+| File Types | 29199 | 16.2% | the list's contents |
+| Offline Files | 9574 | 5.3% | the up-down beside the minutes box, the trackbar's thumb position |
+
+Two of those cannot close. The machine's **File Types** list is its own
+registry — a hundred extensions this example has never heard of — while ours
+is what `type_of` knows; the page's frame, its buttons and its wording match,
+its rows never can. The machine's **Advanced settings** is not a list but a
+tree: rows indented by level, with three kinds of picture in the state
+column — a folder for a heading, a check box, an option button — which is
+what ween32's tree view would need before the page could be counted properly.
+
 ```sh
 # View > Choose Columns — the 330x313 frame is the dialog
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/cc%d.bmp \

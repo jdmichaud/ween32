@@ -4592,7 +4592,10 @@ static void trackbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     RECT r = ps->rcPaint;
     int vert = (wnd->style & TBS_VERT) != 0;
-    int box = (wnd->style & (TBS_BOTH | TBS_NOTICKS)) != 0;
+    /* A box thumb is what TBS_BOTH asks for — ticks on both sides leave no
+     * room for a point. TBS_NOTICKS only takes the ticks away; the thumb
+     * keeps its point, which is what the machine's has. */
+    int box = (wnd->style & TBS_BOTH) != 0;
     int ox, oy;
     int min = wnd->scroll_min, max = wnd->scroll_max, pos = wnd->scroll_pos;
     int cw = r.right - r.left, ch = r.bottom - r.top;
@@ -4638,7 +4641,7 @@ static void trackbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 static int trackbar_pos_at(HWND wnd, int at)
 {
     int vert = (wnd->style & TBS_VERT) != 0;
-    int box = (wnd->style & (TBS_BOTH | TBS_NOTICKS)) != 0;
+    int box = (wnd->style & TBS_BOTH) != 0;
     int travel = vert ? (box ? 11 : WEEN_TB_THUMB_W) : WEEN_TB_THUMB_W;
     int half = travel / 2;
     int chan0 = 8, chan1 = (vert ? wnd->h : wnd->w) - (vert ? 9 : 8);
