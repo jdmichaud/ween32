@@ -71,6 +71,10 @@ const ween_strike *ween_font_by_face(const char *face)
         return ween_gui_font();
     if (!strcmp(face, "MS Shell Dlg") || !strcmp(face, "MS Sans Serif"))
         return ween_dialog_font();
+    /* "MS Shell Dlg 2" is the other stand-in, and resolves to the shell's own
+     * face: it is what a dialog written for this Windows asks for when it
+     * wants to look like the shell rather than like an older dialog, and it
+     * is what a Properties page is set in. */
     return ween_gui_font();
 }
 

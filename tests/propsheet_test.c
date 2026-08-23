@@ -26,11 +26,15 @@ static int g_failures = 0;
         }                                                                      \
     } while (0)
 
-enum { ID_CHECK = 200, ID_EDIT = 201 };
+enum { ID_CHECK = 200, ID_EDIT = 201, ID_CHECK2 = 202 };
 
 static int g_active[2], g_kill[2], g_apply[2], g_reset[2];
 static HWND g_page[2];
 static int g_step;
+/* The first page places the keyboard itself, the way a Properties page does —
+ * on its second item, not the one the sheet would have picked — and what it
+ * set is what still has the keyboard once the sheet has put the page up. */
+static HWND g_placed, g_had_focus;
 /* Gathered while the sheet is still up: it and its pages are gone by the time
  * PropertySheetA returns, which is what makes it modal. */
 static int g_had_tabs, g_same_sheet, g_two_pages;
@@ -43,6 +47,11 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
     switch (msg) {
     case WM_INITDIALOG:
         g_page[which] = dlg;
+        if (which == 0) { /* answering FALSE says the page placed it */
+            g_placed = GetDlgItem(dlg, ID_CHECK2);
+            SetFocus(g_placed);
+            return FALSE;
+        }
         return TRUE;
     case WM_NOTIFY: {
         const NMHDR *nm = (const NMHDR *)lp;
@@ -65,6 +74,7 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
                 PostMessageA(sheet, PSM_SETCURSEL, 1, 0);
             } else if (g_step == 1 && which == 1) {
                 g_step = 2;
+                g_had_focus = GetFocus();
                 PostMessageA(sheet, WM_COMMAND, IDOK, 0);
             }
             return TRUE;
@@ -120,6 +130,11 @@ int main(void)
     a[na].cls = ATOM_BUTTON;
     a[na].text = "A &check box";
     na++;
+    a[na] = a[na - 1];
+    a[na].y = 24;
+    a[na].id = ID_CHECK2;
+    a[na].text = "A&nother";
+    na++;
     CHECK(build_dialog_template(t0, sizeof t0,
                                 WS_CHILD | DS_SETFONT | WS_EX_CONTROLPARENT,
                                 180, 90, "", a, na) > 0,
@@ -170,6 +185,8 @@ int main(void)
 
     /* The pieces are reachable the way a program expects: the sheet is the
      * page's parent, and it owns the tabs. */
+    CHECK(g_placed && g_had_focus == g_placed,
+          "a page that placed the keyboard itself keeps it");
     CHECK(g_had_tabs, "the sheet hands over its tab control");
     CHECK(g_same_sheet, "and both pages hang off the same sheet");
 

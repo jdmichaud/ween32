@@ -43,6 +43,7 @@ typedef struct {
     HWND page[PS_MAX_PAGES];
     PROPSHEETPAGEA desc[PS_MAX_PAGES];
     int changed[PS_MAX_PAGES]; /* this page has something worth keeping */
+    HWND placed[PS_MAX_PAGES]; /* what this one put the keyboard on itself */
     int count;
     int current;
     int result; /* what PropertySheetA gives back */
@@ -183,9 +184,18 @@ static void sheet_show(ps_sheet *ps, int want)
     {   /* The page that comes to the front takes the keyboard with it: what
          * the machine shows is a focus rectangle on the new page's first
          * item, not on the tabs that were clicked. A group of option buttons
-         * hands the stop to whichever of them is set. */
+         * hands the stop to whichever of them is set.
+         *
+         * A page that placed the keyboard itself — one whose WM_INITDIALOG
+         * answered FALSE having called SetFocus, which is what the machine's
+         * Properties page does when it puts it on the first attribute — is
+         * shown with it where it put it, once. */
         HWND first = ween_tab_next(ps->page[want], NULL, 1);
-        if (first)
+        HWND put = ps->placed[want];
+        ps->placed[want] = NULL; /* the once */
+        if (put)
+            SetFocus(put);
+        else if (first)
             SetFocus(first);
     }
 }
@@ -273,6 +283,55 @@ static INT_PTR CALLBACK sheet_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     return FALSE;
 }
 
+/* Past one of the three things a template's header ends with: a menu, a class
+ * or a title. Each is nothing (a zero word), an ordinal (0xffff and a word),
+ * or a string of wide characters. */
+static const unsigned char *ps_skip_name(const unsigned char *p)
+{
+    WORD w = (WORD)(p[0] | (p[1] << 8));
+    if (w == 0)
+        return p + 2;
+    if (w == 0xffff)
+        return p + 4;
+    while (w) {
+        p += 2;
+        w = (WORD)(p[0] | (p[1] << 8));
+    }
+    return p + 2;
+}
+
+/* The face and size a page is set in, so the frame can be set in the same one:
+ * a sheet whose pages are the shell's face has its tabs and buttons in it too,
+ * which is the difference between the machine's Properties and its Folder
+ * Options. Zero back if the page named no font. */
+static int ps_page_font(const unsigned char *t, char *face, size_t max,
+                        int *points)
+{
+    DWORD style;
+    const unsigned char *p;
+    size_t i = 0;
+    if (!t)
+        return 0;
+    style = (DWORD)(t[0] | (t[1] << 8) | ((DWORD)t[2] << 16) |
+                    ((DWORD)t[3] << 24));
+    if (!(style & DS_SETFONT))
+        return 0;
+    p = ps_skip_name(t + 18); /* menu */
+    p = ps_skip_name(p);      /* class */
+    p = ps_skip_name(p);      /* title */
+    *points = (int)(WORD)(p[0] | (p[1] << 8));
+    p += 2;
+    while (i + 1 < max) {
+        WORD c = (WORD)(p[0] | (p[1] << 8));
+        if (!c)
+            break;
+        face[i++] = (char)c;
+        p += 2;
+    }
+    face[i] = 0;
+    return i != 0;
+}
+
 INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
 {
     static unsigned char tmpl[1024];
@@ -280,6 +339,8 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     ps_sheet ps;
     RECT page_area, largest;
     int cx, cy, tab_h, i, n, sheet_w, sheet_h, y, bx;
+    int points = 8;
+    char face[64] = "MS Shell Dlg";
     INT_PTR r;
 
     if (!header || !header->ppsp || !header->nPages)
@@ -313,6 +374,11 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     }
     cx = (int)largest.right;
     cy = (int)largest.bottom;
+    /* the frame is written in the same hand as its pages */
+    for (i = 0; i < n; i++)
+        if (ps_page_font((const unsigned char *)ps.desc[i].pResource, face,
+                         sizeof(face), &points))
+            break;
 
     /* A rough template: the frame is laid out in pixels once it exists, so
      * this only has to be big enough to hold the pieces. */
@@ -338,8 +404,8 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     ps_sz(&b, NULL); /* no menu */
     ps_sz(&b, NULL); /* our own class */
     ps_sz(&b, header->pszCaption ? header->pszCaption : "Properties");
-    ps_w(&b, 8); /* point size */
-    ps_sz(&b, "MS Shell Dlg");
+    ps_w(&b, (WORD)points);
+    ps_sz(&b, face);
 
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, 3, 6, cx + 3, tab_h,
             PS_TAB, 0, WC_TABCONTROLA, "");
@@ -369,9 +435,18 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
      * measure — and turned into pixels the way the dialog manager would. */
     {
         RECT page = { 0, 0, cx, cy };
+        RECT unit = { 0, 0, 4, 8 }; /* one unit across and one down */
         RECT tab, cr, wr;
         int tab_w, tab_h, strip, client_w, client_h, frame_w, frame_h, bx, by;
-        MapDialogRect(ps.sheet, &page);
+        /* A unit is wider than a pixel — six to four across and thirteen to
+         * eight down — so a page's own edge falls half way through a pixel as
+         * often as not. What the sheet is built around is the whole pixels
+         * those units cover, and one more across, which is the margin the tab
+         * control keeps beside a page. The machine's sheets come out pixel
+         * for pixel that way, both this one and Folder Options. */
+        MapDialogRect(ps.sheet, &unit);
+        page.right = cx * unit.right / 4 + 1;
+        page.bottom = cy * unit.bottom / 8;
 
         /* what the tab control must be to hold a page that size */
         tab.left = 0;
@@ -452,6 +527,15 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
                                                 (LPARAM)&ps.desc[i]);
         if (!ps.page[i])
             continue;
+        /* Whether it placed the keyboard itself, asked while it is the page
+         * that has just been made: the pages are all made up front, so which
+         * one has the keyboard at the end of that says nothing, and what each
+         * had at its own creation says everything. */
+        for (HWND w = GetFocus(); w; w = GetParent(w))
+            if (w == ps.page[i]) {
+                ps.placed[i] = GetFocus();
+                break;
+            }
         /* what is in it is reachable from the sheet's tab ring */
         SetWindowLongA(ps.page[i], GWL_EXSTYLE,
                        GetWindowLongA(ps.page[i], GWL_EXSTYLE) |

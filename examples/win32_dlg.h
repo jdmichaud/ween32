@@ -65,10 +65,16 @@ static void db_align(dlg_buf *b)
 }
 
 /* Assemble a modeless dialog template into `buf` (which must be DWORD-aligned);
- * returns the byte length used. */
-static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
-                                      short cx, short cy, const char *title,
-                                      const dlg_item *items, int n)
+ * returns the byte length used. `face` and `points` are the font DS_SETFONT
+ * promises: "MS Shell Dlg" is the older stand-in the system resolves to the
+ * dialog face, "MS Shell Dlg 2" the one it resolves to the shell's own — which
+ * is the difference between a dialog that looks like Folder Options and one
+ * that looks like a Properties page. */
+static UINT_PTR build_dialog_template_font(void *buf, UINT_PTR cap, DWORD style,
+                                           short cx, short cy,
+                                           const char *title,
+                                           const dlg_item *items, int n,
+                                           const char *face, int points)
 {
     dlg_buf b;
     b.p = (unsigned char *)buf;
@@ -89,8 +95,8 @@ static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
      * skips exactly that much before the first control. Saying so without
      * writing them slides every control out of step. */
     if (style & DS_SETFONT) {
-        db_w(&b, 8);
-        db_wsz(&b, "MS Shell Dlg");
+        db_w(&b, (WORD)points);
+        db_wsz(&b, face);
     }
 
     /* DLGITEMTEMPLATE for each control */
@@ -113,6 +119,15 @@ static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
         db_w(&b, 0); /* no creation data */
     }
     return (UINT_PTR)(b.p - (unsigned char *)buf);
+}
+
+/* The same, in the face every dialog here but one is set in. */
+static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
+                                      short cx, short cy, const char *title,
+                                      const dlg_item *items, int n)
+{
+    return build_dialog_template_font(buf, cap, style, cx, cy, title, items, n,
+                                      "MS Shell Dlg", 8);
 }
 
 #endif /* WIN32_DLG_H */
