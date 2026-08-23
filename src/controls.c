@@ -740,6 +740,16 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int moved = 1;
         if (!e)
             return 0;
+        /* The vertical keys mean nothing to a box one line tall, and mean
+         * something to whatever put the box inside itself: a combo box walks
+         * its list with them. So they go to the parent rather than nowhere. */
+        if (!(wnd->style & ES_MULTILINE) &&
+            (wp == VK_UP || wp == VK_DOWN || wp == VK_PRIOR ||
+             wp == VK_NEXT)) {
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_KEYDOWN, wp, lp);
+            return 0;
+        }
         /* Enter and Escape are the two answers a box asked for one name
          * takes: what to do about them is the parent's, not the box's. */
         if (wp == VK_RETURN || wp == VK_ESCAPE) {
@@ -862,6 +872,8 @@ typedef struct {
     int opened; /* combo box: this press is the one that opened the list */
     HWND edit;  /* combo box: the field, when its style says it can be typed
                  * in — which is what an address bar is */
+    int quiet;  /* the control is writing in its own field: what comes back
+                 * is not someone typing, and the owner is not told */
     char was[260]; /* and what was in it when the typing started */
 } ween_items;
 
@@ -1397,12 +1409,33 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 GetWindowTextA(it->edit, it->was, (int)sizeof(it->was));
             } else if (HIWORD(wp) == EN_KILLFOCUS)
                 combo_end_edit(wnd, it, CBENF_KILLFOCUS, -1);
-            else if (HIWORD(wp) == EN_ENTER)
-                combo_end_edit(wnd, it, CBENF_RETURN, -1);
+            else if (HIWORD(wp) == EN_ENTER) {
+                if (g_dropped == wnd && it->track >= 0 &&
+                    it->track < it->count) {
+                    /* the list is open on something: Enter takes that */
+                    it->cursel = it->track;
+                    it->track = -1;
+                    g_dropped = NULL;
+                    combo_show_sel(wnd, it);
+                    ween_top_level(wnd)->dirty = 1;
+                    if (wnd->parent)
+                        SendMessageA(wnd->parent, WM_COMMAND,
+                                     MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE),
+                                     (LPARAM)wnd);
+                } else {
+                    combo_end_edit(wnd, it, CBENF_RETURN, -1);
+                }
+            }
             else if (HIWORD(wp) == EN_ESCAPE) {
-                combo_show_sel(wnd, it); /* back to what it was */
-                combo_end_edit(wnd, it, CBENF_ESCAPE, -1);
-            } else if (HIWORD(wp) == EN_CHANGE) {
+                if (g_dropped == wnd) { /* the list goes; the text stays */
+                    g_dropped = NULL;
+                    it->track = -1;
+                    ween_top_level(wnd)->dirty = 1;
+                } else {
+                    combo_show_sel(wnd, it); /* back to what it was */
+                    combo_end_edit(wnd, it, CBENF_ESCAPE, -1);
+                }
+            } else if (HIWORD(wp) == EN_CHANGE && !it->quiet) {
                 /* the picture goes when the text is no longer that item's,
                  * and comes back when it is — the field stays where it is */
                 InvalidateRect(wnd, NULL, FALSE);
@@ -1414,6 +1447,74 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         return DefWindowProcA(wnd, msg, wp, lp);
+    case WM_KEYDOWN: {
+        /* Walking the list from the keyboard, whether the combo has a field
+         * or is the list-only kind: Down opens it and moves through it, Up
+         * comes back, Enter takes what is under the highlight and Escape
+         * leaves the list as it was. */
+        int ih, per;
+        RECT cr;
+        it = items_of(wnd);
+        if (!it || !it->count)
+            return 0;
+        ih = item_height(wnd);
+        GetClientRect(wnd, &cr);
+        per = 8; /* the list shows at most this many, as combo_list_height has it */
+        switch (wp) {
+        case VK_DOWN:
+        case VK_NEXT:
+            if (g_dropped != wnd) {
+                g_dropped = wnd; /* the first Down opens it */
+                it->track = it->cursel >= 0 ? it->cursel : 0;
+            } else {
+                int step = wp == VK_NEXT ? per : 1;
+                it->track = (it->track < 0 ? -1 : it->track) + step;
+                if (it->track >= it->count)
+                    it->track = it->count - 1;
+            }
+            break;
+        case VK_UP:
+        case VK_PRIOR:
+            if (g_dropped != wnd)
+                return 0;
+            {
+                int step = wp == VK_PRIOR ? per : 1;
+                it->track = (it->track < 0 ? it->count : it->track) - step;
+                if (it->track < 0)
+                    it->track = 0;
+            }
+            break;
+        case VK_ESCAPE:
+            if (g_dropped != wnd)
+                return 0;
+            g_dropped = NULL;
+            it->track = -1;
+            combo_show_sel(wnd, it); /* back to what was picked before */
+            ween_top_level(wnd)->dirty = 1;
+            return 0;
+        default:
+            return 0;
+        }
+        /* the field shows what the highlight is on, as win32's does — and
+         * without telling the application the text changed, since it is the
+         * control moving through its own list rather than someone typing */
+        if (it->edit && it->track >= 0 && it->track < it->count) {
+            it->quiet = 1;
+            SetWindowTextA(it->edit, it->item[it->track]);
+            SendMessageA(it->edit, EM_SETSEL, 0, -1);
+            it->quiet = 0;
+        }
+        if (it->track >= 0) { /* keep the highlight in view */
+            if (it->track < it->top)
+                it->top = it->track;
+            else if (it->track >= it->top + per)
+                it->top = it->track - per + 1;
+        }
+        ween_top_level(wnd)->dirty = 1;
+        (void)ih;
+        (void)cr;
+        return 0;
+    }
     case WM_SETFOCUS:
         /* the keyboard reaching the combo reaches its field, and everything
          * in it is picked — as it is when you click into an address bar */

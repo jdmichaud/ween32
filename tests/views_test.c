@@ -450,6 +450,26 @@ int main(void)
         CHECK((HWND)(INT_PTR)SendMessageA(cb, CBEM_GETEDITCONTROL, 0, 0) ==
                   field,
               "and emptying the list leaves the field where it was");
+
+        /* The list is walked from the keyboard: Down opens it and moves
+         * through it, the field follows the highlight, Escape puts it away.
+         * The keys arrive at the field, which passes on the ones a box one
+         * line tall has no use for. */
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "alpha");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "beta");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "gamma");
+        SendMessageA(cb, CB_SETCURSEL, 0, 0);
+        CHECK(!SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
+              "a combo box starts with its list down");
+        SendMessageA(field, WM_KEYDOWN, VK_DOWN, 0);
+        CHECK(SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
+              "and Down in the field opens it");
+        SendMessageA(field, WM_KEYDOWN, VK_DOWN, 0);
+        GetWindowTextA(field, got, (int)sizeof(got));
+        CHECK(!strcmp(got, "beta"), "the field follows the highlight");
+        SendMessageA(field, WM_KEYDOWN, VK_ESCAPE, 0);
+        CHECK(!SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
+              "and Escape puts the list away");
         DestroyWindow(cb);
         DestroyWindow(list_only);
     }
