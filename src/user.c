@@ -2629,6 +2629,11 @@ static UINT button_type(const struct ween_wnd *w)
  * pixel down and right, with grey over it. */
 static void button_label(HWND wnd, HDC dc, RECT *r, UINT fmt)
 {
+    /* The line under a mnemonic keeps the same company a menu's does: out of
+     * sight until Alt has been pressed. A control is not a menu, but the
+     * state is one state — UISF_HIDEACCEL covers both. */
+    if (!ween_menu_cues)
+        fmt |= DT_HIDEPREFIX;
     if (wnd->style & WS_DISABLED) {
         RECT sh = *r;
         sh.left++;
@@ -2968,6 +2973,8 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         UINT fmt = (kind == SS_SIMPLE || kind == SS_LEFTNOWORDWRAP)
                        ? DT_SINGLELINE
                        : DT_WORDBREAK;
+        if (!ween_menu_cues) /* as a control's mnemonic hides, so does a label's */
+            fmt |= DT_HIDEPREFIX;
         switch (wnd->style & 0x03) {
         case SS_CENTER:
             fmt |= DT_CENTER;

@@ -10,7 +10,6 @@
  * be written independently and still line up.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -315,8 +314,10 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
 
     b.p = tmpl;
     b.end = tmpl + sizeof(tmpl);
-    ps_d(&b, WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE | DS_MODALFRAME |
-                 DS_SETFONT);
+    /* Not visible yet: the frame is made at a rough size, sized to its
+     * largest page and filled with pages, and only then put up. A window that
+     * appears first and is moved afterwards is seen in the wrong place. */
+    ps_d(&b, WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_SETFONT);
     /* A sheet wears the question mark unless it was told not to, which is
      * what comctl32 does and what the machine's Folder Options has. */
     ps_d(&b, (header->dwFlags & PSH_NOCONTEXTHELP) ? 0
@@ -467,14 +468,12 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
         }
     }
 
-    { RECT pr; GetWindowRect(ps.page[0], &pr); RECT tr; GetWindowRect(ps.tabs,&tr);
-      fprintf(stderr, "PS tab %ld,%ld-%ld,%ld page %ld,%ld-%ld,%ld\n",
-        (long)tr.left,(long)tr.top,(long)tr.right,(long)tr.bottom,
-        (long)pr.left,(long)pr.top,(long)pr.right,(long)pr.bottom); }
     i = (int)header->nStartPage;
     if (i < 0 || i >= n)
         i = 0;
     sheet_show(&ps, i);
+    ShowWindow(ps.sheet, SW_SHOW); /* now it is worth looking at */
+    SetFocus(ween_tab_next(ps.sheet, NULL, 1));
 
     {   /* the owner goes down for as long as the sheet is up */
         int off = header->hwndParent &&

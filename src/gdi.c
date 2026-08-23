@@ -533,12 +533,13 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
                      cr_to_px(dc->text_color));
     if (underline >= 0 && underline < len) {
         /* A one-pixel rule under the mnemonic character, on the row below the
-         * cell — one lower than the descenders, which is where the reference
-         * capture puts it. */
+         * baseline — which for the eleven-pixel faces is twelve down, where
+         * both the reference capture and the machine put it. */
         int x0 = ween_strike_pen(f, text, underline);
         int x1 = ween_strike_pen(f, text, underline + 1);
-        ween_surface_hline(dc->s, dc->org_x + x + x0, dc->org_y + y + th,
-                           x1 - x0, cr_to_px(dc->text_color));
+        ween_surface_hline(dc->s, dc->org_x + x + x0,
+                           dc->org_y + y + f->ascent + 1, x1 - x0,
+                           cr_to_px(dc->text_color));
     }
     ween_surface_clip(dc->s, saved.left, saved.top, saved.right - saved.left,
                       saved.bottom - saved.top);

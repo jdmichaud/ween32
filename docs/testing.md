@@ -70,8 +70,12 @@ tools/refcapture/pxdiff.py                  # expect 7182 / 298596 — 2.4%
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 741 / 39200 — 1.9%
+  tools/refcapture/pxdiff.py                # expect 747 / 39200 — 1.9%
 ```
+
+Fourteen of the 747 are two mnemonic underlines a control draws only once Alt
+has been pressed, which wine draws always — the same rule that keeps a menu's
+underlines out of sight, applied to the controls in a dialog.
 
 Roughly 242 of that 1.8% is the menu bar, and is *deliberate*: wine spaces bar
 items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The

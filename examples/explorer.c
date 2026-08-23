@@ -2441,7 +2441,7 @@ static const fo_place g_fo_general_at[] = {
     { IDC_FO_I1, 24, 30, 32, 32 },
     { IDC_FO_I2, 24, 105, 32, 32 },
     { IDC_FO_I3, 24, 178, 32, 32 },
-    { IDC_FO_I4, 24, 238, 32, 32 },
+    { IDC_FO_I4, 24, 251, 32, 32 },
 };
 
 /* ---- the General page ---- */
