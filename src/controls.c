@@ -2624,6 +2624,7 @@ typedef struct ween_tvitem {
     char *text;
     struct ween_tvitem *parent, *child, *next;
     int expanded;
+    int state_img; /* the picture before it: 1-based into the state list, 0 none */
     int image;     /* index into the view's image list, -1 for none */
     int sel_image; /* the one it wears while selected, -1 to keep `image` */
     int cchildren; /* said to have children before it has any: an item that
@@ -2631,7 +2632,8 @@ typedef struct ween_tvitem {
 } ween_tvitem;
 
 typedef struct {
-    HIMAGELIST images; /* the icons items name by index */
+    HIMAGELIST images;       /* the icons items name by index */
+    HIMAGELIST state_images; /* the tick boxes and option buttons before them */
     ween_tvitem *root;
     ween_tvitem *sel;
     int scroll_x, content_w; /* horizontal scroll, and what there is to scroll */
@@ -2722,12 +2724,15 @@ static int tree_has_button(const struct ween_wnd *wnd, const ween_tvitem *it,
  * away from it and the item it had stops being marked. */
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                      int ox, int oy, int depth, int row, int lines, int at_root,
-                     const ween_tvitem *sel, int sel_state, HIMAGELIST images)
+                     const ween_tvitem *sel, int sel_state, HIMAGELIST images,
+                     HIMAGELIST state_images, int buttons)
 {
     int th = f ? f->ascent - f->descent : 13;
-    int icon_w = 0, icon_h = 0;
+    int icon_w = 0, icon_h = 0, st_w = 0, st_h = 0;
     if (images)
         ImageList_GetIconSize(images, &icon_w, &icon_h);
+    if (state_images)
+        ImageList_GetIconSize(state_images, &st_w, &st_h);
     for (ween_tvitem *it = first; it; it = it->next) {
         int y = oy + WEEN_TV_TOP_MARGIN + row * WEEN_TV_ITEM_H;
         /* The column this item's own picture starts in. TVS_LINESATROOT
@@ -2753,7 +2758,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             if (it != first || depth > 0) /* up to the sibling or the parent */
                 dotted_v(s, cx, y, cy, WEEN_SHADOW);
         }
-        if ((it->child || it->cchildren) && marked) {
+        if ((it->child || it->cchildren) && marked && buttons) {
             /* the button: a grey box with a plus or minus in it */
             ween_surface_rect(s, bx, cy - 4, WEEN_TV_BUTTON, WEEN_TV_BUTTON,
                               WEEN_SHADOW);
@@ -2762,6 +2767,16 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             ween_surface_hline(s, bx + 2, cy, WEEN_TV_BUTTON - 4, WEEN_BLACK);
             if (!it->expanded)
                 ween_surface_vline(s, cx, cy - 2, WEEN_TV_BUTTON - 4, WEEN_BLACK);
+        }
+        /* The state column comes before everything the item draws in: the
+         * tick box or option button a page of settings puts against each of
+         * its rows. It is reserved for every item once the list is set, so
+         * the ones that draw nothing there still start where the others do. */
+        if (state_images) {
+            if (it->state_img > 0)
+                ween_imagelist_draw(state_images, it->state_img - 1, s, tx,
+                                    y + (WEEN_TV_ITEM_H - st_h) / 2);
+            tx += st_w + 5;
         }
         if (images && it->image >= 0) {
             /* the icon goes between the button and the label, and the label
@@ -2779,7 +2794,13 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
             tx += icon_w + 5;
         }
         if (f && it->text) {
-            int ty = y + (WEEN_TV_ITEM_H - th) / 2;
+            /* The label sits on the row's own baseline: the strike's cell
+             * centred in what the row keeps for it, which is two less than
+             * the row. Both faces are measured — the shell's folder tree is
+             * set in Tahoma and this one, in a dialog, in MS Sans Serif, and
+             * the two cells differ by two rows. */
+            int cell = f->cell_h ? f->cell_h : th;
+            int ty = y + (WEEN_TV_ITEM_H - 2 - cell) / 2;
             int selected = it == sel && sel_state;
             if (selected) {
                 /* The bar is the whole row's height, not the text's, and it
@@ -2802,7 +2823,8 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         row++;
         if (it->expanded && it->child)
             row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines,
-                            at_root, sel, sel_state, images);
+                            at_root, sel, sel_state, images, state_images,
+                            buttons);
         /* Down to the next sibling — past this item's children, when it has
          * any open. Drawn after them so the run is one length rather than
          * one per row, and so an item with a subtree under it still has the
@@ -2977,7 +2999,8 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
               ween_focus_get() == wnd  ? 2
               : (wnd->style & TVS_SHOWSELALWAYS) ? 1
                                                  : 0,
-              t->images);
+              t->images, t->state_images,
+              (wnd->style & TVS_HASBUTTONS) != 0);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -3129,6 +3152,10 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!item)
             return 0;
         item->image = (is->item.mask & TVIF_IMAGE) ? is->item.iImage : -1;
+        item->state_img = (is->item.mask & TVIF_STATE)
+                              ? (int)((is->item.state & TVIS_STATEIMAGEMASK) >>
+                                      12)
+                              : 0;
         item->sel_image = (is->item.mask & TVIF_SELECTEDIMAGE)
                               ? is->item.iSelectedImage
                               : -1;
@@ -3214,12 +3241,39 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (item->mask & TVIF_IMAGE)
             item->iImage = it->image;
+        if (item->mask & TVIF_STATE)
+            item->state = (UINT)(it->state_img << 12);
+        return TRUE;
+    }
+    case TVM_SETITEMA: {
+        TVITEMA *item = (TVITEMA *)lp;
+        ween_tvitem *it = item ? item->hItem : NULL;
+        if (!it)
+            return FALSE;
+        if ((item->mask & TVIF_STATE) &&
+            (item->stateMask & TVIS_STATEIMAGEMASK))
+            it->state_img =
+                (int)((item->state & TVIS_STATEIMAGEMASK) >> 12);
+        if ((item->mask & TVIF_IMAGE))
+            it->image = item->iImage;
+        if ((item->mask & TVIF_TEXT) && item->pszText) {
+            size_t n = strlen(item->pszText) + 1;
+            char *copy = malloc(n);
+            if (copy) {
+                memcpy(copy, item->pszText, n);
+                free(it->text);
+                it->text = copy;
+            }
+        }
+        InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
     }
     case TVM_SETIMAGELIST:
         if ((t = tree_of(wnd))) {
-            HIMAGELIST was = t->images;
-            t->images = (HIMAGELIST)lp;
+            HIMAGELIST *slot = wp == TVSIL_STATE ? &t->state_images
+                                                 : &t->images;
+            HIMAGELIST was = *slot;
+            *slot = (HIMAGELIST)lp;
             InvalidateRect(wnd, NULL, FALSE);
             return (LRESULT)(UINT_PTR)was;
         }
@@ -4071,6 +4125,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
      * altogether when the style does not. The caret goes with the focus in
      * either case: an unfocused list has no caret to move. */
     int focused = ween_focus_get() == wnd;
+    int fullrow = (l->exstyle & LVS_EX_FULLROWSELECT) != 0;
     int sel_state = focused                            ? 2
                     : (wnd->style & LVS_SHOWSELALWAYS) ? 1
                                                        : 0;
@@ -4100,7 +4155,17 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             ween_classic_check_flat(&top->surface, ox - sx + 4, by,
                                     l->row[i].state_img == 2);
         }
-        if ((selected || caret) && f && l->row[i].text[0]) {
+        /* LVS_EX_FULLROWSELECT: the row is picked, not the name in it, so
+         * the highlight runs the whole width of the columns and every cell's
+         * text goes with it. The machine's file-type list is one of these. */
+        if (fullrow && (selected || caret) && f) {
+            int rw = lv_content_w(l);
+            if (selected)
+                ween_surface_fill(&top->surface, ox - sx, y, rw, ih,
+                                  sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
+            if (caret)
+                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih);
+        } else if ((selected || caret) && f && l->row[i].text[0]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
             int lx = ox - sx + lv_label_x(indent);
@@ -4139,10 +4204,12 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                     lead = l->width[c] - 6 - ween_strike_text_width(f, t, len);
                 /* two below the row's top, not one: the same lopsided
                  * centring the rest of the shell's text has */
-                ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 2, t,
-                                 len,
-                                 selected && sel_state == 2 && !c ? WEEN_WHITE
-                                                                  : WEEN_BLACK);
+                ween_strike_draw(f, &top->surface, ox + x - sx + lead, y + 2,
+                                 t, len,
+                                 selected && sel_state == 2 &&
+                                         (!c || fullrow)
+                                     ? WEEN_WHITE
+                                     : WEEN_BLACK);
             }
             x += l->width[c];
         }

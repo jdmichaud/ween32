@@ -542,6 +542,13 @@ typedef struct {
  * it with. */
 #define TVIF_CHILDREN 0x0040
 #define TVSIL_NORMAL 0
+/* The pictures a tree draws *before* an item — a tick box, an option button —
+ * kept in a list of their own. An item names one in the top four bits of its
+ * state, which is what INDEXTOSTATEIMAGEMASK builds; zero means none, and the
+ * column is reserved for every item once the list is set. */
+#define TVSIL_STATE 2
+#define TVIS_STATEIMAGEMASK 0xF000
+#define TVIF_STATE 0x0008
 #define TVI_ROOT ((HTREEITEM)(UINT_PTR)-0x10000)
 #define TVI_FIRST ((HTREEITEM)(UINT_PTR)-0x0FFFF)
 #define TVI_LAST ((HTREEITEM)(UINT_PTR)-0x0FFFE)
@@ -553,6 +560,7 @@ typedef struct {
 #define TVM_DELETEITEM (TV_FIRST + 1)
 #define TVM_GETNEXTITEM (TV_FIRST + 10)
 #define TVM_GETITEMA (TV_FIRST + 12)
+#define TVM_SETITEMA (TV_FIRST + 13)
 /* which item TVM_GETNEXTITEM is being asked for */
 #define TVGN_ROOT 0x0000
 #define TVGN_NEXT 0x0001

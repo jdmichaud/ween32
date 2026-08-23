@@ -132,6 +132,32 @@ void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h)
     }
 }
 
+/* The same dots in a colour of their own rather than inverted. A view's
+ * caret inverts what it lands on — on the machine's file-type list the dots
+ * over a picked row come out the exact inverse of the highlight — but a
+ * button's rectangle is drawn, not inverted: on the face of a dialog the
+ * machine's dots are black, where inverting that face would leave a dark
+ * blue-grey. */
+void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
+                                ween_color c)
+{
+    int r = x + w - 1, b = y + h - 1;
+    if (w <= 0 || h <= 0)
+        return;
+    for (int i = x; i <= r; i++) {
+        if (!((i + y) & 1))
+            ween_surface_pixel(s, i, y, c);
+        if (!((i + b) & 1))
+            ween_surface_pixel(s, i, b, c);
+    }
+    for (int j = y + 1; j < b; j++) {
+        if (!((x + j) & 1))
+            ween_surface_pixel(s, x, j, c);
+        if (!((r + j) & 1))
+            ween_surface_pixel(s, r, j, c);
+    }
+}
+
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c)
 {
     ween_surface_hline(s, x, y, w, c);

@@ -2372,30 +2372,136 @@ enum {
     IDC_FO_OFF_ENABLE, IDC_FO_OFF_SYNC, IDC_FO_OFF_REMIND,
     IDC_FO_OFF_MINUTES, IDC_FO_OFF_SHORTCUT, IDC_FO_OFF_SPACE,
     IDC_FO_OFF_DELETE, IDC_FO_OFF_VIEW, IDC_FO_OFF_ADVANCED,
-    IDC_FO_OS1, IDC_FO_OS2, IDC_FO_OS3, IDC_FO_OS4, IDC_FO_OS5
+    IDC_FO_OS1, IDC_FO_OS2, IDC_FO_OS3, IDC_FO_OS4, IDC_FO_OS5,
+    IDC_FO_TS1, /* "Registered file types:" */
+    IDC_FO_TS2  /* "Opens with:" */
 };
 
-/* The View page's list, which is the one place the advanced settings are
- * named. A row with no field is a heading. */
+/* The View page's Advanced settings, which is the one place the settings are
+ * named. It is a tree on the machine, not a list: headings carry a folder and
+ * hold what is under them, a setting carries a tick box, and a pair of them
+ * that excludes each other carries option buttons instead.
+ *
+ * The rows are the machine's, in its order. The ones this example has no
+ * field for are remembered and nothing else — the same bargain the Offline
+ * page makes. */
+enum { ADV_HEAD, ADV_CHECK, ADV_RADIO };
+
 static const struct {
     const char *label;
-    size_t field; /* offset into explorer_options, or 0 for a heading */
-    int radio;    /* a pair of options rather than a box, as the machine has
-                   * for hidden files */
+    int level; /* how deep in the tree it sits */
+    int kind;
+    size_t field;  /* offset into explorer_options, or 0 for none */
+    int fixed;     /* what a row with no field of its own shows */
 } g_advanced[] = {
-    { "Files and Folders", 0, 0 },
-    { "Display the full path in the address bar",
+    { "Files and Folders", 0, ADV_HEAD, 0, 0 },
+    { "Display compressed files and folders with alternate color", 1,
+      ADV_CHECK, 0, 0 },
+    { "Display the full path in the address bar", 1, ADV_CHECK,
       offsetof(explorer_options, show_full_path_address), 0 },
-    { "Display the full path in title bar",
+    { "Display the full path in title bar", 1, ADV_CHECK,
       offsetof(explorer_options, show_full_path_title), 0 },
-    { "Hidden files and folders", 0, 0 },
-    { "Show hidden files and folders",
-      offsetof(explorer_options, show_hidden), 1 },
-    { "Hide file extensions for known file types",
+    { "Hidden files and folders", 1, ADV_HEAD, 0, 0 },
+    { "Do not show hidden files and folders", 2, ADV_RADIO, 0, 0 },
+    { "Show hidden files and folders", 2, ADV_RADIO,
+      offsetof(explorer_options, show_hidden), 0 },
+    { "Hide file extensions for known file types", 1, ADV_CHECK,
       offsetof(explorer_options, hide_extensions), 0 },
-    { "Remember each folder's view settings",
+    { "Hide protected operating system files (Recommended)", 1, ADV_CHECK, 0,
+      1 },
+    { "Launch folder windows in a separate process", 1, ADV_CHECK, 0, 0 },
+    { "Remember each folder's view settings", 1, ADV_CHECK,
       offsetof(explorer_options, remember_views), 0 },
+    { "Show My Documents on the Desktop", 1, ADV_CHECK, 0, 1 },
 };
+
+/* The pictures that go before those rows, in the state list the tree draws
+ * from: a flat box with a two-pixel border, the same with a tick in it, an
+ * option button and the one that is set — all measured off the machine, which
+ * draws its own rather than the raised kind a dialog's check box wears — and
+ * the folder a heading carries.
+ *
+ * They are one-based in an item's state, so ADV_IMG_BOX is what
+ * INDEXTOSTATEIMAGEMASK(1) names. */
+enum {
+    ADV_IMG_BOX = 1,
+    ADV_IMG_BOX_ON,
+    ADV_IMG_RADIO,
+    ADV_IMG_RADIO_ON,
+    ADV_IMG_FOLDER
+};
+
+static const char *const g_adv_box[] = {
+    "#############", "#############", "##.........##", "##.........##",
+    "##.........##", "##.........##", "##.........##", "##.........##",
+    "##.........##", "##.........##", "##.........##", "#############",
+    "#############"
+};
+static const char *const g_adv_box_on[] = {
+    "#############", "#############", "##.........##", "##.......#.##",
+    "##......##.##", "##.#...###.##", "##.##.###..##", "##.#####...##",
+    "##..###....##", "##...#.....##", "##.........##", "#############",
+    "#############"
+};
+static const char *const g_adv_radio[] = {
+    "....####....", "..########..", ".###....###.", ".##......##.",
+    "##........##", "##........##", "##........##", "##........##",
+    ".##......##.", ".###....###.", "..########..", "....####...."
+};
+static const char *const g_adv_radio_on[] = {
+    "....####....", "..########..", ".###....###.", ".##......##.",
+    "##...##...##", "##..####..##", "##..####..##", "##...##...##",
+    ".##......##.", ".###....###.", "..########..", "....####...."
+};
+
+static const char *asset_dir(void); /* where the pictures are kept */
+
+/* One of those, as a sixteen-square bitmap with the art two in and one down,
+ * which is where the machine's sits in its row. */
+static HBITMAP adv_art(const char *const *rows, int n)
+{
+    unsigned char bits[16 * 16 * 4];
+    memset(bits, 0xff, sizeof(bits)); /* white, and the row it sits on is */
+    for (int y = 0; y < n; y++)
+        for (int x = 0; rows[y][x]; x++)
+            if (rows[y][x] == '#') {
+                unsigned char *p = bits + (((size_t)(y + 1) * 16) + x + 2) * 4;
+                p[0] = p[1] = p[2] = 0;
+            }
+    return CreateBitmap(16, 16, 1, 32, bits);
+}
+
+static HIMAGELIST adv_state_images(void)
+{
+    HIMAGELIST il = ImageList_Create(16, 16, ILC_MASK, 5, 0);
+    HBITMAP bmp;
+    if (!il)
+        return NULL;
+    bmp = adv_art(g_adv_box, 13);
+    ImageList_Add(il, bmp, NULL);
+    DeleteObject(bmp);
+    bmp = adv_art(g_adv_box_on, 13);
+    ImageList_Add(il, bmp, NULL);
+    DeleteObject(bmp);
+    bmp = adv_art(g_adv_radio, 12);
+    ImageList_Add(il, bmp, NULL);
+    DeleteObject(bmp);
+    bmp = adv_art(g_adv_radio_on, 12);
+    ImageList_Add(il, bmp, NULL);
+    DeleteObject(bmp);
+    {   /* the folder a heading wears is the one the rest of the shell uses */
+        char path[600];
+        HICON icon;
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), ICON_FOLDER);
+        icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 16, 16,
+                                 LR_LOADFROMFILE);
+        if (icon) {
+            ImageList_AddIcon(il, icon);
+            DestroyIcon(icon);
+        }
+    }
+    return il;
+}
 
 static int *opt_field(explorer_options *o, size_t at)
 {
@@ -2417,7 +2523,6 @@ static void options_applied(void)
 /* The pictures beside the group boxes, which are the shell's own. Each is
  * drawn where the machine has it; they are not controls, so the page paints
  * them itself. */
-static const char *asset_dir(void); /* where the pictures are kept */
 
 enum { FOI_DESKTOP, FOI_WEBVIEW, FOI_BROWSE, FOI_CLICK, FOI_VIEWS,
        FOI_OFFLINE, FOI_COUNT };
@@ -2487,6 +2592,21 @@ static const fo_place g_fo_view_at[] = {
     { IDC_FO_I5, 33, 35, 32, 32 },
 };
 
+/* The File Types page, measured off the machine's own: its list, the two
+ * buttons beside it, the group below and what is in it. */
+static const fo_place g_fo_types_at[] = {
+    { IDC_FO_TS1, 14, 12, 120, 14 },
+    { IDC_FO_TYPES, 14, 30, 335, 135 },
+    { IDC_FO_NEW, 192, 177, 75, 23 },
+    { IDC_FO_DELETE, 273, 177, 75, 23 },
+    { IDC_FO_DETAILS, 14, 222, 335, 141 },
+    { IDC_FO_TS2, 24, 246, 60, 14 },
+    { IDC_FO_OPENS, 109, 246, 150, 14 },
+    { IDC_FO_CHANGE, 263, 242, 75, 24 },
+    { IDC_FO_DETAIL_TEXT, 24, 277, 316, 40 },
+    { IDC_FO_TYPE_ADVANCED, 263, 328, 75, 24 },
+};
+
 /* The Offline Files page. */
 static const fo_place g_fo_offline_at[] = {
     { IDC_FO_I6, 14, 12, 32, 32 },
@@ -2499,11 +2619,11 @@ static const fo_place g_fo_offline_at[] = {
     { IDC_FO_OS3, 261, 149, 50, 14 },
     { IDC_FO_OFF_SHORTCUT, 24, 178, 285, 16 },
     { IDC_FO_OS4, 24, 206, 300, 14 },
-    { IDC_FO_OFF_SPACE, 24, 218, 176, 37 },
+    { IDC_FO_OFF_SPACE, 29, 232, 152, 37 },
     { IDC_FO_OS5, 192, 237, 120, 14 },
-    { IDC_FO_OFF_DELETE, 78, 282, 83, 23 },
-    { IDC_FO_OFF_VIEW, 169, 282, 83, 23 },
-    { IDC_FO_OFF_ADVANCED, 259, 282, 83, 23 },
+    { IDC_FO_OFF_DELETE, 77, 282, 84, 23 },
+    { IDC_FO_OFF_VIEW, 168, 282, 84, 23 },
+    { IDC_FO_OFF_ADVANCED, 258, 282, 84, 23 },
 };
 
 /* ---- the General page ---- */
@@ -2592,43 +2712,89 @@ static INT_PTR CALLBACK fo_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 /* ---- the View page ---- */
+/* Which picture a row wears, given what it is set to. */
+static int adv_image(int i)
+{
+    int on = g_advanced[i].field
+                 ? *opt_field(&g_opt_edit, g_advanced[i].field)
+                 : g_advanced[i].fixed;
+    switch (g_advanced[i].kind) {
+    case ADV_HEAD:
+        return ADV_IMG_FOLDER;
+    case ADV_RADIO:
+        /* the pair reads one field: the second of them is what it is on */
+        return (g_advanced[i].field ? on : !*opt_field(&g_opt_edit,
+                                                       offsetof(
+                                                           explorer_options,
+                                                           show_hidden)))
+                   ? ADV_IMG_RADIO_ON
+                   : ADV_IMG_RADIO;
+    default:
+        return on ? ADV_IMG_BOX_ON : ADV_IMG_BOX;
+    }
+}
+
+/* The tree, built from that table: a heading holds the rows under it, so the
+ * levels in the table become parents and children. */
+static HTREEITEM g_adv_item[sizeof(g_advanced) / sizeof(*g_advanced)];
+
 static void fo_view_fill(HWND dlg)
 {
-    HWND list = GetDlgItem(dlg, IDC_FO_ADVANCED);
+    HWND tree = GetDlgItem(dlg, IDC_FO_ADVANCED);
     int n = (int)(sizeof(g_advanced) / sizeof(*g_advanced));
-    SendMessageA(list, LVM_DELETEALLITEMS, 0, 0);
+    HTREEITEM parent[4];
+    memset(parent, 0, sizeof(parent));
+    SendMessageA(tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
     for (int i = 0; i < n; i++) {
-        LVITEMA it;
-        memset(&it, 0, sizeof(it));
-        it.mask = LVIF_TEXT;
-        it.iItem = i;
-        it.pszText = (char *)g_advanced[i].label;
-        SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
-        lv_state_image(list, i,
-                       !g_advanced[i].field
-                           ? 0 /* a heading has no box */
-                           : (*opt_field(&g_opt_edit, g_advanced[i].field) ? 2
-                                                                          : 1));
+        TVINSERTSTRUCTA is;
+        int lv = g_advanced[i].level;
+        memset(&is, 0, sizeof(is));
+        is.hParent = lv > 0 ? parent[lv - 1] : TVI_ROOT;
+        is.hInsertAfter = TVI_LAST;
+        is.item.mask = TVIF_TEXT | TVIF_STATE;
+        is.item.pszText = (char *)g_advanced[i].label;
+        is.item.stateMask = TVIS_STATEIMAGEMASK;
+        is.item.state = INDEXTOSTATEIMAGEMASK(adv_image(i));
+        g_adv_item[i] = (HTREEITEM)SendMessageA(tree, TVM_INSERTITEMA, 0,
+                                                (LPARAM)&is);
+        if (lv < 3)
+            parent[lv] = g_adv_item[i];
+        if (g_advanced[i].kind == ADV_HEAD && g_adv_item[i])
+            SendMessageA(tree, TVM_EXPAND, TVE_EXPAND,
+                         (LPARAM)g_adv_item[i]);
     }
+}
+
+static HIMAGELIST g_adv_images;
+static POINT g_adv_click; /* where the last press in the tree landed */
+static WNDPROC g_adv_proc;
+
+/* In front of the tree, only to remember where a press landed: NM_CLICK says
+ * that one happened and not where, and the page has to know which row's
+ * picture was hit. */
+static LRESULT CALLBACK adv_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_LBUTTONDOWN) {
+        g_adv_click.x = GET_X_LPARAM(lp);
+        g_adv_click.y = GET_Y_LPARAM(lp);
+    }
+    return CallWindowProcA(g_adv_proc, w, msg, wp, lp);
 }
 
 static INT_PTR CALLBACK fo_view(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
-    HWND list = GetDlgItem(dlg, IDC_FO_ADVANCED);
+    HWND tree = GetDlgItem(dlg, IDC_FO_ADVANCED);
     switch (msg) {
     case WM_INITDIALOG: {
-        LVCOLUMNA col;
-        RECT cr;
         fo_layout(dlg, g_fo_view_at,
                   (int)(sizeof(g_fo_view_at) / sizeof(*g_fo_view_at)));
         fo_set_icon(dlg, IDC_FO_I5, FOI_VIEWS);
-        memset(&col, 0, sizeof(col));
-        GetClientRect(list, &cr);
-        col.mask = LVCF_WIDTH;
-        col.cx = cr.right - GetSystemMetrics(SM_CXVSCROLL);
-        SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
-        SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
-                     LVS_EX_CHECKBOXES);
+        if (!g_adv_images)
+            g_adv_images = adv_state_images();
+        g_adv_proc = (WNDPROC)SetWindowLongPtrA(tree, GWLP_WNDPROC,
+                                                (LONG_PTR)adv_proc);
+        SendMessageA(tree, TVM_SETIMAGELIST, TVSIL_STATE,
+                     (LPARAM)g_adv_images);
         fo_view_fill(dlg);
         return TRUE;
     }
@@ -2654,13 +2820,33 @@ static INT_PTR CALLBACK fo_view(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (!nm)
             return FALSE;
-        if (nm->hwndFrom == list && nm->code == LVN_ITEMCHANGED) {
+        if (nm->hwndFrom == tree && nm->code == NM_CLICK) {
+            /* a press on a row's picture turns that setting over, which is
+             * what the machine's does; the label alone only picks the row.
+             * Where the press landed comes from the tree itself: the click
+             * that was just handled left its point behind. */
+            TVHITTESTINFO ht;
             int n = (int)(sizeof(g_advanced) / sizeof(*g_advanced));
-            for (int i = 0; i < n; i++)
-                if (g_advanced[i].field)
+            memset(&ht, 0, sizeof(ht));
+            ht.pt = g_adv_click;
+            SendMessageA(tree, TVM_HITTEST, 0, (LPARAM)&ht);
+            for (int i = 0; i < n; i++) {
+                if (!ht.hItem || ht.hItem != g_adv_item[i] ||
+                    !(ht.flags & TVHT_ONITEMSTATEICON))
+                    continue;
+                if (g_advanced[i].kind == ADV_CHECK && g_advanced[i].field)
                     *opt_field(&g_opt_edit, g_advanced[i].field) =
-                        ListView_GetCheckState(list, i) > 0;
-            PropSheet_Changed(GetParent(dlg), dlg);
+                        !*opt_field(&g_opt_edit, g_advanced[i].field);
+                else if (g_advanced[i].kind == ADV_RADIO)
+                    *opt_field(&g_opt_edit,
+                               offsetof(explorer_options, show_hidden)) =
+                        g_advanced[i].field != 0;
+                else
+                    break;
+                fo_view_fill(dlg);
+                PropSheet_Changed(GetParent(dlg), dlg);
+                break;
+            }
             return TRUE;
         }
         if (nm->code == PSN_SETACTIVE) {
@@ -2710,27 +2896,39 @@ static INT_PTR CALLBACK fo_filetypes(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     case WM_INITDIALOG: {
         LVCOLUMNA col;
         int n = (int)(sizeof(g_types) / sizeof(*g_types));
+        /* placed first, so the columns are measured against the list's own
+         * width rather than the one the template started it at */
+        fo_layout(dlg, g_fo_types_at,
+                  (int)(sizeof(g_fo_types_at) / sizeof(*g_fo_types_at)));
         memset(&col, 0, sizeof(col));
         col.mask = LVCF_TEXT | LVCF_WIDTH;
         col.pszText = (char *)"Extensions";
-        col.cx = 80;
+        col.cx = 63; /* the machine's divider, sixty-three in from the edge */
         SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
         col.pszText = (char *)"File Types";
         {
             RECT cr;
             GetClientRect(list, &cr);
-            col.cx = cr.right - 80 - GetSystemMetrics(SM_CXVSCROLL);
+            col.cx = cr.right - 63 - GetSystemMetrics(SM_CXVSCROLL);
         }
         SendMessageA(list, LVM_INSERTCOLUMNA, 1, (LPARAM)&col);
         for (int i = 0; i < n; i++) {
             LVITEMA it;
             memset(&it, 0, sizeof(it));
-            it.mask = LVIF_TEXT;
+            it.mask = LVIF_TEXT | LVIF_IMAGE;
             it.iItem = i;
+            it.iImage = IMG_FILE;
             it.pszText = (char *)g_types[i].ext;
             SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&it);
             set_cell(list, i, 1, g_types[i].desc);
         }
+        /* the whole row is picked, as the shell's list has it, and every row
+         * carries a picture — the machine's are the registry's, one per type;
+         * this has the one icon it knows for a file, which is what puts the
+         * rows on the same seventeen-pixel pitch */
+        SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                     LVS_EX_FULLROWSELECT);
+        SendMessageA(list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
         ListView_SetItemState(list, 0, LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
         fo_types_detail(dlg);
@@ -2779,8 +2977,10 @@ static INT_PTR CALLBACK fo_offline(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         CheckDlgButton(dlg, IDC_FO_OFF_SYNC, BST_CHECKED);
         CheckDlgButton(dlg, IDC_FO_OFF_REMIND, BST_CHECKED);
         SetDlgItemTextA(dlg, IDC_FO_OFF_MINUTES, "60");
+        /* The shell offers up to about a third of the drive, not all of it,
+         * which is what puts its thumb a third along at ten percent. */
         SendMessageA(GetDlgItem(dlg, IDC_FO_OFF_SPACE), TBM_SETRANGE, TRUE,
-                     MAKELPARAM(0, 100));
+                     MAKELPARAM(0, 29));
         SendMessageA(GetDlgItem(dlg, IDC_FO_OFF_SPACE), TBM_SETPOS, TRUE, 10);
         return TRUE;
     case WM_COMMAND:
@@ -2872,10 +3072,11 @@ static void folder_options(HWND owner)
     PUSH(46, 31, 86, 14, IDC_FO_LIKE, "&Like Current Folder");
     PUSH(140, 31, 86, 14, IDC_FO_RESET_ALL, "&Reset All Folders");
     LABEL(7, 62, 100, 9, IDC_FO_VS2, "&Advanced settings:");
-    ITEM(WS_TABSTOP | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
-             LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS,
-         7, 73, 232, 121, IDC_FO_ADVANCED, 0, NULL);
-    items[n - 1].clsname = WC_LISTVIEWA;
+    /* The machine's Advanced settings is a tree with no lines and no boxes to
+     * open: what it shows of its shape is the indent and the folder on a
+     * heading. */
+    ITEM(WS_TABSTOP | WS_VSCROLL, 7, 73, 232, 121, IDC_FO_ADVANCED, 0, NULL);
+    items[n - 1].clsname = WC_TREEVIEWA;
     items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     PUSH(160, 199, 79, 14, IDC_FO_VDEFAULTS, "R&estore Defaults");
     ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I5, ATOM_STATIC, "");
@@ -2885,7 +3086,7 @@ static void folder_options(HWND owner)
     /* ---- File Types ---- */
     n = 0;
     memset(items, 0, sizeof(items));
-    LABEL(7, 7, 120, 9, 0, "&Registered file types:");
+    LABEL(7, 7, 120, 9, IDC_FO_TS1, "&Registered file types:");
     ITEM(WS_TABSTOP | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
              LVS_SHOWSELALWAYS,
          7, 18, 232, 87, IDC_FO_TYPES, 0, NULL);
@@ -2895,7 +3096,7 @@ static void folder_options(HWND owner)
     PUSH(187, 110, 52, 14, IDC_FO_DELETE, "&Delete");
     GROUP(7, 132, 232, 76, "Details for extension");
     items[n - 1].id = IDC_FO_DETAILS;
-    LABEL(14, 148, 44, 9, 0, "Opens with:");
+    LABEL(14, 148, 44, 9, IDC_FO_TS2, "Opens with:");
     LABEL(74, 148, 90, 9, IDC_FO_OPENS, "");
     PUSH(174, 145, 58, 14, IDC_FO_CHANGE, "&Change...");
     LABEL(14, 166, 218, 26, IDC_FO_DETAIL_TEXT, "");
