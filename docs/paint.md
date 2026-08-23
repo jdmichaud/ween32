@@ -328,6 +328,20 @@ way and draws it another, and with no window manager nothing takes the focus
 — but it is the same source, and every call it makes is a call Windows
 answers.
 
+The things this side of the port cannot check are what to look at there.
+Attributes opens with the width already selected, which is user32's dialog
+manager doing what ween32 was taught to; the page's corner handle drags out a
+dotted rectangle and the picture becomes it; and a shape dragged out past the
+left of the picture stops at the picture's edge rather than crossing the tool
+box. XTEST drives all three from a script — press, move, screenshot, release
+— and the pixels say the same thing on both sides.
+
+One difference worth knowing, since it is the sort of thing a comparison
+against wine would otherwise "fix": wine's `DrawFocusRect` puts its dots on
+the other chequer from the machine's. Both leave the corner the top and the
+left share blank, and both step every other pixel; they simply start on
+opposite ones. The machine is what ween32 follows.
+
 ## What is not there
 
 - **The text toolbar.** It would offer a choice of faces and sizes that
