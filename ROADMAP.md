@@ -60,8 +60,11 @@ in the order it suggested:
   `HDM_HITTEST` something to answer with.
 - [ ] **A folder picker**, so Edit > Copy To Folder and Move To Folder can ask
   where rather than leaving the paste to the folder you go to.
-- [ ] **Property sheets** (`PROPSHEETHEADER`, `PropertySheet`), which is what
-  Folder Options, Choose Columns and the tabbed half of Properties are.
+- [x] **Property sheets** — `PROPSHEETHEADER` and `PropertySheetA`, in
+  `src/propsheet.c`. Folder Options is a sheet of four pages and Properties
+  one of a single page; Choose Columns is a plain dialog, as the machine's
+  is. The sheet is as big as its largest page, is written in the same face as
+  its pages, and leaves the keyboard where a page put it.
 - [ ] **A flat toolbar button that hot-tracks and takes the keyboard**, so the
   ✕ on the explorer's Folders bar can be one instead of seven `FillRect` pairs
   with a frame drawn by hand. (A toolbar takes the keyboard now — the menu band
@@ -546,8 +549,8 @@ the guess. A photograph of the real thing settles it.
 
 `examples/menu.c` is the second sampler, and its reference is a window with a
 menu bar. 532 of its 39200 pixels differ — 1.4% — and nearly all of that is the
-caption's bold title, which ween32 synthesises by overstriking the regular
-strike where Wine has the real Tahoma Bold. That difference is not new; it
+caption's bold title, which is set in wine's redistributable Tahoma Bold: its
+eleven-pixel strike is not the machine's, and draws a letter a pixel wider. That difference is not new; it
 shows up here because this window's title has different letters in it. The menu
 bar's own geometry lands on Wine's pixels, and where it did not, the reference
 said so by a pixel and was followed.

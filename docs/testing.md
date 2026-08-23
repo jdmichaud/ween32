@@ -121,12 +121,12 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 15017 / 298596 — 5.0%
+tools/refcapture/pxdiff.py                  # expect 15841 / 298596 — 5.3%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 3931 / 39200 — 10.0%
+  tools/refcapture/pxdiff.py                # expect 4397 / 39200 — 11.2%
 ```
 
 Most of both — 3170 of the menu's and 7835 of the sampler's — is one thing:
@@ -148,6 +148,15 @@ Fourteen of the rest are two mnemonic underlines a control draws only once Alt
 has been pressed, which wine draws always — the same rule that keeps a menu's
 underlines out of sight, applied to the controls in a dialog.
 
+About 820 more are where a label sits inside a button, and are deliberate in
+the same way: the machine centres one by the height of a *line* — the ascent,
+the descent and the row between two of them, fourteen at this size — where
+wine centres it by the strike's own cell, which is twelve for Tahoma; and it
+places a centred label by the width the glyphs draw at, where wine measures
+Tahoma off its outline and gets three pixels more across "Cancel". Both were
+measured on the machine's own Properties page, whose buttons and tick boxes
+come out on its pixels because of them — see [Properties](#properties).
+
 Roughly 240 of what is left is the menu bar, and is *deliberate*. A bar item
 is its label plus twelve pixels of padding, half each side, which is what
 Paint's own bar measures on the machine — the gap between one label's ink and
@@ -155,7 +164,8 @@ the next is a constant thirteen across File, Edit, View, Image and Colors.
 It was sixteen here for a while, off the explorer's bar; but the shell's bar
 is a *toolbar* of drop-down buttons in its rebar, not a menu bar at all, and a
 toolbar button's padding is not a menu item's. The rest is the caption's bold
-title, which ween32 synthesises. Do not "fix" the bar by eye — measure it
+title, whose strike is wine's Tahoma Bold and not the machine's. Do not "fix"
+the bar by eye — measure it
 against a program that has a menu bar.
 
 The ramp itself is stepped in 16.16 with the step rounded down before it is
@@ -350,10 +360,10 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
 | page | differing | of 180648 | what is left |
 | --- | --- | --- | --- |
-| General | 1228 | 0.7% | the machine's own mouse pointer in the shot, the caption's bold title |
-| View | 1411 | 0.8% | the same two, the folder a heading wears, the scroll bar |
-| File Types | 9719 | 5.4% | the list's contents |
-| Offline Files | 1041 | 0.6% | the same two, and the arrows' bevel |
+| General | 1224 | 0.7% | the machine's own mouse pointer in the shot, the caption's bold title |
+| View | 1407 | 0.8% | the same two, the folder a heading wears, the scroll bar |
+| File Types | 9715 | 5.4% | the list's contents |
+| Offline Files | 1037 | 0.6% | the same two, and the arrows' bevel |
 
 Only **File Types** cannot close: the machine's list is its own registry — a
 hundred extensions this example has never heard of — while ours is what
@@ -371,7 +381,8 @@ scroll bar, which is shorter here because the machine offers more settings
 below the ones it shows.
 
 Two things are in every one of these counts and in the Column Settings one:
-the caption's bold title, which ween32 synthesises, is about 300, and the
+the caption's bold title — wine's Tahoma Bold is not the machine's, and its
+letters are a pixel wider — is about 300, and the
 machine's mouse pointer, which is in the screenshot and not in ours, another
 300 where it happens to sit.
 
@@ -391,6 +402,67 @@ Both are driven from the keyboard in a script: the menus by their mnemonics,
 the lists by the arrows, a box by Space, and OK by Enter — which only works
 because the sheet's tab ring goes tabs, page, buttons, so it is worth
 checking that a Tab from the tab control lands on the page.
+
+#### Properties
+
+`tools/refcapture/properties-machine.png` is the machine's Properties for
+`CONFIG.SYS` and `properties-boot-machine.png` is the same page for `boot.ini`
+— one file with no program registered against it and one with, one hidden and
+one not, one empty and one 203 bytes. Both frames are 367x443.
+
+```sh
+# five downs picks CONFIG.SYS in the fixture's list, Alt+Enter opens it; the
+# 367x443 frame is the sheet. Four downs picks boot.
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/pp%d.bmp \
+  WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:200 a:13 w:900" \
+  ./examples/explorer
+PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
+  tools/refcapture/pxdiff.py                  # expect 640 / 162581 — 0.4%
+```
+
+| what | differing | what it is |
+| --- | --- | --- |
+| CONFIG.SYS | 640 | 453 the caption's bold title, 145 the icon quantised, 42 two glyphs |
+| boot | 294 | 236 the two icons quantised, 48 the same two glyphs and the title |
+
+Nothing else in either differs. The icons are the machine's own quantisation
+— it draws them through a sixteen bit image list, so its pixel is ours with
+the low three bits of each channel dropped — and the two glyphs are `J` and
+`1`, which wine's Tahoma draws differently from the machine's: the `J` in
+"July" descends below the baseline here and does not there.
+
+The page is worth reading for what it taught, because most of it was not
+about this dialog at all:
+
+- **It is set in another face.** The template asks for "MS Shell Dlg 2",
+  which resolves to Tahoma, where Folder Options asks for "MS Shell Dlg" and
+  gets MS Sans Serif. A sheet takes its face from its page, so the tab and the
+  three buttons along the bottom are in it too.
+- **A line of text is not the strike's cell.** Both faces are eleven up and
+  two down, but MS Sans Serif's cell is fourteen rows and Tahoma's twelve.
+  The machine centres a button's label and a tick box's by fourteen in both,
+  which is the ascent and the descent and the row between two lines.
+- **Text is placed by what it draws.** A bitmap face measures as it draws, but
+  Tahoma is measured off its outline and comes out wider — three pixels wider
+  across "Cancel". The machine centres that label by the drawn width, and
+  sizes a tab and a focus rectangle by it too: "General" in a Properties
+  sheet's tab is 49 wide, its drawn width and the twelve either side.
+- **A focus rectangle's dots start at the control's corner**, not the
+  screen's: win32 hangs the pattern on the brush origin. Two tick boxes at
+  different places dot theirs the same way; off the screen's corner one of
+  them comes out inverted, which is what the machine showed against ours.
+- **An etched line is a frame two pixels thick**, which is what puts the
+  highlight round its far end.
+- **A tab control draws its own frame**, and lays the sides down in an order
+  no other frame uses: the shadowed ones first, so the white top line keeps
+  the corner at the top right and the white left one keeps the corner at the
+  bottom left. Every other frame in the window is the other way round, and
+  moving them all was worth 4 pixels here and 50 the wrong way elsewhere.
+- **Alt with any key brings the underlines out.** Alt+Enter opens this sheet
+  without going near a menu, and the machine's has them.
+
+Two of those move pixels in the wine samplers, deliberately: see below.
 
 #### The bars that can be put away
 
