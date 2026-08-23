@@ -473,6 +473,12 @@ typedef struct {
      * resize the window themselves. */
     void (*resize)(void *win, int w, int h);
     void (*set_resizable)(void *win, int resizable);
+    /* Put the window on the screen or take it off. A window is opened off
+     * the screen and only appears when it is shown, which is what lets one
+     * be made ready and kept back — a menu, a box of suggestions. May be
+     * NULL, in which case the window is on the screen from the moment it is
+     * opened. */
+    void (*show)(void *win, int on);
     /* The pointer's shape over this window, as one of WEEN_CURSOR_*. */
     void (*set_cursor)(void *win, int shape);
     /* Where the window's surface actually is on the desktop. A window
@@ -517,6 +523,7 @@ void ween_headless_set_window_size(int w, int h);
 void ween_headless_set_window_origin(int x, int y);
 void ween_headless_last_unmanaged_origin(int *x, int *y);
 int ween_headless_cursor(void *backend_win); /* the shape last asked for */
+int ween_headless_window_shown(void *backend_win); /* on the screen, or kept back */
 void ween_headless_set_bmp_path(const char *path); /* written on present */
 const ween_surface *ween_headless_surface(void);   /* last presented */
 

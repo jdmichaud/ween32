@@ -563,6 +563,12 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
                               : WEEN_WIN_UNMANAGED;
         wnd->backend_win =
             ween_active_backend->open(x, y, w, h, wnd->text, wflags);
+        /* A window is opened off the screen and appears when it is shown.
+         * Without WS_VISIBLE it stays back — which is how a box that is made
+         * once and put up later avoids standing in the corner of the screen
+         * from the moment the program starts. */
+        if (wnd->backend_win && ween_active_backend->show)
+            ween_active_backend->show(wnd->backend_win, (style & WS_VISIBLE) != 0);
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
@@ -662,6 +668,11 @@ BOOL ShowWindow(HWND wnd, int cmd)
         return FALSE;
     BOOL was = wnd->visible;
     wnd->visible = cmd != SW_HIDE;
+    /* A window of its own is put on the screen or taken off it; a child is
+     * only a rectangle in its parent's, and repainting is the whole of it. */
+    if (!wnd->parent && wnd->backend_win && ween_active_backend &&
+        ween_active_backend->show)
+        ween_active_backend->show(wnd->backend_win, wnd->visible);
     ween_top_level(wnd)->dirty = 1;
     return was;
 }

@@ -110,6 +110,7 @@ typedef struct {
     int cursor;    /* the shape last asked for, so a test can see it */
     int unmanaged; /* placed by the application rather than by the manager */
     int x, y;      /* and, if it is, where it was placed */
+    int shown;     /* on the screen: a window kept back writes no frame */
 } hl_win;
 
 static hl_win g_wins[MAX_WINDOWS];
@@ -176,8 +177,23 @@ static void *hl_open(int x, int y, int w, int h, const char *title,
     return NULL;
 }
 
+static void hl_show(void *win, int on)
+{
+    if (win)
+        ((hl_win *)win)->shown = on;
+}
+
+/* Whether the fake window system has been given this window to show, which is
+ * how a test sees that one made but not shown stays off the screen. */
+int ween_headless_window_shown(void *win)
+{
+    return win ? ((hl_win *)win)->shown : 0;
+}
+
 static void hl_present(void *win, const ween_surface *s)
 {
+    if (win && !((hl_win *)win)->shown)
+        return; /* made but not put up: nothing of it is on the screen */
     if (win) /* what the pointer will be offset against, as on a real display */
         ween_letterbox_shown(&((hl_win *)win)->box, s->w * ween_zoom(),
                              s->h * ween_zoom());
@@ -297,8 +313,8 @@ const ween_backend *ween_backend_headless(void)
 {
     static const ween_backend b = { hl_open,           hl_present,
                                     hl_move_by,        hl_resize,
-                                    hl_set_resizable,  hl_set_cursor,
-                                    hl_origin,         hl_next_event,
-                                    hl_close };
+                                    hl_set_resizable,  hl_show,
+                                    hl_set_cursor,     hl_origin,
+                                    hl_next_event,     hl_close };
     return &b;
 }

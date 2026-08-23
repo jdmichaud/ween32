@@ -109,12 +109,20 @@ int main(void)
     CHECK(g_pop != NULL, "a popup with no caption was created");
     CHECK(GetFocus() == g_field,
           "putting it up left the keyboard where it was");
+    /* Made without WS_VISIBLE, it is not on the screen. A box that is made
+     * once and shown later otherwise stands in the corner of the screen from
+     * the moment the program starts — which is what it looked like. */
+    CHECK(!IsWindowVisible(g_pop), "and made without WS_VISIBLE it is not up");
+    CHECK(!ween_headless_window_shown(g_pop->backend_win),
+          "the window system has not been given it to show either");
 
     /* Made in one place and moved to another, which is what a box that has to
      * follow the field it belongs to does. It has to move on the screen, not
      * only in the bookkeeping. */
     MoveWindow(g_pop, 120, 60, 200, 100, TRUE);
     ShowWindow(g_pop, SW_SHOW);
+    CHECK(ween_headless_window_shown(g_pop->backend_win),
+          "showing it is what puts it on the screen");
     GetWindowRect(g_pop, &r);
     CHECK(r.left == 120 && r.top == 60,
           "moving it moved it in the window system, not just on paper");
@@ -179,6 +187,10 @@ int main(void)
         CHECK(g_sized == 60 + 84 + 8,
               "the corner says where the pointer is on the screen");
     }
+
+    ShowWindow(g_pop, SW_HIDE);
+    CHECK(!ween_headless_window_shown(g_pop->backend_win),
+          "and hiding it takes it off again");
 
     DestroyWindow(g_pop);
     DestroyWindow(g_main);

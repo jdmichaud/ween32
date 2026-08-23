@@ -191,6 +191,7 @@ extern XWindow XCreateSimpleWindow(XDisplay *, XWindow, int, int, unsigned,
 extern int XStoreName(XDisplay *, XWindow, const char *);
 extern int XSelectInput(XDisplay *, XWindow, long);
 extern int XMapWindow(XDisplay *, XWindow);
+extern int XUnmapWindow(XDisplay *, XWindow);
 extern XGC *XCreateGC(XDisplay *, XWindow, unsigned long, void *);
 extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
                             unsigned, unsigned, int, int);
@@ -515,6 +516,16 @@ static void x11_resize(void *win, int w, int h)
     XFlush(xw->dpy);
 }
 
+static void x11_show(void *win, int on)
+{
+    x11_win *xw = win;
+    if (on)
+        XMapWindow(xw->dpy, xw->win);
+    else
+        XUnmapWindow(xw->dpy, xw->win);
+    XFlush(xw->dpy);
+}
+
 static void x11_move_by(void *win, int dx, int dy)
 {
     x11_win *xw = win;
@@ -716,9 +727,9 @@ const ween_backend *ween_backend_x11(void)
 {
     static const ween_backend b = { x11_open,          x11_present,
                                     x11_move_by,       x11_resize,
-                                    x11_set_resizable, x11_set_cursor,
-                                    x11_origin,        x11_next_event,
-                                    x11_close };
+                                    x11_set_resizable, x11_show,
+                                    x11_set_cursor,    x11_origin,
+                                    x11_next_event,    x11_close };
     return &b;
 }
 
