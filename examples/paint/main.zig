@@ -390,11 +390,16 @@ fn command(id: u16) void {
             selection.copyTo(zlen(&buf));
         },
         ID.colors_edit => {
-            var custom: [16]w.COLORREF = @splat(w.RGB(255, 255, 255));
+            // The sixteen the box was last left with: the machine keeps them
+            // for as long as the program runs, so the colour mixed on one
+            // visit is still there on the next.
+            const S = struct {
+                var custom: [16]w.COLORREF = @splat(w.RGB(255, 255, 255));
+            };
             var cc = w.CHOOSECOLORA{
                 .hwndOwner = app.frame,
                 .rgbResult = app.fg,
-                .lpCustColors = &custom,
+                .lpCustColors = &S.custom,
                 .Flags = w.CC_RGBINIT | w.CC_ENABLEHOOK,
                 .lpfnHook = colorHook,
             };

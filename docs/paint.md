@@ -52,6 +52,28 @@ measured the same way: `tools/refcapture/paint/dlg-colors.png` shut and
 `dlg-colors-open.png` open. Its hue-and-saturation field is drawn in sixty
 blocks by thirty, which is what the machine draws, and matches it exactly.
 
+What it *does* was measured on the machine too, click by click, and is worth
+writing down because none of it is guessable:
+
+- One square is picked out at a time across both grids, and by position
+  rather than by colour. The sixteen custom squares all start white, so a
+  dialog that marks the chosen one by colour rings every one of them.
+- Clicking a square makes its colour the chosen one — the field's cross, the
+  bar's arrow and all six numbers follow.
+- Clicking in the field takes the hue and the saturation and *keeps* the
+  luminosity the bar was left on. Hue runs over the field's whole width;
+  saturation over one less than its height, which is why row 10 of 187 is
+  228 and row 52 is 173.
+- Each of the six numbers drives the colour as it is typed, and the other
+  five follow it.
+- "Add to Custom Colors" writes into the square the custom grid is sitting
+  on and then moves on to the next — so pressing it twice fills two. The
+  sixteen run *down* each column of the eight-by-two grid: the square below
+  the first is the second of the array, not the ninth.
+- The sixteen go back to the caller whether the box was accepted or
+  cancelled, and Paint keeps them for as long as it runs.
+- A double click on a square does not accept the box.
+
 Now that ween32 letters a dialog in MS Sans Serif, what is left of the boxes
 is small: **Stretch and Skew 506 pixels of 95,226**, **Edit Colors 292 of
 71,928** shut and 2173 open, **Attributes 2659 of 105,315**, **Flip and

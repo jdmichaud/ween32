@@ -465,7 +465,28 @@ static struct {
     COLORREF chosen;
     int expanded;
     int hue, sat, lum; /* 0..240, as the dialog has always scaled them */
+    /* Which square is picked out, and in which grid. One at a time across
+     * both of them, and by *position*: the sixteen custom squares start out
+     * all white, and marking the chosen one by colour would ring every one
+     * of them. */
+    int sel_grid;  /* IDC_COLOR_BASIC, IDC_COLOR_CUSTOM, or 0 for neither */
+    int sel_index;
+    /* Where "Add to Custom Colors" will put the next one. Clicking a custom
+     * square moves it there; each add walks it on by one, the way the
+     * machine's does. */
+    int add_index;
+    /* While the six numbers are being written into, so that setting them
+     * does not come back round as an edit of its own. */
+    int quiet;
 } g_cc;
+
+/* The sixteen custom squares are eight across and two down, but the array
+ * behind them runs *down* each column: the machine fills the top of a column
+ * and then the bottom of the same one before moving right. */
+static int custom_slot(int cell)
+{
+    return (cell % 8) * 2 + cell / 8;
+}
 
 /* The dialog works in hue, saturation and luminosity, and its own scale for
  * them is 0..240. These are the conversions it has always used. */
@@ -547,8 +568,9 @@ static void swatch_cell(int i, int cols, RECT *r)
 }
 
 static void draw_swatches(HWND dlg, HDC dc, HWND ctl, const COLORREF *colors,
-                          int count, int cols, COLORREF picked)
+                          int count, int cols, int grid)
 {
+    int custom = grid == IDC_COLOR_CUSTOM;
     (void)dlg;
     (void)ctl;
     for (int i = 0; i < count; i++) {
@@ -560,10 +582,10 @@ static void draw_swatches(HWND dlg, HDC dc, HWND ctl, const COLORREF *colors,
         in.top = cell.top + 2;
         in.right = cell.right - 2;
         in.bottom = cell.bottom - 2;
-        br = CreateSolidBrush(colors[i]);
+        br = CreateSolidBrush(colors[custom ? custom_slot(i) : i]);
         FillRect(dc, &in, br);
         DeleteObject(br);
-        if (colors[i] == picked) {
+        if (g_cc.sel_grid == grid && g_cc.sel_index == i) {
             /* the one in hand wears a black rectangle outside its edge */
             RECT out = cell;
             out.left--;
@@ -605,6 +627,69 @@ static void color_show_half(HWND dlg, int open)
     InvalidateRect(dlg, NULL, TRUE);
 }
 
+/* What one of the six numbers says, or -1 when it says nothing a number
+ * could be made of -- an empty field while it is being retyped. */
+static int color_edit_value(HWND dlg, int id)
+{
+    char buf[16];
+    int v = 0, any = 0;
+    if (!GetDlgItemTextA(dlg, id, buf, sizeof buf))
+        return -1;
+    for (const char *p = buf; *p; p++) {
+        if (*p < '0' || *p > '9')
+            return -1;
+        v = v * 10 + (*p - '0');
+        any = 1;
+        if (v > 9999)
+            break;
+    }
+    return any ? v : -1;
+}
+
+/* Write the six out again. `except` is the one being typed into, which is
+ * left alone so that the caret stays where the person put it. */
+static void color_show_numbers(HWND dlg, int except)
+{
+    static const struct {
+        int id;
+        int rgb; /* which of the two triples it belongs to */
+    } fields[6] = { { IDC_COLOR_HUE, 0 },   { IDC_COLOR_SAT, 0 },
+                    { IDC_COLOR_LUMEDIT, 0 }, { IDC_COLOR_RED, 1 },
+                    { IDC_COLOR_GREEN, 1 }, { IDC_COLOR_BLUE, 1 } };
+    char buf[16];
+    g_cc.quiet = 1;
+    for (int i = 0; i < 6; i++) {
+        int v;
+        if (fields[i].id == except)
+            continue;
+        switch (fields[i].id) {
+        case IDC_COLOR_HUE: v = g_cc.hue; break;
+        case IDC_COLOR_SAT: v = g_cc.sat; break;
+        case IDC_COLOR_LUMEDIT: v = g_cc.lum; break;
+        case IDC_COLOR_RED: v = GetRValue(g_cc.chosen); break;
+        case IDC_COLOR_GREEN: v = GetGValue(g_cc.chosen); break;
+        default: v = GetBValue(g_cc.chosen); break;
+        }
+        snprintf(buf, sizeof buf, "%d", v);
+        SetDlgItemTextA(dlg, fields[i].id, buf);
+    }
+    g_cc.quiet = 0;
+}
+
+/* The three pictures that follow the colour: the field's cross, the bar and
+ * its arrow, and the sample. */
+static void color_repaint(HWND dlg)
+{
+    static const int ids[3] = { IDC_COLOR_FIELD, IDC_COLOR_LUM,
+                                IDC_COLOR_SAMPLE };
+    for (int i = 0; i < 3; i++) {
+        HWND c = GetDlgItem(dlg, ids[i]);
+        if (c)
+            InvalidateRect(c, NULL, FALSE);
+    }
+    InvalidateRect(dlg, NULL, FALSE); /* the arrow, which the dialog draws */
+}
+
 static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     /* An application that asked for a hook sees every message before the
@@ -618,6 +703,29 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg) {
     case WM_INITDIALOG: {
         rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
+        /* The square the colour came in on is picked out, if it is one of
+         * them: the basic grid first, then the custom one. */
+        g_cc.sel_grid = 0;
+        g_cc.sel_index = 0;
+        g_cc.add_index = 0;
+        for (int i = 0; i < 48; i++) {
+            if (g_basic[i] == g_cc.chosen) {
+                g_cc.sel_grid = IDC_COLOR_BASIC;
+                g_cc.sel_index = i;
+                break;
+            }
+        }
+        if (!g_cc.sel_grid) {
+            for (int i = 0; i < 16; i++) {
+                if (g_custom[custom_slot(i)] == g_cc.chosen) {
+                    g_cc.sel_grid = IDC_COLOR_CUSTOM;
+                    g_cc.sel_index = i;
+                    g_cc.add_index = custom_slot(i);
+                    break;
+                }
+            }
+        }
+        color_show_numbers(dlg, 0);
         /* CC_FULLOPEN asks for it open; anything else starts it shut. */
         color_show_half(dlg, (g_cc.cc->Flags & CC_FULLOPEN) != 0);
         return 1;
@@ -626,10 +734,10 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         DRAWITEMSTRUCT *di = (DRAWITEMSTRUCT *)lp;
         if (di->CtlID == IDC_COLOR_BASIC)
             draw_swatches(dlg, di->hDC, di->hwndItem, g_basic, 48, 8,
-                          g_cc.chosen);
+                          IDC_COLOR_BASIC);
         else if (di->CtlID == IDC_COLOR_CUSTOM)
             draw_swatches(dlg, di->hDC, di->hwndItem, g_custom, 16, 8,
-                          g_cc.chosen);
+                          IDC_COLOR_CUSTOM);
         else if (di->CtlID == IDC_COLOR_SAMPLE) {
             HBRUSH br = CreateSolidBrush(g_cc.chosen);
             FillRect(di->hDC, &di->rcItem, br);
@@ -639,21 +747,7 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case WM_PAINT: {
-        /* the numbers, which follow whatever was last picked */
-        char buf[16];
         RECT bar;
-        snprintf(buf, sizeof buf, "%d", GetRValue(g_cc.chosen));
-        SetDlgItemTextA(dlg, IDC_COLOR_RED, buf);
-        snprintf(buf, sizeof buf, "%d", GetGValue(g_cc.chosen));
-        SetDlgItemTextA(dlg, IDC_COLOR_GREEN, buf);
-        snprintf(buf, sizeof buf, "%d", GetBValue(g_cc.chosen));
-        SetDlgItemTextA(dlg, IDC_COLOR_BLUE, buf);
-        snprintf(buf, sizeof buf, "%d", g_cc.hue);
-        SetDlgItemTextA(dlg, IDC_COLOR_HUE, buf);
-        snprintf(buf, sizeof buf, "%d", g_cc.sat);
-        SetDlgItemTextA(dlg, IDC_COLOR_SAT, buf);
-        snprintf(buf, sizeof buf, "%d", g_cc.lum);
-        SetDlgItemTextA(dlg, IDC_COLOR_LUMEDIT, buf);
         /* The dialog paints itself, and then the arrow beside the
          * brightness bar: it points at the luminance in hand from outside
          * the bar, so it belongs to the dialog rather than to the control. */
@@ -698,13 +792,57 @@ static INT_PTR CALLBACK color_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
             return TRUE;
         }
         if (id == IDC_COLOR_ADD) {
-            for (int i = 0; i < 16; i++) {
-                if (g_custom[i] == RGB(255, 255, 255) || i == 15) {
-                    g_custom[i] = g_cc.chosen;
-                    break;
-                }
+            /* Into the square the custom grid is sitting on, and then on to
+             * the next one -- so pressing it twice fills two, which is what
+             * the machine does. */
+            g_custom[g_cc.add_index % 16] = g_cc.chosen;
+            g_cc.add_index = (g_cc.add_index + 1) % 16;
+            InvalidateRect(GetDlgItem(dlg, IDC_COLOR_CUSTOM), NULL, FALSE);
+            return TRUE;
+        }
+        /* One of the six numbers was typed in. Each drives the colour: the
+         * three on the left are its hue, saturation and luminosity, the
+         * three on the right its red, green and blue, and whichever is
+         * touched the other five follow. */
+        if (HIWORD(wp) == EN_CHANGE && !g_cc.quiet) {
+            int v = color_edit_value(dlg, id);
+            if (v < 0)
+                return FALSE;
+            switch (id) {
+            case IDC_COLOR_HUE:
+                g_cc.hue = v > 239 ? 239 : v;
+                break;
+            case IDC_COLOR_SAT:
+                g_cc.sat = v > 240 ? 240 : v;
+                break;
+            case IDC_COLOR_LUMEDIT:
+                g_cc.lum = v > 240 ? 240 : v;
+                break;
+            case IDC_COLOR_RED:
+            case IDC_COLOR_GREEN:
+            case IDC_COLOR_BLUE: {
+                int r = GetRValue(g_cc.chosen), g = GetGValue(g_cc.chosen),
+                    b = GetBValue(g_cc.chosen);
+                if (v > 255)
+                    v = 255;
+                if (id == IDC_COLOR_RED)
+                    r = v;
+                else if (id == IDC_COLOR_GREEN)
+                    g = v;
+                else
+                    b = v;
+                g_cc.chosen = RGB(r, g, b);
+                rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
+                color_show_numbers(dlg, id);
+                color_repaint(dlg);
+                return TRUE;
             }
-            InvalidateRect(dlg, NULL, FALSE);
+            default:
+                return FALSE;
+            }
+            g_cc.chosen = hsl_to_rgb(g_cc.hue, g_cc.sat, g_cc.lum);
+            color_show_numbers(dlg, id);
+            color_repaint(dlg);
             return TRUE;
         }
         return FALSE;
@@ -788,10 +926,17 @@ static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (y < 0) y = 0;
             if (x >= r.right) x = r.right - 1;
             if (y >= r.bottom) y = r.bottom - 1;
+            /* hue and saturation from where it was pressed; the brightness
+             * stays where the bar beside it was left, which is what the
+             * machine does */
+            /* Hue over the whole width, saturation over one less than the
+             * height: measured off the machine, which answers 228, 200 and
+             * 173 for rows 10, 31 and 52 of its 187. */
             g_cc.hue = x * 240 / r.right;
-            g_cc.sat = 240 - y * 240 / r.bottom;
+            g_cc.sat = 240 - y * 240 / (r.bottom - 1);
             g_cc.chosen = hsl_to_rgb(g_cc.hue, g_cc.sat, g_cc.lum);
-            InvalidateRect(GetParent(wnd), NULL, FALSE);
+            color_show_numbers(GetParent(wnd), 0);
+            color_repaint(GetParent(wnd));
         }
         return 0;
     default:
@@ -842,7 +987,8 @@ static LRESULT CALLBACK lum_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (y >= r.bottom) y = r.bottom - 1;
             g_cc.lum = 240 - y * 240 / (r.bottom - 1);
             g_cc.chosen = hsl_to_rgb(g_cc.hue, g_cc.sat, g_cc.lum);
-            InvalidateRect(GetParent(wnd), NULL, FALSE);
+            color_show_numbers(GetParent(wnd), 0);
+            color_repaint(GetParent(wnd));
         }
         return 0;
     default:
@@ -879,9 +1025,11 @@ static LRESULT CALLBACK swatch_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         GetClientRect(wnd, &all);
         FillRect(dc, &all, GetSysColorBrush(COLOR_BTNFACE));
         if (GetDlgCtrlID(wnd) == IDC_COLOR_BASIC)
-            draw_swatches(GetParent(wnd), dc, wnd, g_basic, 48, 8, g_cc.chosen);
+            draw_swatches(GetParent(wnd), dc, wnd, g_basic, 48, 8,
+                          IDC_COLOR_BASIC);
         else
-            draw_swatches(GetParent(wnd), dc, wnd, g_custom, 16, 8, g_cc.chosen);
+            draw_swatches(GetParent(wnd), dc, wnd, g_custom, 16, 8,
+                          IDC_COLOR_CUSTOM);
         EndPaint(wnd, &ps);
         return 0;
     }
@@ -901,10 +1049,30 @@ static LRESULT CALLBACK swatch_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (i < 0)
             return 0;
-        g_cc.chosen = GetDlgCtrlID(wnd) == IDC_COLOR_BASIC ? g_basic[i]
-                                                           : g_custom[i];
-        rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
-        InvalidateRect(GetParent(wnd), NULL, FALSE);
+        /* One square is picked out at a time across both grids, so the one
+         * that was is drawn again without its ring. */
+        {
+            HWND dlg = GetParent(wnd);
+            int grid = GetDlgCtrlID(wnd);
+            HWND other = GetDlgItem(dlg, grid == IDC_COLOR_BASIC
+                                             ? IDC_COLOR_CUSTOM
+                                             : IDC_COLOR_BASIC);
+            if (g_cc.sel_grid && g_cc.sel_grid != grid && other)
+                InvalidateRect(other, NULL, FALSE);
+            g_cc.sel_grid = grid;
+            g_cc.sel_index = i;
+            if (grid == IDC_COLOR_CUSTOM) {
+                /* and the next colour added goes into the one just picked */
+                g_cc.add_index = custom_slot(i);
+                g_cc.chosen = g_custom[g_cc.add_index];
+            } else {
+                g_cc.chosen = g_basic[i];
+            }
+            rgb_to_hsl(g_cc.chosen, &g_cc.hue, &g_cc.sat, &g_cc.lum);
+            InvalidateRect(wnd, NULL, FALSE);
+            color_show_numbers(dlg, 0);
+            color_repaint(dlg);
+        }
         return 0;
     }
     default:
@@ -1003,9 +1171,15 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
                      DS_SETFONT | DS_3DLOOK | DS_CONTEXTHELP,
                  COLOR_DLG_OPEN, 184, "Color", items,
                  (int)(sizeof items / sizeof items[0]));
-    if (DialogBoxIndirectParamA(NULL, tmpl, cc->hwndOwner, color_proc, 0) != 1)
+    INT_PTR answer = DialogBoxIndirectParamA(NULL, tmpl, cc->hwndOwner,
+                                             color_proc, 0);
+    /* The sixteen go back whatever the answer was: a colour mixed and added
+     * is kept even if the box is then cancelled, which is what the machine
+     * does and what the documentation means by "the system updates the
+     * array". */
+    memcpy(cc->lpCustColors, g_custom, sizeof g_custom);
+    if (answer != 1)
         return FALSE;
     cc->rgbResult = g_cc.chosen;
-    memcpy(cc->lpCustColors, g_custom, sizeof g_custom);
     return TRUE;
 }
