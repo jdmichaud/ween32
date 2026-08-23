@@ -114,6 +114,21 @@ in and the pixel of white above its first row are measured against a Windows
 item, and its header's text sitting six in rather than eight, against the same
 machine's list. See the ROADMAP for what was measured.
 
+### Paint beside the machine
+
+`examples/mspaint` is held up against a Windows 2000 running the real
+program, which is where the numbers above came from. The window differs by
+six pixels of 110,000, and every tool but two draws what the machine draws to
+the pixel. See [mspaint.md](mspaint.md) for how to take the captures, how the
+comparison calibrates the guest's relative mouse, and what the two are.
+
+```sh
+zig build mspaint
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/paint-ours.bmp ./zig-out/bin/mspaint
+magick /tmp/paint-ours.bmp /tmp/paint-ours.png
+tools/refcapture/paintdiff.py               # expect 6 of 110000
+```
+
 ### The explorer beside the machine
 
 `WEEN32_EXPLORER_FIXTURE=1` fills both panes with what a Windows 2000

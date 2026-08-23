@@ -28,6 +28,19 @@ that no application has asked for:
   scrolls rather than being clipped.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
+- [ ] **A cursor made from a bitmap** (`CreateCursor`, `LoadCursorFromFileA`).
+  Cursors are stock shapes today, so an application with cursor art of its own
+  — Paint has one per tool — has to make do with the nearest.
+
+- [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
+  one; GDI's comes out flatter across the top, and a wide line at a shallow
+  angle differs at its ends because GDI sweeps the pen as a region rather
+  than stamping it along a walk. Both are measured in
+  [docs/mspaint.md](docs/mspaint.md).
+
+- [ ] **DS_CONTEXTHELP**, the `?` a Windows 2000 dialog wears beside its
+  close box.
+
 - [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
   is the arrangement a shell uses, but a shell also puts a fixed-width band
   beside one that stretches — `RBBIM_SIZE`, `RBBS_FIXEDSIZE`, `RBBS_BREAK` —
@@ -135,6 +148,37 @@ tables, every `BDR_`/`EDGE_` type and `BF_` flag), `DrawFrameControl`
 `CreateSolidBrush`, `CreateFontA`, `DeleteObject`,
 `GetStockObject` (the GUI font and the stock brushes), `SelectObject`
 (returning what was really selected).
+
+**The drawing half of GDI** — what a paint program is made of, in `draw.c`:
+memory device contexts (`CreateCompatibleDC`/`DeleteDC`/
+`CreateCompatibleBitmap`/`SelectObject`/`GetObjectA`), pens
+(`CreatePen`, `SetROP2`, `MoveToEx`, `LineTo`, `Polyline`, `PolyBezier`),
+shapes (`Rectangle`, `Ellipse`, `RoundRect`, `Polygon` filled with the
+selected brush), `SetPixel`/`GetPixel`, `ExtFloodFill`, `BitBlt`/
+`StretchBlt`/`PatBlt` with the general ROP3 (the high byte is the truth
+table of pattern, source and destination, evaluated on whole words),
+`InvertRect`, `DrawFocusRect`, `SetViewportOrgEx`, and `GetDIBits`/
+`SetDIBits` so a program that has to write a `.bmp` can reach the pixels.
+
+A wide pen puts down the disc Windows puts down, measured off a machine: two
+across is a full square, three a plus, four and five squares with the corners
+off, seven a proper circle. The far end of a wide line is part of it; a
+one-pixel line still leaves its last point to whatever comes next.
+
+**A window's own scroll bars** — `WS_HSCROLL`/`WS_VSCROLL` put a bar in the
+non-client area, so `GetClientRect` shrinks; `SetScrollInfo`/`GetScrollInfo`/
+`SetScrollPos`/`GetScrollPos`/`SetScrollRange`/`ShowScrollBar`/
+`EnableScrollBar` address them, and the window hears `WM_HSCROLL`/
+`WM_VSCROLL` with a null lParam. The controls that draw their bars inside
+their own client area — an edit, a list box, the two views — say so at
+registration so they do not wear both.
+
+**The common dialogs** — `GetOpenFileNameA`, `GetSaveFileNameA` and
+`ChooseColorA`, in `comdlg.c`: the dialogs that belong to the system rather
+than to the application, built from templates out of the controls ween32
+already has. The file one lists directories and files against the caller's
+filter; the colour one has the forty-eight basic colours, the custom row,
+the hue-and-saturation field, the brightness bar and the six numbers.
 
 **Dialogs** — `CreateDialogIndirectParamA` (+ `CreateDialogIndirectA`) builds a
 dialog from a `DLGTEMPLATE`/`DLGITEMTEMPLATE`, instantiating each control and
@@ -369,13 +413,25 @@ them is in one of four places:
 Wine's classic rendering matches Windows 2000 everywhere ween32 has checked it
 — except menus, where it is wrong in three ways. A wine drop-down has a flat
 one-pixel `COLOR_3DSHADOW` border and single-line separators; a real Windows
-2000 menu has a two-pixel raised edge and etched separators. And wine spaces
-menu *bar* items by twelve pixels where Windows uses sixteen.
+2000 menu has a two-pixel raised edge and etched separators. And it draws a
+menu bar item's label a row lower than Windows does.
 
-The menu metrics here are measured against Windows itself instead: the bar's
-sixteen is the same on all five of File, Edit, View, Favorites and Tools — a
-constant across labels of that range is hard to get by accident — and the
+The menu metrics here are measured against Windows itself instead: the
 popups are measured off a running machine, item by item.
+
+A menu bar item is its label plus **twelve**, which is what a Windows 2000
+Paint's bar measures — its six titles sit thirteen pixels of ink apart and
+the first starts six in. It was sixteen here for a while, measured off the
+explorer's bar; but that bar is not a menu bar at all. The shell's is a
+*toolbar* of drop-down buttons inside its rebar, and a toolbar button's
+padding is not a menu item's. Measure a menu bar against a program that has
+one.
+
+Two more places where wine and the machine disagree, both settled the same
+way and both worth about fifty pixels of the sampler totals: the caption
+gradient steps just *after* the exact point rather than on it, and a scroll
+bar's up arrow sits in the same four rows of its button as the down arrow.
+[docs/mspaint.md](docs/mspaint.md) has the measurements.
 
 A shell context menu on a folder is 121 x 238 there and 121 x 238 here, with
 every label's ink in the same column and every separator between the same two

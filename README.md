@@ -15,9 +15,16 @@ and a list either side of a splitter, and a status bar in three parts:
 
 ![a Windows 2000 file browser](docs/explorer.png)
 
+And Paint, in Zig, measured against a Windows 2000 running the real thing —
+six pixels of 110,000 apart, and pixel for pixel in the tool box, the colour
+box, the menu bar and the view:
+
+![Windows 2000's Paint, on ween32](docs/paint.png)
+
 **This is a work in progress.** See [ROADMAP.md](ROADMAP.md) for what works
 today and what does not, [docs/design.md](docs/design.md) for how it is
-built, and [docs/testing.md](docs/testing.md) for how to check it.
+built, [docs/mspaint.md](docs/mspaint.md) for how Paint was measured, and
+[docs/testing.md](docs/testing.md) for how to check it.
 
 The library code is MIT. The embedded fonts are Wine's redistributable Tahoma,
 MS Sans Serif and Marlett replacements and carry their own (LGPL) license.
