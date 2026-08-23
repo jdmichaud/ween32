@@ -140,6 +140,29 @@ The tree pane is window-relative x 4..203, y 100..519. Everything in it
 matches but the icons, and every icon difference but the picked one is the
 quantisation.
 
+### The explorer's commands
+
+The menus and the toolbar do what they say, against the file system the
+example is browsing — so trying them means giving it somewhere safe to work:
+
+```sh
+mkdir -p /tmp/scratch/sub && printf x > /tmp/scratch/alpha.txt
+./examples/explorer /tmp/scratch
+```
+
+Headless, the same through a script. New Folder, a name typed over it, and the
+folder that results:
+
+```sh
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/f%d.bmp \
+  WEEN32_SCRIPT="w:200 k:18 w:150 t:f w:200 t:w w:200 t:f w:400 t:Photos w:200 k:13 w:400" \
+  ./examples/explorer /tmp/scratch && ls /tmp/scratch
+```
+
+Delete puts what it takes into a folder beside the system's temporary
+directory — `ween32-recycled` — which is what makes Edit > Undo Delete able to
+put it back. Nothing is removed outright.
+
 ### The same source, built as win32
 
 `examples/explorer.c` compiles against the real win32 headers, and it is worth

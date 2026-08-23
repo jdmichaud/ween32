@@ -50,6 +50,10 @@ in the order it suggested:
   headings, so the header is a place and a store rather than a control. Doing
   it properly also lifts the four-column cap and gives `HDM_LAYOUT` and
   `HDM_HITTEST` something to answer with.
+- [ ] **A folder picker**, so Edit > Copy To Folder and Move To Folder can ask
+  where rather than leaving the paste to the folder you go to.
+- [ ] **Property sheets** (`PROPSHEETHEADER`, `PropertySheet`), which is what
+  Folder Options, Choose Columns and the tabbed half of Properties are.
 - [ ] **A flat toolbar button that hot-tracks and takes the keyboard**, so the
   ✕ on the explorer's Folders bar can be one instead of seven `FillRect` pairs
   with a frame drawn by hand. (A toolbar takes the keyboard now — the menu band

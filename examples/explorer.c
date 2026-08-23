@@ -3217,6 +3217,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         EnableMenuItem(bar, IDM_PASTE, g_clip_n ? on : off);
         EnableMenuItem(bar, IDM_PASTE_SHORTCUT, off);
         EnableMenuItem(bar, IDM_UNDO, g_undo.what ? on : off);
+        /* Both of these are about where an icon sits, so they mean nothing
+         * in the views that put every item in a row. */
+        EnableMenuItem(bar, IDM_LINEUP, g_view <= 1 ? on : off);
+        EnableMenuItem(bar, IDM_AUTO_ARRANGE, g_view <= 1 ? on : off);
         EnableMenuItem(bar, IDM_BACK, g_hist_at > 0 ? on : off);
         EnableMenuItem(bar, IDM_FORWARD,
                        g_hist_at >= 0 && g_hist_at < g_hist_n - 1 ? on : off);
@@ -3517,6 +3521,21 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                         "A shortcut is a .lnk file, which is a shell format "
                         "rather than a window one.",
                         "Create Shortcut", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_TOOLBAR_LINKS:
+        case IDM_BAR_TIP:
+            MessageBoxA(w,
+                        "The Links bar and the Tip of the Day are the "
+                        "browser's, and this window is the file half of the "
+                        "shell.",
+                        "Not in this example", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_LINEUP:
+        case IDM_AUTO_ARRANGE:
+            /* Both only mean anything where icons can be anywhere, and this
+             * view puts every one of them in its place already — so lining
+             * them up is a repaint and arranging them is always on. */
+            InvalidateRect(g_list, NULL, TRUE);
             return 0;
         case IDM_TOOLBAR_STD:
         case IDM_TOOLBAR_ADDR: {
