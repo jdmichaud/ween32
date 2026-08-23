@@ -517,6 +517,7 @@ pub extern fn StretchBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: 
 pub extern fn PatBlt(dc: HDC, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) BOOL;
 pub extern fn InvertRect(dc: HDC, rect: *const RECT) BOOL;
 pub extern fn DrawFocusRect(dc: HDC, rect: *const RECT) BOOL;
+pub extern fn IntersectClipRect(dc: HDC, left: i32, top: i32, right: i32, bottom: i32) i32;
 pub extern fn GetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: ?*anyopaque, info: *BITMAPINFO, usage: UINT) c_int;
 pub extern fn SetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: *const anyopaque, info: *const BITMAPINFO, usage: UINT) c_int;
 

@@ -1495,6 +1495,12 @@ BOOL StretchBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
 BOOL PatBlt(HDC dc, int x, int y, int w, int h, DWORD rop);
 BOOL InvertRect(HDC dc, const RECT *rect);
 BOOL DrawFocusRect(HDC dc, const RECT *rect);
+/* What a clipping call made of the region it was given. */
+#define ERROR 0
+#define NULLREGION 1
+#define SIMPLEREGION 2
+#define COMPLEXREGION 3
+int IntersectClipRect(HDC dc, int left, int top, int right, int bottom);
 
 /* The pixels of a bitmap, as a device-independent bitmap: how a program that
  * has to write a .bmp file, or work on the picture a pixel at a time, gets

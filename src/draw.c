@@ -41,14 +41,33 @@ static COLORREF px_cr(ween_color p)
 /* Narrow the surface's clip to this DC's drawing area, and give back what it
  * was so it can be put back. Every entry point in this file brackets its
  * drawing with these two. */
+void ween_dc_clip_box(HDC dc, RECT *out)
+{
+    out->left = dc->org_x;
+    out->top = dc->org_y;
+    out->right = dc->org_x + dc->clip_w;
+    out->bottom = dc->org_y + dc->clip_h;
+    if (!dc->clip_rect_set)
+        return;
+    if (dc->org_x + dc->clip_l > out->left)
+        out->left = dc->org_x + dc->clip_l;
+    if (dc->org_y + dc->clip_t > out->top)
+        out->top = dc->org_y + dc->clip_t;
+    if (dc->org_x + dc->clip_r < out->right)
+        out->right = dc->org_x + dc->clip_r;
+    if (dc->org_y + dc->clip_b < out->bottom)
+        out->bottom = dc->org_y + dc->clip_b;
+    if (out->right < out->left)
+        out->right = out->left;
+    if (out->bottom < out->top)
+        out->bottom = out->top;
+}
+
 static void clip_push(HDC dc, RECT *saved)
 {
     RECT c;
     ween_surface_get_clip(dc->s, saved);
-    c.left = dc->org_x;
-    c.top = dc->org_y;
-    c.right = dc->org_x + dc->clip_w;
-    c.bottom = dc->org_y + dc->clip_h;
+    ween_dc_clip_box(dc, &c);
     if (c.left < saved->left)
         c.left = saved->left;
     if (c.top < saved->top)
@@ -1072,6 +1091,38 @@ BOOL InvertRect(HDC dc, const RECT *rect)
         return FALSE;
     return blt(dc, rect->left, rect->top, rect->right - rect->left,
                rect->bottom - rect->top, NULL, 0, 0, 1, 1, DSTINVERT);
+}
+
+/* Narrow what a DC may draw in, the way win32 does: the intersection of what
+ * it could already and the rectangle given, in the caller's own coordinates.
+ * There is no region here, only a rectangle — which is what every caller in
+ * this library and in the programs written against it asks for, and Paint is
+ * the reason it exists at all: a shape dragged past the edge of the picture
+ * is clipped there rather than drawn over the tool box beside it. */
+int IntersectClipRect(HDC dc, int left, int top, int right, int bottom)
+{
+    if (!dc)
+        return ERROR;
+    left += dc->vp_x;
+    top += dc->vp_y;
+    right += dc->vp_x;
+    bottom += dc->vp_y;
+    if (dc->clip_rect_set) {
+        if (dc->clip_l > left)
+            left = dc->clip_l;
+        if (dc->clip_t > top)
+            top = dc->clip_t;
+        if (dc->clip_r < right)
+            right = dc->clip_r;
+        if (dc->clip_b < bottom)
+            bottom = dc->clip_b;
+    }
+    dc->clip_rect_set = 1;
+    dc->clip_l = left;
+    dc->clip_t = top;
+    dc->clip_r = right;
+    dc->clip_b = bottom;
+    return right <= left || bottom <= top ? NULLREGION : SIMPLEREGION;
 }
 
 BOOL DrawFocusRect(HDC dc, const RECT *rect)

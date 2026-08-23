@@ -151,6 +151,19 @@ was and where it is now, grown by the pen. Freehand does the same with the
 segment just drawn. Three thousand moves of an ellipse's corner take nine
 milliseconds, and nothing is left behind on the page.
 
+**A drag stops at the edge of the picture.** Everything a drag shows before
+it is drawn — a rectangle's outline, a line, a lasso, a selection being moved
+— goes on the window over the picture rather than into it, and a drag that
+leaves the picture would otherwise put it on the tool box or the grey beside
+it, where it stays until something repaints. The machine clips all of it to
+the picture, to the pixel: on a page starting at x=66 the outline of a
+rectangle dragged out to the left ends at 66, and on a 199-wide picture the
+one dragged right ends at 264. Ours does the same, with `IntersectClipRect` —
+which ween32 did not have, and which is the whole of the clipping win32
+offers that anything here needs. The handles round the page and the rubber
+band of a drag of one of them are drawn first, because those are the two
+things that belong outside.
+
 **The three handles that size the picture.** Eight sit round the page and
 only three do anything — the right edge, the bottom edge and the corner
 between them; the other five are drawn hollow to say so. What they do was

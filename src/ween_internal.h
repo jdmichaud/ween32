@@ -61,6 +61,9 @@ void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c
 /* DrawFocusRect's dotted, inverting rectangle. */
 void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h,
                              int phase);
+/* Where a DC may draw, in surface coordinates: its window, narrowed by
+ * whatever IntersectClipRect has been given. */
+void ween_dc_clip_box(HDC dc, RECT *out);
 /* The same dots drawn in one colour instead of inverting what is under them:
  * what a button's rectangle is, where a view's caret inverts. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
@@ -198,6 +201,11 @@ struct ween_dc {
     ween_surface *s;
     int org_x, org_y;   /* window origin within the surface */
     int clip_w, clip_h; /* drawing area (window size) */
+    /* IntersectClipRect: what the caller has narrowed this DC to, in the
+     * window's own coordinates. Not set on a fresh DC, which is what the ones
+     * the library builds on the stack rely on. */
+    int clip_rect_set;
+    int clip_l, clip_t, clip_r, clip_b;
     ween_color text_color;
     int bk_mode;
     const ween_strike *font;    /* the strike drawing uses, from font_obj */

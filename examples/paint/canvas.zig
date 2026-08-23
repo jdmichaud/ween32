@@ -183,6 +183,26 @@ fn paint(hwnd: w.HWND) void {
 
     if (app.zoom == 1) {
         _ = w.BitBlt(dc, o.x, o.y, app.pic.width, app.pic.height, app.pic.dc, 0, 0, w.SRCCOPY);
+    } else {
+        _ = w.StretchBlt(dc, o.x, o.y, shownWidth(), shownHeight(), app.pic.dc, 0, 0, app.pic.width, app.pic.height, w.SRCCOPY);
+        if (app.grid and app.zoom >= 4) drawGrid(dc, o);
+    }
+
+    // Everything outside the picture goes down first, because what comes
+    // after is clipped to the picture and could not draw it: the handles
+    // round the page, and the rubber band of a drag of one of them, which is
+    // the one thing here that belongs outside.
+    drawHandles(dc);
+    if (page_sizing != null) {
+        var pr = pagePreviewRect();
+        _ = w.DrawFocusRect(dc, &pr);
+    }
+
+    // A drag that leaves the picture is clipped at its edge, as it is on the
+    // machine: without this a rectangle dragged out to the left is drawn
+    // across the tool box, and stays there until something repaints it.
+    _ = w.IntersectClipRect(dc, o.x, o.y, o.x + shownWidth(), o.y + shownHeight());
+    if (app.zoom == 1) {
         // What the drag is making, drawn over the picture but not into it:
         // the origin moves to the picture's, so the tools work in its
         // coordinates whichever context they are handed.
@@ -195,14 +215,6 @@ fn paint(hwnd: w.HWND) void {
         textbox.draw(dc, true);
         tools.drawDrag(dc);
         _ = w.SetViewportOrgEx(dc, 0, 0, null);
-    } else {
-        _ = w.StretchBlt(dc, o.x, o.y, shownWidth(), shownHeight(), app.pic.dc, 0, 0, app.pic.width, app.pic.height, w.SRCCOPY);
-        if (app.grid and app.zoom >= 4) drawGrid(dc, o);
-    }
-    drawHandles(dc);
-    if (page_sizing != null) {
-        var pr = pagePreviewRect();
-        _ = w.DrawFocusRect(dc, &pr);
     }
     _ = w.EndPaint(hwnd, &ps);
 }
