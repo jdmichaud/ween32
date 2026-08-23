@@ -3626,10 +3626,14 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case SS_ETCHEDHORZ:
         case SS_ETCHEDVERT:
         case SS_ETCHEDFRAME:
-            DrawEdge(dc, &r, EDGE_ETCHED,
-                     kind == SS_ETCHEDHORZ   ? BF_TOP
-                     : kind == SS_ETCHEDVERT ? BF_LEFT
-                                             : BF_RECT);
+            /* A line is a frame two pixels thick, not an edge on its own:
+             * that is what puts the highlight round the far end of it, which
+             * is where the machine's Properties page has it. */
+            if (kind == SS_ETCHEDHORZ)
+                r.bottom = r.top + 2;
+            else if (kind == SS_ETCHEDVERT)
+                r.right = r.left + 2;
+            DrawEdge(dc, &r, EDGE_ETCHED, BF_RECT);
             EndPaint(wnd, &ps);
             return 0;
         case SS_BLACKRECT:
