@@ -628,8 +628,8 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
     int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
     int widest = 0, lines;
     int nbuttons = (type & MB_OKCANCEL) == MB_OKCANCEL ? 2 : 1;
-    int ids[2] = { IDOK, IDCANCEL };
-    const char *labels[2] = { "OK", "Cancel" };
+    int ids[3] = { IDOK, IDCANCEL, 0 };
+    const char *labels[3] = { "OK", "Cancel", NULL };
 
     char wrapped[2048];
     int icon = 0;
@@ -655,7 +655,16 @@ int MessageBoxA(HWND owner, LPCSTR text, LPCSTR caption, UINT type)
     wrap_text(text, f, wrapped, sizeof(wrapped));
     text = wrapped;
     lines = line_count(text, f, &widest);
-    if ((type & MB_YESNO) == MB_YESNO) {
+    if ((type & MB_TYPEMASK) == MB_YESNOCANCEL) {
+        /* the three-button question: save, throw away, or think again */
+        nbuttons = 3;
+        ids[0] = IDYES;
+        ids[1] = IDNO;
+        ids[2] = IDCANCEL;
+        labels[0] = "&Yes";
+        labels[1] = "&No";
+        labels[2] = "Cancel";
+    } else if ((type & MB_TYPEMASK) == MB_YESNO) {
         nbuttons = 2;
         ids[0] = IDYES;
         ids[1] = IDNO;

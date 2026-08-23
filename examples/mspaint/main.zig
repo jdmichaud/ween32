@@ -26,6 +26,8 @@ const undo = @import("undo.zig");
 const tools = @import("tools.zig");
 const bmp = @import("file.zig");
 const selection = @import("selection.zig");
+const viewbitmap = @import("viewbitmap.zig");
+const thumbnail = @import("thumbnail.zig");
 const app = &A.app;
 
 // ---- geometry -------------------------------------------------------------
@@ -261,7 +263,14 @@ fn frameProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c)
             command(w.LOWORD(wp));
             return 0;
         },
+        w.WM_MENUSELECT => {
+            // the line the status bar shows while a menu item is under the
+            // pointer, which is where a Windows program explains itself
+            setHelpText(helpFor(w.LOWORD(wp)));
+            return 0;
+        },
         w.WM_CLOSE => {
+            if (!askToSave()) return 0;
             _ = w.DestroyWindow(hwnd);
             return 0;
         },
@@ -273,6 +282,57 @@ fn frameProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c)
     }
 }
 
+/// What the status bar says about each command. These are the machine's own
+/// strings — the ones its resources carry, checked against it item by item.
+fn helpFor(id: u16) [*:0]const u8 {
+    return switch (id) {
+        ID.file_new => "Creates a new document.",
+        ID.file_open => "Opens an existing document.",
+        ID.file_save => "Saves the active document.",
+        ID.file_save_as => "Saves the active document with a new name.",
+        ID.file_print_preview => "Displays full pages.",
+        ID.file_page_setup => "Changes the printing options.",
+        ID.file_print => "Prints the active document.",
+        ID.file_send => "Sends the active document through electronic mail.",
+        ID.file_wallpaper_tiled => "Sets the current bitmap as the desktop wallpaper in tiled format.",
+        ID.file_wallpaper_centered => "Sets the current bitmap as the desktop wallpaper in centered format.",
+        ID.file_exit => "Quits Paint.",
+
+        ID.edit_undo => "Undoes the last action.",
+        ID.edit_repeat => "Redoes the previously undone action.",
+        ID.edit_cut => "Cuts the selection and puts it on the Clipboard.",
+        ID.edit_copy => "Copies the selection and puts it on the Clipboard.",
+        ID.edit_paste => "Inserts the Clipboard contents.",
+        ID.edit_clear => "Deletes the selection.",
+        ID.edit_select_all => "Selects everything.",
+        ID.edit_copy_to => "Copies the selection to a file.",
+        ID.edit_paste_from => "Pastes a file into the selection.",
+
+        ID.view_tool_box => "Shows or hides the tool box.",
+        ID.view_color_box => "Shows or hides the color box.",
+        ID.view_status_bar => "Shows or hides the status bar.",
+        ID.view_text_toolbar => "Shows or hides the text toolbar.",
+        ID.view_zoom_normal => "Zooms the picture to 100%.",
+        ID.view_zoom_large => "Zooms the picture to 400%.",
+        ID.view_zoom_custom => "Zooms the picture.",
+        ID.view_show_grid => "Shows or hides the grid.",
+        ID.view_show_thumbnail => "Shows or hides the thumbnail.",
+        ID.view_bitmap => "Displays the picture.",
+
+        ID.image_flip_rotate => "Flips or rotates the picture or a selection.",
+        ID.image_stretch_skew => "Stretches or skews the picture or a selection.",
+        ID.image_invert => "Inverts the colors of the picture or a selection.",
+        ID.image_attributes => "Changes the attributes of the picture.",
+        ID.image_clear => "Clears the picture or selection.",
+        ID.image_draw_opaque => "Makes the current selection either opaque or transparent.",
+
+        ID.colors_edit => "Creates a new color.",
+        ID.help_topics => "Lists Help topics.",
+        ID.help_about => "Displays program information, version number, and copyright.",
+        else => "For Help, click Help Topics on the Help Menu.",
+    };
+}
+
 pub fn setHelpText(text: [*:0]const u8) void {
     _ = w.SendMessageA(app.status, w.SB_SETTEXTA, 0, @bitCast(@intFromPtr(text)));
 }
@@ -280,6 +340,7 @@ pub fn setHelpText(text: [*:0]const u8) void {
 fn command(id: u16) void {
     switch (id) {
         ID.file_new => {
+            if (!askToSave()) return;
             app.pic.resize(512, 384, w.RGB(255, 255, 255));
             app.pic.clear();
             undo.forget();
@@ -289,6 +350,7 @@ fn command(id: u16) void {
         ID.file_save => save(hasPath()),
         ID.file_save_as => save(false),
         ID.file_open => {
+            if (!askToSave()) return;
             var buf: [300]u8 = @splat(0);
             if (!askForFile(&buf, false)) return;
             const path = zlen(&buf);
@@ -355,6 +417,12 @@ fn command(id: u16) void {
         ID.view_tool_box => toggleBar(&app.show_toolbox, app.toolbox, ID.view_tool_box),
         ID.view_color_box => toggleBar(&app.show_colorbox, app.colorbox, ID.view_color_box),
         ID.view_status_bar => toggleBar(&app.show_status, app.status, ID.view_status_bar),
+        ID.view_bitmap => viewbitmap.show(),
+        ID.view_show_thumbnail => {
+            app.thumbnail = !app.thumbnail;
+            _ = w.CheckMenuItem(w.GetMenu(app.frame), ID.view_show_thumbnail, if (app.thumbnail) w.MF_CHECKED else w.MF_UNCHECKED);
+            thumbnail.toggle(app.thumbnail);
+        },
         ID.view_zoom_normal => setZoom(1),
         ID.view_zoom_large => setZoom(4),
         ID.view_show_grid => {
@@ -417,6 +485,17 @@ pub fn updateMenus() void {
     _ = w.EnableMenuItem(m, ID.edit_copy, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_clear, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_paste, if (w.IsClipboardFormatAvailable(w.CF_BITMAP) != 0) on else off);
+}
+
+/// Before anything that would lose the picture: save it, throw it away, or
+/// change your mind, which is the three-button question every Windows
+/// program asks.
+fn askToSave() bool {
+    if (!app.dirty) return true;
+    const answer = w.MessageBoxA(app.frame, "Save changes to untitled?", "Paint", w.MB_YESNOCANCEL | w.MB_ICONQUESTION);
+    if (answer == w.IDCANCEL) return false;
+    if (answer == w.IDYES) save(hasPath());
+    return true;
 }
 
 /// The file dialogs, which are the system's rather than ours.
@@ -548,6 +627,8 @@ pub fn main() void {
     toolbox.register();
     colorbox.register();
     canvas.register();
+    viewbitmap.register();
+    thumbnail.register();
 
     const frame = w.CreateWindowExA(0, "MSPaintApp", "untitled - Paint", w.WS_OVERLAPPEDWINDOW | w.WS_CLIPCHILDREN | w.WS_CLIPSIBLINGS, w.CW_USEDEFAULT, w.CW_USEDEFAULT, 275, 400, null, buildMenu(), null, null).?;
     _ = w.ShowWindow(frame, w.SW_SHOWNORMAL);

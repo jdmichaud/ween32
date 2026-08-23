@@ -2027,7 +2027,10 @@ LRESULT DefDlgProcA(HWND dlg, UINT msg, WPARAM wp, LPARAM lp);
 /* ---- message box --------------------------------------------------------- */
 #define MB_OK 0x00000000
 #define MB_OKCANCEL 0x00000001
+#define MB_YESNOCANCEL 0x00000003
 #define MB_YESNO 0x00000004
+/* the buttons a box wants live in the low four bits */
+#define MB_TYPEMASK 0x0000000F
 /* The picture beside the message, which says what kind of message it is. A
  * box without one is a plain notice; the four here are what win32 draws. */
 #define MB_ICONHAND 0x00000010

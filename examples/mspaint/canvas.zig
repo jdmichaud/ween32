@@ -224,6 +224,7 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
         .pencil, .brush, .eraser, .airbrush => {
             undo.take();
             tools.stroke(app.pic.dc, p, p);
+            if (app.tool == .airbrush) _ = w.SetTimer(hwnd, spray_timer, 100, null);
             _ = w.InvalidateRect(hwnd, null, w.FALSE);
         },
         .fill => {
@@ -283,9 +284,12 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     }
 }
 
+const spray_timer = 1;
+
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
     if (!d.active) return;
+    if (d.tool == .airbrush) _ = w.KillTimer(hwnd, spray_timer);
     d.cur = toImage(lp);
     d.active = false;
     _ = w.ReleaseCapture();
@@ -417,6 +421,16 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
         w.WM_SIZE => {
             updateScroll(hwnd);
             return 0;
+        },
+        w.WM_TIMER => {
+            // the airbrush goes on spraying where it is while the button is
+            // down, which is what makes it an airbrush and not a pen
+            if (wp == spray_timer and tools.drag.active and tools.drag.tool == .airbrush) {
+                tools.stroke(app.pic.dc, tools.drag.cur, tools.drag.cur);
+                _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                return 0;
+            }
+            return w.DefWindowProcA(hwnd, msg, wp, lp);
         },
         w.WM_HSCROLL => {
             scroll(hwnd, w.SB_HORZ, w.LOWORD(wp), &app.scroll_x);

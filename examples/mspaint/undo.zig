@@ -42,8 +42,10 @@ fn capture(into: *Snapshot) void {
     _ = w.BitBlt(into.dc, 0, 0, app.pic.width, app.pic.height, app.pic.dc, 0, 0, w.SRCCOPY);
 }
 
-/// Called before anything changes the picture.
+/// Called before anything changes the picture — which is also the moment
+/// the picture stops matching the file it came from.
 pub fn take() void {
+    app.dirty = true;
     if (count == depth) {
         // the oldest goes; the rest shuffle down
         const oldest = stack[0];
