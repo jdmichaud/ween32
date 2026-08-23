@@ -740,26 +740,6 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int moved = 1;
         if (!e)
             return 0;
-        /* The vertical keys mean nothing to a box one line tall, and mean
-         * something to whatever put the box inside itself: a combo box walks
-         * its list with them. So they go to the parent rather than nowhere. */
-        if (!(wnd->style & ES_MULTILINE) &&
-            (wp == VK_UP || wp == VK_DOWN || wp == VK_PRIOR ||
-             wp == VK_NEXT)) {
-            if (wnd->parent)
-                SendMessageA(wnd->parent, WM_KEYDOWN, wp, lp);
-            return 0;
-        }
-        /* Enter and Escape are the two answers a box asked for one name
-         * takes: what to do about them is the parent's, not the box's. */
-        if (wp == VK_RETURN || wp == VK_ESCAPE) {
-            if (wnd->parent)
-                SendMessageA(wnd->parent, WM_COMMAND,
-                             MAKEWPARAM((WORD)wnd->id,
-                                        wp == VK_RETURN ? EN_ENTER : EN_ESCAPE),
-                             (LPARAM)wnd);
-            return 0;
-        }
         if (ctrl) { /* the clipboard shortcuts, and select-all */
             switch (wp) {
             case 'C':
@@ -1324,6 +1304,63 @@ static int combo_edit_x(HWND wnd, ween_items *it)
     return it && it->images ? 1 + WEEN_CBEX_IMAGE + 4 : 2;
 }
 
+/* The field of a combo box has the combo's own procedure in front of it: the
+ * keys that walk the list, and the two that end the typing, are the combo's
+ * and never reach the box. Subclassing, as comctl32 does it. */
+static WNDPROC g_combo_edit_proc;
+static void combo_end_edit(HWND wnd, ween_items *it, int why, int sel);
+static void combo_show_sel(HWND wnd, ween_items *it);
+static void combo_commit(HWND wnd, ween_items *it);
+
+static LRESULT CALLBACK combo_field_proc(HWND box, UINT msg, WPARAM wp,
+                                         LPARAM lp)
+{
+    HWND cb = box->parent;
+    ween_items *it = cb ? items_of(cb) : NULL;
+    if (msg == WM_KEYDOWN && it && it->edit == box) {
+        switch (wp) {
+        case VK_UP:
+        case VK_DOWN:
+        case VK_PRIOR:
+        case VK_NEXT:
+            /* a box one line tall has no use for these; the combo does */
+            return SendMessageA(cb, WM_KEYDOWN, wp, lp);
+        case VK_RETURN:
+            if (g_dropped == cb && it->track >= 0 && it->track < it->count)
+                combo_commit(cb, it); /* the list is open on something */
+            else
+                combo_end_edit(cb, it, CBENF_RETURN, -1);
+            return 0;
+        case VK_ESCAPE:
+            if (g_dropped == cb) { /* the list goes; the text stays */
+                g_dropped = NULL;
+                it->track = -1;
+                ween_top_level(cb)->dirty = 1;
+            } else {
+                combo_show_sel(cb, it); /* back to what it was */
+                combo_end_edit(cb, it, CBENF_ESCAPE, -1);
+            }
+            return 0;
+        default:
+            break;
+        }
+    }
+    return CallWindowProcA(g_combo_edit_proc, box, msg, wp, lp);
+}
+
+/* Take what the list is open on, and say so. */
+static void combo_commit(HWND wnd, ween_items *it)
+{
+    it->cursel = it->track;
+    it->track = -1;
+    g_dropped = NULL;
+    combo_show_sel(wnd, it);
+    ween_top_level(wnd)->dirty = 1;
+    if (wnd->parent)
+        SendMessageA(wnd->parent, WM_COMMAND,
+                     MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE), (LPARAM)wnd);
+}
+
 /* The field of an editable combo: an EDIT over everything but the button and
  * whatever picture stands before it. */
 static HWND combo_edit(HWND wnd)
@@ -1344,6 +1381,8 @@ static HWND combo_edit(HWND wnd)
              * starts, which is what lines it up with the picture beside it */
             SendMessageA(it->edit, EM_SETMARGINS,
                          EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(0, 0));
+            g_combo_edit_proc = (WNDPROC)SetWindowLongPtrA(
+                it->edit, GWLP_WNDPROC, (LONG_PTR)combo_field_proc);
         }
     }
     /* One row down and one shorter than the field: what the box draws then
@@ -1399,7 +1438,9 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case CBEM_GETEDITCONTROL:
         return (LRESULT)(INT_PTR)combo_edit(wnd);
     case WM_COMMAND:
-        /* the field says the typing is over */
+        /* what the field says about itself: the keyboard arriving, going, and
+         * the text changing. Enter and Escape never get here — the combo's
+         * own procedure took them in front of the box. */
         it = items_of(wnd);
         if (it && it->edit && (HWND)lp == it->edit) {
             if (HIWORD(wp) == EN_SETFOCUS) {
@@ -1407,34 +1448,8 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                  * clicking into an address bar does */
                 SendMessageA(it->edit, EM_SETSEL, 0, -1);
                 GetWindowTextA(it->edit, it->was, (int)sizeof(it->was));
-            } else if (HIWORD(wp) == EN_KILLFOCUS)
+            } else if (HIWORD(wp) == EN_KILLFOCUS) {
                 combo_end_edit(wnd, it, CBENF_KILLFOCUS, -1);
-            else if (HIWORD(wp) == EN_ENTER) {
-                if (g_dropped == wnd && it->track >= 0 &&
-                    it->track < it->count) {
-                    /* the list is open on something: Enter takes that */
-                    it->cursel = it->track;
-                    it->track = -1;
-                    g_dropped = NULL;
-                    combo_show_sel(wnd, it);
-                    ween_top_level(wnd)->dirty = 1;
-                    if (wnd->parent)
-                        SendMessageA(wnd->parent, WM_COMMAND,
-                                     MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE),
-                                     (LPARAM)wnd);
-                } else {
-                    combo_end_edit(wnd, it, CBENF_RETURN, -1);
-                }
-            }
-            else if (HIWORD(wp) == EN_ESCAPE) {
-                if (g_dropped == wnd) { /* the list goes; the text stays */
-                    g_dropped = NULL;
-                    it->track = -1;
-                    ween_top_level(wnd)->dirty = 1;
-                } else {
-                    combo_show_sel(wnd, it); /* back to what it was */
-                    combo_end_edit(wnd, it, CBENF_ESCAPE, -1);
-                }
             } else if (HIWORD(wp) == EN_CHANGE && !it->quiet) {
                 /* the picture goes when the text is no longer that item's,
                  * and comes back when it is — the field stays where it is */
@@ -3347,6 +3362,27 @@ void ween_listview_view(HWND w, ween_lv_view *out)
  * and clicking away takes it as well. The application hears LVN_ENDLABELEDIT
  * and can refuse.
  */
+/* The box a label is typed over in is an EDIT with the view's own procedure
+ * in front of it: Enter and Escape are the view's answers, not the box's, and
+ * everything else is the box's as usual. This is how comctl32 does it, and
+ * what SetWindowLongPtr(GWLP_WNDPROC) is for. */
+static WNDPROC g_lv_edit_proc;
+
+static void lv_end_edit(HWND wnd, ween_list *l, int keep);
+
+static LRESULT CALLBACK lv_edit_proc(HWND box, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_KEYDOWN && (wp == VK_RETURN || wp == VK_ESCAPE)) {
+        HWND view = box->parent;
+        ween_list *l = view ? list_of(view) : NULL;
+        if (l && l->edit == box) {
+            lv_end_edit(view, l, wp == VK_RETURN);
+            return 0;
+        }
+    }
+    return CallWindowProcA(g_lv_edit_proc, box, msg, wp, lp);
+}
+
 static void lv_end_edit(HWND wnd, ween_list *l, int keep)
 {
     char text[260];
@@ -3393,6 +3429,9 @@ static HWND lv_begin_edit(HWND wnd, ween_list *l, int row)
                               NULL, NULL);
     if (!l->edit)
         return NULL;
+    /* in front of the box: Enter and Escape are the view's */
+    g_lv_edit_proc = (WNDPROC)SetWindowLongPtrA(l->edit, GWLP_WNDPROC,
+                                                (LONG_PTR)lv_edit_proc);
     l->editing = row;
     SendMessageA(l->edit, WM_SETFONT, (WPARAM)0, FALSE);
     SendMessageA(l->edit, EM_SETSEL, 0, -1); /* all of it, ready to type over */
@@ -3410,17 +3449,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case LVM_GETEDITCONTROL:
         l = list_of(wnd);
         return l ? (LRESULT)(INT_PTR)l->edit : 0;
-    case WM_COMMAND:
-        /* the box says it is done: Enter takes the name, Escape drops it */
-        l = list_of(wnd);
-        if (l && l->edit && (HWND)lp == l->edit) {
-            if (HIWORD(wp) == EN_ENTER)
-                lv_end_edit(wnd, l, 1);
-            else if (HIWORD(wp) == EN_ESCAPE)
-                lv_end_edit(wnd, l, 0);
-            return 0;
-        }
-        return DefWindowProcA(wnd, msg, wp, lp);
+
     case WM_SIZE:
         /* the header stands across the band, so it follows the width */
         l = list_of(wnd);

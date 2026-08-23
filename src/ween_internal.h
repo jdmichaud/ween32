@@ -281,7 +281,10 @@ typedef struct ween_class {
 
 struct ween_wnd {
     const ween_class *cls;
-    WNDPROC proc; /* class proc (subclassing not in v1) */
+    WNDPROC proc; /* what this window answers with: its class's to begin
+                   * with, and whatever SetWindowLong(GWL_WNDPROC) put there
+                   * after — which is how a control that hosts another one
+                   * takes the keys it needs off it */
     struct ween_wnd *parent;
     struct ween_wnd *first_child;
     struct ween_wnd *next_sibling;

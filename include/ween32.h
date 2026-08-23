@@ -451,11 +451,6 @@ typedef struct {
 #define EN_KILLFOCUS 0x0200
 #define EN_CHANGE 0x0300
 #define EN_UPDATE 0x0400
-/* Not win32's — there Enter and Escape in a single-line edit go to the
- * dialog. A list view's in-place editor is not in a dialog, so the box says
- * so itself. */
-#define EN_ENTER 0x1300
-#define EN_ESCAPE 0x1301
 /* Select a run of the text: wParam is where it starts, lParam where it ends,
  * and -1 for the end means all of it. */
 #define EM_SETSEL 0x00B1
@@ -1269,11 +1264,24 @@ HWND GetFocus(void);
 /* A window's style, read and written after it was made — which is how a list
  * view is told to show its folder a different way. GWL_STYLE is the one index
  * that matters here; a control that cares about the change hears WM_STYLECHANGED. */
+/* -4 is the window's own procedure: reading it and putting another in its
+ * place is subclassing, which is how a control that puts another inside
+ * itself takes the messages it needs before the inner one sees them. What
+ * came back is called for the rest. */
+#define GWL_WNDPROC (-4)
 #define GWL_STYLE (-16)
 #define GWL_EXSTYLE (-20)
 #define GWL_ID (-12)
 LONG GetWindowLongA(HWND wnd, int index);
 LONG SetWindowLongA(HWND wnd, int index, LONG value);
+/* The same two where the value is a pointer — a window procedure does not fit
+ * in a LONG on a 64-bit build, so subclassing goes through these. */
+LONG_PTR GetWindowLongPtrA(HWND wnd, int index);
+LONG_PTR SetWindowLongPtrA(HWND wnd, int index, LONG_PTR value);
+#define GWLP_WNDPROC (-4)
+/* Call a procedure that was subclassed away, which is the other half of it. */
+LRESULT CallWindowProcA(WNDPROC proc, HWND wnd, UINT msg, WPARAM wp,
+                        LPARAM lp);
 #define WM_STYLECHANGED 0x007D
 
 /* The string calls win32 has of its own. Only the ones an application reaches

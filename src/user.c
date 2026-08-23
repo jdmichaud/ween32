@@ -959,6 +959,35 @@ HWND GetFocus(void)
 
 /* A window's style after the fact. Changing it tells the window, which is how
  * a list view comes to lay its folder out a different way. */
+/* A window's procedure, and everything else GWL_ names, as a pointer — which
+ * is what a procedure needs on a build where a LONG is half a pointer. */
+LONG_PTR GetWindowLongPtrA(HWND wnd, int index)
+{
+    if (!wnd)
+        return 0;
+    if (index == GWL_WNDPROC)
+        return (LONG_PTR)wnd->proc;
+    return (LONG_PTR)GetWindowLongA(wnd, index);
+}
+
+LONG_PTR SetWindowLongPtrA(HWND wnd, int index, LONG_PTR value)
+{
+    if (!wnd)
+        return 0;
+    if (index == GWL_WNDPROC) {
+        WNDPROC was = wnd->proc;
+        wnd->proc = (WNDPROC)value;
+        return (LONG_PTR)was;
+    }
+    return (LONG_PTR)SetWindowLongA(wnd, index, (LONG)value);
+}
+
+/* Hand a message to a procedure that was subclassed away. */
+LRESULT CallWindowProcA(WNDPROC proc, HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    return proc ? proc(wnd, msg, wp, lp) : DefWindowProcA(wnd, msg, wp, lp);
+}
+
 LONG GetWindowLongA(HWND wnd, int index)
 {
     if (!wnd)

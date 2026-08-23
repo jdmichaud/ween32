@@ -12,6 +12,20 @@
 
 static int g_failures = 0;
 
+/* for the subclassing check further down: what was in front, and whether it
+ * saw the message */
+static WNDPROC g_sub_next;
+static int g_sub_seen;
+
+static LRESULT CALLBACK sub_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_KEYDOWN && wp == VK_RETURN) {
+        g_sub_seen++;
+        return 0; /* taken: the original never sees it */
+    }
+    return CallWindowProcA(g_sub_next, w, msg, wp, lp);
+}
+
 #define CHECK(cond, name)                                                      \
     do {                                                                       \
         if (cond) {                                                            \
@@ -472,6 +486,30 @@ int main(void)
               "and Escape puts the list away");
         DestroyWindow(cb);
         DestroyWindow(list_only);
+    }
+
+    /* Subclassing: a window's procedure can be taken out and another put in
+     * front of it, and what came back called for everything the new one does
+     * not want. A control that puts another inside itself takes its keys this
+     * way, which is how a combo box's field comes to give up Enter. */
+    {
+        HWND box = CreateWindowExA(0, "EDIT", "typed", WS_CHILD | WS_VISIBLE,
+                                   10, 240, 120, 20, w, NULL, NULL, NULL);
+        char got[32];
+        g_sub_seen = 0;
+        g_sub_next = (WNDPROC)SetWindowLongPtrA(box, GWLP_WNDPROC,
+                                                (LONG_PTR)sub_proc);
+        CHECK(g_sub_next != NULL, "a window gives up its procedure");
+        CHECK((WNDPROC)(INT_PTR)GetWindowLongPtrA(box, GWLP_WNDPROC) ==
+                  sub_proc,
+              "and answers with the one put in front of it");
+        SendMessageA(box, WM_KEYDOWN, VK_RETURN, 0);
+        CHECK(g_sub_seen == 1, "which sees the message first");
+        SendMessageA(box, WM_CHAR, 'x', 0);
+        GetWindowTextA(box, got, (int)sizeof(got));
+        CHECK(strlen(got) == 6 && strchr(got, 'x'),
+              "and what it passes on still reaches the original");
+        DestroyWindow(box);
     }
 
     /* Cursors: a class carries one, and a control can override it over part
