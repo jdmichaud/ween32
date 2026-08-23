@@ -593,6 +593,14 @@ static void x11_resize(void *win, int w, int h)
     xw->h = h;
     XResizeWindow(xw->dpy, xw->win, (unsigned)(w * xw->zoom),
                   (unsigned)(h * xw->zoom));
+    /* And the letterbox with it, rather than waiting for the server to say
+     * ConfigureNotify. A window that resizes itself and paints in the same
+     * breath -- the colour box does, shrinking to its left half before it is
+     * ever shown -- would otherwise be centred inside the size it was opened
+     * at: the surface pushed right by half the difference, and everything
+     * past the window's edge cut off. A window manager's own resize still
+     * arrives as a configure and is handled there. */
+    ween_letterbox_window(&xw->box, w * xw->zoom, h * xw->zoom);
     XFlush(xw->dpy);
 }
 

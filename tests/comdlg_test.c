@@ -123,6 +123,22 @@ int main(void)
     CHECK(cc.lpCustColors[4] == mixed,
           "the custom colours come back even from a cancelled box");
 
+    /* The box is built at its full width and shrunk to the left half before
+     * it is ever shown, so everything below depends on the backend being
+     * told at once that the window is a different size. A backend that waits
+     * to be told centres what is drawn inside the size the window was opened
+     * at: on a display the picture is pushed right by half the difference
+     * and cut off at the edge, and a press lands a hundred and fifteen
+     * pixels from where it was aimed. Cancel is the rightmost thing in the
+     * shut box, so it is the one that says. */
+    click(118, 303); /* Cancel */
+    BOOL cancelled = ChooseColorA(&cc);
+    CHECK(!cancelled, "Cancel is where it is drawn after the box shrinks");
+
+    click(46, 303); /* OK */
+    cc.rgbResult = RGB(0, 0, 0);
+    CHECK(ChooseColorA(&cc), "and so is OK");
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
