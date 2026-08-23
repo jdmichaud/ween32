@@ -1918,20 +1918,11 @@ static void armed_mark(HWND top, int index)
     }
 }
 
-/* Leaving menu mode puts the underlines away again: they came out with Alt
- * and they go with whatever ends it — Escape, a second Alt, or the drop-down
- * that was opened being finished with. The focus rectangles are not part of
- * this; those stay until a mouse click puts them away. */
-static void menu_cues_off(HWND top)
-{
-    if (!ween_menu_cues)
-        return;
-    ween_menu_cues = 0;
-    if (top) {
-        top->dirty = 1;
-        InvalidateRect(top, NULL, FALSE);
-    }
-}
+/* Once Alt has been pressed the underlines stay out: they are what the window
+ * has been told about how it is being driven, not part of the menu being up.
+ * A dialog opened from a menu that was walked by key has them, which is what
+ * the machine's Column Settings shows — and one opened with the mouse never
+ * turned them on in the first place. */
 
 void ween_menu_disarm(void)
 {
@@ -1941,7 +1932,6 @@ void ween_menu_disarm(void)
     g_menu_armed = 0;
     armed_mark(top, -1);
     g_menu_armed_top = NULL;
-    menu_cues_off(top);
 }
 
 int ween_menu_key(HWND top, unsigned vk, unsigned ch)
@@ -1980,7 +1970,6 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
     cmd = ween_menu_track_bar(top, index, 1);
     if (cmd)
         post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
-    menu_cues_off(top);
     return 1;
 }
 
@@ -2015,7 +2004,6 @@ int ween_menu_armed_key(HWND top, unsigned vk)
         cmd = ween_menu_track_bar(top, index, 1);
         if (cmd)
             post_msg(top, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
-        menu_cues_off(top);
         return 1;
     }
     default:

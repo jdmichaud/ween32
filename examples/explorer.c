@@ -2329,7 +2329,7 @@ static void choose_columns(HWND owner)
          IDC_CC_WIDTH, ATOM_EDIT, "");
     items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     ITEM(WS_CHILD | WS_VISIBLE, 131, 132, 45, 9, IDC_CC_AFTER, ATOM_STATIC,
-         "pixels wide.");
+         "pixels &wide.");
     /* the rule that separates what is asked from the buttons that answer */
     ITEM(WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 7, 148, 202, 1, IDC_CC_RULE,
          ATOM_STATIC, "");

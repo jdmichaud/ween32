@@ -3713,7 +3713,14 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     int sel_state = focused                            ? 2
                     : (wnd->style & LVS_SHOWSELALWAYS) ? 1
                                                        : 0;
-    for (int i = l->top; i < l->nrow && i < l->top + g.visible; i++) {
+    /* One past what fits, when what fits leaves a gap: a view whose rows do
+     * not divide its height draws the next one cut off at the bottom, which
+     * is what says there is more below. Only paint counts it — a page still
+     * moves by whole rows. */
+    int painted = g.visible +
+                  ((g.view_h - lv_header_h(wnd) - WEEN_LV_ROW_TOP) % ih ? 1
+                                                                        : 0);
+    for (int i = l->top; i < l->nrow && i < l->top + painted; i++) {
         int y = oy + lv_header_h(wnd) + WEEN_LV_ROW_TOP + (i - l->top) * ih;
         int selected = l->row[i].selected && sel_state;
         /* The caret is drawn on the row the arrows would move from, selected
@@ -3722,7 +3729,10 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int caret = ween_ui_focus_cues && focused && i == l->focus - 1;
         int box = lv_check_w(l);
         int has_image = l->images && l->row[i].image >= 0;
-        int indent = has_image ? box + icon_w + 2 : box;
+        /* Where the label column starts. A row with a tick box and no
+         * picture starts two past the box, the same two an icon leaves
+         * between itself and the name — the box stands in for the icon. */
+        int indent = has_image ? box + icon_w + 2 : box ? box + 2 : 0;
         x = 0;
         if (box && l->row[i].state_img) {
             int by = y + (ih - WEEN_LV_CHECK) / 2;
@@ -3758,7 +3768,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* the first column leaves room for an icon; the rest sit closer */
             /* the name sits two past its box, which starts where the icon
              * ends; the other cells sit closer to their own column */
-            int lead = c ? 6 : (has_image ? indent + 2 : indent + 7);
+            int lead = c ? 6 : (has_image || box ? indent + 2 : indent + 7);
             if (f && l->row[i].text[c]) {
                 int len;
                 const char *t = fit_text(f, l->row[i].text[c],
