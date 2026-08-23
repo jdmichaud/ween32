@@ -735,6 +735,59 @@ int main(void)
         DestroyWindow(lw);
     }
 
+    /* A view with tick boxes: what Choose Columns is made of. The box stands
+     * where a picture would, the whole of its column answers for it, and the
+     * name starts after it rather than under it. */
+    {
+        HWND tw = CreateWindowExA(0, "weenviews", "ticks",
+                                  WS_POPUP | WS_VISIBLE, 0, 0, 260, 140, NULL,
+                                  NULL, NULL, NULL);
+        HWND ticks = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
+                                     WS_CHILD | WS_VISIBLE | LVS_REPORT |
+                                         LVS_NOCOLUMNHEADER,
+                                     10, 10, 200, 60, tw,
+                                     (HMENU)(UINT_PTR)9, NULL, NULL);
+        LVCOLUMNA col;
+        LVHITTESTINFO ht;
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_WIDTH | LVCF_TEXT;
+        col.cx = 180;
+        col.pszText = (char *)"Column";
+        SendMessageA(ticks, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        SendMessageA(ticks, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+                     LVS_EX_CHECKBOXES);
+        for (int i = 0; i < 5; i++) {
+            LVITEMA it;
+            memset(&it, 0, sizeof(it));
+            it.mask = LVIF_TEXT;
+            it.iItem = i;
+            it.pszText = (char *)"Name";
+            SendMessageA(ticks, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        }
+        memset(&ht, 0, sizeof(ht));
+        ht.pt.x = 2;
+        ht.pt.y = 4;
+        CHECK(SendMessageA(ticks, LVM_HITTEST, 0, (LPARAM)&ht) == 0 &&
+                  (ht.flags & LVHT_ONITEMSTATEICON),
+              "the near edge of the state column is the box");
+        ht.pt.x = 17; /* the far edge of the same sixteen */
+        CHECK(SendMessageA(ticks, LVM_HITTEST, 0, (LPARAM)&ht) == 0 &&
+                  (ht.flags & LVHT_ONITEMSTATEICON),
+              "and so is its far edge, not just the box drawn in it");
+        ht.pt.x = 20; /* two past the column: the name */
+        CHECK(SendMessageA(ticks, LVM_HITTEST, 0, (LPARAM)&ht) == 0 &&
+                  (ht.flags & LVHT_ONITEMLABEL),
+              "the name starts two past the box");
+
+        CHECK(!ListView_GetCheckState(ticks, 0), "a row starts unticked");
+        SendMessageA(ticks, WM_LBUTTONDOWN, 0, MAKELPARAM(9, 4));
+        CHECK(ListView_GetCheckState(ticks, 0),
+              "clicking the box ticks it, and clicking it again");
+        SendMessageA(ticks, WM_LBUTTONDOWN, 0, MAKELPARAM(9, 4));
+        CHECK(!ListView_GetCheckState(ticks, 0), "unticks it");
+        DestroyWindow(tw);
+    }
+
     /* A combo box's drop-down. It can be emptied — an address bar refills
      * itself on every folder, and without CB_RESETCONTENT it only ever grew,
      * going on showing the first path it was ever given. And once open it
