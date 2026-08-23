@@ -25,6 +25,10 @@ typedef struct {
     int w, h;
     /* the clip rectangle every primitive draws through */
     int clip_x, clip_y, clip_r, clip_b;
+    /* How many pixels the buffer really holds. A window being dragged by its
+     * corner is resized sixty times a second, and asking the system for a new
+     * four-megabyte block each time is most of what that costs. */
+    long cap;
 } ween_surface;
 
 #define WEEN_RGBX(r, g, b) ((ween_color)(((r) << 16) | ((g) << 8) | (b)))
@@ -64,6 +68,8 @@ void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
 int ween_surface_write_bmp(const ween_surface *s, const char *path);
 /* Nearest-neighbour integer magnification (dst must be src * zoom). */
 void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom);
+void ween_surface_zoom_rect(ween_surface *dst, const ween_surface *src,
+                            int zoom, int x, int y, int w, int h);
 
 /* ---- classic chrome (from classic.zig; the Wine DrawEdge algorithm) ---- */
 

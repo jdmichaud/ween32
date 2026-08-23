@@ -75,6 +75,16 @@ static void inject_script(const char *script)
                 ev.vk = ev.ch >= 'a' && ev.ch <= 'z' ? ev.ch - 32 : ev.ch;
                 ween_headless_inject(ev);
             }
+        } else if (kind == 'r' && p[1] == ':') {
+            /* r:800,600 — the window system hands the app a new size, which
+             * is what a person dragging a frame does sixty times a second */
+            char *end;
+            ev.kind = WEEN_EV_RESIZE;
+            ev.x = (int)strtol(p + 2, &end, 10);
+            if (*end == ',')
+                ev.y = (int)strtol(end + 1, &end, 10);
+            p = end;
+            ween_headless_inject(ev);
         } else if (kind == 'w' && p[1] == ':') {
             ev.kind = WEEN_EV_TIME; /* w:500 — let 500ms of timer time pass */
             ev.x = (int)strtol(p + 2, (char **)&p, 10);

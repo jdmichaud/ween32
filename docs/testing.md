@@ -40,6 +40,32 @@ time WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_SCRIPT="$(cat /tmp/stroke)" \
 ```
 
 ```sh
+# that a rubber band is still quick: three thousand moves of an ellipse's
+# corner, which is what a slow preview used to make of a single drag
+python3 -c "print('d:20,229 u:20,229 d:100,80 ' + ' '.join('m:%d,%d'%(70+(i%140),
+  60+((i*7)%180)) for i in range(3000)) + ' u:200,200')" > /tmp/band
+time WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_SCRIPT="$(cat /tmp/band)" \
+  ./zig-out/bin/paint                       # expect a few hundredths
+
+# and that resizing is: two hundred window sizes, as a drag of the corner
+python3 -c "print(' '.join('r:%d,%d'%(1100+(i%200),800+(i%150))
+  for i in range(200)))" > /tmp/rez
+time WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_SCRIPT="$(cat /tmp/rez)" \
+  ./zig-out/bin/paint                       # expect about a millisecond each
+```
+
+Neither of those catches the thing that actually made a resize crawl, which
+only a real X server shows: the window falling further behind the pointer the
+longer the drag runs, because every motion report the mouse sent was answered
+with its own repaint. What it looks like from outside is a drag of a corner
+that arrives late — 300 moves of a 1500x1000 window took 323 ms to send and
+the window caught up 677 ms after the last of them. The backend now reports
+where the pointer *is*, not everywhere it has been, and the same drag lands
+on the final size with the last move. Measuring it needs a display and a
+program that sends the moves; there is no headless equivalent, because the
+script feeds one event at a time and so can never build a backlog.
+
+```sh
 # the sanitizers, which have caught real bugs the suite passed through
 make clean && make X11=0 test CC=gcc \
   CFLAGS="-O1 -g -std=c99 -Iinclude -fsanitize=address,undefined -fno-sanitize-recover=all"

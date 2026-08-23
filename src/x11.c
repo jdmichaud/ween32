@@ -395,10 +395,25 @@ static void x11_present(void *win, const ween_surface *s, const RECT *damage)
     x11_win *xw = win;
     const ween_surface *out = s;
     int px = 0, py = 0, pw = s->w, ph = s->h;
+    /* Only the part that changed: a stroke of a pencil moves a few hundred
+     * pixels, and copying the whole window to the server for each of them is
+     * most of what a frame costs once the drawing itself is quick. */
+    if (damage) {
+        px = damage->left < 0 ? 0 : damage->left;
+        py = damage->top < 0 ? 0 : damage->top;
+        pw = (damage->right > s->w ? s->w : damage->right) - px;
+        ph = (damage->bottom > s->h ? s->h : damage->bottom) - py;
+        if (pw <= 0 || ph <= 0) {
+            XFlush(xw->dpy);
+            return;
+        }
+    }
     if (xw->zoom > 1) { /* crisp HiDPI: pixel-double the finished frame */
         if (xw->zbuf.w != s->w * xw->zoom || xw->zbuf.h != s->h * xw->zoom)
             ween_surface_resize(&xw->zbuf, s->w * xw->zoom, s->h * xw->zoom);
-        ween_surface_zoom_into(&xw->zbuf, s, xw->zoom);
+        /* magnifying the whole window for a damaged corner of it is the same
+         * waste as sending the whole window to the server */
+        ween_surface_zoom_rect(&xw->zbuf, s, xw->zoom, px, py, pw, ph);
         out = &xw->zbuf;
     }
     /* the image must describe the buffer being handed over, whatever size the
@@ -435,23 +450,10 @@ static void x11_present(void *win, const ween_surface *s, const RECT *damage)
                            (unsigned)out->h);
         }
     }
-    /* Only the part that changed: a stroke of a pencil moves a few hundred
-     * pixels, and copying the whole window to the server for each of them is
-     * most of what a frame costs once the drawing itself is quick. */
-    if (damage) {
-        px = damage->left < 0 ? 0 : damage->left;
-        py = damage->top < 0 ? 0 : damage->top;
-        pw = (damage->right > s->w ? s->w : damage->right) - px;
-        ph = (damage->bottom > s->h ? s->h : damage->bottom) - py;
-        if (pw <= 0 || ph <= 0) {
-            XFlush(xw->dpy);
-            return;
-        }
-        px *= xw->zoom;
-        py *= xw->zoom;
-        pw *= xw->zoom;
-        ph *= xw->zoom;
-    }
+    px *= xw->zoom;
+    py *= xw->zoom;
+    pw *= xw->zoom;
+    ph *= xw->zoom;
     XPutImage(xw->dpy, xw->win, xw->gc, xw->img, px, py, ox + px, oy + py,
               (unsigned)pw, (unsigned)ph);
     XFlush(xw->dpy);
@@ -764,7 +766,17 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             out.y_root = b->y_root;
             out.button = (int)b->button;
             return out;
-        case X_MotionNotify:
+        case X_MotionNotify: {
+            /* Where the pointer is now, not everywhere it has been. A mouse
+             * reports a hundred times a second and a window being dragged by
+             * its corner repaints whole; answering each report in turn means
+             * the window falls further behind the pointer the longer the drag
+             * goes on. Windows queues one mouse move for the same reason, and
+             * an app that draws joins the points it is given. */
+            XEvent newer;
+            while (XCheckTypedWindowEvent(g_dpy, xw->win, X_MotionNotify,
+                                          &newer))
+                ev = newer;
             out.kind = WEEN_EV_MOUSE_MOVE;
             out.x = b->x;
             out.y = b->y;
@@ -772,6 +784,7 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             out.x_root = b->x_root;
             out.y_root = b->y_root;
             return out;
+        }
         case X_KeyPress: {
             /* index 1 of the keysym list is the shifted symbol, which is what
              * the character (but not the virtual key) depends on */

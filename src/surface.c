@@ -15,6 +15,7 @@ int ween_surface_init(ween_surface *s, int w, int h)
     s->px = calloc((size_t)w * (size_t)h, sizeof(ween_color));
     if (!s->px)
         return 0;
+    s->cap = (long)w * (long)h;
     s->w = w;
     s->h = h;
     ween_surface_clip(s, 0, 0, w, h);
@@ -25,15 +26,26 @@ int ween_surface_init(ween_surface *s, int w, int h)
 int ween_surface_resize(ween_surface *s, int w, int h)
 {
     ween_color *px;
+    long want = (long)w * (long)h;
     if (w <= 0 || h <= 0)
         return 0;
     if (w == s->w && h == s->h)
         return 1;
-    px = calloc((size_t)w * (size_t)h, sizeof(ween_color));
+    if (want <= s->cap) { /* it already fits: keep the buffer */
+        memset(s->px, 0, (size_t)want * sizeof(ween_color));
+        s->w = w;
+        s->h = h;
+        ween_surface_clip(s, 0, 0, w, h);
+        return 1;
+    }
+    /* Room to grow, so that a drag that widens a window a pixel at a time
+     * does not ask for a new block at every pixel. */
+    px = calloc((size_t)(want + want / 4), sizeof(ween_color));
     if (!px)
         return 0;
     free(s->px);
     s->px = px;
+    s->cap = want + want / 4;
     s->w = w;
     s->h = h;
     ween_surface_clip(s, 0, 0, w, h);
@@ -44,6 +56,7 @@ void ween_surface_free(ween_surface *s)
 {
     free(s->px);
     s->px = NULL;
+    s->cap = 0;
     s->w = s->h = 0;
 }
 
@@ -179,22 +192,35 @@ void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c
 
 /* Nearest-neighbour integer magnification: the crisp HiDPI path (render at
  * 96 dpi, pixel-double on the way out). dst must be sized src * zoom. */
-void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom)
+void ween_surface_zoom_rect(ween_surface *dst, const ween_surface *src,
+                            int zoom, int x, int y, int w, int h)
 {
-    for (int y = 0; y < src->h; y++) {
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > src->w)
+        w = src->w - x;
+    if (y + h > src->h)
+        h = src->h - y;
+    for (int r = 0; r < h; r++) {
         /* expand one source row into the first destination row... */
-        ween_color *d0 = dst->px + (long)y * zoom * dst->w;
-        const ween_color *sp = src->px + (long)y * src->w;
-        for (int x = 0; x < src->w; x++) {
-            ween_color c = sp[x];
+        ween_color *d0 =
+            dst->px + (long)(y + r) * zoom * dst->w + (long)x * zoom;
+        const ween_color *sp = src->px + (long)(y + r) * src->w + x;
+        for (int c = 0; c < w; c++) {
+            ween_color v = sp[c];
             for (int i = 0; i < zoom; i++)
-                d0[x * zoom + i] = c;
+                d0[c * zoom + i] = v;
         }
         /* ...then replicate it */
         for (int i = 1; i < zoom; i++)
-            memcpy(dst->px + ((long)y * zoom + i) * dst->w, d0,
-                   (size_t)dst->w * sizeof(ween_color));
+            memcpy(d0 + (long)i * dst->w, d0,
+                   (size_t)(w * zoom) * sizeof(ween_color));
     }
+}
+
+void ween_surface_zoom_into(ween_surface *dst, const ween_surface *src, int zoom)
+{
+    ween_surface_zoom_rect(dst, src, zoom, 0, 0, src->w, src->h);
 }
 
 static void put_le32(unsigned char *p, uint32_t v)
