@@ -13,6 +13,7 @@ const w = @import("ween32");
 const A = @import("app.zig");
 const art = @import("art_tools.zig");
 const artwork = @import("artwork.zig");
+const opts = @import("art_options.zig");
 const app = &A.app;
 
 pub const class_name = "PaintToolBox";
@@ -59,13 +60,14 @@ fn drawButton(dc: w.HDC, bx: i32, by: i32, index: usize, pressed: bool) void {
         fill(dc, bx + 1, by + 1, 1, 22, shadow);
         fill(dc, bx, by + 24, 25, 1, white);
         fill(dc, bx + 24, by, 1, 25, white);
-        // the checker, twenty-one squares each way, in the window's
-        // coordinates so neighbouring buttons line up as one pattern
+        // the checker, twenty-one squares each way, counted from the
+        // button's own corner: the buttons are 25 apart, so the pattern
+        // starts afresh in each of them rather than running through
         var y: i32 = by + 2;
         while (y <= by + 22) : (y += 1) {
             var x: i32 = bx + 2;
             while (x <= bx + 22) : (x += 1)
-                _ = w.SetPixel(dc, x, y, if (@mod(x + y, 2) == 1) white else face);
+                _ = w.SetPixel(dc, x, y, if (@mod((x - bx) + (y - by), 2) == 0) white else face);
         }
     } else {
         fill(dc, bx, by, 24, 1, white);
@@ -77,6 +79,43 @@ fn drawButton(dc: w.HDC, bx: i32, by: i32, index: usize, pressed: bool) void {
     }
     const off: i32 = if (pressed) 5 else 4;
     _ = w.ImageList_Draw(glyphs, @intCast(index), dc, bx + off, by + off, w.ILD_TRANSPARENT);
+}
+
+/// The settings this tool offers, as generated from screenshots of the real
+/// program: where each one sits in the box, and what it looks like chosen
+/// and not chosen.
+pub fn options(t: A.Tool) []const opts.Option {
+    return switch (t) {
+        .free_select, .select, .text => &opts.select,
+        .eraser => &opts.eraser,
+        .brush => &opts.brush,
+        .airbrush => &opts.airbrush,
+        .magnifier => &opts.zoom,
+        .line, .curve => &opts.line,
+        .rect, .polygon, .ellipse, .round_rect => &opts.shape,
+        else => &.{},
+    };
+}
+
+/// One of those pictures, a character at a time.
+fn drawPicture(dc: w.HDC, x: i32, y: i32, rows: []const []const u8) void {
+    for (rows, 0..) |row, ry| {
+        for (row, 0..) |c, rx| {
+            var rgb: u32 = 0xD4D0C8;
+            for (opts.palette) |pal| {
+                if (pal.ch == c) {
+                    rgb = pal.rgb;
+                    break;
+                }
+            }
+            _ = w.SetPixel(dc, x + @as(i32, @intCast(rx)), y + @as(i32, @intCast(ry)), swap(rgb));
+        }
+    }
+}
+
+/// The art is written as 0xRRGGBB and a COLORREF is 0x00BBGGRR.
+fn swap(rgb: u32) w.COLORREF {
+    return w.RGB(@truncate(rgb >> 16), @truncate(rgb >> 8), @truncate(rgb));
 }
 
 /// The settings box, and whatever the current tool puts in it.
@@ -91,21 +130,9 @@ fn drawOptions(dc: w.HDC) void {
     fill(dc, opt_x + 1, opt_y + opt_h - 1, opt_w - 1, 1, white);
 
     const chosen = A.option();
-    switch (app.tool) {
-        .eraser => {
-            // four square rubbers, 4 6 8 and 10 pixels across, each in a
-            // 14x14 cell on a 16-pixel pitch
-            var i: i32 = 0;
-            while (i < 4) : (i += 1) {
-                const cx = opt_x + 10;
-                const cy = opt_y + 2 + i * 16;
-                const on = i == chosen;
-                if (on) fill(dc, cx, cy, 14, 14, navy);
-                const size = 4 + i * 2;
-                fill(dc, cx + @divTrunc(14 - size, 2), cy + @divTrunc(14 - size, 2), size, size, if (on) white else black);
-            }
-        },
-        else => {},
+    for (options(app.tool), 0..) |o, i| {
+        const pic = if (i == chosen) o.on else o.off;
+        drawPicture(dc, opt_x + o.x, opt_y + o.y, pic);
     }
 }
 
@@ -139,18 +166,15 @@ fn toolAt(x: i32, y: i32) ?A.Tool {
     return A.Tool.fromIndex(@intCast(row * 2 + col));
 }
 
+/// Which setting a point is in: its own rectangle, which is exactly the
+/// part of the box that changes when it is chosen.
 fn optionAt(x: i32, y: i32) ?u8 {
-    const count = app.tool.optionCount();
-    if (count == 0) return null;
-    switch (app.tool) {
-        .eraser => {
-            const i = @divTrunc(y - (opt_y + 2), 16);
-            if (x < opt_x + 10 or x >= opt_x + 24) return null;
-            if (i < 0 or i >= count) return null;
+    for (options(app.tool), 0..) |o, i| {
+        if (x >= opt_x + o.x and x < opt_x + o.x + o.w and
+            y >= opt_y + o.y and y < opt_y + o.y + o.h)
             return @intCast(i);
-        },
-        else => return null,
     }
+    return null;
 }
 
 fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {

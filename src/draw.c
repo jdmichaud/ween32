@@ -151,7 +151,7 @@ static int rop_uses_source(unsigned char rop)
 static void put(HDC dc, int x, int y, ween_color c)
 {
     ween_surface *s = dc->s;
-    int sx = dc->org_x + x, sy = dc->org_y + y;
+    int sx = dc->org_x + dc->vp_x + x, sy = dc->org_y + dc->vp_y + y;
     if (sx < s->clip_x || sy < s->clip_y || sx >= s->clip_r || sy >= s->clip_b)
         return;
     if (!dc->rop2 || dc->rop2 == R2_COPYPEN)
@@ -164,7 +164,7 @@ static void put(HDC dc, int x, int y, ween_color c)
 static ween_color peek(HDC dc, int x, int y)
 {
     ween_surface *s = dc->s;
-    int sx = dc->org_x + x, sy = dc->org_y + y;
+    int sx = dc->org_x + dc->vp_x + x, sy = dc->org_y + dc->vp_y + y;
     if (sx < 0 || sy < 0 || sx >= s->w || sy >= s->h)
         return 0;
     return s->px[(long)sy * s->w + sx] & 0xffffffu;
@@ -865,8 +865,8 @@ static ween_color src_px(HDC src, int x, int y)
     if (!src)
         return 0;
     s = src->s;
-    sx = src->org_x + x;
-    sy = src->org_y + y;
+    sx = src->org_x + src->vp_x + x;
+    sy = src->org_y + src->vp_y + y;
     if (x < 0 || y < 0 || x >= src->clip_w || y >= src->clip_h)
         return 0;
     if (sx < 0 || sy < 0 || sx >= s->w || sy >= s->h)
@@ -921,7 +921,8 @@ static BOOL blt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
             ween_color s = src ? src_px(src, sxx, syy) : 0;
             ween_color d = peek(dst, x + i, y + j);
             ween_color r = rop3_apply(code, pat, s, d);
-            ween_surface_pixel(dst->s, dst->org_x + x + i, dst->org_y + y + j, r);
+            ween_surface_pixel(dst->s, dst->org_x + dst->vp_x + x + i,
+                               dst->org_y + dst->vp_y + y + j, r);
         }
     }
     clip_pop(dst, &saved);
@@ -959,7 +960,8 @@ BOOL DrawFocusRect(HDC dc, const RECT *rect)
     if (!dc || !rect)
         return FALSE;
     clip_push(dc, &saved);
-    ween_surface_focus_rect(dc->s, dc->org_x + rect->left, dc->org_y + rect->top,
+    ween_surface_focus_rect(dc->s, dc->org_x + dc->vp_x + rect->left,
+                            dc->org_y + dc->vp_y + rect->top,
                             rect->right - rect->left, rect->bottom - rect->top);
     clip_pop(dc, &saved);
     return TRUE;

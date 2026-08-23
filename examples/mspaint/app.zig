@@ -101,8 +101,15 @@ pub const State = struct {
     status: w.HWND = undefined,
 
     tool: Tool = .pencil,
-    /// The setting picked in the box under the tools, one per tool.
-    option: [16]u8 = @splat(0),
+    /// The setting picked in the box under the tools, one per tool. The
+    /// starting values are the ones Paint starts with: the middle rubber,
+    /// the middle round brush, everything else the first.
+    option: [16]u8 = blk: {
+        var o: [16]u8 = @splat(0);
+        o[@intFromEnum(Tool.eraser)] = 2;
+        o[@intFromEnum(Tool.brush)] = 1;
+        break :blk o;
+    },
 
     fg: w.COLORREF = 0x000000,
     bg: w.COLORREF = 0xFFFFFF,

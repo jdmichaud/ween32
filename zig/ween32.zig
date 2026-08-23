@@ -434,6 +434,8 @@ pub extern fn CreatePen(style: c_int, width: c_int, color: COLORREF) ?HPEN;
 pub extern fn SetROP2(dc: HDC, mode: c_int) c_int;
 pub extern fn GetROP2(dc: HDC) c_int;
 pub extern fn SetStretchBltMode(dc: HDC, mode: c_int) c_int;
+pub extern fn SetViewportOrgEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) BOOL;
+pub extern fn GetViewportOrgEx(dc: HDC, pt: *POINT) BOOL;
 pub extern fn MoveToEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) BOOL;
 pub extern fn LineTo(dc: HDC, x: c_int, y: c_int) BOOL;
 pub extern fn Polyline(dc: HDC, pts: [*]const POINT, count: c_int) BOOL;

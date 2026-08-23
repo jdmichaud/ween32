@@ -1417,6 +1417,10 @@ COLORREF SetBkColor(HDC dc, COLORREF color);
 COLORREF GetBkColor(HDC dc);
 int SetStretchBltMode(HDC dc, int mode);
 
+/* Where the caller's (0,0) lands in the window: a scrolling view sets this
+ * and then draws in the coordinates of what it is showing. */
+BOOL SetViewportOrgEx(HDC dc, int x, int y, POINT *prev);
+BOOL GetViewportOrgEx(HDC dc, POINT *pt);
 BOOL MoveToEx(HDC dc, int x, int y, POINT *prev);
 BOOL LineTo(HDC dc, int x, int y);
 BOOL Polyline(HDC dc, const POINT *pts, int count);

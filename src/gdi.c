@@ -241,8 +241,8 @@ static int dc_rect(HDC dc, const RECT *r, int *x, int *y, int *w, int *h)
     LONG bottom = r->bottom > dc->clip_h ? dc->clip_h : r->bottom;
     if (right <= left || bottom <= top)
         return 0;
-    *x = dc->org_x + left;
-    *y = dc->org_y + top;
+    *x = dc->org_x + dc->vp_x + left;
+    *y = dc->org_y + dc->vp_y + top;
     *w = right - left;
     *h = bottom - top;
     return 1;
@@ -276,6 +276,31 @@ int FrameRect(HDC dc, const RECT *rect, HBRUSH brush)
     r.left = r.right - 1;
     FillRect(dc, &r, brush); /* right */
     return 1;
+}
+
+/* Where the caller's origin sits in the window. A scrolling view sets it
+ * once and then draws in the coordinates of the thing it is showing, which
+ * is what keeps the arithmetic out of every call. */
+BOOL SetViewportOrgEx(HDC dc, int x, int y, POINT *prev)
+{
+    if (!dc)
+        return FALSE;
+    if (prev) {
+        prev->x = dc->vp_x;
+        prev->y = dc->vp_y;
+    }
+    dc->vp_x = x;
+    dc->vp_y = y;
+    return TRUE;
+}
+
+BOOL GetViewportOrgEx(HDC dc, POINT *pt)
+{
+    if (!dc || !pt)
+        return FALSE;
+    pt->x = dc->vp_x;
+    pt->y = dc->vp_y;
+    return TRUE;
 }
 
 BOOL DrawEdge(HDC dc, LPRECT rect, UINT edge, UINT flags)
@@ -419,8 +444,8 @@ BOOL TextOutA(HDC dc, int x, int y, LPCSTR text, int len)
         return FALSE;
     if (len < 0)
         len = (int)strlen(text);
-    ween_strike_draw(f, dc->s, dc->org_x + x, dc->org_y + y, text, len,
-                     cr_to_px(dc->text_color));
+    ween_strike_draw(f, dc->s, dc->org_x + dc->vp_x + x, dc->org_y + dc->vp_y + y,
+                     text, len, cr_to_px(dc->text_color));
     return TRUE;
 }
 
@@ -548,10 +573,10 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     ween_surface_get_clip(dc->s, &saved);
     if (!(format & DT_NOCLIP)) {
         RECT c;
-        c.left = dc->org_x + rect->left;
-        c.top = dc->org_y + rect->top;
-        c.right = dc->org_x + rect->right;
-        c.bottom = dc->org_y + rect->bottom;
+        c.left = dc->org_x + dc->vp_x + rect->left;
+        c.top = dc->org_y + dc->vp_y + rect->top;
+        c.right = dc->org_x + dc->vp_x + rect->right;
+        c.bottom = dc->org_y + dc->vp_y + rect->bottom;
         if (c.left < saved.left)
             c.left = saved.left;
         if (c.top < saved.top)
@@ -564,16 +589,16 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
                           c.bottom - c.top);
     }
 
-    ween_strike_draw(f, dc->s, dc->org_x + x, dc->org_y + y, text, len,
-                     cr_to_px(dc->text_color));
+    ween_strike_draw(f, dc->s, dc->org_x + dc->vp_x + x, dc->org_y + dc->vp_y + y,
+                     text, len, cr_to_px(dc->text_color));
     if (underline >= 0 && underline < len) {
         /* A one-pixel rule under the mnemonic character, on the row below the
          * baseline — which for the eleven-pixel faces is twelve down, where
          * both the reference capture and the machine put it. */
         int x0 = ween_strike_pen(f, text, underline);
         int x1 = ween_strike_pen(f, text, underline + 1);
-        ween_surface_hline(dc->s, dc->org_x + x + x0,
-                           dc->org_y + y + f->ascent + 1, x1 - x0,
+        ween_surface_hline(dc->s, dc->org_x + dc->vp_x + x + x0,
+                           dc->org_y + dc->vp_y + y + f->ascent + 1, x1 - x0,
                            cr_to_px(dc->text_color));
     }
     ween_surface_clip(dc->s, saved.left, saved.top, saved.right - saved.left,

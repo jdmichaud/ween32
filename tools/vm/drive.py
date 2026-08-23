@@ -49,13 +49,13 @@ class VM:
 
     # The pointer is walked, never jumped: the guest sees PS/2 deltas and
     # applies acceleration to anything bigger than a few pixels.
-    def walk(self, x, y, buttons=0, step=4):
+    def walk(self, x, y, buttons=0, step=2):
         cx, cy = self.pos
         while (cx, cy) != (x, y):
             cx += max(-step, min(step, x - cx))
             cy += max(-step, min(step, y - cy))
             self.call("mouse", x=cx, y=cy, buttons=buttons)
-            time.sleep(0.002)
+            time.sleep(0.006)
         self.pos = (x, y)
 
     def park(self, buttons=0):

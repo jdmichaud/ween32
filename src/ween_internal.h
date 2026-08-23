@@ -201,6 +201,10 @@ struct ween_dc {
      * the few DCs the library builds on the stack keep working: rop2 0 is
      * read as R2_COPYPEN and stretch 0 as the default mode. */
     int cur_x, cur_y;   /* the current position: MoveToEx, LineTo */
+    /* SetViewportOrgEx: where the caller's (0,0) lands in the window. A
+     * view that scrolls its contents sets it and then draws in the
+     * coordinates of what it is showing. Zero for every other DC. */
+    int vp_x, vp_y;
     int rop2;           /* R2_*: how a pen combines with the destination */
     COLORREF bk_color;  /* the gap colour of a styled pen, and OPAQUE text */
     int stretch_mode;   /* SetStretchBltMode */
