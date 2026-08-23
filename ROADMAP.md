@@ -277,6 +277,12 @@ Shortcuts the current code takes deliberately; each is a candidate task.
   `WM_QUIT` is final. (`SetWindowLongPtrA`/`CallWindowProcA`, `PostMessageA`
   and `GetDC`/`ReleaseDC` are all there now, and the explorer subclasses both
   a list view's label editor and a combo box's field.)
+- **Folder Options has no pictures beside its group boxes.** The machine puts
+  a 32-pixel one against each of Active Desktop, Web View, Browse Folders,
+  Click items and Folder views; none of the five is among the icons that were
+  extracted, and matching the machine's against every one of them by pixel
+  finds nothing nearer than half the square. The dialogs are laid out with
+  the space they take.
 - **A list box's rows are a pixel short of the machine's.** `item_height`
   gives 13 for the 11-pixel Tahoma; the machine's address-bar suggestion box
   puts its rows at 6, 20, 34, 48, 62, 76 and 90, a pitch of 14, and fits
@@ -285,8 +291,8 @@ Shortcuts the current code takes deliberately; each is a candidate task.
   machine disagree and the machine is right. Changing it moves every list
   box, combo box and status bar, so it wants its own pass with a sampler
   captured from the machine rather than from wine.
-- **Fixed caps still left**: four columns in a list view, and 64 buttons in one
-  group of option buttons. Window text, the class table and the message queue
+- **Fixed caps still left**: eight columns in a list view, and 64 buttons in
+  one group of option buttons. Window text, the class table and the message queue
   grow; a window may have any number of tab stops.
 - **The dpi is latched on first use** — the font strikes are static
   singletons, so `WEEN32_DPI` must be set before the first API call.

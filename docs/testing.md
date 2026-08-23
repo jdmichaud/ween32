@@ -205,6 +205,29 @@ The one-name box settled two more:
 - and a hatch line is four pixels, the last of them face. A status bar's
   corner fills its square first and so never needed the fourth.
 
+#### The two dialogs
+
+`tools/refcapture/columns-machine.png` is the machine's Column Settings and
+`folderopts-machine.png` / `folderopts-view-machine.png` its Folder Options.
+Every rectangle in both is measured off those, so a change that moves one
+shows up beside them:
+
+```sh
+# View > Choose Columns — the 330x313 frame is the dialog
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/cc%d.bmp \
+  WEEN32_SCRIPT="w:300 k:18 w:200 t:vc w:800" ./examples/explorer /tmp/many
+
+# Tools > Folder Options — the 384x469 frame is the sheet; the tabs are at
+# y 42, at x 30 / 75 / 135 / 205
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/fo%d.bmp \
+  WEEN32_SCRIPT="w:300 k:18 w:200 t:to w:900" ./examples/explorer /tmp/many
+```
+
+Both are driven from the keyboard in a script: the menus by their mnemonics,
+the lists by the arrows, a box by Space, and OK by Enter — which only works
+because the sheet's tab ring goes tabs, page, buttons, so it is worth
+checking that a Tab from the tab control lands on the page.
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the
