@@ -73,7 +73,7 @@
 #define KEY(id, text, x, y, w, h)                                             \
     {                                                                          \
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, (x), (y), (w), (h), \
-            (id), ATOM_BUTTON, (text), NULL                                    \
+            (id), ATOM_BUTTON, (text), NULL, 0                                 \
     }
 
 /* ---- calculator state --------------------------------------------------- */

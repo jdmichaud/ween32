@@ -2954,6 +2954,21 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
+        {   /* a rule, a column or a frame of them: an etched edge and no
+             * text at all */
+            DWORD kind = wnd->style & 0x1F;
+            if (kind == SS_ETCHEDHORZ || kind == SS_ETCHEDVERT ||
+                kind == SS_ETCHEDFRAME) {
+                RECT r;
+                GetClientRect(wnd, &r);
+                DrawEdge(dc, &r, EDGE_ETCHED,
+                         kind == SS_ETCHEDHORZ   ? BF_TOP
+                         : kind == SS_ETCHEDVERT ? BF_LEFT
+                                                 : BF_RECT);
+                EndPaint(wnd, &ps);
+                return 0;
+            }
+        }
         if ((wnd->style & 0x1F) == SS_ICON) {
             RECT r;
             GetClientRect(wnd, &r);
@@ -2986,7 +3001,11 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             fmt |= DT_LEFT;
             break;
         }
-        RECT r = ps.rcPaint;
+        /* Laid out in the whole label, not in whatever part of it was
+         * damaged: where a line breaks is a property of the control's width,
+         * so a repaint of half of it must not rewrap the words. */
+        RECT r;
+        GetClientRect(wnd, &r);
         DrawTextA(dc, wnd->text, -1, &r, fmt);
         EndPaint(wnd, &ps);
         return 0;

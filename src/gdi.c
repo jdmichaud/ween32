@@ -458,10 +458,16 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
     /* More than the rectangle is wide, and told to break: each line is drawn
      * on its own, aligned the same way, and the answer is how tall the lot
      * came out. A word too long for the rectangle takes a line of its own
-     * rather than being cut mid-way. */
+     * rather than being cut mid-way.
+     *
+     * One line sits below the next by the *outline* cell — win32 steps by the
+     * font's ascent and descent, not by the strike's own cell, which for a
+     * bitmap face is a row taller. A paragraph in a dialog is where the two
+     * part company. */
     if ((format & DT_WORDBREAK) && !(format & DT_SINGLELINE) &&
         rect->right > rect->left && tw > rect->right - rect->left) {
         int avail = rect->right - rect->left;
+        int step = f->ascent - f->descent > 0 ? f->ascent - f->descent : th;
         int at = 0, line = 0;
         RECT one = *rect;
         while (at < len) {
@@ -479,7 +485,7 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             take = i >= len            ? len - at
                    : last_space > at   ? last_space - at
                                        : (i > at ? i - at : 1);
-            one.top = rect->top + line * th;
+            one.top = rect->top + line * step;
             one.bottom = one.top + th;
             if (!(format & DT_CALCRECT))
                 DrawTextA(dc, text + at, take, &one,
@@ -491,8 +497,8 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             line++;
         }
         if (format & DT_CALCRECT)
-            rect->bottom = rect->top + line * th;
-        return line * th;
+            rect->bottom = rect->top + line * step;
+        return line * step;
     }
 
     LONG x = rect->left;

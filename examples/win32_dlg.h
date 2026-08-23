@@ -26,6 +26,7 @@ typedef struct {
     const char *text;
     const char *clsname;   /* or a class by name, for one with no ordinal:
                             * a template may hold any registered class */
+    DWORD exstyle;         /* WS_EX_CLIENTEDGE for a field border, and so on */
 } dlg_item;
 
 typedef struct {
@@ -96,7 +97,7 @@ static UINT_PTR build_dialog_template(void *buf, UINT_PTR cap, DWORD style,
     for (int i = 0; i < n; i++) {
         db_align(&b); /* items start on a DWORD boundary */
         db_d(&b, items[i].style);
-        db_d(&b, 0); /* dwExtendedStyle */
+        db_d(&b, items[i].exstyle);
         db_w(&b, (WORD)items[i].x);
         db_w(&b, (WORD)items[i].y);
         db_w(&b, (WORD)items[i].cx);

@@ -194,11 +194,11 @@ static LRESULT CALLBACK proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 #if HAVE(DIALOGBOX)
             static const dlg_item items[] = {
                 { WS_CHILD | WS_VISIBLE | SS_LEFT, 10, 10, 130, 8, 0,
-                  ATOM_STATIC, "Modal: the sampler is disabled.", NULL },
+                  ATOM_STATIC, "Modal: the sampler is disabled.", NULL, 0 },
                 { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 30, 32,
-                  50, 14, IDOK, ATOM_BUTTON, "OK", NULL },
+                  50, 14, IDOK, ATOM_BUTTON, "OK", NULL, 0 },
                 { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 90, 32, 50,
-                  14, IDCANCEL, ATOM_BUTTON, "Cancel", NULL },
+                  14, IDCANCEL, ATOM_BUTTON, "Cancel", NULL, 0 },
             };
             static unsigned char tmpl[1024];
             build_dialog_template(tmpl, sizeof(tmpl),

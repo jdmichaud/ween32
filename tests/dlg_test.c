@@ -76,11 +76,11 @@ int main(void)
 
     static const dlg_item items[] = {
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 10, 30, 50, 14,
-          ID_OK, ATOM_BUTTON, "OK", NULL },
+          ID_OK, ATOM_BUTTON, "OK", NULL, 0 },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 70, 30, 50, 14,
-          ID_CANCEL, ATOM_BUTTON, "Cancel", NULL },
+          ID_CANCEL, ATOM_BUTTON, "Cancel", NULL, 0 },
         { WS_CHILD | WS_VISIBLE | SS_LEFT, 10, 8, 120, 8, 100, ATOM_STATIC,
-          "Pick one", NULL },
+          "Pick one", NULL, 0 },
     };
     static unsigned char tmpl[1024];
     build_dialog_template(tmpl, sizeof(tmpl),
