@@ -1335,8 +1335,8 @@ BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase)
             int ox, oy;
             ween_client_origin(wnd, &ox, &oy);
             GetClientRect(wnd, &cr);
-            ween_damage_rect(wnd, ox - ween_ex_edge(wnd), oy - ween_ex_edge(wnd),
-                             wnd->w, wnd->h);
+            int edge = ween_border_width(wnd);
+            ween_damage_rect(wnd, ox - edge, oy - edge, wnd->w, wnd->h);
             (void)cr;
         } else {
             ween_damage_all(wnd);
@@ -1459,7 +1459,7 @@ static void paint_tree(struct ween_wnd *w)
      * nor anything under it can have anything to say. */
     if (ox >= outer.right || oy >= outer.bottom || ox + cr.right <= outer.left ||
         oy + cr.bottom <= outer.top) {
-        int edge = ween_ex_edge(w);
+        int edge = ween_border_width(w);
         if (ox - edge >= outer.right || oy - edge >= outer.bottom ||
             ox - edge + w->w <= outer.left || oy - edge + w->h <= outer.top)
             return;
