@@ -2065,6 +2065,29 @@ static void lv_state_image(HWND list, int row, int img)
     SendMessageA(list, LVM_SETITEMSTATE, (WPARAM)row, (LPARAM)&st);
 }
 
+/* Where each control goes, in pixels of the page, measured off the machine's
+ * own dialog.
+ *
+ * A dialog is normally laid out in dialog units and the manager maps them to
+ * pixels; the shell's own numbers cannot be recovered that way, because its
+ * grid does not land where its controls do — two of the four group boxes on
+ * the General page sit at heights no whole number of units maps to. So the
+ * templates put the controls in the right order and the right dialog, and
+ * this puts them in the right place. */
+typedef struct {
+    int id;
+    short x, y, cx, cy;
+} fo_place;
+
+static void fo_layout(HWND dlg, const fo_place *at, int n)
+{
+    for (int i = 0; i < n; i++) {
+        HWND c = GetDlgItem(dlg, at[i].id);
+        if (c)
+            MoveWindow(c, at[i].x, at[i].y, at[i].cx, at[i].cy, FALSE);
+    }
+}
+
 /* ---- View > Choose Columns -------------------------------------------------
  *
  * "Column Settings" on the machine: every column it can show, ticked or not,
@@ -2079,7 +2102,28 @@ enum {
     IDC_CC_DOWN,
     IDC_CC_SHOW,
     IDC_CC_HIDE,
-    IDC_CC_WIDTH
+    IDC_CC_WIDTH,
+    IDC_CC_TEXT,   /* the paragraph at the top */
+    IDC_CC_BEFORE, /* "The selected column should be" */
+    IDC_CC_AFTER,  /* "pixels wide." */
+    IDC_CC_RULE    /* the line above OK and Cancel */
+};
+
+/* Where each control goes, in pixels of the dialog's client, measured off the
+ * machine's own — the same way Folder Options' pages are placed. */
+static const fo_place g_cc_at[] = {
+    { IDC_CC_TEXT, 11, 11, 290, 45 },
+    { IDC_CC_LIST, 11, 63, 218, 133 },
+    { IDC_CC_UP, 239, 63, 75, 23 },
+    { IDC_CC_DOWN, 239, 91, 75, 23 },
+    { IDC_CC_SHOW, 239, 119, 75, 23 },
+    { IDC_CC_HIDE, 239, 146, 75, 23 },
+    { IDC_CC_BEFORE, 11, 213, 150, 14 },
+    { IDC_CC_WIDTH, 165, 210, 30, 21 },
+    { IDC_CC_AFTER, 200, 213, 60, 14 },
+    { IDC_CC_RULE, 11, 242, 301, 2 },
+    { IDOK, 153, 254, 75, 23 },
+    { IDCANCEL, 239, 254, 75, 23 },
 };
 
 /* What the dialog is working on: a copy, so Cancel leaves the real one be. */
@@ -2183,6 +2227,7 @@ static INT_PTR CALLBACK cc_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
         SendMessageA(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                      LVS_EX_CHECKBOXES);
+        fo_layout(dlg, g_cc_at, (int)(sizeof(g_cc_at) / sizeof(*g_cc_at)));
         cc_fill(dlg);
         cc_sync(dlg);
         return TRUE;
@@ -2261,14 +2306,15 @@ static void choose_columns(HWND owner)
     /* Every rectangle here is the machine's, measured off its own dialog and
      * turned into dialog units: four to the character cell across and eight
      * down. */
-    ITEM(WS_CHILD | WS_VISIBLE, 7, 6, 209, 24, 0, ATOM_STATIC,
+    ITEM(WS_CHILD | WS_VISIBLE, 7, 6, 209, 24, IDC_CC_TEXT, ATOM_STATIC,
          "Check the columns that you would like to make visible in this "
          "folder.  Use the Move Up and Move Down buttons to reorder the "
          "columns.");
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | WS_VSCROLL |
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
              LVS_REPORT | LVS_SINGLESEL | LVS_NOCOLUMNHEADER |
              LVS_SHOWSELALWAYS,
          7, 39, 145, 81, IDC_CC_LIST, 0, NULL);
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE; /* the field's own sunken edge */
     ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 39, 50, 14, IDC_CC_UP,
          ATOM_BUTTON, "Move &Up");
     ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 57, 50, 14, IDC_CC_DOWN,
@@ -2277,12 +2323,16 @@ static void choose_columns(HWND owner)
          ATOM_BUTTON, "&Show");
     ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 90, 50, 14, IDC_CC_HIDE,
          ATOM_BUTTON, "&Hide");
-    ITEM(WS_CHILD | WS_VISIBLE, 5, 132, 103, 9, 0, ATOM_STATIC,
+    ITEM(WS_CHILD | WS_VISIBLE, 5, 132, 103, 9, IDC_CC_BEFORE, ATOM_STATIC,
          "The selected column should be");
-    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 110, 130, 19, 12,
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_LEFT, 110, 130, 19, 12,
          IDC_CC_WIDTH, ATOM_EDIT, "");
-    ITEM(WS_CHILD | WS_VISIBLE, 131, 132, 45, 9, 0, ATOM_STATIC,
+    items[n - 1].exstyle = WS_EX_CLIENTEDGE;
+    ITEM(WS_CHILD | WS_VISIBLE, 131, 132, 45, 9, IDC_CC_AFTER, ATOM_STATIC,
          "pixels wide.");
+    /* the rule that separates what is asked from the buttons that answer */
+    ITEM(WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 7, 148, 202, 1, IDC_CC_RULE,
+         ATOM_STATIC, "");
     ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 103, 156, 49,
          14, IDOK, ATOM_BUTTON, "OK");
     ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 159, 156, 50, 14, IDCANCEL,
@@ -2291,8 +2341,9 @@ static void choose_columns(HWND owner)
     /* a list view has no ordinal in a template, so it goes by name */
     items[1].clsname = WC_LISTVIEWA;
     len = build_dialog_template(buf, sizeof(buf),
-                                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-                                216, 178, "Column Settings", items, n);
+                                WS_POPUP | WS_CAPTION | WS_SYSMENU |
+                                    WS_VISIBLE | DS_SETFONT,
+                                216, 177, "Column Settings", items, n);
     if (len <= sizeof(buf))
         DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, cc_proc, 0);
 }
@@ -2395,29 +2446,6 @@ static void fo_set_icon(HWND dlg, int id, int which)
     HWND c = GetDlgItem(dlg, id);
     if (c && g_fo_icons[which])
         SendMessageA(c, STM_SETICON, (WPARAM)g_fo_icons[which], 0);
-}
-
-/* Where each control goes, in pixels of the page, measured off the machine's
- * own dialog.
- *
- * A dialog is normally laid out in dialog units and the manager maps them to
- * pixels; the shell's own numbers cannot be recovered that way, because its
- * grid does not land where its controls do — two of the four group boxes on
- * the General page sit at heights no whole number of units maps to. So the
- * templates put the controls in the right order and the right dialog, and
- * this puts them in the right place. */
-typedef struct {
-    int id;
-    short x, y, cx, cy;
-} fo_place;
-
-static void fo_layout(HWND dlg, const fo_place *at, int n)
-{
-    for (int i = 0; i < n; i++) {
-        HWND c = GetDlgItem(dlg, at[i].id);
-        if (c)
-            MoveWindow(c, at[i].x, at[i].y, at[i].cx, at[i].cy, FALSE);
-    }
 }
 
 /* The General page. A group box's etched frame is drawn one pixel in from
