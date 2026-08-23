@@ -2051,7 +2051,7 @@ static LRESULT CALLBACK combo_field_proc(HWND box, UINT msg, WPARAM wp,
             if (g_dropped == cb) { /* the list goes; the text stays */
                 g_dropped = NULL;
                 it->track = -1;
-                ween_top_level(cb)->dirty = 1;
+                ween_damage_all(cb);
             } else {
                 combo_show_sel(cb, it); /* back to what it was */
                 combo_end_edit(cb, it, CBENF_ESCAPE, -1);
@@ -2071,7 +2071,7 @@ static void combo_commit(HWND wnd, ween_items *it)
     it->track = -1;
     g_dropped = NULL;
     combo_show_sel(wnd, it);
-    ween_top_level(wnd)->dirty = 1;
+    ween_damage_all(wnd);
     if (wnd->parent)
         SendMessageA(wnd->parent, WM_COMMAND,
                      MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE), (LPARAM)wnd);
@@ -2187,7 +2187,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 it->top = it->count - rows;
             if (it->top < 0)
                 it->top = 0;
-            ween_top_level(wnd)->dirty = 1;
+            ween_damage_all(wnd);
         }
         return 0;
     case WM_KEYDOWN: {
@@ -2233,7 +2233,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             g_dropped = NULL;
             it->track = -1;
             combo_show_sel(wnd, it); /* back to what was picked before */
-            ween_top_level(wnd)->dirty = 1;
+            ween_damage_all(wnd);
             return 0;
         default:
             return 0;
@@ -2254,7 +2254,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             else if (it->track >= it->top + rows)
                 it->top = it->track - rows + 1;
         }
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         (void)ih;
         (void)cr;
         return 0;
@@ -2315,7 +2315,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     int grab;
                     int pos = sb_click(sy, combo_bar_h(wnd), &st, &grab);
                     it->top = sb_clamp(pos, &st);
-                    ween_top_level(wnd)->dirty = 1;
+                    ween_damage_all(wnd);
                     SetCapture(wnd);
                 }
                 return 0;
@@ -2336,7 +2336,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             SetCapture(wnd);
         }
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         return 0;
     }
     case WM_MOUSEMOVE: {
@@ -2363,7 +2363,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 rows = it->count;
             if (rows != it->rows) {
                 it->rows = rows;
-                ween_top_level(wnd)->dirty = 1;
+                ween_damage_all(wnd);
             }
             return 0;
         }
@@ -2374,7 +2374,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (at != it->track) {
                 it->track = at;
                 it->opened = 0; /* a drag into the list commits on release */
-                ween_top_level(wnd)->dirty = 1;
+                ween_damage_all(wnd);
             }
         }
         return 0;
@@ -2412,7 +2412,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (it)
             it->opened = 0;
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         return 0;
     }
     case WM_KILLFOCUS:
@@ -2421,7 +2421,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (it)
                 it->track = -1;
             g_dropped = NULL;
-            ween_top_level(wnd)->dirty = 1;
+            ween_damage_all(wnd);
         }
         return 0;
     case WM_DESTROY:
@@ -2491,7 +2491,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (it)
                 it->track = -1;
         }
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         return 0;
     case CB_GETDROPPEDSTATE:
         return g_dropped == wnd;

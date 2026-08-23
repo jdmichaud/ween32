@@ -199,8 +199,11 @@ int ween_headless_window_shown(void *win)
     return win ? ((hl_win *)win)->shown : 0;
 }
 
-static void hl_present(void *win, const ween_surface *s)
+static void hl_present(void *win, const ween_surface *s, const RECT *damage)
 {
+    /* Nothing is on a screen here, so what changed does not matter: what is
+     * written out is the whole frame, which is what a test compares. */
+    (void)damage;
     if (win && !((hl_win *)win)->shown)
         return; /* made but not put up: nothing of it is on the screen */
     if (win) /* what the pointer will be offset against, as on a real display */

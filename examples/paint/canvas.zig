@@ -309,12 +309,39 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     if (d.tool == .free_select) tools.lassoAdd(p);
     switch (d.tool) {
         .pencil, .brush, .eraser, .airbrush => {
+            const from = d.last;
             tools.stroke(app.pic.dc, d.last, p);
             d.last = p;
-            _ = w.InvalidateRect(hwnd, null, w.FALSE);
+            invalidateStroke(hwnd, from, p, toolReach());
         },
         else => _ = w.InvalidateRect(hwnd, null, w.FALSE),
     }
+}
+
+/// Ask for a repaint of the picture between two points and no more of it.
+/// A stroke damages the pixels under it and the pen's width around them; the
+/// rest of the view — and with it the tool box, the colour box and the rest
+/// of the window — has nothing to say and need not be painted at all.
+fn invalidateStroke(hwnd: w.HWND, a: w.POINT, b: w.POINT, pad: i32) void {
+    const o = pageOrigin();
+    const z = app.zoom;
+    var r = w.RECT{
+        .left = o.x + @min(a.x, b.x) * z - pad * z,
+        .top = o.y + @min(a.y, b.y) * z - pad * z,
+        .right = o.x + (@max(a.x, b.x) + 1) * z + pad * z,
+        .bottom = o.y + (@max(a.y, b.y) + 1) * z + pad * z,
+    };
+    _ = w.InvalidateRect(hwnd, &r, w.FALSE);
+}
+
+/// How far from the point a tool's mark reaches, in picture pixels.
+fn toolReach() i32 {
+    return switch (app.tool) {
+        .brush => 6,
+        .eraser => 4 + @as(i32, A.option()) * 2,
+        .airbrush => 12,
+        else => 2,
+    };
 }
 
 const spray_timer = 1;

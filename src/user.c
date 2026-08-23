@@ -312,7 +312,7 @@ BOOL SetMenu(HWND wnd, HMENU menu)
         return FALSE;
     wnd->menu = menu;
     wnd->menu_hot = -1;
-    ween_top_level(wnd)->dirty = 1;
+    ween_damage_all(wnd);
     return TRUE;
 }
 
@@ -730,9 +730,9 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
                      MAKELPARAM((WORD)cr.right, (WORD)cr.bottom));
     }
 
-    wnd->dirty = 1;
+    ween_damage_all(wnd);
     if (wnd->parent)
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
     return wnd;
 }
 
@@ -793,7 +793,7 @@ BOOL ShowWindow(HWND wnd, int cmd)
     if (!wnd->parent && wnd->backend_win && ween_active_backend &&
         ween_active_backend->show)
         ween_active_backend->show(wnd->backend_win, wnd->visible);
-    ween_top_level(wnd)->dirty = 1;
+    ween_damage_all(wnd);
     return was;
 }
 
@@ -804,7 +804,7 @@ BOOL SetWindowTextA(HWND wnd, LPCSTR text)
     if (!ween_wnd_set_text(wnd, text))
         return FALSE;
     SendMessageA(wnd, WM_SETTEXT, 0, (LPARAM)text);
-    ween_top_level(wnd)->dirty = 1;
+    ween_damage_all(wnd);
     return TRUE;
 }
 
@@ -852,7 +852,7 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
         }
     }
     if (repaint)
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
     return TRUE;
 }
 
@@ -1085,7 +1085,7 @@ BOOL EnableWindow(HWND wnd, BOOL enable)
         wnd->style |= WS_DISABLED;
     if (was_disabled != !enable) {
         SendMessageA(wnd, WM_ENABLE, (WPARAM)enable, 0);
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
     }
     return was_disabled;
 }
@@ -1288,19 +1288,77 @@ HWND SetFocus(HWND wnd)
     return prev;
 }
 
+/* Add a rectangle of the surface to what has to be painted again. */
+void ween_damage_rect(struct ween_wnd *w, int x, int y, int cx, int cy)
+{
+    struct ween_wnd *top;
+    if (!w || cx <= 0 || cy <= 0)
+        return;
+    top = ween_top_level(w);
+    if (!top->dirty) { /* the first of the frame: it *is* the damage */
+        top->damage.left = x;
+        top->damage.top = y;
+        top->damage.right = x + cx;
+        top->damage.bottom = y + cy;
+        top->dirty = 1;
+        return;
+    }
+    if (x < top->damage.left)
+        top->damage.left = x;
+    if (y < top->damage.top)
+        top->damage.top = y;
+    if (x + cx > top->damage.right)
+        top->damage.right = x + cx;
+    if (y + cy > top->damage.bottom)
+        top->damage.bottom = y + cy;
+}
+
+/* The whole of a top-level, which is what most things that ask for a repaint
+ * mean: a window moved, a title changed, a menu opened. */
+void ween_damage_all(struct ween_wnd *w)
+{
+    struct ween_wnd *top = ween_top_level(w);
+    if (top)
+        ween_damage_rect(top, 0, 0, top->surface.w, top->surface.h);
+}
+
 BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase)
 {
-    (void)rect;
     (void)erase;
     if (!wnd)
         return FALSE;
-    ween_top_level(wnd)->dirty = 1;
+    if (!rect) {
+        /* the whole window, frame and all: a child asking for itself still
+         * means its own client area */
+        if (wnd->parent) {
+            RECT cr;
+            int ox, oy;
+            ween_client_origin(wnd, &ox, &oy);
+            GetClientRect(wnd, &cr);
+            ween_damage_rect(wnd, ox - ween_ex_edge(wnd), oy - ween_ex_edge(wnd),
+                             wnd->w, wnd->h);
+            (void)cr;
+        } else {
+            ween_damage_all(wnd);
+        }
+        return TRUE;
+    }
+    {
+        /* a rectangle in the window's own client coordinates */
+        int ox, oy;
+        ween_client_origin(wnd, &ox, &oy);
+        ween_damage_rect(wnd, ox + rect->left, oy + rect->top,
+                         rect->right - rect->left, rect->bottom - rect->top);
+    }
     return TRUE;
 }
 
 /* ---- painting ----------------------------------------------------------- */
 
 static struct ween_dc g_dc; /* single-threaded: one DC serves every paint */
+/* Whether a paint pass is running: the damage is still what is being
+ * painted, though the flag that asked for it has been cleared. */
+static int ween_painting;
 
 HDC BeginPaint(HWND wnd, PAINTSTRUCT *ps)
 {
@@ -1324,7 +1382,28 @@ HDC BeginPaint(HWND wnd, PAINTSTRUCT *ps)
 
     memset(ps, 0, sizeof(*ps));
     ps->hdc = &g_dc;
+    /* What actually needs painting, in the window's own coordinates: an
+     * application that looks at this paints a stroke's worth instead of a
+     * window's worth. Never larger than the client area, and the whole of it
+     * when nothing narrower was asked for. */
     ps->rcPaint = cr;
+    if (top->dirty || ween_painting) {
+        RECT d = top->damage;
+        int l = d.left - ox, t = d.top - oy;
+        int r = d.right - ox, b = d.bottom - oy;
+        if (l > ps->rcPaint.left)
+            ps->rcPaint.left = l;
+        if (t > ps->rcPaint.top)
+            ps->rcPaint.top = t;
+        if (r < ps->rcPaint.right)
+            ps->rcPaint.right = r;
+        if (b < ps->rcPaint.bottom)
+            ps->rcPaint.bottom = b;
+        if (ps->rcPaint.right < ps->rcPaint.left)
+            ps->rcPaint.right = ps->rcPaint.left;
+        if (ps->rcPaint.bottom < ps->rcPaint.top)
+            ps->rcPaint.bottom = ps->rcPaint.top;
+    }
     return &g_dc;
 }
 
@@ -1376,6 +1455,15 @@ static void paint_tree(struct ween_wnd *w)
     ween_surface_get_clip(&top->surface, &outer);
     ween_client_origin(w, &ox, &oy);
     GetClientRect(w, &cr);
+    /* Nothing of this window is inside what has to be painted: neither it
+     * nor anything under it can have anything to say. */
+    if (ox >= outer.right || oy >= outer.bottom || ox + cr.right <= outer.left ||
+        oy + cr.bottom <= outer.top) {
+        int edge = ween_ex_edge(w);
+        if (ox - edge >= outer.right || oy - edge >= outer.bottom ||
+            ox - edge + w->w <= outer.left || oy - edge + w->h <= outer.top)
+            return;
+    }
 
     if (w->parent) {
         /* the frame sits outside the client area: clip it to the window rect */
@@ -1409,16 +1497,35 @@ static void paint_tree(struct ween_wnd *w)
 
 static void flush_one(struct ween_wnd *top)
 {
+    RECT d;
     if (!top || !top->dirty)
         return;
     top->dirty = 0;
-    ween_surface_clip(&top->surface, 0, 0, top->surface.w, top->surface.h);
+    ween_painting = 1;
+    /* Everything below draws through the damaged rectangle, which is what
+     * makes a small change cost a small paint: the frame, the children and
+     * anything dropped down over them are all clipped to it. */
+    d = top->damage;
+    if (d.left < 0)
+        d.left = 0;
+    if (d.top < 0)
+        d.top = 0;
+    if (d.right > top->surface.w)
+        d.right = top->surface.w;
+    if (d.bottom > top->surface.h)
+        d.bottom = top->surface.h;
+    if (d.right <= d.left || d.bottom <= d.top)
+        return;
+    ween_surface_clip(&top->surface, d.left, d.top, d.right - d.left,
+                      d.bottom - d.top);
     SendMessageA(top, WM_NCPAINT, 0, 0);
     paint_tree(top);
-    ween_surface_clip(&top->surface, 0, 0, top->surface.w, top->surface.h);
+    ween_surface_clip(&top->surface, d.left, d.top, d.right - d.left,
+                      d.bottom - d.top);
     ween_popup_paint(); /* a dropped-down list goes over everything */
     if (ween_active_backend)
-        ween_active_backend->present(top->backend_win, &top->surface);
+        ween_active_backend->present(top->backend_win, &top->surface, &d);
+    ween_painting = 0;
 }
 
 void ween_flush_paint(void)
@@ -2057,7 +2164,7 @@ static void resize_top(struct ween_wnd *top, int w, int h)
     GetClientRect(top, &cr);
     SendMessageA(top, WM_SIZE, SIZE_RESTORED,
                  MAKELPARAM((WORD)cr.right, (WORD)cr.bottom));
-    top->dirty = 1;
+    ween_damage_all(top);
 }
 
 /* Dragging a sizing border: the pointer moves an edge, the window follows. */
@@ -2122,7 +2229,7 @@ static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
 static void nc_track_button(struct ween_wnd *top, int which)
 {
     top->nc_button_pressed = which;
-    top->dirty = 1;
+    ween_damage_all(top);
     ween_flush_paint();
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
@@ -2137,13 +2244,13 @@ static void nc_track_button(struct ween_wnd *top, int which)
                      ev.y < c.bottom;
             if (in != (top->nc_button_pressed == which)) {
                 top->nc_button_pressed = in ? which : 0;
-                top->dirty = 1;
+                ween_damage_all(top);
                 ween_flush_paint();
             }
         } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
             int acted = top->nc_button_pressed == which;
             top->nc_button_pressed = 0;
-            top->dirty = 1;
+            ween_damage_all(top);
             ween_flush_paint();
             if (acted)
                 SendMessageA(top, WM_SYSCOMMAND,
@@ -2160,7 +2267,7 @@ static void nc_track_button(struct ween_wnd *top, int which)
 static void nc_track_close(struct ween_wnd *top)
 {
     top->nc_close_pressed = 1;
-    top->dirty = 1;
+    ween_damage_all(top);
     ween_flush_paint();
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
@@ -2174,13 +2281,13 @@ static void nc_track_close(struct ween_wnd *top)
             int in = ev.x >= c.left && ev.x < c.right && ev.y >= c.top && ev.y < c.bottom;
             if (in != top->nc_close_pressed) {
                 top->nc_close_pressed = in;
-                top->dirty = 1;
+                ween_damage_all(top);
                 ween_flush_paint();
             }
         } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
             int fire = top->nc_close_pressed;
             top->nc_close_pressed = 0;
-            top->dirty = 1;
+            ween_damage_all(top);
             ween_flush_paint();
             if (fire)
                 post_msg(top, WM_CLOSE, 0, 0);
@@ -2232,7 +2339,7 @@ static void armed_mark(HWND top, int index)
 {
     if (top) {
         top->menu_hot = index;
-        top->dirty = 1;
+        ween_damage_all(top);
         InvalidateRect(top, NULL, FALSE);
     }
 }
@@ -2281,7 +2388,7 @@ int ween_menu_key(HWND top, unsigned vk, unsigned ch)
         g_menu_armed_at = 0;
         g_menu_armed_top = top;
         armed_mark(top, 0);
-        top->dirty = 1;
+        ween_damage_all(top);
         return 1;
     }
     g_menu_armed = 0;
@@ -2352,7 +2459,7 @@ void ween_mark_exposed(const ween_event *ev)
                 target = t;
     }
     if (target)
-        target->dirty = 1;
+        ween_damage_all(target);
 }
 
 /* Which window a pointer event happened in, and the event moved into that
@@ -2416,7 +2523,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
     g_alt_down = ev->alt;
     switch (ev->kind) {
     case WEEN_EV_EXPOSE:
-        top->dirty = 1;
+        ween_damage_all(top);
         break;
     case WEEN_EV_MOUSE_DOWN: {
         LRESULT hit;
@@ -2663,7 +2770,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             ween_menu_cues = show;
         if (flags & UISF_HIDEFOCUS)
             ween_ui_focus_cues = show;
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         InvalidateRect(ween_top_level(wnd), NULL, FALSE);
         return 0;
     }
@@ -2692,7 +2799,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * place ween32 draws one, and it wants the small one. */
         HICON was = wnd->icon;
         wnd->icon = (HICON)lp;
-        ween_top_level(wnd)->dirty = 1;
+        ween_damage_all(wnd);
         return (LRESULT)(INT_PTR)was;
     }
     case WM_GETICON:
@@ -2771,8 +2878,23 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             ween_surface_fill(s, wnd->w - 1, 0, 1, wnd->h, WEEN_BLACK);
             return 0;
         }
-        /* raised frame + face border */
-        ween_surface_clear(s, WEEN_FACE);
+        /* Raised frame + face border. Only the band outside the client
+         * area: what is inside it belongs to the window and is filled with
+         * its class's brush before its WM_PAINT, so clearing the whole
+         * surface here painted a hundred and ten thousand pixels a frame
+         * that were painted again immediately. */
+        {
+            int cox, coy;
+            RECT cr;
+            ween_client_origin(wnd, &cox, &coy);
+            GetClientRect(wnd, &cr);
+            ween_surface_fill(s, 0, 0, wnd->w, coy, WEEN_FACE);
+            ween_surface_fill(s, 0, coy + cr.bottom, wnd->w,
+                              wnd->h - coy - cr.bottom, WEEN_FACE);
+            ween_surface_fill(s, 0, coy, cox, cr.bottom, WEEN_FACE);
+            ween_surface_fill(s, cox + cr.right, coy,
+                              wnd->w - cox - cr.right, cr.bottom, WEEN_FACE);
+        }
         /* A window frame is the plain EDGE_RAISED: its outer line is
          * COLOR_3DLIGHT (face), the white one sits inside it. */
         ween_classic_edge(s, 0, 0, wnd->w, wnd->h, EDGE_RAISED, BF_RECT, NULL);
@@ -3211,7 +3333,7 @@ static void button_click(HWND wnd)
                 if (button_type(c) == BS_AUTORADIOBUTTON)
                     c->check = c == wnd ? BST_CHECKED : BST_UNCHECKED;
             }
-            ween_top_level(wnd)->dirty = 1;
+            ween_damage_all(wnd);
         }
         wnd->check = BST_CHECKED;
         radio_take_tabstop(wnd);

@@ -48,6 +48,7 @@ void ween_surface_clear(ween_surface *s, ween_color c);
 /* Restrict drawing to a rectangle; window painting sets this per window. */
 void ween_surface_clip(ween_surface *s, int x, int y, int w, int h);
 void ween_surface_get_clip(const ween_surface *s, RECT *r);
+int ween_surface_clipped_out(const ween_surface *s, int x, int y, int w, int h);
 void ween_surface_pixel(ween_surface *s, int x, int y, ween_color c);
 void ween_surface_fill(ween_surface *s, int x, int y, int w, int h, ween_color c);
 void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
@@ -413,6 +414,12 @@ struct ween_wnd {
     ween_surface surface;
     void *backend_win;
     int dirty;
+    /* What of the surface has to be painted again, in surface coordinates.
+     * Only a top-level has one: it owns the surface its children draw into.
+     * Everything that asks for a repaint adds its rectangle to this, and the
+     * paint pass clips to it -- which is the difference between a stroke of
+     * a pencil costing the pixels under it and costing the whole window. */
+    RECT damage;
     int nc_close_pressed;   /* close-box tracking */
     int nc_button_pressed;  /* 1 maximize, 2 minimize, 0 none */
     int maximized;          /* drawn as restore, and SC_MAXIMIZE toggles it */
@@ -577,7 +584,10 @@ typedef struct {
      * WEEN_WIN_UNMANAGED asks for a window the window system places and sizes
      * exactly as told and never decorates — what a menu is. */
     void *(*open)(int x, int y, int w, int h, const char *title, unsigned flags);
-    void (*present)(void *win, const ween_surface *s);
+    /* Put the finished frame on the screen. `damage` is the part of it that
+     * changed, in surface coordinates, which is all a backend need copy —
+     * null means the whole of it. */
+    void (*present)(void *win, const ween_surface *s, const RECT *damage);
     void (*move_by)(void *win, int dx, int dy);
     /* Ask the window system for a new size, and say whether the user may
      * resize the window themselves. */
@@ -605,6 +615,11 @@ typedef struct {
     ween_event (*next_event)(void *win, int timeout_ms);
     void (*close)(void *win);
 } ween_backend;
+
+/* What of a window has to be painted again: a rectangle of the surface, or
+ * the whole of it. Both add to whatever was already waiting. */
+void ween_damage_rect(struct ween_wnd *w, int x, int y, int cx, int cy);
+void ween_damage_all(struct ween_wnd *w);
 
 /* Where a top-level window's client-area origin is on the desktop, for the
  * benefit of anything placed in desktop coordinates. Falls back to where the

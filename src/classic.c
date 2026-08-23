@@ -517,6 +517,8 @@ void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h)
      * out the same as one that starts on an even one. Anchored to the surface
      * instead, half the bars in a window come out inverted — and which half
      * depends on where the window is. */
+    if (ween_surface_clipped_out(s, x, y, w, h))
+        return;
     for (int py = y; py < y + h; py++)
         for (int px = x; px < x + w; px++)
             ween_surface_pixel(s, px, py,

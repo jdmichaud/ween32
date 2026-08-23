@@ -243,6 +243,10 @@ also runs on X:
 zig build paint && ./zig-out/bin/paint
 ```
 
+That builds it optimised, which for a program with a pencil in it is the
+difference between following the pointer and lagging behind it;
+`-Doptimize=Debug` asks for the other thing.
+
 The window that comes up is the window in the pictures above, and the pointer
 over the picture is the tool's own — which can be read back off the server,
 hot spot and all, with `XFixesGetCursorImage`.

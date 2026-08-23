@@ -13,7 +13,7 @@ make test
 Expect **437 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
-Then the three things `make test` does not cover:
+Then the four things `make test` does not cover:
 
 ```sh
 # that the same example source still builds against the real windows.h, and
@@ -29,6 +29,15 @@ the icon view instead of the report view, and two constants copied wrong —
 `TVN_SELCHANGEDA` sitting on `TVN_SELCHANGING`'s number and
 `TB_ISBUTTONCHECKED` on `TB_ISBUTTONHIDDEN`'s. Needs `zig`, for its bundled
 mingw-w64 headers; without it the target says so and passes.
+
+```sh
+# that drawing is still quick: three thousand mouse moves through the pencil,
+# which is a second of somebody scribbling
+python3 -c "print('d:70,60 ' + ' '.join('m:%d,%d'%(70+(i%180),60+(i%240))
+  for i in range(3000)) + ' u:250,300')" > /tmp/stroke
+time WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_SCRIPT="$(cat /tmp/stroke)" \
+  ./zig-out/bin/paint                       # expect well under a tenth of a second
+```
 
 ```sh
 # the sanitizers, which have caught real bugs the suite passed through

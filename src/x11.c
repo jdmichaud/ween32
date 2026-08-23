@@ -390,10 +390,11 @@ static void *x11_open(int x, int y, int w, int h, const char *title,
     return xw;
 }
 
-static void x11_present(void *win, const ween_surface *s)
+static void x11_present(void *win, const ween_surface *s, const RECT *damage)
 {
     x11_win *xw = win;
     const ween_surface *out = s;
+    int px = 0, py = 0, pw = s->w, ph = s->h;
     if (xw->zoom > 1) { /* crisp HiDPI: pixel-double the finished frame */
         if (xw->zbuf.w != s->w * xw->zoom || xw->zbuf.h != s->h * xw->zoom)
             ween_surface_resize(&xw->zbuf, s->w * xw->zoom, s->h * xw->zoom);
@@ -434,8 +435,25 @@ static void x11_present(void *win, const ween_surface *s)
                            (unsigned)out->h);
         }
     }
-    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, 0, 0, ox, oy,
-              (unsigned)out->w, (unsigned)out->h);
+    /* Only the part that changed: a stroke of a pencil moves a few hundred
+     * pixels, and copying the whole window to the server for each of them is
+     * most of what a frame costs once the drawing itself is quick. */
+    if (damage) {
+        px = damage->left < 0 ? 0 : damage->left;
+        py = damage->top < 0 ? 0 : damage->top;
+        pw = (damage->right > s->w ? s->w : damage->right) - px;
+        ph = (damage->bottom > s->h ? s->h : damage->bottom) - py;
+        if (pw <= 0 || ph <= 0) {
+            XFlush(xw->dpy);
+            return;
+        }
+        px *= xw->zoom;
+        py *= xw->zoom;
+        pw *= xw->zoom;
+        ph *= xw->zoom;
+    }
+    XPutImage(xw->dpy, xw->win, xw->gc, xw->img, px, py, ox + px, oy + py,
+              (unsigned)pw, (unsigned)ph);
     XFlush(xw->dpy);
 }
 

@@ -67,6 +67,17 @@ void ween_surface_get_clip(const ween_surface *s, RECT *r)
     r->bottom = s->clip_b;
 }
 
+/* Whether a rectangle would draw nothing at all. Every pixel is clipped on
+ * its way in anyway, so this changes no picture: what it saves is the work
+ * of asking, which for something drawn a pixel at a time -- a scroll bar's
+ * weave, a line of text -- is the whole of the cost when it is off-screen or
+ * outside the damaged part of it. */
+int ween_surface_clipped_out(const ween_surface *s, int x, int y, int w, int h)
+{
+    return x + w <= s->clip_x || y + h <= s->clip_y || x >= s->clip_r ||
+           y >= s->clip_b;
+}
+
 void ween_surface_clear(ween_surface *s, ween_color c)
 {
     for (long i = 0; i < (long)s->w * s->h; i++)

@@ -14,7 +14,13 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    // A program someone runs rather than steps through, so the default is
+    // the fast one: Debug leaves every blit and every bounds check
+    // unoptimised, which is the difference between a pencil that follows the
+    // pointer and one that lags a tenth of a second behind it.
+    // `-Doptimize=Debug` still asks for the other thing.
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize",
+        "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
 
     const mod = b.addModule("ween32", .{
         .root_source_file = b.path("zig/ween32.zig"),

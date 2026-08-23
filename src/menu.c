@@ -861,7 +861,7 @@ static void level_set_hot(menu_session *s, int depth, int hot)
         return;
     l->hot = hot;
     l->wnd->menu_hot = hot;
-    l->wnd->dirty = 1;
+    ween_damage_all(l->wnd);
     /* anything opened under the old item goes with it */
     level_close_to(s, depth + 1);
     /* and the owner is told what the highlight is on, which is how a shell
@@ -944,7 +944,7 @@ static void bar_open(menu_session *s, int index)
     level_close_to(s, 0);
     s->bar_index = index;
     s->bar_wnd->menu_hot = index;
-    s->bar_wnd->dirty = 1;
+    ween_damage_all(s->bar_wnd);
     frame = ween_frame_width(s->bar_wnd);
     bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
     /* Where the window actually is, not where it asked to be: under a window
@@ -1083,7 +1083,7 @@ static void session_run(menu_session *s)
                 ween_menu_cues = 1;
                 for (int i = 0; i < s->depth; i++)
                     if (s->level[i].wnd)
-                        s->level[i].wnd->dirty = 1;
+                        ween_damage_all(s->level[i].wnd);
             }
             switch (ev.vk) {
             case VK_ESCAPE:
@@ -1144,7 +1144,7 @@ static void session_run(menu_session *s)
              * when a drop-down that was covering it goes away */
             ween_mark_exposed(&ev);
             for (int i = 0; i < s->depth; i++)
-                s->level[i].wnd->dirty = 1;
+                ween_damage_all(s->level[i].wnd);
             break;
 
         case WEEN_EV_END:
@@ -1161,7 +1161,7 @@ static void session_run(menu_session *s)
         SendMessageA(s->owner, WM_MENUSELECT, MAKEWPARAM(0xffff, 0xffff), 0);
     if (s->bar_wnd) {
         s->bar_wnd->menu_hot = -1;
-        s->bar_wnd->dirty = 1;
+        ween_damage_all(s->bar_wnd);
     }
     ween_flush_paint();
     /* the press that closed it, once the menu is really gone */

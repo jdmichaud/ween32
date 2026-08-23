@@ -891,22 +891,30 @@ done:
 
 /* Read one source pixel, with the source DC's own origin and bounds; outside
  * it the source reads as black, as a blit off the edge of a bitmap does. */
-static ween_color src_px(HDC src, int x, int y)
+
+/* Where a source pixel column lands, for a blit that may be stretched or
+ * mirrored. Kept out of the inner loop for the unstretched case, which is
+ * nearly every blit an application makes. */
+static int src_at(int i, int span, int src_span, int origin, int flip)
 {
-    ween_surface *s;
-    int sx, sy;
-    if (!src)
-        return 0;
-    s = src->s;
-    sx = src->org_x + src->vp_x + x;
-    sy = src->org_y + src->vp_y + y;
-    if (x < 0 || y < 0 || x >= src->clip_w || y >= src->clip_h)
-        return 0;
-    if (sx < 0 || sy < 0 || sx >= s->w || sy >= s->h)
-        return 0;
-    return s->px[(long)sy * s->w + sx] & 0xffffffu;
+    int k = flip ? span - 1 - i : i;
+    return origin + (span == src_span ? k : (int)(((long)k * src_span) / span));
 }
 
+/* The blit itself.
+ *
+ * A blit is the one thing a drawing program does in bulk -- Paint copies its
+ * whole picture into the view on every stroke -- so this is written for the
+ * row rather than the pixel: the clipping is worked out once per call, the
+ * two row pointers once per row, and the inner loop has no calls in it at
+ * all. Taken pixel at a time, through the general put-a-pixel path with its
+ * own clip test on each one, a stroke across a 210x282 view cost four
+ * function calls sixty thousand times over.
+ *
+ * The source is read as black past its edge, which is what the pixel-at-a-
+ * time version did and what a blit from a smaller bitmap has always looked
+ * like here.
+ */
 static BOOL blt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
                 int sw, int sh, DWORD rop)
 {
@@ -914,6 +922,8 @@ static BOOL blt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
     ween_color pat;
     RECT saved;
     int flip_x = 0, flip_y = 0;
+    ween_surface *ds, *ss = NULL;
+    int dx0, dy0, i0, i1, j0, j1;
 
     if (!dst)
         return FALSE;
@@ -944,18 +954,74 @@ static BOOL blt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
 
     pat = dc_brush(dst)->color;
     clip_push(dst, &saved);
-    for (int j = 0; j < h; j++) {
-        int syy = sh == h ? sy + (flip_y ? h - 1 - j : j)
-                          : sy + (int)(((long)(flip_y ? h - 1 - j : j) * sh) / h);
-        for (int i = 0; i < w; i++) {
-            int sxx = sw == w
-                          ? sx + (flip_x ? w - 1 - i : i)
-                          : sx + (int)(((long)(flip_x ? w - 1 - i : i) * sw) / w);
-            ween_color s = src ? src_px(src, sxx, syy) : 0;
-            ween_color d = peek(dst, x + i, y + j);
-            ween_color r = rop3_apply(code, pat, s, d);
-            ween_surface_pixel(dst->s, dst->org_x + dst->vp_x + x + i,
-                               dst->org_y + dst->vp_y + y + j, r);
+    ds = dst->s;
+    if (src)
+        ss = src->s;
+
+    /* Once, rather than per pixel: where the destination lands on the
+     * surface, and which part of it the clip leaves. */
+    dx0 = dst->org_x + dst->vp_x + x;
+    dy0 = dst->org_y + dst->vp_y + y;
+    i0 = ds->clip_x - dx0;
+    if (i0 < 0)
+        i0 = 0;
+    i1 = ds->clip_r - dx0;
+    if (i1 > w)
+        i1 = w;
+    j0 = ds->clip_y - dy0;
+    if (j0 < 0)
+        j0 = 0;
+    j1 = ds->clip_b - dy0;
+    if (j1 > h)
+        j1 = h;
+
+    for (int j = j0; j < j1; j++) {
+        ween_color *drow = ds->px + (long)(dy0 + j) * ds->w;
+        const ween_color *srow = NULL;
+        int svalid0 = 0, svalid1 = 0; /* the columns the source really has */
+        if (ss) {
+            int syy = src_at(j, h, sh, sy, flip_y);
+            int ssy = src->org_y + src->vp_y + syy;
+            if (syy >= 0 && syy < src->clip_h && ssy >= 0 && ssy < ss->h) {
+                srow = ss->px + (long)ssy * ss->w;
+                /* The source is read as black outside itself; rather than
+                 * test that per pixel, the run that *is* inside is worked
+                 * out here and the rest left at zero. */
+                svalid0 = i0;
+                svalid1 = i1;
+                while (svalid0 < svalid1) {
+                    int k = src_at(svalid0, w, sw, sx, flip_x);
+                    int kk = src->org_x + src->vp_x + k;
+                    if (k >= 0 && k < src->clip_w && kk >= 0 && kk < ss->w)
+                        break;
+                    svalid0++;
+                }
+                while (svalid1 > svalid0) {
+                    int k = src_at(svalid1 - 1, w, sw, sx, flip_x);
+                    int kk = src->org_x + src->vp_x + k;
+                    if (k >= 0 && k < src->clip_w && kk >= 0 && kk < ss->w)
+                        break;
+                    svalid1--;
+                }
+            }
+        }
+        /* The one every application asks for: pixel for pixel, straight
+         * across, with the whole run inside both surfaces. */
+        if (code == 0xCC && srow && svalid0 == i0 && svalid1 == i1 &&
+            sw == w && !flip_x) {
+            int soff = src->org_x + src->vp_x + sx;
+            memcpy(drow + dx0 + i0, srow + soff + i0,
+                   (size_t)(i1 - i0) * sizeof *drow);
+            continue;
+        }
+        for (int i = i0; i < i1; i++) {
+            ween_color sv = 0;
+            if (srow && i >= svalid0 && i < svalid1) {
+                int k = src_at(i, w, sw, sx, flip_x);
+                sv = srow[src->org_x + src->vp_x + k] & 0xffffffu;
+            }
+            drow[dx0 + i] =
+                rop3_apply(code, pat, sv, drow[dx0 + i] & 0xffffffu);
         }
     }
     clip_pop(dst, &saved);

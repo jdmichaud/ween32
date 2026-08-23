@@ -263,6 +263,14 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
 {
     int baseline = y + f->ascent;
     int pen = x;
+    /* A line of text is drawn a pixel at a time, so a line that is nowhere
+     * near what is being painted is worth refusing before the first glyph
+     * rather than clipping sixty of them away one pixel at a time. The
+     * height is the cell's; the width is not known without measuring, so
+     * only the row is tested. */
+    if (y + f->cell_h + f->ascent <= s->clip_y || y >= s->clip_b ||
+        x >= s->clip_r)
+        return;
     for (int i = 0; i < len; i++)
         pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
 }

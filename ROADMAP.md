@@ -208,6 +208,12 @@ beside its close box, and pressing it sends `SC_CONTEXTHELP`.
 at four gigabytes in its thirty-two-bit fields exactly as Windows caps it.
 An About box is the one place a program says something about the machine.
 
+**Only what changed is painted** — every window keeps the rectangle of its
+surface that has to be drawn again, `InvalidateRect`'s rectangle adds to it,
+the paint pass clips to it, `BeginPaint` reports it in `rcPaint`, and the
+backend puts only that much of the frame on the screen. Drawing a stroke
+costs the pixels under the pen rather than the whole window.
+
 **DPI** — one system dpi detected from the desktop's `Xft.dpi` (overridable
 with `WEEN32_DPI`); point-sized font strikes, scaled non-client metrics, and
 pixel doubling at 200%. `GetDpiForSystem`.
