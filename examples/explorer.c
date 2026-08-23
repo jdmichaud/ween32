@@ -530,6 +530,7 @@ static char g_hist[HIST_MAX][sizeof(g_path)];
 static int g_hist_n, g_hist_at = -1;
 static int g_navigating; /* set while Back or Forward is doing the walking */
 static int g_show_status = 1; /* View > Status Bar */
+static HACCEL g_accel;                            /* the menus' own shortcuts */
 static int g_show_toolbar = 1, g_show_address = 1; /* View > Toolbars */
 static int g_view = 3;        /* which of the five View offers, Details being
                                * the fourth — the order the menu has them in */
@@ -3613,6 +3614,28 @@ int main(int argc, char **argv)
     ShowWindow(w, SW_SHOWNORMAL);
     UpdateWindow(w);
 
+    /* What the menus say beside their commands has to work: a menu that
+     * offers Ctrl+C and does nothing when it is pressed is a menu telling a
+     * lie. Delete and F2 carry no label, as the shell's do not either. */
+    {
+        static ACCEL accel[] = {
+            { FVIRTKEY | FCONTROL, 'X', IDM_CUT },
+            { FVIRTKEY | FCONTROL, 'C', IDM_COPY },
+            { FVIRTKEY | FCONTROL, 'V', IDM_PASTE },
+            { FVIRTKEY | FCONTROL, 'Z', IDM_UNDO },
+            { FVIRTKEY | FCONTROL, 'A', IDM_SELECT_ALL },
+            { FVIRTKEY, VK_DELETE, IDM_DELETE },
+            { FVIRTKEY, VK_F2, IDM_RENAME },
+            { FVIRTKEY, VK_F5, IDM_REFRESH },
+            { FVIRTKEY | FALT, VK_LEFT, IDM_BACK },
+            { FVIRTKEY | FALT, VK_RIGHT, IDM_FORWARD },
+            { FVIRTKEY | FALT, VK_HOME, IDM_HOME },
+            { FVIRTKEY | FALT, VK_RETURN, IDM_CTX_PROPERTIES },
+        };
+        g_accel = CreateAcceleratorTableA(accel,
+                                          (int)(sizeof(accel) / sizeof(*accel)));
+    }
+
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0)) {
         /* The dialog manager's keys — Tab between the panes, Escape, the
@@ -3624,6 +3647,10 @@ int main(int argc, char **argv)
          * up, which is what LVM_GETEDITCONTROL is for. */
         HWND editing =
             (HWND)(INT_PTR)SendMessageA(g_list, LVM_GETEDITCONTROL, 0, 0);
+        /* the shortcuts first, and not while a name is being typed: Ctrl+C
+         * there belongs to the box */
+        if (!editing && TranslateAcceleratorA(w, g_accel, &msg))
+            continue;
         if (GetFocus() != g_menubar && !editing && IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);

@@ -841,6 +841,11 @@ typedef struct tagTCITEMA {
 #define VK_PRIOR 0x21 /* Page Up */
 #define VK_NEXT 0x22  /* Page Down */
 #define VK_F1 0x70
+#define VK_F2 0x71
+#define VK_F3 0x72
+#define VK_F4 0x73
+#define VK_F5 0x74
+#define VK_F6 0x75
 #define VK_F10 0x79
 #define VK_SPACE 0x20
 #define VK_END 0x23
