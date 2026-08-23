@@ -1467,6 +1467,27 @@ static int item_height(HWND w)
     return h;
 }
 
+/* How tall a combo box is with its list up: one row and six -- two pixels of
+ * edge on each side and one of padding above and below. The row is the
+ * font's line with a pixel over and under it, the sixteen a picture wants, or
+ * whatever the owner of an owner-drawn box said. The machine's plain box is
+ * twenty-one and the one with pictures in it is twenty-two, and that is where
+ * those two numbers come from. */
+static int combo_closed_h(HWND wnd)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    const ween_items *it = wnd->ctl;
+    int row = f ? f->ascent - f->descent + 2 : 15;
+    if (it && it->item_h > 0)
+        row = it->item_h;
+    else if (it && it->images && row < WEEN_CBEX_IMAGE)
+        row = WEEN_CBEX_IMAGE;
+    else if (wnd->cls && wnd->cls->name &&
+             !strcmp(wnd->cls->name, WC_COMBOBOXEXA) && row < WEEN_CBEX_IMAGE)
+        row = WEEN_CBEX_IMAGE;
+    return row + 6;
+}
+
 /* One row of a list: the selection bar, then the text. */
 static void draw_item(HWND w, HDC dc, const char *text, int x, int y, int width,
                       int h, int selected)
@@ -2484,37 +2505,25 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* The combo box wears the field border itself, whatever ex-style it
          * was created with, and a closed drop-down list is one row tall
          * however high the app asked for -- what it asked for is how far the
-         * list drops.
-         *
-         * The row is the font's line with a pixel over and under it, or the
-         * sixteen a picture wants; the box is six more than that, which is
-         * the two edges and the two paddings. The machine's plain box is
-         * twenty-one and the one that draws pictures is twenty-two, and this
-         * is where those two numbers come from. */
-        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-        int row = f ? f->ascent - f->descent + 2 : 15;
+         * list drops. */
         wnd->ex_style |= WS_EX_CLIENTEDGE;
         it = items_of(wnd);
         if (it)
             it->drop_h = wnd->h; /* what it will be when the list is down */
-        if (wnd->cls && wnd->cls->name &&
-            !strcmp(wnd->cls->name, WC_COMBOBOXEXA) && row < WEEN_CBEX_IMAGE)
-            row = WEEN_CBEX_IMAGE;
         if ((wnd->style & CBS_OWNERDRAWFIXED) && wnd->parent) {
             /* the owner says how tall a row of its own drawing is */
             MEASUREITEMSTRUCT mi;
+            const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
             memset(&mi, 0, sizeof mi);
             mi.CtlType = ODT_COMBOBOX;
             mi.CtlID = (UINT)wnd->id;
-            mi.itemHeight = (UINT)row;
+            mi.itemHeight = (UINT)(f ? f->ascent - f->descent + 2 : 15);
             SendMessageA(wnd->parent, WM_MEASUREITEM, (WPARAM)wnd->id,
                          (LPARAM)&mi);
-            if (mi.itemHeight > 0)
-                row = (int)mi.itemHeight;
-            if (it)
-                it->item_h = row;
+            if (mi.itemHeight > 0 && it)
+                it->item_h = (int)mi.itemHeight;
         }
-        wnd->h = row + 6;
+        wnd->h = combo_closed_h(wnd);
         combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
     }
@@ -2539,7 +2548,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         was = it->images;
         it->images = (HIMAGELIST)lp;
         /* the rows grow to fit the images, and so does the closed control */
-        wnd->h = item_height(wnd) + 4 + 2 * ween_border_width(wnd);
+        wnd->h = combo_closed_h(wnd);
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)(INT_PTR)was;
     }

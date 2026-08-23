@@ -82,7 +82,18 @@ enum {
     WEEN_ART_NETWORK,
     WEEN_ART_TOOLBAR,
     WEEN_ART_LOOKIN,
-    WEEN_ART_DOCUMENT16
+    WEEN_ART_DOCUMENT16,
+    /* the same places at sixteen pixels, out of the dropped "Look in" list,
+     * with the plain folder and the drive the tree draws beside a path */
+    WEEN_ART_HISTORY16,
+    WEEN_ART_DESKTOP16,
+    WEEN_ART_DOCUMENTS16,
+    WEEN_ART_COMPUTER16,
+    WEEN_ART_DRIVE16,
+    WEEN_ART_FOLDER16,
+    WEEN_ART_PICTURES16,
+    WEEN_ART_NETDRIVE16,
+    WEEN_ART_NETWORK16
 };
 
 const ween_shell_art *ween_shell_picture(int which);

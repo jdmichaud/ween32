@@ -315,6 +315,235 @@ static const char *const document16_rows[16] = {
     "0000333333330000",
 };
 
+/* history16: 16x16 out of the capture at 107,53, 19 colours */
+static const ween_color history16_pal[19] = {
+    0xffffff, 0x9c9c00, 0x000000, 0xffffce, 0xffff9c, 0xcece63, 0x313100,
+    0x949494, 0x4a4a4a, 0xffce9c, 0x737373, 0x424242, 0x393939, 0x9c6331,
+    0x313131, 0xce9c31, 0x848484, 0xf7f7f7, 0xc6c6c6,
+};
+static const char *const history16_rows[16] = {
+    "0000000000000000",
+    "0011111200000000",
+    "0103344120000000",
+    "1555555511111100",
+    "1333333333334560",
+    "1344477748449560",
+    "134473A08B494560",
+    "13473038CDE49560",
+    "1347A30CDFE94560",
+    "134G30HIFFE49560",
+    "13448H8HIE499560",
+    "13999EEEE9999560",
+    "1555555555555560",
+    "0222222222222220",
+    "0000000000000000",
+    "0000000000000000",
+};
+
+/* desktop16: 16x16 out of the capture at 107,69, 19 colours */
+static const ween_color desktop16_pal[19] = {
+    0xffffff, 0xff5252, 0xce3100, 0xce9c00, 0xff9cce, 0x9c0000, 0x009cce,
+    0x00639c, 0xadad94, 0xffce00, 0x9c6300, 0x000000, 0x63ceff, 0xcece9c,
+    0xffffce, 0xffff9c, 0x31639c, 0x949494, 0x9c9c63,
+};
+static const char *const desktop16_rows[16] = {
+    "0000000000001200",
+    "0000000000034500",
+    "666678888839AB8B",
+    "6C67D00E03FAB67B",
+    "667D00EE39ABGC7B",
+    "67D0HHH3FAB8EG7B",
+    "7D00H039AB8EDDGB",
+    "800EH0IABBEDE8HB",
+    "80EEH0B0EBDE8DHB",
+    "8EEEH000EBEDD8HB",
+    "8EEEH000EBDD8DHB",
+    "6EEEHEEEEBD8D8GB",
+    "66EEBBBBBB8D8GGB",
+    "6C6EEDEDD8D8GCGB",
+    "7776HHHHHHHGGGGB",
+    "BBBBBBBBBBBBBBBB",
+};
+
+/* documents16: 16x16 out of the capture at 117,85, 17 colours */
+static const ween_color documents16_pal[17] = {
+    0xffffff, 0x63639c, 0xceffff, 0x000000, 0x848400, 0xceceff, 0xcece63,
+    0x319cff, 0x0063ff, 0x9cffff, 0x9c9c00, 0x3131ce, 0x313100, 0x31009c,
+    0x9c9cff, 0xffff9c, 0xffce9c,
+};
+static const char *const documents16_rows[16] = {
+    "0000000010000000",
+    "0000000123000000",
+    "0004441205300000",
+    "0046612072530000",
+    "0466120890253AA0",
+    "046120B90B02536C",
+    "04125DE5DE55553C",
+    "AAAAAAAAAAAAE253",
+    "A0FFFFFFGFG6C553",
+    "A0FFFFGFFGF6CE3C",
+    "0A0FFFFFGFGGACAC",
+    "0A0FFGFGFGGG6CAC",
+    "00A0GFGFGGGG6ACC",
+    "00AAAAAAAAAAAACC",
+    "000CCCCCCCCCCCCC",
+    "0000000000000000",
+};
+
+/* computer16: 16x16 out of the capture at 117,101, 46 colours */
+static const ween_color computer16_pal[46] = {
+    0xffffff, 0x848484, 0x9c9cce, 0x9c9c63, 0x63639c, 0x393939, 0xffffce,
+    0xfffff7, 0xceceff, 0x424242, 0xf7f7f7, 0x6363ce, 0x000031, 0x003163,
+    0xceefff, 0x4a4a4a, 0x9cceff, 0x63ffff, 0x9cffff, 0x63ceff, 0x319cff,
+    0x0063ff, 0xb5b5b5, 0x31ceff, 0x3163ce, 0x639cce, 0xceffff, 0x009cff,
+    0x313100, 0x292929, 0xadad94, 0xdedede, 0x101010, 0xce9c9c, 0x080808,
+    0x000000, 0xefd6c6, 0xce9cce, 0x636363, 0x633131, 0x636331, 0x848400,
+    0xc6c6c6, 0xefefef, 0xe7e7d6, 0x212121,
+};
+static const char *const computer16_rows[16] = {
+    "0122222222223400",
+    "5600066666770890",
+    "58A62BCCCCCCDEF0",
+    "5G8ABHIIIJJKLH90",
+    "5M87BIIIHINNOI90",
+    "58M7PHIIHHNNOQ90",
+    "5MM0PJIHHJJRO090",
+    "5M80KNNNNNKRL090",
+    "SSM6JOOOOOOOO0T0",
+    "0SSU8V666666V2W0",
+    "SXYZZZZZZZZZYWT0",
+    "S5abcd5eUUdW5c00",
+    "S4fga8ah86UiU8Uc",
+    "S4458a8iii82ff8j",
+    "0S4ja8a86868a8aj",
+    "00ejjjjjjjjjjjjj",
+};
+
+/* drive16: 16x16 out of the capture at 127,117, 11 colours */
+static const ween_color drive16_pal[11] = {
+    0xffffff, 0x737373, 0xb5b5b5, 0x000000, 0x9c9c9c, 0xd6d6d6, 0xc6c6c6,
+    0x00ce00, 0x008400, 0x949494, 0xdedede,
+};
+static const char *const drive16_rows[16] = {
+    "0000000000000000",
+    "0000000000000000",
+    "0000000000000000",
+    "0000000000000000",
+    "0000000000000000",
+    "0011111111111110",
+    "0122222222222213",
+    "1000000000000413",
+    "1566666662782913",
+    "1A26666622222913",
+    "1A11111111112913",
+    "1500000000002913",
+    "1111111111111130",
+    "0333333333333300",
+    "0000000000000000",
+    "0000000000000000",
+};
+
+/* folder16: 16x16 out of the capture at 137,133, 8 colours */
+static const ween_color folder16_pal[8] = {
+    0xffffff, 0x9c9c00, 0x000000, 0xf7f7f7, 0xffffce, 0xffff9c, 0xcece63,
+    0xffce9c,
+};
+static const char *const folder16_rows[16] = {
+    "0000000000000000",
+    "0011111200000000",
+    "0134455120000000",
+    "1666666611111100",
+    "1444444444445620",
+    "1455555555557620",
+    "1455555557575620",
+    "1455555555757620",
+    "1455555757575620",
+    "1455555575757620",
+    "1455575757577620",
+    "1475757575777620",
+    "1666666666666620",
+    "0222222222222220",
+    "0000000000000000",
+    "0000000000000000",
+};
+
+/* pictures16: 16x16 out of the capture at 167,181, 17 colours */
+static const ween_color pictures16_pal[17] = {
+    0xffffff, 0x737b18, 0x000818, 0xbdc6d6, 0xbdc6b5, 0xbdc68c, 0x9c9c63,
+    0x737bb5, 0xbd9c8c, 0x9cc6d6, 0x73c6d6, 0x007b18, 0x005218, 0x4a29b5,
+    0x739c39, 0x9c9c39, 0x9c9cb5,
+};
+static const char *const pictures16_rows[16] = {
+    "0000000000000000",
+    "0011111120000000",
+    "0133445512000000",
+    "1666666661111110",
+    "1333333333333512",
+    "1355577757758512",
+    "135779A979A77812",
+    "1379A9BCDCBE9712",
+    "1379BFCB5DCB9D12",
+    "1357BB58DG5BD812",
+    "1357857DGD857812",
+    "13557785857D8812",
+    "1358585858588812",
+    "1111111111111112",
+    "0222222222222222",
+    "0000000000000000",
+};
+
+/* netdrive16: 16x16 out of the capture at 127,197, 12 colours */
+static const ween_color netdrive16_pal[12] = {
+    0xffffff, 0x848484, 0x737373, 0xd6d6d6, 0xc6c6c6, 0xb5b5b5, 0x000000,
+    0xcecece, 0x00ff00, 0x008400, 0x848400, 0xffff00,
+};
+static const char *const netdrive16_rows[16] = {
+    "0000000000000000",
+    "0000000000000000",
+    "0011111111111110",
+    "0233444555555526",
+    "1000000000000126",
+    "1333777777894126",
+    "1337777774444126",
+    "1322222222224126",
+    "1300000000004160",
+    "0666666666666600",
+    "0000000660000000",
+    "0000000460000000",
+    "444444AAA6444444",
+    "666666B0A6666666",
+    "0000006666000000",
+    "0000000000000000",
+};
+
+/* network16: 16x16 out of the capture at 117,213, 36 colours */
+static const ween_color network16_pal[36] = {
+    0xffffff, 0x319c00, 0x31ce31, 0x316300, 0x848484, 0xcecece, 0xc6c6c6,
+    0x5a5a5a, 0xceffce, 0x000031, 0x63639c, 0x313163, 0x3163ff, 0x31ceff,
+    0x009cff, 0x9cffff, 0x00ffff, 0xceffff, 0x63ceff, 0x9c6363, 0x181818,
+    0xffffce, 0xceceff, 0xe7e7d6, 0x949494, 0x424242, 0x3163ce, 0x9cceff,
+    0x6363ce, 0x9ccece, 0x393939, 0xcece63, 0x737373, 0xd6d6d6, 0xefd6c6,
+    0x313131,
+};
+static const char *const network16_rows[16] = {
+    "0000111000000000",
+    "0011021334555567",
+    "0108213395AAAAB4",
+    "0C3233DE95BFFGB4",
+    "CHE3CDDC95BFGIB4",
+    "CJAAAAAA97KKKKK7",
+    "9500L0L0MK6NNNNO",
+    "950PPPPP0K46464O",
+    "95LEFFGQLKBBBBBB",
+    "95LEFGRQ0K00I000",
+    "940SEEEELK009T00",
+    "0UM0L0L0MK0009I0",
+    "9VKKKKKKKKTITITI",
+    "9WXLYLYXLYB99999",
+    "9ZOOOOOOOOB00000",
+    "09BBBBBBBBB00000",
+};
+
 /* One character per pixel, and the character is where the
  * colour is in the palette. */
 static const char alphabet[] =
@@ -338,11 +567,20 @@ static ween_color network_px[1024];
 static ween_color toolbar_px[2760];
 static ween_color lookin_px[256];
 static ween_color document16_px[256];
+static ween_color history16_px[256];
+static ween_color desktop16_px[256];
+static ween_color documents16_px[256];
+static ween_color computer16_px[256];
+static ween_color drive16_px[256];
+static ween_color folder16_px[256];
+static ween_color pictures16_px[256];
+static ween_color netdrive16_px[256];
+static ween_color network16_px[256];
 
 /* Each picture, unpacked once and kept. */
 const ween_shell_art *ween_shell_picture(int which)
 {
-    static ween_shell_art art[8];
+    static ween_shell_art art[17];
     static int done;
     if (!done) {
         art[0].w = 32;
@@ -377,9 +615,45 @@ const ween_shell_art *ween_shell_picture(int which)
         art[7].h = 16;
         art[7].px = document16_px;
         unpack(document16_px, document16_rows, document16_pal, 16, 16);
+        art[8].w = 16;
+        art[8].h = 16;
+        art[8].px = history16_px;
+        unpack(history16_px, history16_rows, history16_pal, 16, 16);
+        art[9].w = 16;
+        art[9].h = 16;
+        art[9].px = desktop16_px;
+        unpack(desktop16_px, desktop16_rows, desktop16_pal, 16, 16);
+        art[10].w = 16;
+        art[10].h = 16;
+        art[10].px = documents16_px;
+        unpack(documents16_px, documents16_rows, documents16_pal, 16, 16);
+        art[11].w = 16;
+        art[11].h = 16;
+        art[11].px = computer16_px;
+        unpack(computer16_px, computer16_rows, computer16_pal, 16, 16);
+        art[12].w = 16;
+        art[12].h = 16;
+        art[12].px = drive16_px;
+        unpack(drive16_px, drive16_rows, drive16_pal, 16, 16);
+        art[13].w = 16;
+        art[13].h = 16;
+        art[13].px = folder16_px;
+        unpack(folder16_px, folder16_rows, folder16_pal, 16, 16);
+        art[14].w = 16;
+        art[14].h = 16;
+        art[14].px = pictures16_px;
+        unpack(pictures16_px, pictures16_rows, pictures16_pal, 16, 16);
+        art[15].w = 16;
+        art[15].h = 16;
+        art[15].px = netdrive16_px;
+        unpack(netdrive16_px, netdrive16_rows, netdrive16_pal, 16, 16);
+        art[16].w = 16;
+        art[16].h = 16;
+        art[16].px = network16_px;
+        unpack(network16_px, network16_rows, network16_pal, 16, 16);
         done = 1;
     }
-    if (which < 0 || which >= 8)
+    if (which < 0 || which >= 17)
         return NULL;
     return &art[which];
 }

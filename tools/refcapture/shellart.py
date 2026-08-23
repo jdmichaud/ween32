@@ -21,6 +21,9 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REF = os.path.join(HERE, "paint", "dlg-open.png")
+# the same dialog with its "Look in" list dropped, which is where the tree's
+# small icons are: a plain folder, a drive, and the places again at sixteen
+DROPPED = os.path.join(HERE, "paint", "dlg-open-dropped.png")
 
 # name, x, y, w, h -- in the capture, whose (0,0) is the dialog's top left
 BOXES = [
@@ -32,6 +35,19 @@ BOXES = [
     ("toolbar", 376, 30, 120, 23),
     ("lookin", 109, 33, 16, 16),
     ("document16", 105, 61, 16, 16),
+]
+
+# the same, out of the capture with the list dropped
+DROPPED_BOXES = [
+    ("history16", 107, 53, 16, 16),
+    ("desktop16", 107, 69, 16, 16),
+    ("documents16", 117, 85, 16, 16),
+    ("computer16", 117, 101, 16, 16),
+    ("drive16", 127, 117, 16, 16),
+    ("folder16", 137, 133, 16, 16),
+    ("pictures16", 167, 181, 16, 16),
+    ("netdrive16", 127, 197, 16, 16),
+    ("network16", 117, 213, 16, 16),
 ]
 
 # Printable characters that need no escaping in a C string, in a stable order
@@ -93,8 +109,11 @@ def main():
     out.append("")
     out.append('#include "ween_internal.h"')
     out.append("")
+    dropped = Image.open(DROPPED).convert("RGB")
     for name, x, y, w, h in BOXES:
         emit(im, name, x, y, w, h, out)
+    for name, x, y, w, h in DROPPED_BOXES:
+        emit(dropped, name, x, y, w, h, out)
     out.append("/* One character per pixel, and the character is where the")
     out.append(" * colour is in the palette. */")
     out.append("static const char alphabet[] =")
@@ -110,16 +129,16 @@ def main():
     out.append("                pal[(int)(strchr(alphabet, rows[y][x]) - alphabet)];")
     out.append("}")
     out.append("")
-    for name, x, y, w, h in BOXES:
+    for name, x, y, w, h in BOXES + DROPPED_BOXES:
         out.append("static ween_color %s_px[%d];" % (name, w * h))
     out.append("")
     out.append("/* Each picture, unpacked once and kept. */")
     out.append("const ween_shell_art *ween_shell_picture(int which)")
     out.append("{")
-    out.append("    static ween_shell_art art[%d];" % len(BOXES))
+    out.append("    static ween_shell_art art[%d];" % len(BOXES + DROPPED_BOXES))
     out.append("    static int done;")
     out.append("    if (!done) {")
-    for n, (name, x, y, w, h) in enumerate(BOXES):
+    for n, (name, x, y, w, h) in enumerate(BOXES + DROPPED_BOXES):
         out.append("        art[%d].w = %d;" % (n, w))
         out.append("        art[%d].h = %d;" % (n, h))
         out.append("        art[%d].px = %s_px;" % (n, name))
@@ -127,7 +146,7 @@ def main():
                    % (name, name, name, w, h))
     out.append("        done = 1;")
     out.append("    }")
-    out.append("    if (which < 0 || which >= %d)" % len(BOXES))
+    out.append("    if (which < 0 || which >= %d)" % len(BOXES + DROPPED_BOXES))
     out.append("        return NULL;")
     out.append("    return &art[which];")
     out.append("}")

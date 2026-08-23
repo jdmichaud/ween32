@@ -224,6 +224,23 @@ Computer, My Network Places, "Files of type:", "My Pictures" -- differs by a
 handful; and the bold `O` of the word "Open" in the caption differs the same
 way. The rest is 47 pixels scattered over the list and the boxes.
 
+What the box does, as well as what it looks like, was read off the machine:
+the tool bar's buttons wear a raised edge under the pointer and a sunken one
+with the picture a pixel down and right while they are held; "Look in" drops
+the shell's tree -- History and Desktop, what is under Desktop, then the path
+down to here a step at a time, ten pixels a step, with the folder picked out
+-- and the view menu offers Large Icons, Small Icons, List, Details and
+Thumbnails, with a dot against the one in use. Thumbnails is greyed, because
+there are none. Every one of those numbers is the machine's.
+
+It resizes the way the machine's does, too, which was measured by dragging
+that one bigger and dumping its window tree again: at 555x320 and at 636x356
+every part either stays where it is, moves by the difference or grows by it,
+so the layout is that difference applied and nothing else. A file dialog with
+its own layout was also where two ids collided -- the shell's view is inside a
+SHELLDLL_DefView and so can be id 1 alongside the Open button; ours are
+siblings, and moving one moved the other.
+
 Five things came out of getting there, and all of them are the library's
 rather than Paint's: `IntersectClipRect` was already there, but the file
 dialog wanted `CBS_OWNERDRAWFIXED` with `WM_DRAWITEM` and `WM_MEASUREITEM`
