@@ -57,6 +57,28 @@ static void click(int x, int y)
     ween_headless_inject(ev);
 }
 
+/* Press, walk, release: the colour field and the brightness bar are dragged
+ * as much as they are clicked. */
+static void drag(int x0, int y0, int x1, int y1)
+{
+    ween_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.kind = WEEN_EV_MOUSE_DOWN;
+    ev.button = 1;
+    ev.x = x0;
+    ev.y = y0;
+    ween_headless_inject(ev);
+    ev.kind = WEEN_EV_MOUSE_MOVE;
+    ev.x = (x0 + x1) / 2;
+    ev.y = (y0 + y1) / 2;
+    ween_headless_inject(ev);
+    ev.x = x1;
+    ev.y = y1;
+    ween_headless_inject(ev);
+    ev.kind = WEEN_EV_MOUSE_UP;
+    ween_headless_inject(ev);
+}
+
 static void key(unsigned vk)
 {
     ween_event ev;
@@ -64,6 +86,29 @@ static void key(unsigned vk)
     ev.kind = WEEN_EV_KEY;
     ev.vk = vk;
     ween_headless_inject(ev);
+}
+
+/* Every place and size the hook saw the box in. */
+static int g_seen, g_moved;
+static int g_at_x, g_at_y, g_min_w, g_max_w;
+
+static INT_PTR CALLBACK watch_hook(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)msg;
+    (void)wp;
+    (void)lp;
+    if (!g_seen++) {
+        g_at_x = dlg->x;
+        g_at_y = dlg->y;
+        g_min_w = g_max_w = dlg->w;
+    }
+    if (dlg->x != g_at_x || dlg->y != g_at_y)
+        g_moved = 1;
+    if (dlg->w < g_min_w)
+        g_min_w = dlg->w;
+    if (dlg->w > g_max_w)
+        g_max_w = dlg->w;
+    return 0; /* and the box carries on with it */
 }
 
 static void custom_click(int row, int col)
@@ -138,6 +183,64 @@ int main(void)
     click(46, 303); /* OK */
     cc.rgbResult = RGB(0, 0, 0);
     CHECK(ChooseColorA(&cc), "and so is OK");
+
+    /* Widening it must not move it. The box asks to be wider and nothing
+     * else, which matters on a display with a window manager: a window there
+     * is where the manager put it rather than where it asked to be, so a box
+     * that reads its own position back and writes it again walks across the
+     * screen by the width of its own frame every time it is opened. The
+     * fake window system is told to place windows somewhere of its own here,
+     * which is what makes the two positions differ at all. */
+    ween_headless_set_window_origin(120, 90);
+    cc.Flags = CC_RGBINIT | CC_ENABLEHOOK;
+    cc.lpfnHook = watch_hook;
+    click(DLG_DEFINE_X, DLG_DEFINE_Y);
+    key(VK_ESCAPE);
+    ChooseColorA(&cc);
+    CHECK(g_min_w < g_max_w, "Define Custom Colors widened the box");
+    CHECK(!g_moved, "and left it where it was");
+    ween_headless_set_window_origin(0, 0);
+
+    /* A drag in the field ends on the colour it ends on, which is the same
+     * colour a click there would have given. Without the buttons in a mouse
+     * message's wParam nothing can tell a drag from a pointer wandering
+     * across, and the cross would only ever move on the press. */
+    cc.Flags = CC_RGBINIT;
+    cc.lpfnHook = NULL;
+    click(DLG_DEFINE_X, DLG_DEFINE_Y);
+    click(DLG_LUM_X, DLG_FIELD_Y + 82);              /* a luminosity to see */
+    click(DLG_FIELD_X + 98, DLG_FIELD_Y + 90);       /* clicked there */
+    click(46, 303);                                  /* OK */
+    ChooseColorA(&cc);
+    COLORREF clicked = cc.rgbResult;
+
+    cc.rgbResult = RGB(0, 0, 0);
+    click(DLG_DEFINE_X, DLG_DEFINE_Y);
+    click(DLG_LUM_X, DLG_FIELD_Y + 82);
+    drag(DLG_FIELD_X + 42, DLG_FIELD_Y + 31,         /* dragged there */
+         DLG_FIELD_X + 98, DLG_FIELD_Y + 90);
+    click(46, 303);
+    ChooseColorA(&cc);
+    CHECK(cc.rgbResult == clicked && clicked != RGB(0, 0, 0),
+          "the field follows a drag, and ends where a click there would");
+
+    /* The same for the bar beside it. */
+    cc.rgbResult = RGB(0, 0, 0);
+    click(DLG_DEFINE_X, DLG_DEFINE_Y);
+    click(DLG_FIELD_X + 98, DLG_FIELD_Y + 90);
+    click(DLG_LUM_X, DLG_FIELD_Y + 120);
+    click(46, 303);
+    ChooseColorA(&cc);
+    COLORREF bar_clicked = cc.rgbResult;
+
+    cc.rgbResult = RGB(0, 0, 0);
+    click(DLG_DEFINE_X, DLG_DEFINE_Y);
+    click(DLG_FIELD_X + 98, DLG_FIELD_Y + 90);
+    drag(DLG_LUM_X, DLG_FIELD_Y + 20, DLG_LUM_X, DLG_FIELD_Y + 120);
+    click(46, 303);
+    ChooseColorA(&cc);
+    CHECK(cc.rgbResult == bar_clicked && bar_clicked != RGB(0, 0, 0),
+          "and so does the brightness bar");
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

@@ -856,6 +856,33 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
     return TRUE;
 }
 
+/* MoveWindow with the parts a caller does not care about left out. The one
+ * that matters here is SWP_NOMOVE: a window that resizes itself must not
+ * have to ask where it is first, because on a display with a window manager
+ * the answer is where the manager put it, and moving it back there again
+ * walks it across the screen by the width of its own frame. */
+BOOL SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy,
+                  UINT flags)
+{
+    (void)after; /* one window is in front of another here by its age */
+    if (!wnd)
+        return FALSE;
+    if (flags & SWP_NOMOVE) {
+        x = wnd->x;
+        y = wnd->y;
+    }
+    if (flags & SWP_NOSIZE) {
+        cx = wnd->w;
+        cy = wnd->h;
+    }
+    MoveWindow(wnd, x, y, cx, cy, (flags & SWP_NOREDRAW) ? FALSE : TRUE);
+    if (flags & SWP_SHOWWINDOW)
+        ShowWindow(wnd, SW_SHOW);
+    if (flags & SWP_HIDEWINDOW)
+        ShowWindow(wnd, SW_HIDE);
+    return TRUE;
+}
+
 /* A control's text by its id, and setting it: what a dialog reads back from
  * what was typed, and writes into a field it fills in. */
 UINT GetDlgItemTextA(HWND dlg, int id, LPSTR out, int max)
@@ -1922,6 +1949,23 @@ static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under, int x,
 /* What is held down as far as the backend has told us: the events carry it,
  * and a mouse message passes it on in its wParam the way win32 does. */
 static int g_mods;
+/* Which mouse buttons are down, as MK_* bits: set on the press and cleared
+ * on the release, so that a move between the two says so. */
+static int g_buttons;
+
+static int button_bit(int button)
+{
+    switch (button) {
+    case 1:
+        return MK_LBUTTON;
+    case 2:
+        return MK_MBUTTON;
+    case 3:
+        return MK_RBUTTON;
+    default:
+        return 0;
+    }
+}
 /* What was held when the last event arrived, which is as much as one
  * keyboard can say between messages. GetKeyState answers from it. */
 static int g_shift_down, g_ctrl_down, g_alt_down;
@@ -2356,8 +2400,17 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         return;
 
     /* Every event says what was held when it happened; a mouse message passes
-     * that on as win32 does, in the low bits of its wParam. */
-    g_mods = (ev->shift ? MK_SHIFT : 0) | (ev->ctrl ? MK_CONTROL : 0);
+     * that on as win32 does, in the low bits of its wParam — the two
+     * modifier keys, and which mouse buttons are down. The buttons are what
+     * a drag is written against: `if (!(wp & MK_LBUTTON)) return;` is how
+     * every control in win32 tells a drag from a pointer wandering over it,
+     * and without them nothing could be dragged. */
+    if (ev->kind == WEEN_EV_MOUSE_DOWN)
+        g_buttons |= button_bit(ev->button);
+    else if (ev->kind == WEEN_EV_MOUSE_UP)
+        g_buttons &= ~button_bit(ev->button);
+    g_mods = (ev->shift ? MK_SHIFT : 0) | (ev->ctrl ? MK_CONTROL : 0) |
+             g_buttons;
     g_shift_down = ev->shift;
     g_ctrl_down = ev->ctrl;
     g_alt_down = ev->alt;

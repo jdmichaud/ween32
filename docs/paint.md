@@ -64,6 +64,10 @@ writing down because none of it is guessable:
   luminosity the bar was left on. Hue runs over the field's whole width;
   saturation over one less than its height, which is why row 10 of 187 is
   228 and row 52 is 173.
+- The cross and the arrow are dragged as well as clicked, and the pointer is
+  held for the length of the drag, so running off the edge goes on picking
+  the colour at the edge rather than handing the drag to whatever is under
+  it.
 - Each of the six numbers drives the colour as it is typed, and the other
   five follow it.
 - "Add to Custom Colors" writes into the square the custom grid is sitting

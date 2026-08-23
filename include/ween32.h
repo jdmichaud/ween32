@@ -267,6 +267,7 @@ typedef struct tagCREATESTRUCTA {
  * asks, because Ctrl adds to a selection and Shift extends it. */
 #define MK_LBUTTON 0x0001
 #define MK_RBUTTON 0x0002
+#define MK_MBUTTON 0x0010
 #define MK_SHIFT 0x0004
 #define MK_CONTROL 0x0008
 /* A window is only sent double-click messages if its class asked for them.
@@ -1813,6 +1814,19 @@ BOOL AdjustWindowRect(LPRECT rect, DWORD style, BOOL menu);
 BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style);
 UINT GetDpiForSystem(void);
 BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint);
+/* The same, said in parts: a window that wants to change size without moving
+ * — which is a dialog widening itself — cannot say so with MoveWindow
+ * without first asking where it is, and where it is is the window manager's
+ * answer rather than the position it asked for. */
+#define SWP_NOSIZE 0x0001
+#define SWP_NOMOVE 0x0002
+#define SWP_NOZORDER 0x0004
+#define SWP_NOREDRAW 0x0008
+#define SWP_NOACTIVATE 0x0010
+#define SWP_SHOWWINDOW 0x0040
+#define SWP_HIDEWINDOW 0x0080
+BOOL SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy,
+                  UINT flags);
 BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase);
 BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);

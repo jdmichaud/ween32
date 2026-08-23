@@ -616,10 +616,10 @@ static void color_show_half(HWND dlg, int open)
     RECT r = { 0, 0, open ? COLOR_DLG_OPEN : COLOR_DLG_SHUT, 184 };
     MapDialogRect(dlg, &r);
     AdjustWindowRect(&r, GetWindowLongA(dlg, GWL_STYLE), FALSE);
-    RECT was;
-    GetWindowRect(dlg, &was);
-    MoveWindow(dlg, was.left, was.top, r.right - r.left, r.bottom - r.top,
-               TRUE);
+    /* Wider, and not a pixel to either side: asking where it is and putting
+     * it back there is the way to walk a window across the screen. */
+    SetWindowPos(dlg, NULL, 0, 0, r.right - r.left, r.bottom - r.top,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     for (size_t i = 0; i < sizeof half_ids / sizeof half_ids[0]; i++)
         EnableWindow(GetDlgItem(dlg, half_ids[i]), open ? TRUE : FALSE);
     /* the button that asked goes grey, as it does on the machine */
@@ -915,10 +915,19 @@ static LRESULT CALLBACK field_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        return 0;
     case WM_LBUTTONDOWN:
     case WM_MOUSEMOVE:
         if (msg == WM_MOUSEMOVE && !(wp & MK_LBUTTON))
             return 0;
+        /* The pointer is held for the length of the drag, so that running
+         * off the edge of the field goes on picking the colour at the edge
+         * rather than handing the drag to whatever is under it. */
+        if (msg == WM_LBUTTONDOWN)
+            SetCapture(wnd);
         GetClientRect(wnd, &r);
         {
             int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
@@ -976,10 +985,16 @@ static LRESULT CALLBACK lum_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(wnd, &ps);
         return 0;
     }
+    case WM_LBUTTONUP:
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        return 0;
     case WM_LBUTTONDOWN:
     case WM_MOUSEMOVE:
         if (msg == WM_MOUSEMOVE && !(wp & MK_LBUTTON))
             return 0;
+        if (msg == WM_LBUTTONDOWN) /* held for the length of the drag */
+            SetCapture(wnd);
         GetClientRect(wnd, &r);
         {
             int y = GET_Y_LPARAM(lp);

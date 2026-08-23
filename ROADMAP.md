@@ -92,7 +92,9 @@ a period mistake rather than a missing feature.
 
 **Windowing** — any number of top-level windows, each with its own surface and
 native window; `RegisterClassA`, `CreateWindowExA`, `DestroyWindow`,
-`ShowWindow`, `MoveWindow`, `GetClientRect`, `AdjustWindowRect(Ex)`,
+`ShowWindow`, `MoveWindow`, `SetWindowPos` (with `SWP_NOMOVE`/`SWP_NOSIZE`,
+which is how a window resizes itself without having to ask where it is
+first), `GetClientRect`, `AdjustWindowRect(Ex)`,
 `SetWindowTextA`/`GetWindowTextA`, `GetDlgItem`, `SetFocus`,
 `SetCapture`/`ReleaseCapture`/`GetCapture`, `InvalidateRect`, `UpdateWindow`,
 the message loop (`GetMessageA`/`TranslateMessage`/`DispatchMessageA`,
