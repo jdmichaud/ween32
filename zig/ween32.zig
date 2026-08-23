@@ -385,6 +385,47 @@ pub extern fn GetScrollRange(wnd: HWND, bar: c_int, min: *c_int, max: *c_int) BO
 pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) BOOL;
 pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) BOOL;
 
+// ---- COMDLG32 ------------------------------------------------------------
+
+pub const OPENFILENAMEA = extern struct {
+    lStructSize: DWORD = @sizeOf(OPENFILENAMEA),
+    hwndOwner: ?HWND = null,
+    hInstance: HINSTANCE = null,
+    lpstrFilter: ?LPCSTR = null,
+    lpstrCustomFilter: ?LPSTR = null,
+    nMaxCustFilter: DWORD = 0,
+    nFilterIndex: DWORD = 1,
+    lpstrFile: LPSTR,
+    nMaxFile: DWORD,
+    lpstrFileTitle: ?LPSTR = null,
+    nMaxFileTitle: DWORD = 0,
+    lpstrInitialDir: ?LPCSTR = null,
+    lpstrTitle: ?LPCSTR = null,
+    Flags: DWORD = 0,
+    nFileOffset: WORD = 0,
+    nFileExtension: WORD = 0,
+    lpstrDefExt: ?LPCSTR = null,
+    lCustData: LPARAM = 0,
+    lpfnHook: ?*anyopaque = null,
+    lpTemplateName: ?LPCSTR = null,
+};
+
+pub const CHOOSECOLORA = extern struct {
+    lStructSize: DWORD = @sizeOf(CHOOSECOLORA),
+    hwndOwner: ?HWND = null,
+    hInstance: ?HWND = null,
+    rgbResult: COLORREF = 0,
+    lpCustColors: [*]COLORREF,
+    Flags: DWORD = 0,
+    lCustData: LPARAM = 0,
+    lpfnHook: ?*anyopaque = null,
+    lpTemplateName: ?LPCSTR = null,
+};
+
+pub extern fn GetOpenFileNameA(ofn: *OPENFILENAMEA) BOOL;
+pub extern fn GetSaveFileNameA(ofn: *OPENFILENAMEA) BOOL;
+pub extern fn ChooseColorA(cc: *CHOOSECOLORA) BOOL;
+
 // ---- COMCTL32 ------------------------------------------------------------
 
 pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) BOOL;
@@ -1019,6 +1060,17 @@ pub const OBJ_BITMAP = 7;
 pub const OBJ_FONT = 6;
 pub const BI_RGB = 0;
 pub const DIB_RGB_COLORS = 0;
+pub const OFN_READONLY = 0x00000001;
+pub const OFN_OVERWRITEPROMPT = 0x00000002;
+pub const OFN_HIDEREADONLY = 0x00000004;
+pub const OFN_PATHMUSTEXIST = 0x00000800;
+pub const OFN_FILEMUSTEXIST = 0x00001000;
+pub const OFN_CREATEPROMPT = 0x00002000;
+pub const OFN_EXPLORER = 0x00080000;
+pub const CC_RGBINIT = 0x00000001;
+pub const CC_FULLOPEN = 0x00000002;
+pub const CC_PREVENTFULLOPEN = 0x00000004;
+pub const CC_ANYCOLOR = 0x00000100;
 pub const WEEN32_HAS_DISABLED = 1;
 pub const WEEN32_HAS_CHECKBOX = 1;
 pub const WEEN32_HAS_RADIO = 1;

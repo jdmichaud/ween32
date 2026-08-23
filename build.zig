@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
         mod.linkSystemLibrary("user32", .{});
         mod.linkSystemLibrary("gdi32", .{});
         mod.linkSystemLibrary("comctl32", .{});
+        mod.linkSystemLibrary("comdlg32", .{});
         addExamples(b, mod, target, optimize);
         return;
     }
@@ -44,6 +45,7 @@ pub fn build(b: *std.Build) void {
             "src/fonts.c",
             "src/gdi.c",
             "src/draw.c",
+            "src/comdlg.c",
             "src/menu.c",
             "src/imagelist.c",
             "src/user.c",

@@ -286,17 +286,12 @@ fn command(id: u16) void {
             setPath("");
             refresh();
         },
-        ID.file_save, ID.file_save_as => {
-            const path = savePath();
-            bmp.save(path) catch {
-                _ = w.MessageBoxA(app.frame, "The picture could not be saved.", "Paint", w.MB_OK | w.MB_ICONERROR);
-                return;
-            };
-            setPath(path);
-            app.dirty = false;
-        },
+        ID.file_save => save(hasPath()),
+        ID.file_save_as => save(false),
         ID.file_open => {
-            const path = savePath();
+            var buf: [300]u8 = @splat(0);
+            if (!askForFile(&buf, false)) return;
+            const path = zlen(&buf);
             bmp.open(path) catch {
                 _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
                 return;
@@ -304,6 +299,30 @@ fn command(id: u16) void {
             undo.forget();
             setPath(path);
             refresh();
+        },
+        ID.edit_paste_from => {
+            var buf: [300]u8 = @splat(0);
+            if (!askForFile(&buf, false)) return;
+            selection.pasteFrom(zlen(&buf));
+            refresh();
+        },
+        ID.edit_copy_to => {
+            var buf: [300]u8 = @splat(0);
+            if (!askForFile(&buf, true)) return;
+            selection.copyTo(zlen(&buf));
+        },
+        ID.colors_edit => {
+            var custom: [16]w.COLORREF = @splat(w.RGB(255, 255, 255));
+            var cc = w.CHOOSECOLORA{
+                .hwndOwner = app.frame,
+                .rgbResult = app.fg,
+                .lpCustColors = &custom,
+                .Flags = w.CC_RGBINIT | w.CC_FULLOPEN,
+            };
+            if (w.ChooseColorA(&cc) != 0) {
+                app.fg = cc.rgbResult;
+                _ = w.InvalidateRect(app.colorbox, null, w.FALSE);
+            }
         },
         ID.file_exit => _ = w.SendMessageA(app.frame, w.WM_CLOSE, 0, 0),
 
@@ -398,6 +417,50 @@ pub fn updateMenus() void {
     _ = w.EnableMenuItem(m, ID.edit_copy, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_clear, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_paste, if (w.IsClipboardFormatAvailable(w.CF_BITMAP) != 0) on else off);
+}
+
+/// The file dialogs, which are the system's rather than ours.
+fn askForFile(buf: *[300]u8, saving: bool) bool {
+    var ofn = w.OPENFILENAMEA{
+        .hwndOwner = app.frame,
+        .lpstrFilter = "Bitmap Files (*.bmp)\x00*.bmp\x00All Files (*.*)\x00*.*\x00",
+        .lpstrFile = @ptrCast(buf),
+        .nMaxFile = buf.len,
+        .lpstrDefExt = "bmp",
+        .Flags = if (saving) w.OFN_OVERWRITEPROMPT else w.OFN_FILEMUSTEXIST,
+        .lpstrTitle = if (saving) "Save As" else "Open",
+    };
+    // start where the last one was, if there was one
+    if (hasPath()) @memcpy(buf[0..savePath().len], savePath());
+    return (if (saving) w.GetSaveFileNameA(&ofn) else w.GetOpenFileNameA(&ofn)) != 0;
+}
+
+fn zlen(buf: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < buf.len and buf[i] != 0) : (i += 1) {}
+    return buf[0..i];
+}
+
+fn hasPath() bool {
+    return app.path[0] != 0;
+}
+
+/// Save, asking for a name unless we already have one.
+fn save(straight: bool) void {
+    var buf: [300]u8 = @splat(0);
+    var path: []const u8 = undefined;
+    if (straight) {
+        path = savePath();
+    } else {
+        if (!askForFile(&buf, true)) return;
+        path = zlen(&buf);
+    }
+    bmp.save(path) catch {
+        _ = w.MessageBoxA(app.frame, "The picture could not be saved.", "Paint", w.MB_OK | w.MB_ICONERROR);
+        return;
+    };
+    setPath(path);
+    app.dirty = false;
 }
 
 /// The window's title: the file's name, or "untitled".

@@ -1449,6 +1449,68 @@ int GetDIBits(HDC dc, HBITMAP bmp, UINT start, UINT lines, LPVOID bits,
 int SetDIBits(HDC dc, HBITMAP bmp, UINT start, UINT lines, const void *bits,
               const BITMAPINFO *info, UINT usage);
 
+/* ---- the common dialogs ---------------------------------------------------
+ *
+ * The dialogs that belong to the system rather than to the application: the
+ * one that asks for a file name and the one that asks for a colour. Every
+ * program gets the same two, which is the point of them — an application
+ * calls GetOpenFileNameA and takes what comes back in its buffer, and what
+ * it looks like is the system's business.
+ */
+
+typedef struct tagOFNA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HINSTANCE hInstance;
+    LPCSTR lpstrFilter;
+    LPSTR lpstrCustomFilter;
+    DWORD nMaxCustFilter;
+    DWORD nFilterIndex;
+    LPSTR lpstrFile;
+    DWORD nMaxFile;
+    LPSTR lpstrFileTitle;
+    DWORD nMaxFileTitle;
+    LPCSTR lpstrInitialDir;
+    LPCSTR lpstrTitle;
+    DWORD Flags;
+    WORD nFileOffset;
+    WORD nFileExtension;
+    LPCSTR lpstrDefExt;
+    LPARAM lCustData;
+    void *lpfnHook;
+    LPCSTR lpTemplateName;
+} OPENFILENAMEA, *LPOPENFILENAMEA;
+
+#define OFN_READONLY 0x00000001
+#define OFN_OVERWRITEPROMPT 0x00000002
+#define OFN_HIDEREADONLY 0x00000004
+#define OFN_PATHMUSTEXIST 0x00000800
+#define OFN_FILEMUSTEXIST 0x00001000
+#define OFN_CREATEPROMPT 0x00002000
+#define OFN_EXPLORER 0x00080000
+
+BOOL GetOpenFileNameA(OPENFILENAMEA *ofn);
+BOOL GetSaveFileNameA(OPENFILENAMEA *ofn);
+
+typedef struct tagCHOOSECOLORA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HWND hInstance;
+    COLORREF rgbResult;
+    COLORREF *lpCustColors;
+    DWORD Flags;
+    LPARAM lCustData;
+    void *lpfnHook;
+    LPCSTR lpTemplateName;
+} CHOOSECOLORA, *LPCHOOSECOLORA;
+
+#define CC_RGBINIT 0x00000001
+#define CC_FULLOPEN 0x00000002
+#define CC_PREVENTFULLOPEN 0x00000004
+#define CC_ANYCOLOR 0x00000100
+
+BOOL ChooseColorA(CHOOSECOLORA *cc);
+
 /* ---- implemented controls -------------------------------------------------
  * examples/controls.c switches its blocks on these: a control is announced
  * here once it renders like the real one. See ROADMAP.md. */

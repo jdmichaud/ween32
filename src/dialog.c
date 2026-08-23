@@ -275,6 +275,9 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     for (int i = 0; i < cdit; i++) {
         p = (p + 3) & ~(size_t)3; /* items are DWORD-aligned in the stream */
         DWORD istyle = rd_d(b, p);
+        /* The item's extended style, which is where a field gets its sunken
+         * border from: a template that asks for WS_EX_CLIENTEDGE must get
+         * one, and this used to drop it on the floor. */
         DWORD iex = rd_d(b, p + 4);
         short ix = (short)rd_w(b, p + 8), iy = (short)rd_w(b, p + 10);
         short icx = (short)rd_w(b, p + 12), icy = (short)rd_w(b, p + 14);
@@ -440,6 +443,12 @@ INT_PTR DialogBoxIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
             EnableWindow(owner, TRUE);
         return -1;
     }
+    /* A modal dialog is shown by the dialog manager whatever its template
+     * says; only a modeless one waits for WS_VISIBLE. Without this, a
+     * template written the way the resource compiler writes them — no
+     * WS_VISIBLE, because DialogBox supplies it — came up as an empty frame
+     * with its controls unpainted behind it. */
+    ShowWindow(dlg, SW_SHOW);
     return ween_dialog_modal(dlg, owner, reenable);
 }
 

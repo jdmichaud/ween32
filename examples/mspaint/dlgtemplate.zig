@@ -68,6 +68,12 @@ pub const Builder = struct {
         self.word(0); // no menu
         self.word(0); // the default dialog class
         self.wsz(title);
+        if (style & w.DS_SETFONT != 0) {
+            // A template that says DS_SETFONT carries the face it wants
+            // after the title, and the reader will look for it there.
+            self.word(8);
+            self.wsz("MS Sans Serif");
+        }
         for (items) |it| {
             self.alignDword();
             self.dword(it.style);

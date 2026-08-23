@@ -9,6 +9,7 @@
 const w = @import("ween32");
 const A = @import("app.zig");
 const undo = @import("undo.zig");
+const picfile = @import("file.zig");
 const app = &A.app;
 
 pub const Selection = struct {
@@ -140,6 +141,44 @@ pub fn clear() void {
     _ = w.DeleteObject(sel.bmp);
     sel.live = false;
     sel.lifted = false;
+}
+
+/// Edit > Paste From: a picture off the disk arrives as a floating
+/// selection, which is what Paste does with the clipboard.
+pub fn pasteFrom(path: []const u8) void {
+    var side = A.Picture{};
+    side.create(1, 1);
+    const keep = app.pic;
+    app.pic = side;
+    picfile.open(path) catch {
+        app.pic = keep;
+        return;
+    };
+    side = app.pic;
+    app.pic = keep;
+    drop();
+    hold(side.width, side.height);
+    _ = w.BitBlt(sel.dc, 0, 0, side.width, side.height, side.dc, 0, 0, w.SRCCOPY);
+    sel.rect = .{ .left = 0, .top = 0, .right = side.width, .bottom = side.height };
+    sel.lifted = true;
+    app.tool = .select;
+    _ = w.InvalidateRect(app.toolbox, null, w.FALSE);
+}
+
+/// Edit > Copy To: the selection, written out as its own picture.
+pub fn copyTo(path: []const u8) void {
+    if (!sel.live) return;
+    const width = sel.rect.right - sel.rect.left;
+    const height = sel.rect.bottom - sel.rect.top;
+    const keep = app.pic;
+    var side = A.Picture{};
+    side.create(width, height);
+    _ = w.BitBlt(side.dc, 0, 0, width, height, if (sel.lifted) sel.dc else app.pic.dc, if (sel.lifted) 0 else sel.rect.left, if (sel.lifted) 0 else sel.rect.top, w.SRCCOPY);
+    app.pic = side;
+    picfile.save(path) catch {};
+    app.pic = keep;
+    _ = w.DeleteDC(side.dc);
+    _ = w.DeleteObject(side.bmp);
 }
 
 /// Paste: whatever is on the clipboard arrives as a selection in the corner.
