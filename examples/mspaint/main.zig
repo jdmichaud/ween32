@@ -770,6 +770,10 @@ pub fn main() void {
     var msg: w.MSG = undefined;
     while (w.GetMessageA(&msg, null, 0, 0) != 0) {
         if (w.TranslateAcceleratorA(frame, accel, &msg) != 0) continue;
+        // Alt and the letters after it: the menu bar is reached from the
+        // keyboard the same way a dialog's controls are, which is what the
+        // framework does for the real one.
+        if (w.IsDialogMessageA(frame, &msg) != 0) continue;
         _ = w.TranslateMessage(&msg);
         _ = w.DispatchMessageA(&msg);
     }

@@ -43,6 +43,7 @@ pub fn build(b: *std.Build) void {
             "src/font.c",
             "src/marlett.c",
             "src/fonts.c",
+            "src/propsheet.c",
             "src/gdi.c",
             "src/draw.c",
             "src/comdlg.c",

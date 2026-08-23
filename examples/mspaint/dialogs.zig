@@ -182,7 +182,7 @@ fn attrProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) 
 /// Image > Attributes. Changing the size keeps what is in the top left and
 /// fills the rest with the background colour, which is what Paint does.
 pub fn attributes(owner: w.HWND) void {
-    const t = builder.build(w.WS_POPUP | w.WS_CAPTION | w.WS_SYSMENU | w.DS_MODALFRAME | w.DS_SETFONT | w.DS_3DLOOK, 234, 166, "Attributes", attrItems());
+    const t = builder.build(w.WS_POPUP | w.WS_CAPTION | w.WS_SYSMENU | w.DS_MODALFRAME | w.DS_SETFONT | w.DS_3DLOOK | w.DS_CONTEXTHELP, 234, 166, "Attributes", attrItems());
     if (w.DialogBoxIndirectParamA(null, t, owner, attrProc, 0) == 0) return;
     if (attr_w == app.pic.width and attr_h == app.pic.height) return;
     undo.take();

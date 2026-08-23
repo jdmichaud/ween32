@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **381 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **421 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the three things `make test` does not cover:
@@ -70,7 +70,7 @@ tools/refcapture/pxdiff.py                  # expect 13804 / 298596 — 4.6%
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 3917 / 39200 — 10.0%
+  tools/refcapture/pxdiff.py                # expect 3931 / 39200 — 10.0%
 ```
 
 Most of both — 3170 of the menu's and 6622 of the sampler's — is one thing:
@@ -86,10 +86,15 @@ Fourteen of the rest are two mnemonic underlines a control draws only once Alt
 has been pressed, which wine draws always — the same rule that keeps a menu's
 underlines out of sight, applied to the controls in a dialog.
 
-Roughly 242 of what is left is the menu bar, and is *deliberate*: wine spaces
-bar items by twelve pixels and Windows by sixteen, and ween32 follows Windows.
-The rest is the caption's bold title, which ween32 synthesises. Do not "fix"
-the bar back toward wine — check it against a screenshot of Windows instead.
+Roughly 240 of what is left is the menu bar, and is *deliberate*. A bar item
+is its label plus twelve pixels of padding, half each side, which is what
+Paint's own bar measures on the machine — the gap between one label's ink and
+the next is a constant thirteen across File, Edit, View, Image and Colors.
+It was sixteen here for a while, off the explorer's bar; but the shell's bar
+is a *toolbar* of drop-down buttons in its rebar, not a menu bar at all, and a
+toolbar button's padding is not a menu item's. The rest is the caption's bold
+title, which ween32 synthesises. Do not "fix" the bar by eye — measure it
+against a program that has a menu bar.
 
 The ramp itself is stepped in 16.16 with the step rounded down before it is
 accumulated, not divided per pixel. The two are the same everywhere except

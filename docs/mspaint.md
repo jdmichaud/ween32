@@ -52,6 +52,19 @@ measured the same way: `tools/refcapture/paint/dlg-colors.png` shut and
 `dlg-colors-open.png` open. Its hue-and-saturation field is drawn in sixty
 blocks by thirty, which is what the machine draws, and matches it exactly.
 
+Now that ween32 letters a dialog in MS Sans Serif, what is left of the boxes
+is small: **Stretch and Skew 506 pixels of 95,226**, **Edit Colors 292 of
+71,928** shut and 2173 open, **Attributes 2659 of 105,315**, **Flip and
+Rotate 1850 of 60,894** — and the hue field inside Edit Colors is still
+exactly the machine's, 0 of 32,725. Most of the rest is a pixel here and
+there in a control ween32 draws slightly differently, and the caption's bold
+title, which is synthesised.
+
+Take the captures with the keyboard, as the machine's were taken: Windows
+underlines a dialog's mnemonics once the keyboard has been used, so a shot
+of a dialog opened by mouse has no underlines in it and one opened by Alt
+does. `a:` in `WEEN32_SCRIPT` holds Alt down over a key for exactly that.
+
 **The dialogs.** The probe dumps a dialog's controls the same way, and
 `tools/mspaint/dlu.py` runs the dialog manager backwards over that dump:
 
@@ -172,7 +185,7 @@ What does not:
 | a wide line at a shallow angle | ~60 px of 400 | GDI sweeps the pen as a region; ween32 stamps it along a four-connected walk, and the two round the ends of that region differently |
 | an ellipse | ~86 px of an 80x60 outline | see below |
 | a rounded rectangle | the same, in its corners | the same arithmetic |
-| the dialogs' text | every glyph | Windows dialogs are set in MS Sans Serif; ween32 has only Tahoma |
+| a disabled push button | its bevel, and the ring round the last one pressed | ween32 draws a disabled button flat where the machine keeps its edge, and Windows leaves the default ring on the button that was clicked even after it is greyed |
 | a free-form selection round a *diagonal* | its edge, by a pixel a row | the machine's lasso is the points its mouse driver delivered, walked in twos; ours is the path we sent. The two polygons are genuinely different |
 
 The first three are ween32's rasteriser, not Paint's drawing code.
