@@ -3479,10 +3479,13 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return l->nrow++;
     }
     case LVM_SETIMAGELIST:
+        /* two sets: the big pictures the Icons view draws, and the small ones
+         * every other view draws */
         l = list_of(wnd);
         if (l) {
-            HIMAGELIST was = l->images;
-            l->images = (HIMAGELIST)lp;
+            HIMAGELIST *slot = (int)wp == LVSIL_NORMAL ? &l->big : &l->images;
+            HIMAGELIST was = *slot;
+            *slot = (HIMAGELIST)lp;
             InvalidateRect(wnd, NULL, FALSE);
             return (LRESULT)(UINT_PTR)was;
         }
