@@ -10,7 +10,8 @@ a way a committed .bmp does not, and needs no decoder at run time.
         > examples/mspaint/art_tools.zig
 
 The width argument is the width of one cell; the picture is cut into that
-many-pixel-wide frames left to right.
+many-pixel-wide frames left to right. A fourth, "x,y", is a cursor's hot
+spot within its cell, and is written into the generated file.
 """
 import sys
 from PIL import Image
@@ -28,7 +29,7 @@ PREFERRED = {
 SPARE = "abcdefghijklmnopqrtuvxyz0123456789"
 
 
-def main(path, name, cell):
+def main(path, name, cell, hot=None):
     im = Image.open(path)
     # A picture with an alpha channel says which pixels are transparent; one
     # without uses the face colour for it, which is how the tool glyphs were
@@ -63,6 +64,11 @@ def main(path, name, cell):
     out.append("pub const cell_w = %d;" % cell)
     out.append("pub const cell_h = %d;" % h)
     out.append("pub const count = %d;" % (w // cell))
+    if hot:
+        out.append("")
+        out.append("/// Where the pointer really is within each cell.")
+        out.append("pub const hot_x = %d;" % hot[0])
+        out.append("pub const hot_y = %d;" % hot[1])
     out.append("")
     out.append("pub const palette = [_]struct { ch: u8, rgb: u32 }{")
     for ch, c in order:
@@ -79,4 +85,8 @@ def main(path, name, cell):
 
 
 if __name__ == "__main__":
-    sys.stdout.write(main(sys.argv[1], sys.argv[2], int(sys.argv[3])))
+    # a fourth argument, "x,y", is a cursor's hot spot within its cell
+    hot = None
+    if len(sys.argv) > 4:
+        hot = tuple(int(v) for v in sys.argv[4].split(","))
+    sys.stdout.write(main(sys.argv[1], sys.argv[2], int(sys.argv[3]), hot))

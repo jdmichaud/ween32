@@ -329,6 +329,12 @@ SHORT GetKeyState(int vk);
 #define IDC_HAND ((LPCSTR)32649)
 
 HCURSOR LoadCursorA(HINSTANCE inst, LPCSTR name);
+/* A cursor of the application's own, out of the two masks win32 has always
+ * taken: one bit per pixel, rows padded to a byte, AND first. A clear AND
+ * bit is a pixel that is drawn, and the XOR bit is then black or white. */
+HCURSOR CreateCursor(HINSTANCE inst, int xhot, int yhot, int width,
+                     int height, const void *and_plane, const void *xor_plane);
+BOOL DestroyCursor(HCURSOR cursor);
 HCURSOR SetCursor(HCURSOR cursor);
 #define WM_SETCURSOR 0x0020
 #define WHEEL_DELTA 120

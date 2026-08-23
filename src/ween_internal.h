@@ -308,9 +308,28 @@ UINT ween_menu_track_bar(HWND top, int index, int from_keyboard);
 /* ---- windows ------------------------------------------------------------- */
 
 
+/* A cursor an application made itself, out of the AND and XOR masks win32
+ * has carried since 16-bit Windows: AND clear means the pixel is drawn, XOR
+ * says black or white, and both set means invert what is under it -- which
+ * X cannot do, so it is drawn black. `argb` is the two masks resolved into
+ * one picture, with alpha zero where nothing is drawn; `backend` is where
+ * the backend keeps whatever it made of it. */
+typedef struct ween_cursor {
+    unsigned magic;
+    int w, h, xhot, yhot;
+    unsigned *argb;
+    void *backend;
+} ween_cursor;
+
+#define WEEN_CURSOR_MAGIC 0x63757273u /* "curs" */
+
+/* Whether a handle is one of those rather than a stock shape number. */
+const ween_cursor *ween_cursor_of(void *handle);
+
 typedef struct ween_class {
     UINT style;  /* CS_*: only CS_DBLCLKS is acted on */
     int cursor;  /* WEEN_CURSOR_*: the shape over a window of this class */
+    const ween_cursor *cursor_img; /* ...or a cursor the application made */
     /* The control draws WS_VSCROLL/WS_HSCROLL itself, inside its client
      * area, rather than leaving them to the window's non-client one: an
      * edit, a list box and the two views all do. Without this they would
@@ -381,6 +400,7 @@ struct ween_wnd {
 
     /* top-level only */
     int cursor_shown; /* WEEN_CURSOR_*: what the backend was last told */
+    const ween_cursor *cursor_img_shown; /* ...or the picture it was told */
     HICON icon;    /* the caption's, from the class or WM_SETICON */
     HANDLE image;  /* a static's picture, from STM_SETIMAGE */
     HMENU menu;    /* the menu bar, drawn above the client area */
@@ -509,9 +529,9 @@ typedef enum {
 
 #define WEEN_WIN_UNMANAGED 1u /* a menu: no decoration, no management */
 
-/* The pointer shapes a backend must know. These are the classic set; there
- * are no custom cursors, because the window system's own are what the classic
- * shell used and what X can supply without a bitmap of our own. */
+/* The pointer shapes a backend must know: the classic set, which the window
+ * system supplies. An application with cursor art of its own hands over a
+ * ween_cursor instead; see below. */
 enum {
     WEEN_CURSOR_ARROW,
     WEEN_CURSOR_IBEAM,
@@ -557,8 +577,10 @@ typedef struct {
      * NULL, in which case the window is on the screen from the moment it is
      * opened. */
     void (*show)(void *win, int on);
-    /* The pointer's shape over this window, as one of WEEN_CURSOR_*. */
-    void (*set_cursor)(void *win, int shape);
+    /* The pointer's shape over this window, as one of WEEN_CURSOR_*, or a
+     * picture of its own when `custom` is not null -- in which case `shape`
+     * is what to fall back to. */
+    void (*set_cursor)(void *win, int shape, const ween_cursor *custom);
     /* Where the window's surface actually is on the desktop. A window
      * manager may put a window somewhere other than it asked to be — a
      * tiling one always does — so a window that wants to place something

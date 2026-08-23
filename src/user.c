@@ -242,9 +242,13 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
     }
     memcpy(c->name, wc->lpszClassName, n);
     c->style = wc->style;
-    /* A class cursor is a shape, not a handle: LoadCursorA hands back the
-     * shape number plus one, so there is nothing to keep alive. */
-    c->cursor = wc->hCursor ? (int)(INT_PTR)wc->hCursor - 1 : WEEN_CURSOR_ARROW;
+    /* A stock class cursor is a shape, not a handle: LoadCursorA hands back
+     * the shape number plus one, so there is nothing to keep alive. One the
+     * application made is kept by pointer, and it must outlive the class. */
+    c->cursor_img = ween_cursor_of(wc->hCursor);
+    c->cursor = wc->hCursor && !c->cursor_img
+                    ? (int)(INT_PTR)wc->hCursor - 1
+                    : WEEN_CURSOR_ARROW;
     c->proc = wc->lpfnWndProc;
     c->background = wc->hbrBackground;
     c->icon = wc->hIcon;
@@ -580,6 +584,11 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     wnd->style = style;
     wnd->ex_style = ex_style;
     wnd->scroll_max = 100;
+    /* Nothing has been said about the pointer yet, which is not the same as
+     * having said "an arrow": a window that never tells the server what it
+     * wants inherits the root's cursor, and on a bare X server that is the
+     * X shape rather than an arrow. */
+    wnd->cursor_shown = -1;
     wnd->x = x == CW_USEDEFAULT ? 0 : x;
     wnd->y = y == CW_USEDEFAULT ? 0 : y;
     wnd->w = w;
@@ -1723,30 +1732,119 @@ HCURSOR LoadCursorA(HINSTANCE inst, LPCSTR name)
     return (HCURSOR)(INT_PTR)(shape + 1);
 }
 
+/* A handle is either a small number -- a stock shape, plus one, so that zero
+ * stays "none" -- or a pointer to one the application made. Nothing is
+ * allocated in the first WEEN_CURSOR_COUNT bytes of an address space, so the
+ * two cannot be confused. */
+const ween_cursor *ween_cursor_of(void *handle)
+{
+    const ween_cursor *c = handle;
+    if (!handle || (INT_PTR)handle <= WEEN_CURSOR_COUNT)
+        return NULL;
+    return c->magic == WEEN_CURSOR_MAGIC ? c : NULL;
+}
+
+HCURSOR CreateCursor(HINSTANCE inst, int xhot, int yhot, int width,
+                     int height, const void *and_plane, const void *xor_plane)
+{
+    const unsigned char *ap = and_plane, *xp = xor_plane;
+    ween_cursor *c;
+    (void)inst;
+    if (width <= 0 || height <= 0 || !ap || !xp)
+        return NULL;
+    c = calloc(1, sizeof(*c));
+    if (!c)
+        return NULL;
+    c->argb = calloc((size_t)width * (size_t)height, sizeof(unsigned));
+    if (!c->argb) {
+        free(c);
+        return NULL;
+    }
+    c->magic = WEEN_CURSOR_MAGIC;
+    c->w = width;
+    c->h = height;
+    c->xhot = xhot;
+    c->yhot = yhot;
+    int stride = (width + 7) / 8;
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int bit = 0x80 >> (x % 8);
+            int a = (ap[y * stride + x / 8] & bit) != 0;
+            int v = (xp[y * stride + x / 8] & bit) != 0;
+            /* AND set and XOR clear is the transparent one; AND set and XOR
+             * set means invert, which is drawn black here. */
+            unsigned px = a ? (v ? 0xFF000000u : 0u)
+                            : (v ? 0xFFFFFFFFu : 0xFF000000u);
+            c->argb[y * width + x] = px;
+        }
+    }
+    return (HCURSOR)c;
+}
+
+BOOL DestroyCursor(HCURSOR cursor)
+{
+    ween_cursor *c = (ween_cursor *)ween_cursor_of(cursor);
+    if (!c)
+        return FALSE;
+    /* whatever the backend made of it goes with it */
+    if (ween_active_backend && ween_active_backend->set_cursor && c->backend)
+        ween_active_backend->set_cursor(NULL, WEEN_CURSOR_ARROW, c);
+    free(c->argb);
+    c->magic = 0;
+    free(c);
+    return TRUE;
+}
+
+/* What SetCursor was handed, kept whole rather than as a shape number, so a
+ * picture survives the trip to apply_cursor. */
+static HCURSOR g_cursor_override_img;
+
 HCURSOR SetCursor(HCURSOR cursor)
 {
     int was = g_cursor_override;
+    HCURSOR was_img = g_cursor_override_img;
+    if (ween_cursor_of(cursor)) {
+        g_cursor_override_img = cursor;
+        g_cursor_override = WEEN_CURSOR_ARROW;
+        return was_img ? was_img
+                       : (was < 0 ? NULL : (HCURSOR)(INT_PTR)(was + 1));
+    }
+    g_cursor_override_img = NULL;
     g_cursor_override = cursor ? (int)(INT_PTR)cursor - 1 : WEEN_CURSOR_ARROW;
-    return was < 0 ? NULL : (HCURSOR)(INT_PTR)(was + 1);
+    return was_img ? was_img : (was < 0 ? NULL : (HCURSOR)(INT_PTR)(was + 1));
 }
 
 /* Ask the window under the pointer what shape it wants, and tell the backend
  * if it has changed. Called as the pointer moves, so this is the one place
  * the shape is decided. */
-static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under)
+static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under, int x,
+                         int y)
 {
     int shape;
+    const ween_cursor *img;
     if (!ween_active_backend || !ween_active_backend->set_cursor || !top ||
         !under)
         return;
     g_cursor_override = -1;
-    SendMessageA(under, WM_SETCURSOR, (WPARAM)under, 0);
+    g_cursor_override_img = NULL;
+    /* WM_SETCURSOR carries where the pointer is, as a hit-test code, and
+     * which message asked -- an application that has a cursor of its own
+     * answers only for HTCLIENT, and would sit on its hands if this said
+     * nothing. */
+    LRESULT hit = SendMessageA(under, WM_NCHITTEST, 0,
+                               MAKELPARAM((WORD)x, (WORD)y));
+    SendMessageA(under, WM_SETCURSOR, (WPARAM)under,
+                 MAKELPARAM((WORD)hit, WM_MOUSEMOVE));
+    img = ween_cursor_of(g_cursor_override_img);
     shape = g_cursor_override >= 0
                 ? g_cursor_override
                 : (under->cls ? under->cls->cursor : WEEN_CURSOR_ARROW);
-    if (shape != top->cursor_shown) {
+    if (!img && under->cls && g_cursor_override < 0)
+        img = under->cls->cursor_img;
+    if (shape != top->cursor_shown || img != top->cursor_img_shown) {
         top->cursor_shown = shape;
-        ween_active_backend->set_cursor(top->backend_win, shape);
+        top->cursor_img_shown = img;
+        ween_active_backend->set_cursor(top->backend_win, shape, img);
     }
 }
 
@@ -1789,7 +1887,7 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
         dst = child_at(top, x, y);
     if (msg == WM_MOUSEMOVE) {
         hover_moved_to(dst);
-        apply_cursor(top, dst);
+        apply_cursor(top, dst, x, y);
     }
     /* Whether the second of a quick pair is a double click is up to the window
      * it lands on: only a class registered with CS_DBLCLKS hears about them.

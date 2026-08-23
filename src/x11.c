@@ -200,6 +200,20 @@ extern int XPutImage(XDisplay *, XWindow, XGC *, XImage *, int, int, int, int,
 extern int XSetForeground(XDisplay *, XGC *, unsigned long);
 extern unsigned long XCreateFontCursor(XDisplay *, unsigned);
 extern int XDefineCursor(XDisplay *, XWindow, unsigned long);
+/* what a cursor of the application's own needs: two one-bit pixmaps and the
+ * two colours they are drawn in */
+typedef struct {
+    unsigned long pixel;
+    unsigned short red, green, blue;
+    char flags, pad;
+} XColor;
+extern XPixmap XCreateBitmapFromData(XDisplay *, XWindow, const char *,
+                                     unsigned, unsigned);
+extern unsigned long XCreatePixmapCursor(XDisplay *, XPixmap, XPixmap,
+                                         XColor *, XColor *, unsigned,
+                                         unsigned);
+extern int XFreePixmap(XDisplay *, XPixmap);
+extern int XFreeCursor(XDisplay *, unsigned long);
 extern int XFillRectangle(XDisplay *, XWindow, XGC *, int, int, unsigned,
                           unsigned);
 extern int XNextEvent(XDisplay *, XEvent *);
@@ -468,13 +482,79 @@ static unsigned cursor_glyph(int shape)
     }
 }
 
-static void x11_set_cursor(void *win, int shape)
+/* A cursor the application drew, turned into an X one: two one-bit pixmaps,
+ * the picture and the mask that says which of it is there. Kept on the
+ * ween_cursor, because the pointer crosses a window boundary often. */
+static unsigned long x11_cursor_image(const ween_cursor *c)
+{
+    int stride = (c->w + 7) / 8;
+    unsigned char *src, *msk;
+    XPixmap sp, mp;
+    XColor black, white;
+    unsigned long cur;
+    if (c->backend)
+        return (unsigned long)(uintptr_t)c->backend;
+    src = calloc((size_t)stride * (size_t)c->h, 1);
+    msk = calloc((size_t)stride * (size_t)c->h, 1);
+    if (!src || !msk) {
+        free(src);
+        free(msk);
+        return 0;
+    }
+    for (int y = 0; y < c->h; y++) {
+        for (int x = 0; x < c->w; x++) {
+            unsigned px = c->argb[y * c->w + x];
+            /* X packs a bitmap the other way round from win32: within a
+             * byte the *least* significant bit is the leftmost pixel. */
+            int bit = 1 << (x % 8);
+            if (!(px >> 24))
+                continue; /* transparent: neither in the mask nor the picture */
+            msk[y * stride + x / 8] |= (unsigned char)bit;
+            /* the source pixmap is 1 where the foreground colour goes, and
+             * XCreatePixmapCursor is handed white as the foreground */
+            if ((px & 0xFFFFFFu) == 0xFFFFFFu)
+                src[y * stride + x / 8] |= (unsigned char)bit;
+        }
+    }
+    sp = XCreateBitmapFromData(g_dpy, XDefaultRootWindow(g_dpy), (char *)src,
+                               c->w, c->h);
+    mp = XCreateBitmapFromData(g_dpy, XDefaultRootWindow(g_dpy), (char *)msk,
+                               c->w, c->h);
+    free(src);
+    free(msk);
+    memset(&black, 0, sizeof black);
+    memset(&white, 0, sizeof white);
+    white.red = white.green = white.blue = 65535;
+    cur = XCreatePixmapCursor(g_dpy, sp, mp, &white, &black,
+                              (unsigned)c->xhot, (unsigned)c->yhot);
+    XFreePixmap(g_dpy, sp);
+    XFreePixmap(g_dpy, mp);
+    ((ween_cursor *)c)->backend = (void *)(uintptr_t)cur;
+    return cur;
+}
+
+static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
 {
     /* Made once each and kept: a cursor is a server resource, and the pointer
      * crosses a window boundary often enough that creating one per crossing
      * would be silly. */
     static unsigned long made[WEEN_CURSOR_COUNT];
     x11_win *xw = win;
+    if (!win) {
+        /* a cursor being destroyed: give the server its resource back */
+        if (custom && custom->backend) {
+            XFreeCursor(g_dpy, (unsigned long)(uintptr_t)custom->backend);
+            ((ween_cursor *)custom)->backend = NULL;
+        }
+        return;
+    }
+    if (custom) {
+        unsigned long cur = x11_cursor_image(custom);
+        if (cur) {
+            XDefineCursor(xw->dpy, xw->win, cur);
+            return;
+        }
+    }
     if (shape < 0 || shape >= WEEN_CURSOR_COUNT)
         shape = WEEN_CURSOR_ARROW;
     if (!made[shape])

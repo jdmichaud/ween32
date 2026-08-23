@@ -77,6 +77,22 @@ also where a click on it lands — and that rectangle out of its own
 screenshot and out of any other are the two pictures to draw. Nothing is
 interpreted, so a colour picture and a one-bit glyph need no distinction.
 
+**The pointers.** Each tool has a drawing of its own — a pencil, a bucket, a
+magnifier — and a cursor is not in the window, so the probe cannot ask for it
+and a screenshot of the window does not hold it. The emulator draws the
+pointer into its frame buffer, though, so a screenshot of the *screen* does:
+`tools/mspaint/grabcursors.py` picks each tool in turn and parks the pointer
+over a page flooded with the palette's grey, which tells the four kinds of
+pixel apart in one shot — grey is the page showing through, black and white
+are the cursor's own, and the inverse of grey is a pixel that inverts what is
+under it, which is how the brush's dotted cross is drawn. The hot spot is
+measured first, by leaving a pencil dot at the same place: the ink lands on
+it.
+
+The rubber's is the one exception. Its cursor is the size it rubs out, so it
+is drawn rather than read: a square outline with the pointer in the middle,
+which is what the captured one is at its smallest.
+
 **The tools.** The twelve brushes are twelve shapes, not sizes of a formula:
 a click with each on the machine, read back off the screen. The disc a wide
 pen puts down is the machine's too — two across is a full square, three a
@@ -156,6 +172,19 @@ What does not:
 
 The first three are ween32's rasteriser, not Paint's drawing code.
 
+## On a display
+
+Everything above is measured headless, which is how it can be counted. It
+also runs on X:
+
+```sh
+zig build mspaint && ./zig-out/bin/mspaint
+```
+
+The window that comes up is the window in the pictures above, and the pointer
+over the picture is the tool's own — which can be read back off the server,
+hot spot and all, with `XFixesGetCursorImage`.
+
 ## The same source, as win32
 
 ```sh
@@ -186,6 +215,5 @@ answers.
 - **Set As Wallpaper**, which writes a registry key on a machine that has
   one. Both items are greyed until the picture is saved, which is where they
   start.
-- **Paint's own cursors.** Each tool has a drawing of its own — a pencil, a
-  bucket, a brush — and those are cursor resources; ween32 has no way yet to
-  make a cursor out of a bitmap, so the nearest stock shape is used.
+- **The web-safe palette** Edit Colors offers on top of the forty-eight basic
+  ones, which is the common dialog's and not Paint's.

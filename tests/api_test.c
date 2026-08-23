@@ -191,6 +191,30 @@ int main(void)
             DestroyWindow(lw);
     }
 
+    /* A cursor an application draws itself: the two masks win32 has always
+     * taken, resolved into one picture with the transparent parts marked. */
+    {
+        /* 8x8: the top row white, the second black, the rest transparent */
+        unsigned char and_bits[8] = { 0x00, 0x00, 0xFF, 0xFF,
+                                      0xFF, 0xFF, 0xFF, 0xFF };
+        unsigned char xor_bits[8] = { 0xFF, 0x00, 0x00, 0x00,
+                                      0x00, 0x00, 0x00, 0x00 };
+        HCURSOR cur = CreateCursor(NULL, 3, 4, 8, 8, and_bits, xor_bits);
+        CHECK(cur != NULL, "a cursor can be made out of two masks");
+        const ween_cursor *c = ween_cursor_of(cur);
+        CHECK(c != NULL, "and is told apart from a stock shape by its handle");
+        CHECK(c && c->w == 8 && c->h == 8 && c->xhot == 3 && c->yhot == 4,
+              "which remembers its size and its hot spot");
+        CHECK(c && c->argb[0] == 0xFFFFFFFFu,
+              "an AND bit clear and an XOR bit set is a white pixel");
+        CHECK(c && c->argb[8] == 0xFF000000u, "both clear is a black one");
+        CHECK(c && (c->argb[16] >> 24) == 0,
+              "and AND set with XOR clear is nothing at all");
+        CHECK(ween_cursor_of(LoadCursorA(NULL, IDC_ARROW)) == NULL,
+              "a stock cursor is still a number, not one of those");
+        CHECK(DestroyCursor(cur) == TRUE, "and it can be given back");
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

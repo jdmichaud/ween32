@@ -53,6 +53,34 @@ pub fn cellBitmap(comptime art: type, comptime index: usize) w.HBITMAP {
     return w.CreateBitmap(art.cell_w, art.cell_h, 1, 32, &px).?;
 }
 
+/// One cell of a strip as a cursor: the two masks win32 takes, built from
+/// the art at compile time. A blank pixel is the transparent one, so the AND
+/// mask is set there and clear everywhere else, and the XOR mask says which
+/// of the rest are white.
+pub fn cursor(comptime art: type, comptime index: usize, xhot: i32, yhot: i32) w.HCURSOR {
+    const stride = (art.cell_w + 7) / 8;
+    var and_bits: [stride * art.cell_h]u8 = @splat(0);
+    var xor_bits: [stride * art.cell_h]u8 = @splat(0);
+    for (art.rows, 0..) |row, y| {
+        for (row[index * art.cell_w ..][0..art.cell_w], 0..) |c, x| {
+            const bit: u8 = @as(u8, 0x80) >> @intCast(x % 8);
+            if (c == ' ') {
+                and_bits[y * stride + x / 8] |= bit;
+                continue;
+            }
+            var rgb: u32 = 0;
+            for (art.palette) |q| {
+                if (q.ch == c) {
+                    rgb = q.rgb;
+                    break;
+                }
+            }
+            if (rgb != 0) xor_bits[y * stride + x / 8] |= bit;
+        }
+    }
+    return w.CreateCursor(null, xhot, yhot, art.cell_w, art.cell_h, &and_bits, &xor_bits).?;
+}
+
 /// A single-cell picture as an icon, which is what a window's class wants for
 /// the one in its caption: the colours, plus the one-bit mask that says which
 /// of them are really there.

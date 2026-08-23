@@ -10,6 +10,7 @@ const app = &A.app;
 const tools = @import("tools.zig");
 const undo = @import("undo.zig");
 const selection = @import("selection.zig");
+const cursors = @import("cursors.zig");
 const textbox = @import("textbox.zig");
 
 pub const class_name = "PaintView";
@@ -414,18 +415,10 @@ fn commit() void {
     _ = w.InvalidateRect(app.view, null, w.FALSE);
 }
 
-/// The pointer over the picture. Paint has a drawing of its own for each
-/// tool — a pencil, a brush, a bucket; those are cursor resources, and
-/// ween32 has no way yet to make a cursor out of one, so this picks the
-/// nearest of the stock shapes.
+/// The pointer over the picture: Paint's own drawing for the tool in hand,
+/// read off the machine.
 fn setCursor() void {
-    const shape = switch (app.tool) {
-        .free_select, .select, .line, .curve, .rect, .polygon, .ellipse, .round_rect, .fill, .pick, .airbrush => w.IDC_CROSS,
-        .text => w.IDC_IBEAM,
-        .magnifier => w.IDC_CROSS,
-        else => w.IDC_ARROW,
-    };
-    _ = w.SetCursor(w.LoadCursorA(null, shape));
+    _ = w.SetCursor(cursors.forTool(app.tool));
 }
 
 fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {

@@ -337,6 +337,8 @@ pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) UINT
 pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) BOOL;
 pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) HCURSOR;
 pub extern fn SetCursor(cursor: HCURSOR) HCURSOR;
+pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) HCURSOR;
+pub extern fn DestroyCursor(cursor: HCURSOR) BOOL;
 pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) HANDLE;
 pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) c_int;
 

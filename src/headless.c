@@ -250,8 +250,11 @@ static void hl_set_resizable(void *win, int resizable)
     (void)resizable;
 }
 
-static void hl_set_cursor(void *win, int shape)
+static void hl_set_cursor(void *win, int shape, const ween_cursor *custom)
 {
+    /* Nothing draws a pointer here, so a picture is only remembered by the
+     * shape it stands in for; a test can still read back what was asked. */
+    (void)custom;
     if (win)
         ((hl_win *)win)->cursor = shape;
 }

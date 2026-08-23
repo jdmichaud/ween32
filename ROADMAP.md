@@ -28,10 +28,6 @@ that no application has asked for:
   scrolls rather than being clipped.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
-- [ ] **A cursor made from a bitmap** (`CreateCursor`, `LoadCursorFromFileA`).
-  Cursors are stock shapes today, so an application with cursor art of its own
-  — Paint has one per tool — has to make do with the nearest.
-
 - [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
   one; GDI's comes out flatter across the top, and a wide line at a shallow
   angle differs at its ends because GDI sweeps the pen as a region rather
@@ -136,6 +132,13 @@ colour, and `SS_NOPREFIX` says an ampersand is an ampersand.
 a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
 `AddMasked`/`AddIcon`/`Draw`/`Destroy`) with one-bit transparency, and
 `DrawIconEx`. The tree and list views draw the image an item names.
+
+**A cursor of the application's own** — `CreateCursor` takes the two masks
+win32 has taken since sixteen-bit Windows and `DestroyCursor` gives it back;
+a class or a `WM_SETCURSOR` can name one, and the X11 backend turns it into a
+pixmap cursor with its hot spot. `WM_SETCURSOR` carries the hit-test code and
+the message that asked, so an application that answers only for `HTCLIENT` —
+which is what one writes — is heard. Paint has one drawing per tool.
 
 **A shell's controls** — a `ToolbarWindow32` with flat, hot-tracked, checkable
 and drop-down buttons, in a `ReBarWindow32` of stacked bands with grippers and
