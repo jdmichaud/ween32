@@ -309,6 +309,11 @@ static void *x11_open(int x, int y, int w, int h, const char *title,
      * not care — two windows that both centre would sit on top of each other */
     int px = x == CW_USEDEFAULT ? (XDisplayWidth(dpy, scr) - ww) / 2 : x * zoom;
     int py = y == CW_USEDEFAULT ? (XDisplayHeight(dpy, scr) - wh) / 2 : y * zoom;
+    /* On the grid the window is drawn on: half of one of its pixels is not a
+     * position it can have, and rounding one away is a window that comes back
+     * a pixel from where it was sent. */
+    px -= px % zoom;
+    py -= py % zoom;
 
     XWindow win = XCreateSimpleWindow(dpy, root, px, py, (unsigned)ww,
                                       (unsigned)wh, 0, 0, 0x00c0c0c0);
@@ -457,6 +462,18 @@ static void x11_present(void *win, const ween_surface *s, const RECT *damage)
     XPutImage(xw->dpy, xw->win, xw->gc, xw->img, px, py, ox + px, oy + py,
               (unsigned)pw, (unsigned)ph);
     XFlush(xw->dpy);
+}
+
+/* The desktop's size, in the pixels a window is measured in: at 2x a window
+ * as wide as the screen is half as many of them. */
+static void x11_screen_size(int *w, int *h)
+{
+    if (!g_dpy)
+        return;
+    int scr = XDefaultScreen(g_dpy);
+    int zoom = ween_zoom();
+    *w = XDisplayWidth(g_dpy, scr) / zoom;
+    *h = XDisplayHeight(g_dpy, scr) / zoom;
 }
 
 static void x11_set_resizable(void *win, int resizable)
@@ -634,11 +651,13 @@ static void x11_show(void *win, int on)
     XFlush(xw->dpy);
 }
 
+/* dx, dy are in the pixels the window is measured in, as everywhere else in
+ * this interface: at 2x the window moves two screen pixels for each of them. */
 static void x11_move_by(void *win, int dx, int dy)
 {
     x11_win *xw = win;
-    xw->pos_x += dx;
-    xw->pos_y += dy;
+    xw->pos_x += dx * xw->zoom;
+    xw->pos_y += dy * xw->zoom;
     XMoveWindow(xw->dpy, xw->win, xw->pos_x, xw->pos_y);
 }
 
@@ -844,11 +863,21 @@ static void x11_close(void *win)
 
 const ween_backend *ween_backend_x11(void)
 {
-    static const ween_backend b = { x11_open,          x11_present,
-                                    x11_move_by,       x11_resize,
-                                    x11_set_resizable, x11_show,
-                                    x11_set_cursor,    x11_origin,
-                                    x11_next_event,    x11_close };
+    static const ween_backend b = { .open = x11_open,
+                                    .present = x11_present,
+                                    .move_by = x11_move_by,
+                                    .resize = x11_resize,
+                                    /* the server answers with the size it
+                                       actually gave, which may not be the one
+                                       that was asked for */
+                                    .resize_is_answered = 1,
+                                    .set_resizable = x11_set_resizable,
+                                    .show = x11_show,
+                                    .set_cursor = x11_set_cursor,
+                                    .screen_size = x11_screen_size,
+                                    .origin = x11_origin,
+                                    .next_event = x11_next_event,
+                                    .close = x11_close };
     return &b;
 }
 

@@ -598,6 +598,11 @@ typedef struct {
     /* Ask the window system for a new size, and say whether the user may
      * resize the window themselves. */
     void (*resize)(void *win, int w, int h);
+    /* Whether asking is answered: a display server always says what it
+     * actually gave, in a WEEN_EV_RESIZE, and what it gave may not be what
+     * was asked for. A backend that does not answer leaves the caller to
+     * take its own word for the new size. */
+    int resize_is_answered;
     void (*set_resizable)(void *win, int resizable);
     /* Put the window on the screen or take it off. A window is opened off
      * the screen and only appears when it is shown, which is what lets one
@@ -609,6 +614,10 @@ typedef struct {
      * picture of its own when `custom` is not null -- in which case `shape`
      * is what to fall back to. */
     void (*set_cursor)(void *win, int shape, const ween_cursor *custom);
+    /* How big the screen is, in the pixels a window is measured in. A
+     * backend without one leaves the numbers alone, and the classic default
+     * stands — which is what keeps a headless render the same everywhere. */
+    void (*screen_size)(int *w, int *h);
     /* Where the window's surface actually is on the desktop. A window
      * manager may put a window somewhere other than it asked to be — a
      * tiling one always does — so a window that wants to place something

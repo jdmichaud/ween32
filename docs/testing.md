@@ -65,6 +65,27 @@ on the final size with the last move. Measuring it needs a display and a
 program that sends the moves; there is no headless equivalent, because the
 script feeds one event at a time and so can never build a backlog.
 
+Three more of a drag's faults are invisible to a script for the same reason —
+they need a pointer, a display, and sometimes a window manager that disagrees.
+The pointer moves in screen pixels while a window is measured in the pixels it
+is drawn from, so at 2x, following it one for one grew the window twice as
+fast as the hand moved and the border ran away from the grip. A size counted
+up step by step drifts as soon as one of the steps is refused — by the minimum
+size, or by a window manager — and never comes back to where it started;
+measured from where the drag began, a drag out and back lands on the size it
+began at, exactly. And a window manager that hands back a size of its own was
+answered by our resizing to what we asked for and then to what it gave, twice
+per mouse report: the window flickered between the two for as long as the drag
+lasted. Asking, and letting the answer do the resizing, is the whole fix.
+
+Driving that needs XTEST — `XTestFakeMotionEvent` and `XTestFakeButtonEvent`,
+so that the press is a real press with X's implicit grab behind it; synthetic
+events through `XSendEvent` are not the same thing and will not show any of
+this. A window manager to disagree with can be a hundred lines: select
+`SubstructureRedirectMask` on the root, clamp every `ConfigureRequest` to a
+maximum, and answer with the geometry kept, which is what a tiling one does
+all day.
+
 ```sh
 # the sanitizers, which have caught real bugs the suite passed through
 make clean && make X11=0 test CC=gcc \

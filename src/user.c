@@ -477,9 +477,14 @@ int GetSystemMetrics(int index)
     case SM_CYMENUCHECK:
         return ween_ncm(WEEN_NC_MENUCHECK);
     case SM_CXSCREEN:
-        return 1024; /* no display query yet; a plausible classic desktop */
-    case SM_CYSCREEN:
-        return 768;
+    case SM_CYSCREEN: {
+        /* the desktop the app is actually on, or a plausible classic one
+         * where there is no desktop to ask */
+        int w = 1024, h = 768;
+        if (ween_active_backend && ween_active_backend->screen_size)
+            ween_active_backend->screen_size(&w, &h);
+        return index == SM_CXSCREEN ? w : h;
+    }
     default:
         return 0;
     }
@@ -692,6 +697,13 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
+        /* A window that did not say where it goes is put somewhere by the
+         * window system, and where that is has to be read back rather than
+         * assumed: taking it for the origin is what left a maximised window
+         * sized to the screen but still sitting where it was. */
+        if (wnd->backend_win && (x == CW_USEDEFAULT || y == CW_USEDEFAULT) &&
+            ween_active_backend->origin)
+            ween_active_backend->origin(wnd->backend_win, &wnd->x, &wnd->y);
         if (!wnd->backend_win) {
             ween_surface_free(&wnd->surface);
             free(wnd);
@@ -2167,10 +2179,21 @@ static void resize_top(struct ween_wnd *top, int w, int h)
     ween_damage_all(top);
 }
 
-/* Dragging a sizing border: the pointer moves an edge, the window follows. */
+/* Dragging a sizing border: the pointer moves an edge, the window follows.
+ *
+ * Two things this cannot do by counting steps. The size is measured from
+ * where the drag began, not added up move by move, because the window may not
+ * end up the size that was asked for — a window manager clamps, a minimum
+ * stops a shrink — and adding the next step to a size that was refused walks
+ * the border away from the pointer. And the pointer moves in screen pixels
+ * while the window is measured in the pixels it is drawn from, which at 2x
+ * are not the same pixel: following it one for one grew the window twice as
+ * fast as the hand moved. */
 static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
 {
-    int last_x = down->x_root, last_y = down->y_root;
+    int zoom = ween_zoom();
+    int x0 = down->x_root, y0 = down->y_root, w0 = top->w, h0 = top->h;
+    int want_w = w0, want_h = h0;
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
         if (ev.kind == WEEN_EV_EXPOSE) {
@@ -2179,24 +2202,43 @@ static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
             continue;
         }
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
-            int dx = ev.x_root - last_x, dy = ev.y_root - last_y;
-            int w = top->w, h = top->h;
-            last_x = ev.x_root;
-            last_y = ev.y_root;
+            int dx = (ev.x_root - x0) / zoom, dy = (ev.y_root - y0) / zoom;
+            int w = w0, h = h0;
             if (edge == HTRIGHT || edge == HTBOTTOMRIGHT || edge == HTTOPRIGHT)
-                w += dx;
+                w = w0 + dx;
             if (edge == HTBOTTOM || edge == HTBOTTOMRIGHT || edge == HTBOTTOMLEFT)
-                h += dy;
-            if (w != top->w || h != top->h) {
+                h = h0 + dy;
+            /* win32 will not let a drag pull a window past the screen it is
+             * on — the maximum tracking size WM_GETMINMAXINFO gives — and a
+             * window bigger than the display is one whose every frame is
+             * copied to a screen that cannot show it. */
+            {
+                int max_w = GetSystemMetrics(SM_CXSCREEN);
+                int max_h = GetSystemMetrics(SM_CYSCREEN);
+                if (max_w > 0 && w > max_w)
+                    w = max_w;
+                if (max_h > 0 && h > max_h)
+                    h = max_h;
+            }
+            if (w == want_w && h == want_h)
+                continue;
+            want_w = w;
+            want_h = h;
+            /* Ask, and let the answer do the resizing. Resizing here as well
+             * means a window manager that hands back a size of its own is
+             * answered by our asking again, and the window flickers between
+             * the two for as long as the drag lasts. */
+            if (ween_active_backend->resize)
+                ween_active_backend->resize(top->backend_win, w, h);
+            if (!ween_active_backend->resize_is_answered) {
                 resize_top(top, w, h);
-                if (ween_active_backend->resize)
-                    ween_active_backend->resize(top->backend_win, top->w, top->h);
                 ween_flush_paint();
             }
         } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
             return;
         } else if (ev.kind == WEEN_EV_RESIZE) {
             resize_top(top, ev.x, ev.y);
+            ween_flush_paint();
         }
     }
 }
@@ -2205,7 +2247,12 @@ static void nc_drag_size(struct ween_wnd *top, const ween_event *down, int edge)
  * by its caption and tracking the close box. */
 static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
 {
-    int last_x = down->x_root, last_y = down->y_root;
+    int zoom = ween_zoom();
+    /* Measured from where the drag began and counted in the pixels the window
+     * is measured in, for the same two reasons a sizing drag is: the pointer
+     * moves in screen pixels, and a step that rounds to nothing must not be
+     * lost — a hundred of them are a hundred pixels. */
+    int x0 = down->x_root, y0 = down->y_root, dx = 0, dy = 0;
     for (;;) {
         ween_event ev = ween_active_backend->next_event(top->backend_win, -1);
         if (ev.kind == WEEN_EV_EXPOSE) {
@@ -2214,10 +2261,18 @@ static void nc_drag_caption(struct ween_wnd *top, const ween_event *down)
             continue;
         }
         if (ev.kind == WEEN_EV_MOUSE_MOVE) {
-            ween_active_backend->move_by(top->backend_win, ev.x_root - last_x,
-                                         ev.y_root - last_y);
-            last_x = ev.x_root;
-            last_y = ev.y_root;
+            int want_x = (ev.x_root - x0) / zoom, want_y = (ev.y_root - y0) / zoom;
+            if (want_x == dx && want_y == dy)
+                continue;
+            ween_active_backend->move_by(top->backend_win, want_x - dx,
+                                         want_y - dy);
+            /* the window rect follows the window: a program that asks where
+             * it is, or is moved somewhere else afterwards, is otherwise
+             * working from where it was before anyone touched it */
+            top->x += want_x - dx;
+            top->y += want_y - dy;
+            dx = want_x;
+            dy = want_y;
         } else if (ev.kind == WEEN_EV_MOUSE_UP || ev.kind == WEEN_EV_END) {
             return;
         }

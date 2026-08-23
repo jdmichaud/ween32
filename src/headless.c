@@ -343,10 +343,21 @@ static void hl_close(void *win)
 
 const ween_backend *ween_backend_headless(void)
 {
-    static const ween_backend b = { hl_open,           hl_present,
-                                    hl_move_by,        hl_resize,
-                                    hl_set_resizable,  hl_show,
-                                    hl_set_cursor,     hl_origin,
-                                    hl_next_event,     hl_close };
+    static const ween_backend b = { .open = hl_open,
+                                    .present = hl_present,
+                                    .move_by = hl_move_by,
+                                    .resize = hl_resize,
+                                    /* nothing answers: a script says what the
+                                       window system did */
+                                    .resize_is_answered = 0,
+                                    .set_resizable = hl_set_resizable,
+                                    .show = hl_show,
+                                    .set_cursor = hl_set_cursor,
+                                    /* no screen: the classic desktop stands,
+                                       so a render is the same everywhere */
+                                    .screen_size = NULL,
+                                    .origin = hl_origin,
+                                    .next_event = hl_next_event,
+                                    .close = hl_close };
     return &b;
 }
