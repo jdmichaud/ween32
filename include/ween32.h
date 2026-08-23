@@ -1132,6 +1132,7 @@ typedef struct {
  * before it. A shell sets this on each of its bars, which is why they stack. */
 #define RBBS_BREAK 0x00000001
 #define RBBS_FIXEDSIZE 0x00000002
+#define RBBS_HIDDEN 0x00000008
 #define RBBS_GRIPPERALWAYS 0x00000080
 #define RBBS_NOGRIPPER 0x00000100
 
@@ -1154,6 +1155,8 @@ typedef struct {
 #define RB_SETBANDINFOA (WM_USER + 6)
 #define RB_GETBANDCOUNT (WM_USER + 12)
 #define RB_GETBARHEIGHT (WM_USER + 27)
+/* Show or hide one band, which is what View > Toolbars does to each of them. */
+#define RB_SHOWBAND (WM_USER + 35)
 
 /* Registering the common control classes. ween32 has them registered before
  * anything can ask for one, so this says yes and does nothing — but an
@@ -1215,6 +1218,9 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint);
 BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase);
 BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);
+/* A control's text by its id, which is how a dialog reads what was typed. */
+UINT GetDlgItemTextA(HWND dlg, int id, LPSTR out, int max);
+BOOL SetDlgItemTextA(HWND dlg, int id, LPCSTR text);
 int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
 HWND GetFocus(void);

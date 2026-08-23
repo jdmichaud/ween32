@@ -15,6 +15,7 @@
 
 /* predefined control-class atoms (winuser.h) */
 #define ATOM_BUTTON 0x0080
+#define ATOM_EDIT 0x0081
 #define ATOM_STATIC 0x0082
 
 typedef struct {

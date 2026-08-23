@@ -5114,7 +5114,8 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
         for (int j = i; j < rb->count; j++) {
             if (j > i && (rb->band[j].style & RBBS_BREAK))
                 break;
-            if (rb->band[j].min_h > row_h)
+            if (!(rb->band[j].style & RBBS_HIDDEN) &&
+                rb->band[j].min_h > row_h)
                 row_h = rb->band[j].min_h;
             n++;
         }
@@ -5123,7 +5124,7 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
             ween_rbband *b = &rb->band[j];
             int content = ween_ncm(WEEN_RB_CONTENT_X);
             b->y = y;
-            b->h = edge + row_h;
+            b->h = (b->style & RBBS_HIDDEN) ? 0 : edge + row_h;
             b->x = x;
             /* the last on the row takes whatever is left of the width */
             b->w = (j == i + n - 1) ? cr.right - x : (b->cx ? b->cx : share);
@@ -5137,7 +5138,7 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
                 MoveWindow(b->child, b->x + content, y + edge,
                            b->w - content - edge, b->h - edge, TRUE);
         }
-        y += edge + row_h;
+        y += row_h ? edge + row_h : 0; /* a row of hidden bands takes none */
         i += n;
     }
 }
@@ -5149,7 +5150,8 @@ static int rebar_height(HWND wnd, ween_rebar *rb)
     int h = (wnd->style & RBS_BANDBORDERS) ? ween_ncm(WEEN_RB_EDGE_H) : 0;
     rebar_layout(wnd, rb);
     for (int i = 0; i < rb->count; i++)
-        if (i == 0 || (rb->band[i].style & RBBS_BREAK))
+        if ((i == 0 || (rb->band[i].style & RBBS_BREAK)) &&
+            !(rb->band[i].style & RBBS_HIDDEN))
             h += rb->band[i].h;
     return h;
 }
@@ -5260,6 +5262,25 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rb->count++;
         rebar_layout(wnd, rb);
         InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case RB_SHOWBAND: {
+        /* a band that is not shown keeps its place but takes no room, which
+         * is what makes hiding a toolbar close the gap it was in */
+        int i = (int)wp;
+        rb = rebar_of(wnd);
+        if (!rb || i < 0 || i >= rb->count)
+            return FALSE;
+        if (lp)
+            rb->band[i].style &= ~RBBS_HIDDEN;
+        else
+            rb->band[i].style |= RBBS_HIDDEN;
+        if (rb->band[i].child)
+            ShowWindow(rb->band[i].child, lp ? SW_SHOW : SW_HIDE);
+        rebar_layout(wnd, rb);
+        InvalidateRect(wnd, NULL, TRUE);
+        if (wnd->parent) /* the frame lays out again around the new height */
+            SendMessageA(wnd->parent, WM_SIZE, 0, 0);
         return TRUE;
     }
     case RB_GETBANDCOUNT:

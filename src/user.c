@@ -718,6 +718,25 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
     return TRUE;
 }
 
+/* A control's text by its id, and setting it: what a dialog reads back from
+ * what was typed, and writes into a field it fills in. */
+UINT GetDlgItemTextA(HWND dlg, int id, LPSTR out, int max)
+{
+    HWND c = GetDlgItem(dlg, id);
+    if (!out || max <= 0)
+        return 0;
+    out[0] = 0;
+    if (!c)
+        return 0;
+    return (UINT)GetWindowTextA(c, out, max);
+}
+
+BOOL SetDlgItemTextA(HWND dlg, int id, LPCSTR text)
+{
+    HWND c = GetDlgItem(dlg, id);
+    return c ? SetWindowTextA(c, text) : FALSE;
+}
+
 HWND GetDlgItem(HWND dlg, int id)
 {
     if (!dlg)

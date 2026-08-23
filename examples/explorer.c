@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "fs.h"
+#include "win32_dlg.h"
 
 /* ---- what the window is made of ------------------------------------------ */
 
@@ -529,6 +530,7 @@ static char g_hist[HIST_MAX][sizeof(g_path)];
 static int g_hist_n, g_hist_at = -1;
 static int g_navigating; /* set while Back or Forward is doing the walking */
 static int g_show_status = 1; /* View > Status Bar */
+static int g_show_toolbar = 1, g_show_address = 1; /* View > Toolbars */
 static int g_view = 3;        /* which of the five View offers, Details being
                                * the fourth — the order the menu has them in */
 /* The folder to open in, when the command line named one. */
@@ -1316,6 +1318,144 @@ static const char *command_help(UINT id)
     default:
         return NULL;
     }
+}
+
+/* ---- Properties -----------------------------------------------------------
+ *
+ * What the shell shows about one thing: its name in a box, what kind it is,
+ * where it is, how big, when it was written, and the three attributes. Built
+ * from a dialog template, so the same source puts it up on either side.
+ */
+enum {
+    IDC_PROP_NAME = 100,
+    IDC_PROP_TYPE,
+    IDC_PROP_WHERE,
+    IDC_PROP_SIZE,
+    IDC_PROP_WHEN,
+    IDC_PROP_READONLY,
+    IDC_PROP_HIDDEN,
+    IDC_PROP_ARCHIVE
+};
+
+static int g_prop_row = -1; /* the row Properties is about */
+
+static int end_rename(int row, const char *name);
+
+static INT_PTR CALLBACK prop_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    if (msg == WM_COMMAND) {
+        WORD id = LOWORD(wp);
+        if (id == IDOK) { /* a name typed in the box is a rename */
+            char typed[280];
+            GetDlgItemTextA(dlg, IDC_PROP_NAME, typed, (int)sizeof(typed));
+            EndDialog(dlg, id);
+            if (typed[0])
+                end_rename(g_prop_row, typed);
+            return TRUE;
+        }
+        if (id == IDCANCEL) {
+            EndDialog(dlg, id);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* "91.0 KB (93,204 bytes)", which is how the shell says a size. */
+static void size_text(unsigned long bytes, char *out, size_t max)
+{
+    char grouped[32];
+    char digits[24];
+    int n = snprintf(digits, sizeof(digits), "%lu", bytes);
+    int j = 0;
+    for (int i = 0; i < n && j < (int)sizeof(grouped) - 2; i++) {
+        if (i && (n - i) % 3 == 0)
+            grouped[j++] = ',';
+        grouped[j++] = digits[i];
+    }
+    grouped[j] = 0;
+    if (bytes >= 1024)
+        snprintf(out, max, "%lu.%lu KB (%s bytes)", bytes / 1024,
+                 (bytes % 1024) * 10 / 1024, grouped);
+    else
+        snprintf(out, max, "%s bytes", grouped);
+}
+
+static void show_properties(HWND owner)
+{
+    int row = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    static char title[300], name[280], type[64], size[64], when[64];
+    static char where[sizeof(g_path)];
+    unsigned char buf[3000];
+    UINT_PTR len;
+    dlg_item items[16];
+    int n = 0;
+    if (row < 0 && g_ctx_row >= 0)
+        row = g_ctx_row;
+    if (row < 0 || row >= g_entries) {
+        MessageBoxA(owner, "Nothing is selected.", "Properties",
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    g_prop_row = row;
+    snprintf(title, sizeof(title), "%s Properties", g_entry[row].name);
+    snprintf(name, sizeof(name), "%s", g_entry[row].name);
+    snprintf(type, sizeof(type), "%s", type_of(&g_entry[row]));
+    snprintf(where, sizeof(where), "%s", g_path);
+    if (g_entry[row].is_dir)
+        snprintf(size, sizeof(size), "%s", "");
+    else
+        size_text(g_entry[row].size, size, sizeof(size));
+    snprintf(when, sizeof(when), "%s", g_entry[row].modified);
+
+/* one row of the table, since a dozen of them written out is a wall */
+#define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                               \
+    do {                                                                       \
+        items[n].style = (st);                                                 \
+        items[n].x = (short)(ix);                                              \
+        items[n].y = (short)(iy);                                              \
+        items[n].cx = (short)(iw);                                             \
+        items[n].cy = (short)(ih);                                             \
+        items[n].id = (WORD)(iid);                                             \
+        items[n].cls = (WORD)(icls);                                           \
+        items[n].text = (itx);                                                 \
+        n++;                                                                   \
+    } while (0)
+    /* the name, in a box of its own, and then a row per thing */
+    /* the name in a box you can type in, as the shell has it */
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 46, 8, 148, 12,
+         IDC_PROP_NAME, ATOM_EDIT, name);
+    ITEM(WS_CHILD | WS_VISIBLE, 8, 30, 40, 9, 0, ATOM_STATIC, "Type:");
+    ITEM(WS_CHILD | WS_VISIBLE, 52, 30, 142, 9, IDC_PROP_TYPE, ATOM_STATIC,
+         type);
+    ITEM(WS_CHILD | WS_VISIBLE, 8, 44, 40, 9, 0, ATOM_STATIC, "Location:");
+    ITEM(WS_CHILD | WS_VISIBLE, 52, 44, 142, 9, IDC_PROP_WHERE, ATOM_STATIC,
+         where);
+    ITEM(WS_CHILD | WS_VISIBLE, 8, 58, 40, 9, 0, ATOM_STATIC, "Size:");
+    ITEM(WS_CHILD | WS_VISIBLE, 52, 58, 142, 9, IDC_PROP_SIZE, ATOM_STATIC,
+         size);
+    ITEM(WS_CHILD | WS_VISIBLE, 8, 76, 40, 9, 0, ATOM_STATIC, "Modified:");
+    ITEM(WS_CHILD | WS_VISIBLE, 52, 76, 142, 9, IDC_PROP_WHEN, ATOM_STATIC,
+         when);
+    ITEM(WS_CHILD | WS_VISIBLE, 8, 96, 40, 9, 0, ATOM_STATIC, "Attributes:");
+    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 95, 60, 10,
+         IDC_PROP_READONLY, ATOM_BUTTON, "&Read-only");
+    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 108, 60, 10,
+         IDC_PROP_HIDDEN, ATOM_BUTTON, "&Hidden");
+    ITEM(WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 52, 121, 60, 10,
+         IDC_PROP_ARCHIVE, ATOM_BUTTON, "A&rchive");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, 84, 142, 50,
+         14, IDOK, ATOM_BUTTON, "OK");
+    ITEM(WS_CHILD | WS_VISIBLE | WS_TABSTOP, 140, 142, 50, 14, IDCANCEL,
+         ATOM_BUTTON, "Cancel");
+#undef ITEM
+    len = build_dialog_template(buf, sizeof(buf),
+                                WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+                                200, 164, title, items, n);
+    if (len <= sizeof(buf))
+        DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)buf, owner, prop_proc, 0);
 }
 
 /* Select All, and its opposite. */
@@ -3306,15 +3446,67 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             }
             return 0;
         }
-        case IDM_CTX_PROPERTIES: {
-            char msg[600];
-            const char *name = g_ctx_row >= 0 && g_ctx_row < g_entries
-                                   ? g_entry[g_ctx_row].name
-                                   : "";
-            snprintf(msg, sizeof(msg), "%s%s", name,
-                     name[0] ? "" : "Nothing is selected.");
-            MessageBoxA(w, msg[0] ? msg : "Nothing is selected.",
-                        "Properties", MB_OK);
+        case IDM_CTX_PROPERTIES:
+            show_properties(w);
+            return 0;
+        /* ---- the ones that are a notice rather than a thing done ---- */
+        case IDM_MAP_DRIVE:
+        case IDM_DISCONNECT:
+        case IDM_SYNCHRONIZE:
+            MessageBoxA(w,
+                        "This example browses the file system it is running "
+                        "on.\nThere are no network drives to map.",
+                        "Map Network Drive", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_FOLDER_OPTIONS:
+        case IDM_CHOOSE_COLUMNS:
+        case IDM_CUSTOMIZE_FOLDER:
+        case IDM_TOOLBAR_CUSTOMIZE:
+            MessageBoxA(w,
+                        "The shell keeps these in property sheets, which this "
+                        "example does not build.\nView > Details and the "
+                        "column dividers do most of what they offer.",
+                        "Options", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_FAV_ADD:
+        case IDM_FAV_ORGANIZE:
+        case IDM_FAV_MSN:
+        case IDM_FAV_RADIO:
+        case IDM_FAV_WEB:
+            MessageBoxA(w,
+                        "Favorites are the browser's, and this window is the "
+                        "file half of the shell.",
+                        "Favorites", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_HELP_TOPICS:
+            MessageBoxA(w,
+                        "The menus do what they say. Try New > Folder, then "
+                        "type a name;\nF2 renames, Delete asks first, and "
+                        "Edit > Undo puts back what the last command did.",
+                        "Explorer Help", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_NEW_SHORTCUT:
+        case IDM_CREATE_SHORTCUT:
+        case IDM_PASTE_SHORTCUT:
+            MessageBoxA(w,
+                        "A shortcut is a .lnk file, which is a shell format "
+                        "rather than a window one.",
+                        "Create Shortcut", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        case IDM_TOOLBAR_STD:
+        case IDM_TOOLBAR_ADDR: {
+            /* the two bars that are there can be shown and hidden */
+            int std = LOWORD(wp) == IDM_TOOLBAR_STD;
+            int *flag = std ? &g_show_toolbar : &g_show_address;
+            HWND band = std ? g_toolbar : g_addrband;
+            *flag = !*flag;
+            ShowWindow(band, *flag ? SW_SHOW : SW_HIDE);
+            CheckMenuItem(GetSubMenu(g_menu, 2), LOWORD(wp),
+                          *flag ? MF_CHECKED : MF_UNCHECKED);
+            SendMessageA(g_rebar, RB_SHOWBAND, (WPARAM)(std ? 1 : 2),
+                         (LPARAM)*flag);
+            layout(w);
+            InvalidateRect(w, NULL, TRUE);
             return 0;
         }
         case IDM_ABOUT:
