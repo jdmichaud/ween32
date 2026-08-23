@@ -65,24 +65,40 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 7182 / 298596 — 2.4%
+tools/refcapture/pxdiff.py                  # expect 13804 / 298596 — 4.6%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 747 / 39200 — 1.9%
+  tools/refcapture/pxdiff.py                # expect 3917 / 39200 — 10.0%
 ```
 
-Fourteen of the 747 are two mnemonic underlines a control draws only once Alt
+Most of both — 3170 of the menu's and 6622 of the sampler's — is one thing:
+the caption's gradient. Where it stops is measured off the machine, which
+holds its end colour two pixels before the leftmost caption button; wine
+stops one pixel before it. A window with nothing but a close box is where the
+two disagree, and every pixel of the ramp shifts by a step when its span
+changes by two, so the whole caption strip counts as different. The machine's
+own Column Settings comes out on the gradient exactly, which is what settled
+it — see the note on the ramp below.
+
+Fourteen of the rest are two mnemonic underlines a control draws only once Alt
 has been pressed, which wine draws always — the same rule that keeps a menu's
 underlines out of sight, applied to the controls in a dialog.
 
-Roughly 242 of that 1.8% is the menu bar, and is *deliberate*: wine spaces bar
-items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
-rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
-bar back toward wine — check it against a screenshot of Windows instead.
+Roughly 242 of what is left is the menu bar, and is *deliberate*: wine spaces
+bar items by twelve pixels and Windows by sixteen, and ween32 follows Windows.
+The rest is the caption's bold title, which ween32 synthesises. Do not "fix"
+the bar back toward wine — check it against a screenshot of Windows instead.
 
-Thirty-six of the sampler's 7182 are the same thing in miniature: a scroll
+The ramp itself is stepped in 16.16 with the step rounded down before it is
+accumulated, not divided per pixel. The two are the same everywhere except
+where a channel would land exactly on an integer — a quarter, a half and
+three quarters along — and there the dropped fraction leaves the machine's a
+shade below. All 305 pixels of Column Settings' gradient come out on the
+machine's with it, and three of them do not without it.
+
+Thirty-six of the sampler's are the same thing in miniature: a scroll
 bar's up arrow. Wine draws it a row higher than the machine does, and the
 machine's is what ween32 draws — see the box under the address bar below,
 which comes out pixel for pixel because of it. Another 1705 are the tab

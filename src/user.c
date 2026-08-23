@@ -2484,12 +2484,9 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * render, the second off the machine's Folder Options. */
         int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0) +
                    (nc_has_help(wnd) ? 1 : 0);
-        int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
-        if (nbtn > 1) {
-            RECT lb = nc_button_rect(wnd, nbtn - 1);
-            buttons_w = wnd->w - frame -
+        RECT lb = nc_button_rect(wnd, nbtn - 1);
+        int buttons_w = wnd->w - frame -
                         (lb.left - (nc_has_help(wnd) ? 0 : ween_ncm(2)));
-        }
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
                              icon_w, buttons_w);
         /* The gradient already holds its start colour across icon_w; this is

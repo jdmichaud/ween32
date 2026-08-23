@@ -189,6 +189,9 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
     if (x2 < x1)
         x2 = x1;
     span = x2 - x1;
+    long rs = span > 0 ? (long)(br - ar) * 65536 / span : 0;
+    long gs = span > 0 ? (long)(bg - ag) * 65536 / span : 0;
+    long bs = span > 0 ? (long)(bb - ab) * 65536 / span : 0;
     for (int i = x; i < x + w; i++) {
         ween_color c;
         if (i < x1 || span <= 0)
@@ -196,10 +199,15 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
         else if (i >= x2)
             c = WEEN_CAP_RIGHT;
         else {
+            /* Stepped in 16.16, the step itself rounded down first — which is
+             * how the machine's ramp lands. It matters only where a channel
+             * would come out exactly on an integer: a quarter, a half and
+             * three quarters of the way along, where the dropped fraction
+             * leaves it a shade below, and the machine's is a shade below. */
             int d = i - x1;
-            unsigned r = (unsigned)(ar + (br - ar) * d / span);
-            unsigned g = (unsigned)(ag + (bg - ag) * d / span);
-            unsigned b = (unsigned)(ab + (bb - ab) * d / span);
+            unsigned r = (unsigned)(ar + (int)((rs * (long)d) >> 16));
+            unsigned g = (unsigned)(ag + (int)((gs * (long)d) >> 16));
+            unsigned b = (unsigned)(ab + (int)((bs * (long)d) >> 16));
             c = (r << 16) | (g << 8) | b;
         }
         ween_surface_vline(s, i, y, h, c);
