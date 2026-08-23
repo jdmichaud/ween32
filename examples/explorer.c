@@ -812,6 +812,30 @@ static const struct {
       IMG_SHELL_SYS, 1 },
 };
 
+/* And what is in a folder, for completing a path typed into the address bar.
+ * The machine's C:\Program Files, read off its own suggestion box, which is
+ * the only way to be sure of a name the list view truncates. */
+static const struct {
+    const char *path;
+    const char *child[16];
+} g_fix_folders[] = {
+    { "C:", { "Documents and Settings", "Program Files", "WINNT", "AUTOEXEC",
+              "boot", "CONFIG.SYS", NULL } },
+    { "C:\\Program Files",
+      { "Accessories", "Common Files", "ComPlus Applications", "desktop.ini",
+        "DPlus", "folder.htt", "Internet Explorer", "microsoft frontpage",
+        "Mozilla Firefox", "NetMeeting", "Outlook Express", "PuTTY",
+        "Windows Media Player", "Windows NT", "WindowsUpdate", NULL } },
+};
+
+/* The machine names its folders with a backslash, so the fixture does too:
+ * what is typed into the address bar has to look like what was typed into
+ * the machine's for the two to be counted pixel for pixel. */
+static char path_sep(void)
+{
+    return g_fixture ? '\\' : FS_SEP;
+}
+
 static void status_for_directory(void)
 {
     unsigned long bytes = 0;
@@ -1333,9 +1357,26 @@ static const char *command_help(UINT id)
  * That is how the shell does it too: the box under an address bar is not the
  * address bar's list.
  */
-static HWND g_sugg, g_sugg_list, g_sugg_grip;
+static HWND g_sugg, g_sugg_list, g_sugg_bar, g_sugg_grip;
 static int g_sugg_dragged; /* the height the corner was let go at, if it was */
 #define SUGG_ROWS 7 /* what it shows before it needs its bar, as the shell has it */
+#define SUGG_MAX 64 /* how many names it will offer at once */
+
+/* Whether a name begins with what has been typed, not minding case — which is
+ * what a shell's completion goes by. */
+static int starts_with_fold(const char *name, const char *typed)
+{
+    for (size_t i = 0; typed[i]; i++) {
+        char a = name[i], b = typed[i];
+        if (a >= 'A' && a <= 'Z')
+            a = (char)(a + 32);
+        if (b >= 'A' && b <= 'Z')
+            b = (char)(b + 32);
+        if (a != b)
+            return 0;
+    }
+    return 1;
+}
 #define SUGG_MIN_H 40 /* not to be dragged shut, only smaller */
 
 static void suggest_hide(void)
@@ -1365,38 +1406,121 @@ static void suggest_take(int close)
     SendMessageA(field, EM_SETSEL, (WPARAM)strlen(pick), (LPARAM)strlen(pick));
 }
 
+/* How the box is put together, measured off the machine's.
+ *
+ * The names are inset from the border — four columns in, three rows down —
+ * and their rows are fourteen tall, none of which a plain list box would do
+ * on its own; the machine's box is the shell's own window and it lays its
+ * list out that way. The last row is therefore cut off by the bottom rather
+ * than being dropped, which is what LBS_NOINTEGRALHEIGHT is for.
+ *
+ * The bar and the corner are not the list's. They stand flush against the
+ * border, down the right of the whole box, with the corner at the foot of
+ * the bar; so they are windows of their own and the box drives them. Both go
+ * away when everything fits — the machine's is white to the border then.
+ */
+#define SUGG_PAD_X 4
+#define SUGG_PAD_Y 3
+#define SUGG_ROW_H 14
+
+static void suggest_scroll_to(int top);
+
+static void suggest_layout(void)
+{
+    RECT cr;
+    int sb = GetSystemMetrics(SM_CXVSCROLL);
+    int n, rows, bars;
+    if (!g_sugg_list)
+        return;
+    GetClientRect(g_sugg, &cr);
+    n = (int)SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0);
+    rows = (cr.bottom - SUGG_PAD_Y + SUGG_ROW_H - 1) / SUGG_ROW_H;
+    bars = n > cr.bottom / SUGG_ROW_H;
+    MoveWindow(g_sugg_list, SUGG_PAD_X, SUGG_PAD_Y,
+               cr.right - SUGG_PAD_X - (bars ? sb : 0),
+               cr.bottom - SUGG_PAD_Y, TRUE);
+    ShowWindow(g_sugg_bar, bars ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_sugg_grip, bars ? SW_SHOW : SW_HIDE);
+    if (bars) {
+        SCROLLINFO si;
+        MoveWindow(g_sugg_bar, cr.right - sb, 0, sb, cr.bottom - sb, TRUE);
+        MoveWindow(g_sugg_grip, cr.right - sb, cr.bottom - sb, sb, sb, TRUE);
+        memset(&si, 0, sizeof(si));
+        si.cbSize = sizeof(si);
+        si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+        si.nMin = 0;
+        si.nMax = n - 1;
+        /* how many whole names show, which is what sizes the thumb: the row
+         * the inset pushes past the bottom is not one of them */
+        si.nPage = (UINT)((cr.bottom - SUGG_PAD_Y) / SUGG_ROW_H);
+        si.nPos = (int)SendMessageA(g_sugg_list, LB_GETTOPINDEX, 0, 0);
+        SetScrollInfo(g_sugg_bar, SB_CTL, &si, TRUE);
+    }
+    (void)rows;
+}
+
+/* Move the list and the bar together, whichever of them was asked. */
+static void suggest_scroll_to(int top)
+{
+    SCROLLINFO si;
+    int n = (int)SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0);
+    RECT cr;
+    GetClientRect(g_sugg, &cr);
+    {
+        int page = cr.bottom / SUGG_ROW_H;
+        if (top > n - page)
+            top = n - page;
+        if (top < 0)
+            top = 0;
+    }
+    SendMessageA(g_sugg_list, LB_SETTOPINDEX, (WPARAM)top, 0);
+    memset(&si, 0, sizeof(si));
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_POS;
+    si.nPos = top;
+    SetScrollInfo(g_sugg_bar, SB_CTL, &si, TRUE);
+}
+
+/* Scroll only as far as it takes to bring a row into view, which is what
+ * walking off the end of what is shown should do. */
+static void suggest_reveal(int row)
+{
+    RECT cr;
+    int top = (int)SendMessageA(g_sugg_list, LB_GETTOPINDEX, 0, 0);
+    int page;
+    GetClientRect(g_sugg, &cr);
+    page = (cr.bottom - SUGG_PAD_Y) / SUGG_ROW_H;
+    if (row < top)
+        suggest_scroll_to(row);
+    else if (row >= top + page)
+        suggest_scroll_to(row - page + 1);
+}
+
+/* The list has no bar of its own — the box has one beside it — so the wheel
+ * has to move the two together. The list's own procedure would scroll it and
+ * leave the bar behind. */
+static WNDPROC g_sugg_list_proc;
+
+static LRESULT CALLBACK suggest_list_proc(HWND w, UINT msg, WPARAM wp,
+                                          LPARAM lp)
+{
+    if (msg == WM_MOUSEWHEEL) {
+        int top = (int)SendMessageA(w, LB_GETTOPINDEX, 0, 0);
+        suggest_scroll_to(top - 3 * (GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA));
+        return 0;
+    }
+    return CallWindowProcA(g_sugg_list_proc, w, msg, wp, lp);
+}
+
 /* The popup's own procedure: it is a frame around the list and the corner,
  * and the corner drags it taller. */
 static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     static int sizing, from_y, was_h;
     switch (msg) {
-    case WM_SIZE: {
-        /* The list fills it, and the corner stands at the foot of the list's
-         * own bar rather than in a strip below it — which is where the
-         * machine puts it, and why its bar stops short of the bottom. With
-         * everything in view there is no bar, and no corner either: the
-         * machine's box is white right up to the border. */
-        RECT cr, lr;
-        int sb = GetSystemMetrics(SM_CXVSCROLL);
-        int rows, ih;
-        GetClientRect(w, &cr);
-        if (!g_sugg_list)
-            return 0;
-        MoveWindow(g_sugg_list, 0, 0, cr.right, cr.bottom, TRUE);
-        GetClientRect(g_sugg_list, &lr);
-        ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
-        rows = ih ? lr.bottom / ih : 0;
-        if (g_sugg_grip) {
-            ShowWindow(g_sugg_grip,
-                       SendMessageA(g_sugg_list, LB_GETCOUNT, 0, 0) > rows
-                           ? SW_SHOW
-                           : SW_HIDE);
-            MoveWindow(g_sugg_grip, lr.right - sb, lr.bottom - sb, sb, sb,
-                       TRUE);
-        }
+    case WM_SIZE:
+        suggest_layout();
         return 0;
-    }
     case WM_SYSCOMMAND:
         if ((wp & 0xfff0) == SC_SIZE) { /* the corner was taken hold of */
             RECT wr;
@@ -1428,6 +1552,24 @@ static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             ReleaseCapture();
         }
         return 0;
+    case WM_VSCROLL: {
+        /* the bar down the side is the box's, so the box moves the list */
+        int page = 1, top = (int)SendMessageA(g_sugg_list, LB_GETTOPINDEX, 0, 0);
+        RECT cr;
+        GetClientRect(w, &cr);
+        page = cr.bottom / SUGG_ROW_H;
+        switch (LOWORD(wp)) {
+        case SB_LINEUP: top--; break;
+        case SB_LINEDOWN: top++; break;
+        case SB_PAGEUP: top -= page; break;
+        case SB_PAGEDOWN: top += page; break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: top = (int)(short)HIWORD(wp); break;
+        default: return 0;
+        }
+        suggest_scroll_to(top);
+        return 0;
+    }
     case WM_COMMAND:
         /* the list says one was landed on, which the mouse only does by
          * pressing on it, and that is picking it */
@@ -1455,12 +1597,14 @@ static LRESULT CALLBACK address_field_proc(HWND box, UINT msg, WPARAM wp,
         case VK_DOWN:
             if (at + 1 < n) {
                 SendMessageA(g_sugg_list, LB_SETCURSEL, (WPARAM)(at + 1), 0);
+                suggest_reveal(at + 1);
                 suggest_take(0);
             }
             return 0;
         case VK_UP:
             if (at > 0) {
                 SendMessageA(g_sugg_list, LB_SETCURSEL, (WPARAM)(at - 1), 0);
+                suggest_reveal(at - 1);
                 suggest_take(0);
             }
             return 0;
@@ -1506,10 +1650,25 @@ static void suggest_show(int count)
     ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
     h = rows * ih + 2;
     (void)sb;
-    /* It hangs off the field, not off the control the field is in: the
-     * machine's starts at the foot of the box the path is typed in, inside
-     * the bar's own border, and runs its width. */
-    GetWindowRect(field, &band);
+    /* It hangs off the field, not off the control the field is in, and its
+     * width is the field's *area* — everything the combo box keeps for text,
+     * which is a pixel wider than the box the text is typed in. The control
+     * is the only thing that knows where that ends, so it is asked. */
+    {
+        COMBOBOXINFO ci;
+        POINT at;
+        memset(&ci, 0, sizeof(ci));
+        ci.cbSize = sizeof(ci);
+        if (!GetComboBoxInfo(g_address, &ci))
+            return;
+        at.x = ci.rcItem.left;
+        at.y = ci.rcItem.bottom;
+        ClientToScreen(g_address, &at);
+        band.left = at.x;
+        band.top = at.y;
+        band.right = at.x + (ci.rcItem.right - ci.rcItem.left);
+        band.bottom = at.y;
+    }
     if (g_sugg_dragged > h)
         h = g_sugg_dragged;
     MoveWindow(g_sugg, band.left, band.bottom, band.right - band.left, h,
@@ -1532,7 +1691,7 @@ static void address_suggest(void)
     GetWindowTextA(field, typed, (int)sizeof(typed));
     /* only a path can be completed: a bare name is the folder we are in and
      * has nothing to be completed against */
-    leaf = strrchr(typed, FS_SEP);
+    leaf = strrchr(typed, path_sep());
     if (!leaf) {
         suggest_hide();
         return;
@@ -1547,49 +1706,53 @@ static void address_suggest(void)
     leaf++;
 
     SendMessageA(g_sugg_list, LB_RESETCONTENT, 0, 0);
-    if (fs_open(&d, dir)) {
-        static char found[20][260];
-        while (fs_next(&d, &e) && n < 20) {
-            if (e.name[0] == '.')
-                continue;
-            if (strncmp(e.name, leaf, strlen(leaf)) != 0 &&
-                lstrcmpiA(e.name, leaf) != 0) {
-                /* case-insensitively, since a shell's completion is */
-                size_t k = strlen(leaf);
-                int same = 1;
-                for (size_t i = 0; i < k && same; i++) {
-                    char a = e.name[i], b = leaf[i];
-                    if (a >= 'A' && a <= 'Z')
-                        a = (char)(a + 32);
-                    if (b >= 'A' && b <= 'Z')
-                        b = (char)(b + 32);
-                    same = a == b;
+    {
+        static char found[SUGG_MAX][260];
+        int opened = 0;
+        if (g_fixture) { /* what the machine has, from the table */
+            for (size_t f = 0; f < sizeof(g_fix_folders) / sizeof(*g_fix_folders);
+                 f++)
+                if (!lstrcmpiA(g_fix_folders[f].path, dir)) {
+                    opened = 1;
+                    for (int i = 0; g_fix_folders[f].child[i] && n < SUGG_MAX;
+                         i++)
+                        if (starts_with_fold(g_fix_folders[f].child[i], leaf))
+                            snprintf(found[n++], sizeof(found[0]), "%s",
+                                     g_fix_folders[f].child[i]);
                 }
-                if (!same)
+        } else if (fs_open(&d, dir)) {
+            opened = 1;
+            while (fs_next(&d, &e) && n < SUGG_MAX) {
+                if (e.name[0] == '.')
                     continue;
+                if (!starts_with_fold(e.name, leaf))
+                    continue;
+                snprintf(found[n], sizeof(found[0]), "%s", e.name);
+                n++;
             }
-            snprintf(found[n], sizeof(found[0]), "%s", e.name);
-            n++;
+            fs_close(&d);
         }
-        fs_close(&d);
-        /* in name order, as the shell offers them */
-        for (int i = 1; i < n; i++)
-            for (int j = i; j > 0 && lstrcmpiA(found[j - 1], found[j]) > 0; j--) {
-                char t[260];
-                snprintf(t, sizeof(t), "%s", found[j - 1]);
-                snprintf(found[j - 1], sizeof(found[0]), "%s", found[j]);
-                snprintf(found[j], sizeof(found[0]), "%s", t);
+        if (opened) {
+            /* in name order, as the shell offers them */
+            for (int i = 1; i < n; i++)
+                for (int j = i;
+                     j > 0 && lstrcmpiA(found[j - 1], found[j]) > 0; j--) {
+                    char t[260];
+                    snprintf(t, sizeof(t), "%s", found[j - 1]);
+                    snprintf(found[j - 1], sizeof(found[0]), "%s", found[j]);
+                    snprintf(found[j], sizeof(found[0]), "%s", t);
+                }
+            for (int i = 0; i < n; i++) {
+                char full[PATH_MAX_LEN];
+                size_t at = dirlen;
+                memcpy(full, dir, at);
+                if (at && full[at - 1] != path_sep())
+                    full[at++] = path_sep();
+                for (size_t k = 0; found[i][k] && at < sizeof(full) - 1; k++)
+                    full[at++] = found[i][k];
+                full[at] = 0;
+                SendMessageA(g_sugg_list, LB_ADDSTRING, 0, (LPARAM)full);
             }
-        for (int i = 0; i < n; i++) {
-            char full[PATH_MAX_LEN];
-            size_t at = dirlen;
-            memcpy(full, dir, at);
-            if (at && full[at - 1] != FS_SEP)
-                full[at++] = FS_SEP;
-            for (size_t k = 0; found[i][k] && at < sizeof(full) - 1; k++)
-                full[at++] = found[i][k];
-            full[at] = 0;
-            SendMessageA(g_sugg_list, LB_ADDSTRING, 0, (LPARAM)full);
         }
     }
     if (n)
@@ -3296,18 +3459,24 @@ static void build_views(HWND w)
     if (g_sugg) {
         int sb = GetSystemMetrics(SM_CXVSCROLL);
         g_sugg_list = CreateWindowExA(0, "LISTBOX", "",
-                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
-                                          LBS_NOTIFY,
-                                      0, 0, 198, 98, g_sugg, NULL, NULL,
-                                      NULL);
-        /* inside the list, so it stands at the foot of the list's bar and
-         * the list draws the bar short of it */
+                                      WS_CHILD | WS_VISIBLE | LBS_NOTIFY |
+                                          LBS_NOINTEGRALHEIGHT,
+                                      0, 0, 198, 98, g_sugg, NULL, NULL, NULL);
+        /* the bar and the corner belong to the box, not to the list: they
+         * stand flush against its border while the list is inset */
+        g_sugg_bar = CreateWindowExA(0, "SCROLLBAR", "",
+                                     WS_CHILD | SBS_VERT, 0, 0, sb, 40, g_sugg,
+                                     NULL, NULL, NULL);
         g_sugg_grip = CreateWindowExA(0, "SCROLLBAR", "",
-                                      WS_CHILD | WS_VISIBLE | SBS_SIZEGRIP, 0,
-                                      0, sb, sb, g_sugg_list, NULL, NULL,
-                                      NULL);
-        if (g_sugg_list)
+                                      WS_CHILD | SBS_SIZEGRIP, 0, 0, sb, sb,
+                                      g_sugg, NULL, NULL, NULL);
+        if (g_sugg_list) {
             SendMessageA(g_sugg_list, WM_SETFONT, (WPARAM)g_font, TRUE);
+            /* fourteen, which is what the machine's rows are */
+            SendMessageA(g_sugg_list, LB_SETITEMHEIGHT, 0, SUGG_ROW_H);
+            g_sugg_list_proc = (WNDPROC)SetWindowLongPtrA(
+                g_sugg_list, GWLP_WNDPROC, (LONG_PTR)suggest_list_proc);
+        }
     }
     {   /* and the field answers to this window first */
         HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL,

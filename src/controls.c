@@ -234,6 +234,46 @@ static void scroll_set(HWND wnd, int pos, int code)
     scroll_notify(wnd, code);
 }
 
+/* What a program puts in a scroll bar, and reads back out of it. A bar owns
+ * no content: the range, the page and the position are the program's, and
+ * this is how it hands them over. */
+int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *si, BOOL redraw)
+{
+    ween_sbstate st;
+    if (!wnd || !si || bar != SB_CTL)
+        return wnd ? wnd->scroll_pos : 0;
+    if (si->fMask & SIF_RANGE) {
+        wnd->scroll_min = si->nMin;
+        wnd->scroll_max = si->nMax;
+    }
+    if (si->fMask & SIF_PAGE)
+        wnd->scroll_page = (int)si->nPage;
+    if (si->fMask & SIF_POS)
+        wnd->scroll_pos = si->nPos;
+    st = scroll_state(wnd);
+    wnd->scroll_pos = sb_clamp(wnd->scroll_pos, &st);
+    if (redraw)
+        InvalidateRect(wnd, NULL, FALSE);
+    return wnd->scroll_pos;
+}
+
+BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si)
+{
+    if (!wnd || !si || bar != SB_CTL)
+        return FALSE;
+    if (si->fMask & SIF_RANGE) {
+        si->nMin = wnd->scroll_min;
+        si->nMax = wnd->scroll_max;
+    }
+    if (si->fMask & SIF_PAGE)
+        si->nPage = (UINT)wnd->scroll_page;
+    if (si->fMask & (SIF_POS | SIF_TRACKPOS)) {
+        si->nPos = wnd->scroll_pos;
+        si->nTrackPos = wnd->scroll_pos;
+    }
+    return TRUE;
+}
+
 static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     int vert = (wnd->style & SBS_VERT) != 0;
@@ -255,8 +295,11 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             BeginPaint(wnd, &ps);
             GetClientRect(wnd, &r);
             ween_client_origin(wnd, &ox, &oy);
-            ween_classic_sizegrip(&top->surface, ox + r.right - 1,
-                                  oy + r.bottom - 1);
+            /* a corner of its own fills the square it was given, unlike the
+             * thirteen a status bar tucks into its right-hand end */
+            ween_classic_sizegrip_size(&top->surface, ox + r.right - 1,
+                                       oy + r.bottom - 1,
+                                       r.right < r.bottom ? r.right : r.bottom);
             EndPaint(wnd, &ps);
             return 0;
         }
@@ -901,6 +944,7 @@ typedef struct {
                  * taller or shorter; 0 until then */
     int drop_h; /* the height it was created with, which is the height it has
                  * with its list down — where the row count comes from */
+    int item_h; /* a row's height when the program set one, 0 for the font's */
     int sizing; /* the grip is being dragged, and this is where from */
     int size_y0, size_rows0;
     char was[260]; /* and what was in it when the typing started */
@@ -987,7 +1031,10 @@ static int item_height(HWND w)
 {
     const ween_strike *f = w->font ? w->font : ween_gui_font();
     const ween_items *it = w->ctl;
-    int h = f ? f->ascent - f->descent : 13;
+    int h;
+    if (it && it->item_h > 0) /* the program said, and that settles it */
+        return it->item_h;
+    h = f ? f->ascent - f->descent : 13;
     if (it && it->images && h < WEEN_CBEX_IMAGE)
         h = WEEN_CBEX_IMAGE;
     return h;
@@ -1069,6 +1116,8 @@ static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 static void lb_whole_items(HWND wnd)
 {
     int ih = item_height(wnd);
+    if (wnd->style & LBS_NOINTEGRALHEIGHT)
+        return; /* it was told to take the height it was given */
     int client = wnd->h - 2 * ween_ex_edge(wnd);
     int rem = ih ? client % ih : 0;
     if (wnd->h > ih && rem)
@@ -1084,7 +1133,10 @@ static void lb_whole_items(HWND wnd)
 static void lb_whole_items_at_birth(HWND wnd)
 {
     int ih = item_height(wnd);
-    int rem = ih ? wnd->h % ih : 0;
+    int rem;
+    if (wnd->style & LBS_NOINTEGRALHEIGHT)
+        return;
+    rem = ih ? wnd->h % ih : 0;
     if (wnd->h > ih && rem)
         wnd->h -= rem;
     lb_whole_items(wnd);
@@ -1238,8 +1290,16 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case LB_GETITEMHEIGHT:
         /* How tall one row is, which is what a program sizing a list box to
          * whole rows has to ask: the height comes from the font it was
-         * given, so only the box itself knows it. */
+         * given unless the program said otherwise, so only the box knows. */
         return item_height(wnd);
+    case LB_SETITEMHEIGHT:
+        it = items_of(wnd);
+        if (!it || (int)lp <= 0)
+            return LB_ERR;
+        it->item_h = (int)lp;
+        lb_whole_items(wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case LB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;
@@ -1253,7 +1313,16 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case LB_RESETCONTENT:
-        ween_controls_free(wnd);
+        /* The items go and nothing else does: a row's height is the list
+         * box's own, not the list's, so emptying it to refill it must not
+         * put the rows back to the font's. */
+        {
+            int keep = wnd->ctl ? ((ween_items *)wnd->ctl)->item_h : 0;
+            ween_controls_free(wnd);
+            it = items_of(wnd);
+            if (it)
+                it->item_h = keep;
+        }
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     default:
@@ -1502,6 +1571,36 @@ static int combo_edit_x(HWND wnd, ween_items *it)
     (void)wnd;
     return it && it->images ? 1 + WEEN_CBEX_IMAGE + 4 : 2;
 }
+
+/* What a combo box is made of. A program that wants to put something under
+ * the field — a box of suggestions — needs to know where the field ends and
+ * the arrow begins, and only the control knows that. */
+BOOL GetComboBoxInfo(HWND combo, COMBOBOXINFO *info)
+{
+    RECT cr;
+    int btn = ween_scroll_metric(), edge;
+    ween_items *it;
+    if (!combo || !info)
+        return FALSE;
+    it = combo->ctl;
+    edge = ween_ex_edge(combo);
+    GetClientRect(combo, &cr);
+    memset(&info->rcItem, 0, sizeof(info->rcItem));
+    info->rcItem.left = combo_edit_x(combo, it);
+    info->rcItem.top = edge;
+    info->rcItem.right = cr.right - btn;
+    info->rcItem.bottom = cr.bottom - edge;
+    info->rcButton.left = cr.right - btn;
+    info->rcButton.top = 0;
+    info->rcButton.right = cr.right;
+    info->rcButton.bottom = cr.bottom;
+    info->stateButton = 0;
+    info->hwndCombo = combo;
+    info->hwndItem = it ? it->edit : NULL;
+    info->hwndList = NULL; /* the dropped list is drawn, not a window */
+    return TRUE;
+}
+
 
 /* The field of a combo box has the combo's own procedure in front of it: the
  * keys that walk the list, and the two that end the typing, are the combo's

@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 6038 / 298596 — 2.0%
+tools/refcapture/pxdiff.py                  # expect 6074 / 298596 — 2.0%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -77,6 +77,11 @@ Roughly 242 of that 1.8% is the menu bar, and is *deliberate*: wine spaces bar
 items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
+
+Thirty-six of the sampler's 6074 are the same thing in miniature: a scroll
+bar's up arrow. Wine draws it a row higher than the machine does, and the
+machine's is what ween32 draws — see the box under the address bar below,
+which comes out pixel for pixel because of it.
 
 About 3100 of the controls sampler's 1.9% is the tree and the list view, and
 is deliberate in the same way. The tree's indent, the column its buttons sit
@@ -139,6 +144,39 @@ of each channel dropped and the top bits shifted back in. What is left over is
 The tree pane is window-relative x 4..203, y 100..519. Everything in it
 matches but the icons, and every icon difference but the picked one is the
 quantisation.
+
+#### The box under the address bar
+
+The suggestions the address bar offers are their own window, so they can be
+counted on their own — and they come out **0 of 50000**. The fixture knows
+what the machine has in `C:\Program Files`, read off the machine's own
+suggestion box, since that is the only way to be sure of a name its list view
+truncates.
+
+```sh
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/pf%d.bmp \
+  WEEN32_SCRIPT='w:300 d:300,84 u:300,84 w:200 t:C:\Program_Files\ w:800' \
+  ./examples/explorer
+# the 500x100 frame is the box; the machine's is tools/refcapture/suggest-machine.png
+PXDIFF_REF=tools/refcapture/suggest-machine.png PXDIFF_OUR=/tmp/ours.png \
+  tools/refcapture/pxdiff.py                  # expect 0 / 50000
+```
+
+Getting there settled five things that no other capture could have:
+
+- a scroll bar's up arrow sits a row lower than wine draws it (the sampler
+  moved by 36 for this, and the machine is the reference);
+- the corner a window is dragged by is one square in a scroll bar and
+  another in a status bar — comctl32 draws its own rather than asking user32
+  for one, and the two are anchored differently;
+- the thumb is sized by the rows that show *whole*, not by the height
+  divided by the row;
+- the box is as wide as the combo box's field *area*, which is a pixel wider
+  than the box the text is typed in — `GetComboBoxInfo` is how to ask;
+- and the shell's list is not a stock one: rows of fourteen, inset four
+  columns and three rows, and `LBS_NOINTEGRALHEIGHT` so the last row is cut
+  by the bottom rather than dropped.
 
 ### The explorer's commands
 

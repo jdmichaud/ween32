@@ -372,6 +372,10 @@ HCURSOR SetCursor(HCURSOR cursor);
 /* Keep the bar there, greyed, when everything fits. Without it a list box
  * that has nothing to scroll shows no bar at all. */
 #define LBS_DISABLENOSCROLL 0x1000L
+/* Take the height given rather than trimming it to whole rows. The last row
+ * is then cut off by the bottom, which is what the box under an address bar
+ * does. */
+#define LBS_NOINTEGRALHEIGHT 0x0100L
 #define LB_ADDSTRING 0x0180
 #define LB_INSERTSTRING 0x0181
 #define LB_DELETESTRING 0x0182
@@ -385,6 +389,7 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define LB_GETCOUNT 0x018B
 #define LB_GETTOPINDEX 0x018E
 #define LB_GETITEMHEIGHT 0x01A1
+#define LB_SETITEMHEIGHT 0x01A0
 #define LB_SETTOPINDEX 0x0197
 #define LBN_SELCHANGE 1
 #define LBN_DBLCLK 2
@@ -408,6 +413,20 @@ HCURSOR SetCursor(HCURSOR cursor);
  * application that has been given a height to fit into says so instead. */
 #define CB_SETITEMHEIGHT 0x0153
 #define CB_GETITEMHEIGHT 0x0154
+
+/* What a combo box is made of, so a program can put something beside one of
+ * its parts. The rectangles are in the combo box's client coordinates. */
+typedef struct tagCOMBOBOXINFO {
+    DWORD cbSize;
+    RECT rcItem;   /* where the text sits: the field, less the button */
+    RECT rcButton; /* the arrow at the end */
+    DWORD stateButton;
+    HWND hwndCombo;
+    HWND hwndItem; /* the edit control, when it has one */
+    HWND hwndList;
+} COMBOBOXINFO, *LPCOMBOBOXINFO;
+
+BOOL GetComboBoxInfo(HWND combo, COMBOBOXINFO *info);
 #define CB_GETITEMHEIGHT 0x0154
 #define CBEM_SETIMAGELIST (WM_USER + 2)
 #define CBEIF_TEXT 0x0001
@@ -787,6 +806,37 @@ typedef struct tagTCITEMA {
 #define PBM_SETSTEP (WM_USER + 4)
 #define PBM_STEPIT (WM_USER + 5)
 #define PBM_SETRANGE32 (WM_USER + 6)
+
+/* Which bar a scroll call is about: a window's own, or the control itself. */
+#define SB_HORZ 0
+#define SB_VERT 1
+#define SB_CTL 2
+#define SB_BOTH 3
+
+/* What of a scroll bar's state is being set or asked for. */
+#define SIF_RANGE 0x0001
+#define SIF_PAGE 0x0002
+#define SIF_POS 0x0004
+#define SIF_DISABLENOSCROLL 0x0008
+#define SIF_TRACKPOS 0x0010
+#define SIF_ALL (SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
+
+/* A scroll bar's whole state. The thumb's size comes from nPage against the
+ * range, which is why a bar cannot be driven by position alone. */
+typedef struct tagSCROLLINFO {
+    UINT cbSize;
+    UINT fMask;
+    int nMin;
+    int nMax;
+    UINT nPage;
+    int nPos;
+    int nTrackPos;
+} SCROLLINFO, *LPSCROLLINFO;
+
+/* Set or read what a scroll bar shows. `bar` is SB_CTL for a SCROLLBAR
+ * control, which is the one ween32 has. Returns the position it settled on. */
+int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *si, BOOL redraw);
+BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 
 /* SCROLLBAR styles */
 #define SBS_HORZ 0x0000L

@@ -619,8 +619,11 @@ void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
         ln[0].x = ln[1].x = ln[2].x - tri;
         break;
     default: /* up */
+        /* One lower than the mirror of the down arrow. The two are not
+         * symmetric in the button: the machine's up arrow starts six rows
+         * into its button and its down arrow seven into its. */
         ln[2].x = left + 470 * small / 1000 + 2;
-        ln[2].y = bottom - (687 * small / 1000 + 1);
+        ln[2].y = bottom - 687 * small / 1000;
         ln[0].x = ln[2].x - tri;
         ln[1].x = ln[2].x + tri;
         ln[0].y = ln[1].y = ln[2].y + tri;
@@ -643,12 +646,37 @@ void ween_classic_scroll_arrow(ween_surface *s, int x, int y, int w, int h,
  * two of shadow, four apart, in the twelve pixels above and left of the
  * corner given. Nothing is filled behind them — the machine runs the last
  * part of the bar on underneath, and a filled box cut it short. */
+/* The hatched corner a window is dragged bigger by, `size` on a side, with
+ * its bottom-right at (x1, y1). The square it sits in is filled with face —
+ * the machine clears exactly that much and no more, so in a status bar the
+ * part's top edge runs on above it and only its right and bottom edges are
+ * cut. The diagonals run every four pixels, the last of them two in from the
+ * corner, so a bigger square gets another line rather than wider spacing. */
+void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size)
+{
+    int x0 = x1 - (size - 1), y0 = y1 - (size - 1);
+    ween_surface_fill(s, x0, y0, size, size, WEEN_FACE);
+    for (int i = 0; i < size / 4; i++) {
+        int line = x1 + y1 - (size - 2) + 4 * i;
+        for (int y = y0; y <= y1; y++) {
+            int x = line - y;
+            if (x < x0 || x > x1)
+                continue;
+            ween_surface_pixel(s, x, y, WEEN_WHITE);
+            if (x + 1 <= x1)
+                ween_surface_pixel(s, x + 1, y, WEEN_SHADOW);
+            if (x + 2 <= x1)
+                ween_surface_pixel(s, x + 2, y, WEEN_SHADOW);
+        }
+    }
+}
+
+/* A status bar's, which is thirteen and anchored a pixel differently: comctl32
+ * draws its own rather than asking for the corner user32 draws, and the
+ * machine has the two in different places. */
 void ween_classic_sizegrip(ween_surface *s, int x1, int y1)
 {
     int x0 = x1 - 11, y0 = y1 - 11;
-    /* The thirteen square it sits in is face: the machine clears that much
-     * and no more, so the part's top edge runs on above it and only its
-     * right and bottom edges are cut. */
     ween_surface_fill(s, x0, y0, 13, 13, WEEN_FACE);
     for (int i = 0; i < 3; i++) {
         int line = x1 + y1 - 11 + 4 * i;

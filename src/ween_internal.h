@@ -78,6 +78,7 @@ void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned fl
 void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_sizegrip(ween_surface *s, int x1, int y1);
+void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size);
 void ween_classic_menu_arrow(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_classic_menu_bullet(ween_surface *s, int x, int y, ween_color c);
 void ween_classic_menu_check(ween_surface *s, int x, int y, ween_color c);
