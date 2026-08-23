@@ -673,48 +673,55 @@ static const struct {
     const char *opens;
     const char *icon; /* the picture a file of that kind wears */
     const char *app;  /* and the one the program that opens it wears */
+    int keep_ext;     /* shown in full even where extensions are hidden */
 } g_types[] = {
-    { "AVI", "Video Clip", "Windows Media Player", "video", "video" },
-    { "BAT", "MS-DOS Batch File", "Command Prompt", "153", "msdos" },
-    { "BMP", "Bitmap Image", "Paint", "bitmap", "paint" },
-    { "DLL", "Application Extension", "", "154", NULL },
-    { "EXE", "Application", "", "3", NULL },
-    { "HTT", "HyperText Template", "Notepad", "htmldoc", "notepad" },
-    { "INI", "Configuration Settings", "Notepad", "151", "notepad" },
-    { "LOG", "Text Document", "Notepad", "152", "notepad" },
-    { "PIF", "Shortcut to MS-DOS Program", "", "msdos", NULL },
-    { "SYS", "System file", "", "154", NULL },
-    { "TXT", "Text Document", "Notepad", "152", "notepad" },
+    { "AVI", "Video Clip", "Windows Media Player", "video", "video", 0 },
+    { "BAT", "MS-DOS Batch File", "Command Prompt", "153", "msdos", 0 },
+    { "BMP", "Bitmap Image", "Paint", "bitmap", "paint", 0 },
+    { "DLL", "Application Extension", "", "154", NULL, 1 },
+    { "EXE", "Application", "", "3", NULL, 1 },
+    { "HTT", "HyperText Template", "Notepad", "htmldoc", "notepad", 0 },
+    { "INI", "Configuration Settings", "Notepad", "151", "notepad", 0 },
+    { "LOG", "Text Document", "Notepad", "152", "notepad", 0 },
+    { "PIF", "Shortcut to MS-DOS Program", "", "msdos", NULL, 0 },
+    /* the machine shows CONFIG.SYS in full where it shows AUTOEXEC and boot
+     * without theirs: some kinds keep their extension whatever the setting */
+    { "SYS", "System file", "", "154", NULL, 1 },
+    { "TXT", "Text Document", "Notepad", "152", "notepad", 0 },
 };
+
+/* Which of them a file is, by its extension, or -1 for a folder and for a
+ * kind the example does not know. */
+static int type_index(const fs_entry *e)
+{
+    const char *dot;
+    if (e->is_dir)
+        return -1;
+    dot = strrchr(e->name, '.');
+    if (!dot || !dot[1])
+        return -1;
+    for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
+        if (!lstrcmpiA(dot + 1, g_types[i].ext))
+            return (int)i;
+    return -1;
+}
 
 /* The picture a file wears: the one its extension is registered with, or the
  * plain page for a kind the example does not know. */
 static int type_image(const fs_entry *e)
 {
-    const char *dot;
+    int t = type_index(e);
     if (e->is_dir)
         return IMG_FOLDER;
-    dot = strrchr(e->name, '.');
-    if (!dot || !dot[1])
-        return IMG_FILE;
-    for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
-        if (!lstrcmpiA(dot + 1, g_types[i].ext))
-            return IMG_TYPE0 + (int)i;
-    return IMG_FILE;
+    return t >= 0 ? IMG_TYPE0 + t : IMG_FILE;
 }
 
 static const char *type_of(const fs_entry *e)
 {
-    const char *dot;
+    int t = type_index(e);
     if (e->is_dir)
         return "File Folder";
-    dot = strrchr(e->name, '.');
-    if (!dot || !dot[1])
-        return "File";
-    for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
-        if (!lstrcmpiA(dot + 1, g_types[i].ext))
-            return g_types[i].desc;
-    return "File";
+    return t >= 0 ? g_types[t].desc : "File";
 }
 
 /* Folders before files whatever the column, which is what the shell does,
@@ -1013,31 +1020,39 @@ static int g_col_order[COL_KINDS] = { COL_NAME,     COL_SIZE,     COL_TYPE,
                                       COL_MODIFIED, COL_ATTRIBUTES, COL_COMMENT,
                                       COL_CREATED,  COL_ACCESSED };
 
+/* The name as the shell shows it: without the extension when Folder Options
+ * says to leave it off a kind it knows the meaning of, which is what the shell
+ * does by default. Some kinds keep it anyway — the machine shows AUTOEXEC and
+ * boot without theirs and CONFIG.SYS with its. Everything a person is shown a
+ * name in goes through this: the list, the caption of a Properties sheet, and
+ * the box in it that the name can be typed over. */
+static const char *display_name(const fs_entry *e, char *buf, size_t cap)
+{
+    const char *dot;
+    int t;
+    if (!g_opt.hide_extensions || e->is_dir)
+        return e->name;
+    dot = strrchr(e->name, '.');
+    t = type_index(e);
+    if (!dot || dot == e->name || !dot[1] || t < 0 || g_types[t].keep_ext)
+        return e->name;
+    {
+        size_t k = (size_t)(dot - e->name);
+        if (k >= cap)
+            k = cap - 1;
+        memcpy(buf, e->name, k);
+        buf[k] = 0;
+    }
+    return buf;
+}
+
 /* What one column has to say about one entry. */
 static const char *cell_text(const fs_entry *e, int kind, char *buf,
                              size_t cap)
 {
     switch (kind) {
-    case COL_NAME: {
-        /* Folder Options can say to leave the extension off a name it knows
-         * the meaning of, which is what the shell does by default. */
-        const char *dot;
-        if (!g_opt.hide_extensions || e->is_dir)
-            return e->name;
-        dot = strrchr(e->name, '.');
-        if (!dot || dot == e->name || !dot[1])
-            return e->name;
-        for (size_t i = 0; i < sizeof(g_types) / sizeof(*g_types); i++)
-            if (!lstrcmpiA(dot + 1, g_types[i].ext)) {
-                size_t k = (size_t)(dot - e->name);
-                if (k >= cap)
-                    k = cap - 1;
-                memcpy(buf, e->name, k);
-                buf[k] = 0;
-                return buf;
-            }
-        return e->name;
-    }
+    case COL_NAME:
+        return display_name(e, buf, cap);
     case COL_SIZE:
         if (e->is_dir)
             return "";
