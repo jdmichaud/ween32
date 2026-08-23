@@ -938,6 +938,50 @@ HWND GetFocus(void)
     return g_focus;
 }
 
+/* A window's style after the fact. Changing it tells the window, which is how
+ * a list view comes to lay its folder out a different way. */
+LONG GetWindowLongA(HWND wnd, int index)
+{
+    if (!wnd)
+        return 0;
+    switch (index) {
+    case GWL_STYLE:
+        return (LONG)wnd->style;
+    case GWL_EXSTYLE:
+        return (LONG)wnd->ex_style;
+    case GWL_ID:
+        return (LONG)wnd->id;
+    default:
+        return 0;
+    }
+}
+
+LONG SetWindowLongA(HWND wnd, int index, LONG value)
+{
+    LONG was;
+    if (!wnd)
+        return 0;
+    was = GetWindowLongA(wnd, index);
+    switch (index) {
+    case GWL_STYLE:
+        wnd->style = (DWORD)value;
+        wnd->visible = (wnd->style & WS_VISIBLE) != 0;
+        SendMessageA(wnd, WM_STYLECHANGED, (WPARAM)GWL_STYLE, 0);
+        InvalidateRect(wnd, NULL, TRUE);
+        break;
+    case GWL_EXSTYLE:
+        wnd->ex_style = (DWORD)value;
+        InvalidateRect(wnd, NULL, TRUE);
+        break;
+    case GWL_ID:
+        wnd->id = (UINT)value;
+        break;
+    default:
+        break;
+    }
+    return was;
+}
+
 HWND SetFocus(HWND wnd)
 {
     HWND prev = g_focus;

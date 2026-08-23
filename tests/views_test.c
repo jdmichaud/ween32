@@ -94,9 +94,11 @@ int main(void)
                              WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0, 400, 240,
                              NULL, NULL, NULL, NULL);
     /* a list ten rows tall, which is not enough for what goes in it */
+    /* LVS_REPORT: rows with columns. A list view with none of the view bits
+     * set is LVS_ICON, which is what win32 makes of a bare style too. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
-                             WS_CHILD | WS_VISIBLE, 10, 10, 240, 160, w,
-                             (HMENU)(UINT_PTR)1, NULL, NULL);
+                             WS_CHILD | WS_VISIBLE | LVS_REPORT, 10, 10, 240,
+                             160, w, (HMENU)(UINT_PTR)1, NULL, NULL);
     /* LINESATROOT carries the lines and the boxes out to the top level;
      * without it the roots have neither, on either side of the build. */
     g_tree = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "",
@@ -480,7 +482,8 @@ int main(void)
                                   WS_POPUP | WS_VISIBLE, 0, 0, 300, 120, NULL,
                                   NULL, NULL, NULL);
         HWND narrow = CreateWindowExA(0, WC_LISTVIEWA, "",
-                                      WS_CHILD | WS_VISIBLE, 0, 0, 280, 100, lw,
+                                      WS_CHILD | WS_VISIBLE | LVS_REPORT, 0, 0,
+                                      280, 100, lw,
                                       (HMENU)(UINT_PTR)7, NULL, NULL);
         LVCOLUMNA col;
         LVITEMA it;

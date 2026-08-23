@@ -511,7 +511,7 @@ static HWND g_menubar, g_addrband;
 #define BRAND_H 23
 static HWND g_brand;
 static HWND g_split, g_panehead;
-static HIMAGELIST g_images, g_hot_images;
+static HIMAGELIST g_images, g_hot_images, g_big_images;
 static HFONT g_font;
 static int g_split_x = 203; /* the tree pane's width, measured off the shot */
 static int g_folders = 1;   /* whether the tree pane is shown at all */
@@ -527,6 +527,8 @@ static char g_hist[HIST_MAX][sizeof(g_path)];
 static int g_hist_n, g_hist_at = -1;
 static int g_navigating; /* set while Back or Forward is doing the walking */
 static int g_show_status = 1; /* View > Status Bar */
+static int g_view = 3;        /* which of the five View offers, Details being
+                               * the fourth — the order the menu has them in */
 /* The folder to open in, when the command line named one. */
 static char g_start[512];
 
@@ -2462,11 +2464,38 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
     return il;
 }
 
+/* The same five, at the size the Icons view draws: an .ico carries more than
+ * one picture and the loader picks the one asked for, so this is the same art
+ * a size up. Only the file kinds are here — a toolbar's glyphs are drawn at
+ * sixteen and there is nothing bigger of them to have. */
+static HIMAGELIST build_big_images(void)
+{
+    static const char *names[] = {
+        ICON_FOLDER, ICON_FOLDER_OPEN, ICON_FILE, ICON_COMPUTER, ICON_DRIVE
+    };
+    HIMAGELIST il = ImageList_Create(32, 32, ILC_MASK, IMG_COUNT, 4);
+    for (int i = 0; i < (int)(sizeof(names) / sizeof(*names)); i++) {
+        char path[600];
+        HICON icon;
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), names[i]);
+        icon = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 32, 32,
+                                 LR_LOADFROMFILE);
+        if (icon) {
+            ImageList_AddIcon(il, icon);
+            DestroyIcon(icon);
+        } else {
+            ImageList_Add(il, NULL, NULL); /* a hole, so the numbers agree */
+        }
+    }
+    return il;
+}
+
 static void load_icons(void)
 {
     int missing = 0;
     g_images = build_images(GLYPHS, &missing);
     g_hot_images = build_images(GLYPHS_HOT, &missing);
+    g_big_images = build_big_images();
     if (missing)
         fprintf(stderr,
                 "explorer: %d of the icons are missing — looked in \"%s\". "
@@ -2747,6 +2776,7 @@ static void build_views(HWND w)
 
     SendMessageA(g_tree, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)g_images);
     SendMessageA(g_list, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)g_images);
+    SendMessageA(g_list, LVM_SETIMAGELIST, LVSIL_NORMAL, (LPARAM)g_big_images);
     /* Both panes draw in the shell's face, which is the window's, not
      * whatever the control would have picked for itself. */
     SendMessageA(g_tree, WM_SETFONT, (WPARAM)g_font, TRUE);
@@ -3006,7 +3036,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         ModifyMenuA(bar, IDM_UNDO, MF_BYCOMMAND | MF_STRING, IDM_UNDO, undo);
         /* and the view it is in carries the bullet */
         CheckMenuRadioItem(bar, IDM_VIEW_LARGE, IDM_VIEW_THUMBS,
-                           IDM_VIEW_DETAILS, MF_BYCOMMAND);
+                           (UINT)(IDM_VIEW_LARGE + g_view), MF_BYCOMMAND);
         return 0;
     }
     case WM_MENUSELECT: {
@@ -3136,6 +3166,24 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case IDM_HOME:
             show_directory(home_path());
             return 0;
+        case IDM_VIEW_LARGE:
+        case IDM_VIEW_SMALL:
+        case IDM_VIEW_LIST:
+        case IDM_VIEW_DETAILS:
+        case IDM_VIEW_THUMBS: {
+            /* The five the menu offers are four the list view has, with
+             * Thumbnails shown as big icons — which is what it is without the
+             * pictures being made from the files. */
+            static const DWORD mode[] = { LVS_ICON, LVS_SMALLICON, LVS_LIST,
+                                          LVS_REPORT, LVS_ICON };
+            g_view = LOWORD(wp) - IDM_VIEW_LARGE;
+            SetWindowLongA(g_list, GWL_STYLE,
+                           (GetWindowLongA(g_list, GWL_STYLE) & ~LVS_TYPEMASK) |
+                               mode[g_view]);
+            SendMessageA(g_toolbar, TB_CHECKBUTTON, IDM_VIEWS, 0);
+            InvalidateRect(g_list, NULL, TRUE);
+            return 0;
+        }
         case IDM_ARRANGE_NAME:
         case IDM_ARRANGE_TYPE:
         case IDM_ARRANGE_SIZE:

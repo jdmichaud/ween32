@@ -2272,7 +2272,8 @@ typedef struct {
 } ween_lvrow;
 
 typedef struct {
-    HIMAGELIST images;
+    HIMAGELIST images; /* the small ones, which every view but one draws */
+    HIMAGELIST big;    /* and the big ones the icon view draws */
     char *col[4];
     int width[4], fmt[4], ncol;
     ween_lvrow *row;
@@ -2312,6 +2313,27 @@ static ween_list *list_of(HWND w)
         }
     }
     return w->ctl;
+}
+
+/* ---- the four views -------------------------------------------------------
+ *
+ * A folder is shown one of four ways, and the low two bits of the style say
+ * which. Details is rows with columns; List is a column of names that wraps
+ * into another column when it runs out of height; Small Icons is the same
+ * items flowing across instead of down; and Icons is a grid of big pictures
+ * with the name under each. All the metrics here are measured off the
+ * machine.
+ */
+#define WEEN_LV_FLOW_H 18     /* a row of List or Small Icons */
+#define WEEN_LV_FLOW_PAD 10   /* and what follows the widest name in a cell */
+#define WEEN_LV_ICON_W 75     /* an Icons cell, and the picture in it */
+#define WEEN_LV_ICON_SIZE 32
+#define WEEN_LV_ICON_TOP 4    /* the picture sits this far down its cell */
+#define WEEN_LV_ICON_GAP 3    /* and the name this far under the picture */
+
+static int lv_mode(const struct ween_wnd *wnd)
+{
+    return (int)(wnd->style & LVS_TYPEMASK);
 }
 
 /* A row is as tall as the tallest thing in it and one more: sixteen for a
@@ -2379,6 +2401,89 @@ static void list_ctl_free(void *p)
 
 /* How many rows fit under the header, and how far down the list can go. */
 /* How wide the columns come to, which is what there is to scroll sideways. */
+/* The widest name in the list, which is what a flowing view's cell is sized
+ * to: every cell the same, as Windows makes them. */
+static int lv_widest_label(HWND wnd, const ween_list *l)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int w = 0;
+    for (int i = 0; f && i < l->nrow; i++) {
+        const char *t = l->row[i].text[0];
+        int tw = t ? ween_strike_text_width(f, t, (int)strlen(t)) : 0;
+        if (tw > w)
+            w = tw;
+    }
+    return w;
+}
+
+/* One cell of List or Small Icons: the picture, a gap, the widest name and
+ * what follows it. */
+static int lv_flow_cell_w(HWND wnd, const ween_list *l)
+{
+    int icon_w = 0, icon_h = 0;
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    return icon_w + 2 + lv_widest_label(wnd, l) + WEEN_LV_FLOW_PAD;
+}
+
+/* How tall a cell of the Icons view is: the picture, the gap under it, and
+ * two lines for the name, which is what a long one wraps to. */
+static int lv_icon_cell_h(HWND wnd)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 13;
+    return WEEN_LV_ICON_TOP + WEEN_LV_ICON_SIZE + WEEN_LV_ICON_GAP + 2 * cell +
+           WEEN_LV_ICON_TOP;
+}
+
+static int lv_content_w(const ween_list *l);
+
+/* Where a row sits, in the view's own coordinates before scrolling: every
+ * view works out from this, so what is drawn and what is clicked agree. */
+static void lv_cell_rect(HWND wnd, const ween_list *l, int row, RECT *out)
+{
+    int mode = lv_mode(wnd);
+    RECT cr;
+    GetClientRect(wnd, &cr);
+    if (mode == LVS_REPORT) {
+        int ih = lv_item_h(wnd, l);
+        out->left = 0;
+        out->top = WEEN_LV_HEADER_H + WEEN_LV_ROW_TOP + row * ih;
+        out->right = lv_content_w(l);
+        out->bottom = out->top + ih;
+        return;
+    }
+    if (mode == LVS_ICON) {
+        int cw = WEEN_LV_ICON_W, ch = lv_icon_cell_h(wnd);
+        int per = cr.right / cw;
+        if (per < 1)
+            per = 1;
+        out->left = (row % per) * cw;
+        out->top = (row / per) * ch;
+        out->right = out->left + cw;
+        out->bottom = out->top + ch;
+        return;
+    }
+    {   /* List goes down then across; Small Icons across then down */
+        int cw = lv_flow_cell_w(wnd, l), ch = WEEN_LV_FLOW_H;
+        int down = cr.bottom / ch, across = cr.right / cw;
+        if (down < 1)
+            down = 1;
+        if (across < 1)
+            across = 1;
+        if (mode == LVS_LIST) {
+            out->left = (row / down) * cw;
+            out->top = (row % down) * ch;
+        } else {
+            out->left = (row % across) * cw;
+            out->top = (row / across) * ch;
+        }
+        out->right = out->left + cw;
+        out->bottom = out->top + ch;
+    }
+}
+
+/* How wide everything is, taken together — what the horizontal bar scrolls. */
 static int lv_content_w(const ween_list *l)
 {
     int w = 0;
@@ -2551,10 +2656,25 @@ static int lv_label_x(int indent)
  * file's. Returns -1 for a point on nothing. */
 static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
 {
-    ween_lv_layout g = lv_layout(wnd, l);
+    ween_lv_layout g;
     int icon_w = 0, icon_h = 0, indent, row;
     if (flags)
         *flags = LVHT_NOWHERE;
+    if (lv_mode(wnd) != LVS_REPORT) {
+        /* the cell a point is in, and then whether it is on what is drawn in
+         * it rather than on the space around it */
+        for (int i = 0; i < l->nrow; i++) {
+            RECT c;
+            lv_cell_rect(wnd, l, i, &c);
+            if (x < c.left || x >= c.right || y < c.top || y >= c.bottom)
+                continue;
+            if (flags)
+                *flags = LVHT_ONITEMLABEL;
+            return i;
+        }
+        return -1;
+    }
+    g = lv_layout(wnd, l);
     if (y < WEEN_LV_HEADER_H || (g.vbar && x >= g.view_w) ||
         (g.hbar && y >= g.view_h))
         return -1;
@@ -2606,6 +2726,119 @@ static const char *fit_text(const ween_strike *f, const char *text, int avail,
     return buf;
 }
 
+/* The three views that are not Details: each item is a cell, and what is in
+ * the cell is a picture and a name — beside each other, or the name under the
+ * picture when the pictures are the big ones. */
+static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
+{
+    struct ween_wnd *top = ween_top_level(wnd);
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int mode = lv_mode(wnd);
+    int icons = mode == LVS_ICON;
+    HIMAGELIST images = icons && l->big ? l->big : l->images;
+    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 13;
+    int th = f ? f->ascent - f->descent : 13;
+    int icon_w = 0, icon_h = 0, ox, oy;
+    int focused = ween_focus_get() == wnd;
+    int sel_state = focused                            ? 2
+                    : (wnd->style & LVS_SHOWSELALWAYS) ? 1
+                                                       : 0;
+    RECT clip;
+    ween_client_origin(wnd, &ox, &oy);
+    if (images)
+        ImageList_GetIconSize(images, &icon_w, &icon_h);
+    ween_surface_get_clip(&top->surface, &clip);
+    for (int i = 0; i < l->nrow; i++) {
+        RECT c;
+        const char *t = l->row[i].text[0] ? l->row[i].text[0] : "";
+        int len = (int)strlen(t);
+        int tw = f ? ween_strike_text_width(f, t, len) : 0;
+        int selected = l->row[i].selected && sel_state;
+        ween_color bar = sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE;
+        lv_cell_rect(wnd, l, i, &c);
+        if (icons) {
+            /* the picture centred over the name, and the name centred under
+             * it — wrapped to a second line when it will not fit */
+            int ix = ox + c.left + (WEEN_LV_ICON_W - icon_w) / 2;
+            int iy = oy + c.top + WEEN_LV_ICON_TOP;
+            int ty = iy + icon_h + WEEN_LV_ICON_GAP;
+            int room = WEEN_LV_ICON_W - 8, used = 0, line = 0;
+            if (images && l->row[i].image >= 0) {
+                if (selected && sel_state == 2)
+                    ween_imagelist_draw_blend(images, l->row[i].image,
+                                              &top->surface, ix, iy,
+                                              WEEN_CAP_LEFT);
+                else
+                    ween_imagelist_draw(images, l->row[i].image, &top->surface,
+                                        ix, iy);
+            }
+            while (used < len && line < 2 && f) {
+                int fit = len - used, w;
+                while (fit > 0 &&
+                       (w = ween_strike_text_width(f, t + used, fit)) > room)
+                    fit--;
+                if (fit <= 0)
+                    break;
+                if (line == 0 && used + fit < len) {
+                    int back = fit; /* break at a space where there is one */
+                    while (back > 0 && t[used + back] != ' ')
+                        back--;
+                    if (back > 0)
+                        fit = back;
+                }
+                w = ween_strike_text_width(f, t + used, fit);
+                {
+                    int lx = ox + c.left + (WEEN_LV_ICON_W - w) / 2;
+                    if (selected)
+                        ween_surface_fill(&top->surface, lx - 1, ty, w + 2,
+                                          cell, bar);
+                    ween_strike_draw(f, &top->surface, lx, ty, t + used, fit,
+                                     selected && sel_state == 2 ? WEEN_WHITE
+                                                                : WEEN_BLACK);
+                }
+                used += fit;
+                while (used < len && t[used] == ' ')
+                    used++;
+                ty += cell;
+                line++;
+            }
+        } else {
+            /* the picture, then the name beside it */
+            int ix = ox + c.left, iy = oy + c.top + (WEEN_LV_FLOW_H - icon_h) / 2;
+            int tx = ix + icon_w + 2;
+            int ty = oy + c.top + (WEEN_LV_FLOW_H - th) / 2;
+            if (images && l->row[i].image >= 0) {
+                if (selected && sel_state == 2)
+                    ween_imagelist_draw_blend(images, l->row[i].image,
+                                              &top->surface, ix, iy,
+                                              WEEN_CAP_LEFT);
+                else
+                    ween_imagelist_draw(images, l->row[i].image, &top->surface,
+                                        ix, iy);
+            }
+            if (selected)
+                ween_surface_fill(&top->surface, tx - 1, ty, tw + 3, th, bar);
+            if (f)
+                ween_strike_draw(f, &top->surface, tx, ty, t, len,
+                                 selected && sel_state == 2 ? WEEN_WHITE
+                                                            : WEEN_BLACK);
+        }
+        if (ween_ui_focus_cues && focused && i == l->focus - 1) {
+            if (icons)
+                ween_surface_focus_rect(&top->surface, ox + c.left,
+                                        oy + c.top, WEEN_LV_ICON_W,
+                                        c.bottom - c.top);
+            else
+                ween_surface_focus_rect(&top->surface,
+                                        ox + c.left + icon_w + 1,
+                                        oy + c.top +
+                                            (WEEN_LV_FLOW_H - th) / 2,
+                                        tw + 3, th);
+        }
+    }
+    (void)dc;
+}
+
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_list *l = list_of(wnd);
@@ -2621,6 +2854,10 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
     if (!l)
         return;
+    if (lv_mode(wnd) != LVS_REPORT) { /* one of the three that flow */
+        lv_paint_flow(wnd, l, dc);
+        return; /* and none of them has a header: that band is Details' own */
+    }
     ih = lv_item_h(wnd, l);
 
     g = lv_layout(wnd, l);

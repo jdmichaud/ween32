@@ -508,7 +508,13 @@ typedef struct tagTVHITTESTINFO {
     HTREEITEM hItem;
 } TVHITTESTINFO;
 
+/* How a folder is shown. The low two bits are the view: big icons in a grid,
+ * a column of rows with details, small icons across, or a list down. */
+#define LVS_ICON 0x0000L
 #define LVS_REPORT 0x0001L
+#define LVS_SMALLICON 0x0002L
+#define LVS_LIST 0x0003L
+#define LVS_TYPEMASK 0x0003L
 #define LVS_SINGLESEL 0x0004L
 #define LVS_SHOWSELALWAYS 0x0008L
 /* A row's label can be typed over in place — which is what Rename is, and
@@ -517,6 +523,9 @@ typedef struct tagTVHITTESTINFO {
 #define LVIF_TEXT 0x0001
 #define LVIF_IMAGE 0x0002
 #define LVIF_STATE 0x0008
+/* Two sets of pictures: the big ones the icon view draws and the small ones
+ * every other view draws. */
+#define LVSIL_NORMAL 0
 #define LVSIL_SMALL 1
 #define LVIS_FOCUSED 0x0001
 /* A cut item, drawn ghosted: the shell marks a hidden file this way too, and
@@ -1206,6 +1215,16 @@ HWND GetDlgItem(HWND dlg, int id);
 int GetDlgCtrlID(HWND wnd);
 HWND SetFocus(HWND wnd);
 HWND GetFocus(void);
+
+/* A window's style, read and written after it was made — which is how a list
+ * view is told to show its folder a different way. GWL_STYLE is the one index
+ * that matters here; a control that cares about the change hears WM_STYLECHANGED. */
+#define GWL_STYLE (-16)
+#define GWL_EXSTYLE (-20)
+#define GWL_ID (-12)
+LONG GetWindowLongA(HWND wnd, int index);
+LONG SetWindowLongA(HWND wnd, int index, LONG value);
+#define WM_STYLECHANGED 0x007D
 
 /* The string calls win32 has of its own. Only the ones an application reaches
  * for are here: a case-insensitive compare is what orders names in a shell,
