@@ -425,6 +425,10 @@ fn command(id: u16) void {
         },
         ID.view_zoom_normal => setZoom(1),
         ID.view_zoom_large => setZoom(4),
+        ID.view_zoom_custom => {
+            const z = dialogs.customZoom(app.frame);
+            if (z != 0) setZoom(z);
+        },
         ID.view_show_grid => {
             app.grid = !app.grid;
             _ = w.CheckMenuItem(w.GetMenu(app.frame), ID.view_show_grid, if (app.grid) w.MF_CHECKED else w.MF_UNCHECKED);

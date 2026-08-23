@@ -40,6 +40,19 @@ pub fn imageList(comptime art: type) w.HIMAGELIST {
     return il;
 }
 
+/// One cell of a strip as a plain bitmap: what a static control holding a
+/// picture is given, and what BitBlt draws straight out.
+pub fn cellBitmap(comptime art: type, comptime index: usize) w.HBITMAP {
+    const src = pixels(art);
+    const stride = art.cell_w * art.count;
+    var px: [art.cell_w * art.cell_h]u32 = undefined;
+    for (0..art.cell_h) |y| {
+        for (0..art.cell_w) |x|
+            px[y * art.cell_w + x] = src[y * stride + index * art.cell_w + x];
+    }
+    return w.CreateBitmap(art.cell_w, art.cell_h, 1, 32, &px).?;
+}
+
 /// A single-cell picture as an icon, which is what a window's class wants for
 /// the one in its caption: the colours, plus the one-bit mask that says which
 /// of them are really there.
