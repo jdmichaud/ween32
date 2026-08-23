@@ -2461,22 +2461,34 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * and starting it at the icon's edge puts every step two columns
          * early. A window that reserves the room without drawing anything
          * gets the room alone. */
-        int icon_w = (wnd->style & WS_SYSMENU)
-                         ? ween_ncm(WEEN_NC_SMICON) +
-                               (wnd->icon ? ween_ncm(2) : 0)
-                         : 0;
+        /* Room for the small icon. A window with a system menu keeps it
+         * whether or not it has one of its own, because it would show the
+         * default; a dialog has no system-menu icon at all, so its title
+         * starts hard left and its gradient starts there — which is where
+         * the machine's Folder Options has it. */
+        int shows_icon =
+            wnd->icon || ((wnd->style & WS_SYSMENU) && !wnd->is_dialog);
+        int icon_w = shows_icon ? ween_ncm(WEEN_NC_SMICON) +
+                                      (wnd->icon ? ween_ncm(2) : 0)
+                                : 0;
         /* The gradient stops short of every caption button, not just the
          * close one: on the machine it has reached its end colour three
          * pixels before the leftmost of the three. A caption with only a
          * close box keeps a single button's width, which is what both
          * reference renders show and what the machine has not been measured
          * with. */
+        /* The gradient stops short of the buttons. Where exactly depends on
+         * which they are: before the group of minimise, maximise and close it
+         * leaves two pixels of caption, and against a question mark it stops
+         * at its very edge. Both are measured — the first off the reference
+         * render, the second off the machine's Folder Options. */
         int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0) +
                    (nc_has_help(wnd) ? 1 : 0);
         int buttons_w = ween_ncm(WEEN_NC_CAPTION) - 1;
         if (nbtn > 1) {
             RECT lb = nc_button_rect(wnd, nbtn - 1);
-            buttons_w = wnd->w - frame - (lb.left - ween_ncm(2));
+            buttons_w = wnd->w - frame -
+                        (lb.left - (nc_has_help(wnd) ? 0 : ween_ncm(2)));
         }
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
                              icon_w, buttons_w);
@@ -2757,7 +2769,9 @@ static void gb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (!wnd->text[0])
         return;
     r = client;
-    r.left += 7;
+    /* The label sits eight in, not seven: the machine's group boxes have it
+     * there and wine's have it a pixel to the left. */
+    r.left += 8;
     r.right -= 7;
     r.top -= 1;
     r.bottom += 1;
@@ -2921,9 +2935,29 @@ static LRESULT button_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case STM_SETICON: {
+        /* The picture this one shows. A label with SS_ICON is how a dialog
+         * puts a picture beside a group of things without drawing it itself
+         * — and, being a control, it is painted after whatever it sits on. */
+        HICON was = wnd->icon;
+        wnd->icon = (HICON)wp;
+        InvalidateRect(wnd, NULL, TRUE);
+        return (LRESULT)(INT_PTR)was;
+    }
+    case STM_GETICON:
+        return (LRESULT)(INT_PTR)wnd->icon;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
+        if ((wnd->style & 0x1F) == SS_ICON) {
+            RECT r;
+            GetClientRect(wnd, &r);
+            if (wnd->icon)
+                DrawIconEx(dc, 0, 0, wnd->icon, r.right, r.bottom, 0, NULL,
+                           DI_NORMAL);
+            EndPaint(wnd, &ps);
+            return 0;
+        }
         FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         /* A label wraps at its own width unless it was made not to, which is

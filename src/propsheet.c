@@ -30,7 +30,7 @@
  * so does this. Going through dialog units would round every edge to the
  * nearest one and a half pixels. */
 #define PS_TAB_X 5    /* client left to tab control */
-#define PS_TAB_Y 8    /* client top to tab control */
+#define PS_TAB_Y 7    /* client top to tab control */
 #define PS_RIGHT 6    /* tab control to client right */
 #define PS_BOTTOM 7   /* buttons to client bottom */
 #define PS_BTN_W 75   /* one of OK / Cancel / Apply */

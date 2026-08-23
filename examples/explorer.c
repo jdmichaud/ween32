@@ -2307,6 +2307,7 @@ static void choose_columns(HWND owner)
  */
 enum {
     IDC_FO_G1 = 1490, IDC_FO_G2, IDC_FO_G3, IDC_FO_G4,
+    IDC_FO_I1, IDC_FO_I2, IDC_FO_I3, IDC_FO_I4, IDC_FO_I5, IDC_FO_I6,
     IDC_FO_WEB_DESKTOP = 1500, IDC_FO_CLASSIC_DESKTOP,
     IDC_FO_WEB_FOLDERS, IDC_FO_CLASSIC_FOLDERS,
     IDC_FO_SAME_WINDOW, IDC_FO_OWN_WINDOW,
@@ -2359,6 +2360,41 @@ static void options_applied(void)
     }
 }
 
+/* The pictures beside the group boxes, which are the shell's own. Each is
+ * drawn where the machine has it; they are not controls, so the page paints
+ * them itself. */
+static const char *asset_dir(void); /* where the pictures are kept */
+
+enum { FOI_DESKTOP, FOI_WEBVIEW, FOI_BROWSE, FOI_CLICK, FOI_VIEWS,
+       FOI_OFFLINE, FOI_COUNT };
+
+static HICON g_fo_icons[FOI_COUNT];
+
+static void fo_load_icons(void)
+{
+    static const char *names[FOI_COUNT] = {
+        "folderopts-desktop", "folderopts-webview", "folderopts-browse",
+        "folderopts-click",   "folderopts-views",   "folderopts-offline"
+    };
+    for (int i = 0; i < FOI_COUNT; i++) {
+        char path[600];
+        if (g_fo_icons[i])
+            continue;
+        snprintf(path, sizeof(path), "%s/%s.ico", asset_dir(), names[i]);
+        g_fo_icons[i] = (HICON)LoadImageA(NULL, path, IMAGE_ICON, 32, 32,
+                                          LR_LOADFROMFILE);
+    }
+}
+
+/* Hand each picture to the label that shows it. A label is a control, so it
+ * is painted after the group box it sits on rather than under it. */
+static void fo_set_icon(HWND dlg, int id, int which)
+{
+    HWND c = GetDlgItem(dlg, id);
+    if (c && g_fo_icons[which])
+        SendMessageA(c, STM_SETICON, (WPARAM)g_fo_icons[which], 0);
+}
+
 /* Where each control goes, in pixels of the page, measured off the machine's
  * own dialog.
  *
@@ -2387,21 +2423,25 @@ static void fo_layout(HWND dlg, const fo_place *at, int n)
  * draws, put back. An option button's circle sits at its left edge and one
  * below its top. */
 static const fo_place g_fo_general_at[] = {
-    { IDC_FO_G1, 11, 13, 341, 60 },
+    { IDC_FO_G1, 12, 12, 341, 62 },
     { IDC_FO_WEB_DESKTOP, 66, 29, 282, 16 },
     { IDC_FO_CLASSIC_DESKTOP, 66, 47, 282, 16 },
-    { IDC_FO_G2, 13, 88, 339, 58 },
+    { IDC_FO_G2, 14, 87, 339, 60 },
     { IDC_FO_WEB_FOLDERS, 66, 104, 282, 16 },
     { IDC_FO_CLASSIC_FOLDERS, 66, 122, 282, 16 },
-    { IDC_FO_G3, 13, 160, 339, 60 },
+    { IDC_FO_G3, 14, 159, 339, 62 },
     { IDC_FO_SAME_WINDOW, 66, 177, 282, 16 },
     { IDC_FO_OWN_WINDOW, 66, 195, 282, 16 },
-    { IDC_FO_G4, 13, 233, 339, 96 },
+    { IDC_FO_G4, 14, 232, 339, 98 },
     { IDC_FO_SINGLE, 66, 250, 282, 16 },
     { IDC_FO_UNDERLINE_ALWAYS, 85, 268, 263, 16 },
     { IDC_FO_UNDERLINE_POINT, 85, 286, 263, 16 },
     { IDC_FO_DOUBLE, 66, 304, 282, 16 },
     { IDC_FO_DEFAULTS, 245, 342, 107, 23 },
+    { IDC_FO_I1, 24, 30, 32, 32 },
+    { IDC_FO_I2, 24, 105, 32, 32 },
+    { IDC_FO_I3, 24, 178, 32, 32 },
+    { IDC_FO_I4, 24, 238, 32, 32 },
 };
 
 /* ---- the General page ---- */
@@ -2411,6 +2451,10 @@ static INT_PTR CALLBACK fo_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
     case WM_INITDIALOG:
         fo_layout(dlg, g_fo_general_at,
                   (int)(sizeof(g_fo_general_at) / sizeof(*g_fo_general_at)));
+        fo_set_icon(dlg, IDC_FO_I1, FOI_DESKTOP);
+        fo_set_icon(dlg, IDC_FO_I2, FOI_WEBVIEW);
+        fo_set_icon(dlg, IDC_FO_I3, FOI_BROWSE);
+        fo_set_icon(dlg, IDC_FO_I4, FOI_CLICK);
         CheckRadioButton(dlg, IDC_FO_WEB_DESKTOP, IDC_FO_CLASSIC_DESKTOP,
                          g_opt_edit.classic_desktop ? IDC_FO_CLASSIC_DESKTOP
                                                     : IDC_FO_WEB_DESKTOP);
@@ -2735,6 +2779,11 @@ static void folder_options(HWND owner)
     RADIO2(46, 174, 186, IDC_FO_DOUBLE,
            "&Double-click to open an item (single-click to select)");
     PUSH(160, 194, 79, 14, IDC_FO_DEFAULTS, "&Restore Defaults");
+    /* the pictures, after the boxes they sit on so they are painted over */
+    ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I1, ATOM_STATIC, "");
+    ITEM(SS_ICON, 14, 38, 21, 20, IDC_FO_I2, ATOM_STATIC, "");
+    ITEM(SS_ICON, 14, 64, 21, 20, IDC_FO_I3, ATOM_STATIC, "");
+    ITEM(SS_ICON, 14, 90, 21, 20, IDC_FO_I4, ATOM_STATIC, "");
     build_dialog_template(t_gen, sizeof(t_gen), WS_CHILD | DS_SETFONT, 243,
                           232, "", items, n);
 
@@ -2809,6 +2858,7 @@ static void folder_options(HWND owner)
 #undef GROUP
 #undef ITEM
 
+    fo_load_icons();
     g_opt_edit = g_opt;
 
     memset(pages, 0, sizeof(pages));

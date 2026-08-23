@@ -1016,6 +1016,11 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define SS_LEFT 0x00000000L
 #define SS_CENTER 0x00000001L
 #define SS_RIGHT 0x00000002L
+/* A picture instead of a line of text: the icon the control is given with
+ * STM_SETICON, drawn at its top-left corner. */
+#define SS_ICON 0x00000003L
+#define STM_SETICON 0x0170
+#define STM_GETICON 0x0171
 /* The two that stay on one line; every other kind wraps at its own width. */
 #define SS_SIMPLE 0x0000000BL
 #define SS_LEFTNOWORDWRAP 0x0000000CL

@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 7477 / 298596 — 2.5%
+tools/refcapture/pxdiff.py                  # expect 7182 / 298596 — 2.4%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -78,7 +78,7 @@ items by twelve pixels and Windows by sixteen, and ween32 follows Windows. The
 rest is the caption's bold title, which ween32 synthesises. Do not "fix" the
 bar back toward wine — check it against a screenshot of Windows instead.
 
-Thirty-six of the sampler's 7477 are the same thing in miniature: a scroll
+Thirty-six of the sampler's 7182 are the same thing in miniature: a scroll
 bar's up arrow. Wine draws it a row higher than the machine does, and the
 machine's is what ween32 draws — see the box under the address bar below,
 which comes out pixel for pixel because of it. Another 1705 are the tab

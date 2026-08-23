@@ -4781,7 +4781,10 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     RECT r = ps->rcPaint;
     int ox, oy, th = f ? f->ascent - f->descent : 13;
-    int tabh = th + 5, body = 2 + tabh;
+    /* The strip the tabs stand in is four more than the text, and the body
+     * starts two below it — nineteen for the eleven-pixel faces, which is
+     * what the machine's property sheets have. */
+    int tabh = th + 4, body = 2 + tabh;
     int min = tab_min_width(f);
     int sel = it ? it->cursel : 0;
 
@@ -4814,7 +4817,10 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 tab_shape(&top->surface, ox, oy + ty, ox + tl, ox + tr,
                           oy + tb);
                 if (f) {
-                    int visible = selected ? tabh + 2 : tabh;
+                    /* The label keeps its place in the tab whether or not the
+                     * tab is the one in front: the two extra pixels a picked
+                     * tab is given go below its text, not around it. */
+                    int visible = tabh;
                     ween_strike_draw(f, &top->surface, ox + l + 6,
                                      oy + ty + (visible - th) / 2, it->item[i],
                                      (int)strlen(it->item[i]), WEEN_BLACK);
@@ -4839,7 +4845,7 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONDOWN: {
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
         int min = tab_min_width(f), l = 2, x = GET_X_LPARAM(lp);
-        int y = GET_Y_LPARAM(lp), tabh = (f ? f->ascent - f->descent : 13) + 5;
+        int y = GET_Y_LPARAM(lp), tabh = (f ? f->ascent - f->descent : 13) + 4;
         it = items_of(wnd);
         SetFocus(wnd);
         if (y > tabh + 2)
@@ -4883,8 +4889,9 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * own border off the rest. */
         RECT *r = (RECT *)lp;
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-        /* the strip the tabs stand in, and the body's own raised edge */
-        int th = (f ? f->ascent - f->descent : 13) + 5 + 2, edge = 2;
+        /* the strip the tabs stand in, the two below it the body's edge
+         * begins at, and the body's own raised edge */
+        int th = (f ? f->ascent - f->descent : 13) + 4 + 2 + 2, edge = 2;
         if (!r)
             return 0;
         if (wp) { /* a page's rectangle -> the control that must hold it */
