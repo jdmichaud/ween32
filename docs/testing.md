@@ -163,6 +163,19 @@ PXDIFF_REF=tools/refcapture/suggest-machine.png PXDIFF_OUR=/tmp/ours.png \
   tools/refcapture/pxdiff.py                  # expect 0 / 50000
 ```
 
+Where it *lands* has to be checked too, and separately: the box is its own
+window, so a comparison of its contents says nothing about where it hangs.
+`tools/refcapture/suggest-window-machine.png` is the machine's whole window
+with the box up. Paste the box into the window frame at (81, 92) — the corner
+it goes to — and the 500x100 it covers differs by 0. The address bar above it
+differs by 26, which is the machine's mouse pointer sitting in the field; the
+panes differ throughout, because the machine is showing Program Files while
+the fixture shows Local Disk (C:).
+
+The box's top-left is the bottom-left of the combo box's `rcItem` — the band
+the text lives on, which is not the client area and not the edit control
+either. Taking it from the client put the box a pixel high.
+
 Getting there settled five things that no other capture could have:
 
 - a scroll bar's up arrow sits a row lower than wine draws it (the sampler

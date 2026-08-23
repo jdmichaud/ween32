@@ -924,6 +924,9 @@ static void items_free(void *p); /* defined with ween_controls_free */
 /* How many rows a dropped list shows before it needs a bar, and how far it
  * can be dragged. The machine's shows seven and can be pulled taller. */
 #define WEEN_CB_ROWS 8
+/* How far down its client a combo box puts the row of text — the field when
+ * it has one, and where the box under it hangs from. */
+#define WEEN_COMBO_TEXT_Y 3
 #define WEEN_CB_MIN_ROWS 2
 
 typedef struct {
@@ -1586,10 +1589,14 @@ BOOL GetComboBoxInfo(HWND combo, COMBOBOXINFO *info)
     edge = ween_ex_edge(combo);
     GetClientRect(combo, &cr);
     memset(&info->rcItem, 0, sizeof(info->rcItem));
+    /* The band the text lives in: the rows the field is put on, and as wide
+     * as what the button leaves — a pixel more than the field itself, which
+     * stops one short of the button. */
     info->rcItem.left = combo_edit_x(combo, it);
-    info->rcItem.top = edge;
+    info->rcItem.top = WEEN_COMBO_TEXT_Y;
     info->rcItem.right = cr.right - btn;
-    info->rcItem.bottom = cr.bottom - edge;
+    info->rcItem.bottom = cr.bottom - 1;
+    (void)edge;
     info->rcButton.left = cr.right - btn;
     info->rcButton.top = 0;
     info->rcButton.right = cr.right;
@@ -1688,8 +1695,8 @@ static HWND combo_edit(HWND wnd)
      * where the machine has it. */
     x = combo_edit_x(wnd, it);
     if (it->edit)
-        MoveWindow(it->edit, x, 3, cr.right - btn - x - 1, cr.bottom - 4,
-                   FALSE);
+        MoveWindow(it->edit, x, WEEN_COMBO_TEXT_Y, cr.right - btn - x - 1,
+                   cr.bottom - 1 - WEEN_COMBO_TEXT_Y, FALSE);
     return it->edit;
 }
 
