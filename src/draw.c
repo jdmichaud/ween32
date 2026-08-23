@@ -331,9 +331,23 @@ HGDIOBJ ween_select_bitmap(HDC dc, HGDIOBJ obj)
 
 /* ---- lines --------------------------------------------------------------- */
 
-/* A pen wider than one pixel puts down a square of that width at every point
- * of the line, centred as GDI centres it: the extra pixels of an even width
- * go up and left. */
+/* A pen wider than one pixel puts down a disc of that many pixels across at
+ * every point of the line, which is what gives a wide line its even
+ * thickness and its rounded ends.
+ *
+ * The disc is the one Windows draws, measured by clicking the line tool at
+ * each width on a Windows 2000 Paint: two across is a full square, three is
+ * a plus, four and five are squares with the corners off, and seven — the
+ * biggest brush — is a proper circle. One test reproduces all of them: a
+ * pixel is in when its centre, in doubled coordinates, is within w of the
+ * middle, allowing two.
+ */
+static int in_disc(int dx, int dy, int w)
+{
+    int ax = 2 * dx - (w - 1), ay = 2 * dy - (w - 1);
+    return ax * ax + ay * ay <= w * w - 2;
+}
+
 static void pen_dot(HDC dc, const ween_gdiobj *pen, int x, int y)
 {
     int w = pen->pen_width;
@@ -341,9 +355,11 @@ static void pen_dot(HDC dc, const ween_gdiobj *pen, int x, int y)
         put(dc, x, y, pen->color);
         return;
     }
+    /* the extra pixel of an even width goes above and left */
     for (int dy = 0; dy < w; dy++)
         for (int dx = 0; dx < w; dx++)
-            put(dc, x - (w - 1) / 2 + dx, y - (w - 1) / 2 + dy, pen->color);
+            if (in_disc(dx, dy, w))
+                put(dc, x - w / 2 + dx, y - w / 2 + dy, pen->color);
 }
 
 /* PS_DASH and friends: the pattern GDI walks along a cosmetic pen, in pixels
@@ -379,6 +395,12 @@ static void line_raw(HDC dc, const ween_gdiobj *pen, int x0, int y0, int x1,
     int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
     int x = x0, y = y0;
 
+    /* A wide pen is swept along the line rather than stamped at its points,
+     * and a swept shape leaves nothing out: where the walk steps in both
+     * directions at once the pen is put down at the corner too, so the path
+     * it covers is four-connected. A one-pixel pen keeps the plain
+     * eight-connected Bresenham, which is what a one-pixel line is. */
+    int wide = pen->pen_width > 1;
     if (adx >= ady) {
         int err = adx / 2;
         for (int i = 0; i <= adx; i++) {
@@ -388,6 +410,8 @@ static void line_raw(HDC dc, const ween_gdiobj *pen, int x0, int y0, int x1,
             if (err < 0) {
                 y += sy;
                 err += adx;
+                if (wide && (i < adx || draw_last))
+                    pen_dot(dc, pen, x, y);
             }
             x += sx;
         }
@@ -400,6 +424,8 @@ static void line_raw(HDC dc, const ween_gdiobj *pen, int x0, int y0, int x1,
             if (err < 0) {
                 x += sx;
                 err += ady;
+                if (wide && (i < ady || draw_last))
+                    pen_dot(dc, pen, x, y);
             }
             y += sy;
         }
@@ -429,7 +455,14 @@ BOOL LineTo(HDC dc, int x, int y)
     pen = dc_pen(dc);
     if (!pen->is_null) {
         clip_push(dc, &saved);
-        line_raw(dc, pen, dc->cur_x, dc->cur_y, x, y, &step, 0);
+        /* The last point of a one-pixel line belongs to whatever comes next
+         * and is not put down here. A wide pen is a shape swept along the
+         * line rather than a run of points, and its far end is part of the
+         * shape: a Windows 2000 Paint clicking the line tool with a
+         * five-pixel pen leaves the whole disc, where a line that stopped
+         * short would leave nothing at all. */
+        line_raw(dc, pen, dc->cur_x, dc->cur_y, x, y, &step,
+                 pen->pen_width > 1);
         clip_pop(dc, &saved);
     }
     dc->cur_x = x;
@@ -450,7 +483,7 @@ BOOL Polyline(HDC dc, const POINT *pts, int count)
     clip_push(dc, &saved);
     for (int i = 0; i + 1 < count; i++)
         line_raw(dc, pen, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, &step,
-                 0);
+                 pen->pen_width > 1 && i + 2 == count);
     clip_pop(dc, &saved);
     return TRUE;
 }

@@ -53,48 +53,56 @@ pub fn isShape(t: A.Tool) bool {
 
 // ---- the marks the freehand tools make ------------------------------------
 
-/// The brushes, as Paint has them: three sizes of round, square and the two
-/// diagonals. Each is a list of the rows it covers, given as (x0, x1) either
-/// side of the centre.
-const Brush = struct { w: i32, h: i32, kind: enum { round, square, back, fwd } };
-
-const brushes = [12]Brush{
-    .{ .w = 8, .h = 8, .kind = .round },  .{ .w = 5, .h = 5, .kind = .round },  .{ .w = 2, .h = 2, .kind = .round },
-    .{ .w = 8, .h = 8, .kind = .square }, .{ .w = 5, .h = 5, .kind = .square }, .{ .w = 2, .h = 2, .kind = .square },
-    .{ .w = 8, .h = 8, .kind = .back },   .{ .w = 6, .h = 6, .kind = .back },   .{ .w = 4, .h = 4, .kind = .back },
-    .{ .w = 8, .h = 8, .kind = .fwd },    .{ .w = 6, .h = 6, .kind = .fwd },    .{ .w = 4, .h = 4, .kind = .fwd },
+/// The twelve brushes, exactly as the machine stamps them: a click with
+/// each in turn, read back off the screen. Three sizes of round, of square,
+/// and of the two diagonals; the stamp sits with its top-left corner half
+/// its size above and left of the pointer.
+const brushes = [12][]const []const u8{
+    // round: seven, four and one across
+    &.{ "  ###  ", " ##### ", "#######", "#######", "#######", " ##### ", "  ###  " },
+    &.{ " ## ", "####", "####", " ## " },
+    &.{"#"},
+    // square: eight, five and two
+    &.{ "########", "########", "########", "########", "########", "########", "########", "########" },
+    &.{ "#####", "#####", "#####", "#####", "#####" },
+    &.{ "##", "##" },
+    // one diagonal
+    &.{ "       #", "      # ", "     #  ", "    #   ", "   #    ", "  #     ", " #      ", "#       " },
+    &.{ "    #", "   # ", "  #  ", " #   ", "#    " },
+    &.{ " #", "# " },
+    // and the other
+    &.{ "#       ", " #      ", "  #     ", "   #    ", "    #   ", "     #  ", "      # ", "       #" },
+    &.{ "#    ", " #   ", "  #  ", "   # ", "    #" },
+    &.{ "# ", " #" },
 };
 
 /// One stamp of the brush at a point, in the given colour.
 fn brushAt(dc: w.HDC, x: i32, y: i32, color: w.COLORREF) void {
     const b = brushes[@min(A.option(), brushes.len - 1)];
-    const x0 = x - @divTrunc(b.w, 2);
-    const y0 = y - @divTrunc(b.h, 2);
-    const brush = w.CreateSolidBrush(color).?;
-    defer _ = w.DeleteObject(brush);
-    switch (b.kind) {
-        .square => {
-            const r = w.RECT{ .left = x0, .top = y0, .right = x0 + b.w, .bottom = y0 + b.h };
-            _ = w.FillRect(dc, &r, brush);
-        },
-        .round => {
-            const pen = w.CreatePen(w.PS_SOLID, 1, color).?;
-            defer _ = w.DeleteObject(pen);
-            const op = w.SelectObject(dc, pen);
-            const ob = w.SelectObject(dc, brush);
-            _ = w.Ellipse(dc, x0, y0, x0 + b.w, y0 + b.h);
-            if (op) |o| _ = w.SelectObject(dc, o);
-            if (ob) |o| _ = w.SelectObject(dc, o);
-        },
-        .back, .fwd => {
-            var i: i32 = 0;
-            while (i < b.w) : (i += 1) {
-                const dx = if (b.kind == .back) i else b.w - 1 - i;
-                const r = w.RECT{ .left = x0 + dx, .top = y0 + i, .right = x0 + dx + 1, .bottom = y0 + i + 1 };
-                _ = w.FillRect(dc, &r, brush);
+    const h: i32 = @intCast(b.len);
+    const wd: i32 = @intCast(b[0].len);
+    const x0 = x - @divTrunc(wd, 2);
+    const y0 = y - @divTrunc(h, 2);
+    for (b, 0..) |row, ry| {
+        var run: i32 = -1;
+        for (row, 0..) |c, rx| {
+            const on = c == '#';
+            if (on and run < 0) run = @intCast(rx);
+            if (!on and run >= 0) {
+                fillRun(dc, x0 + run, y0 + @as(i32, @intCast(ry)), @as(i32, @intCast(rx)) - run, color);
+                run = -1;
             }
-        },
+        }
+        if (run >= 0)
+            fillRun(dc, x0 + run, y0 + @as(i32, @intCast(ry)), wd - run, color);
     }
+}
+
+fn fillRun(dc: w.HDC, x: i32, y: i32, len: i32, color: w.COLORREF) void {
+    const r = w.RECT{ .left = x, .top = y, .right = x + len, .bottom = y + 1 };
+    const brush = w.CreateSolidBrush(color).?;
+    _ = w.FillRect(dc, &r, brush);
+    _ = w.DeleteObject(brush);
 }
 
 /// The rubber: a square of the background colour, four sizes.

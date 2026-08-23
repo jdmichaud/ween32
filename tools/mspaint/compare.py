@@ -39,6 +39,45 @@ def tool_point(n):
     return (8 + (n % 2) * 25 + 12, 42 + (n // 2) * 25 + 12)
 
 
+# Which settings each tool offers, and where they sit — read out of the
+# generated art so the two cannot drift apart.
+GROUP_OF = {
+    0: "select", 1: "select", 9: "select",
+    2: "eraser", 5: "zoom", 7: "brush", 8: "airbrush",
+    10: "line", 11: "line",
+    12: "shape", 13: "shape", 14: "shape", 15: "shape",
+}
+
+
+def option_rects():
+    import re
+
+    text = open(os.path.join(ROOT, "examples/mspaint/art_options.zig")).read()
+    out, name = {}, None
+    for line in text.splitlines():
+        m = re.match(r"pub const (\w+) = \[_\]Option\{", line)
+        if m:
+            name = m.group(1)
+            out[name] = []
+        m = re.match(r"\s*\.x = (-?\d+), \.y = (-?\d+), \.w = (\d+), \.h = (\d+),", line)
+        if m and name:
+            out[name].append(tuple(int(v) for v in m.groups()))
+    return out
+
+
+def option_point(tool, index):
+    """The middle of that setting's rectangle, in window coordinates: the
+    settings box sits at (12,245) and both copies put it there."""
+    group = GROUP_OF.get(tool)
+    if not group:
+        return None
+    rects = option_rects().get(group, [])
+    if index >= len(rects):
+        return None
+    x, y, w_, h_ = rects[index]
+    return (12 + x + w_ // 2, 245 + y + h_ // 2)
+
+
 def run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
 
@@ -113,6 +152,7 @@ def main(argv):
     for kind, args in steps:
         if kind in ("click", "drag"):
             pts += args
+    tool_now = 6
     fixed = calibrate(pts) if pts else []
     real = dict(zip(pts, fixed))
     if pts:
@@ -125,7 +165,12 @@ def main(argv):
     args = []
     for kind, a in steps:
         if kind == "tool":
+            tool_now = a[0]
             args += ["click", "%d,%d" % tool_point(a[0]), "sleep", "400"]
+        elif kind == "option":
+            p = option_point(tool_now, a[0])
+            if p:
+                args += ["click", "%d,%d" % p, "sleep", "300"]
         elif kind == "click":
             args += ["click", "%d,%d" % a[0], "sleep", "300"]
         elif kind == "drag":
@@ -137,10 +182,16 @@ def main(argv):
 
     # ours, driven with where the pointer really went
     script = []
+    tool_now = 6
     for kind, a in steps:
         if kind == "tool":
+            tool_now = a[0]
             x, y = tool_point(a[0])
             script += ["d:%d,%d" % (x, y), "u:%d,%d" % (x, y), "w:50"]
+        elif kind == "option":
+            p = option_point(tool_now, a[0])
+            if p:
+                script += ["d:%d,%d" % p, "u:%d,%d" % p, "w:50"]
         elif kind == "click":
             x, y = real.get(a[0], a[0])
             script += ["d:%d,%d" % (x, y), "u:%d,%d" % (x, y), "w:50"]
