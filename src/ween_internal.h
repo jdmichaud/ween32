@@ -382,6 +382,14 @@ int ween_toolbar_menu_step(HWND bar, int from, int dir);
  * own client area without a second top-level window. */
 void ween_popup_paint(void);
 HWND ween_popup_hit(int x, int y);
+/* Where a combo box's dropped list is, in surface pixels — the tests reach
+ * for it, since a list that stops at eight rows and can be dragged taller has
+ * a size worth checking. */
+void ween_combo_list_rect(HWND combo, RECT *out);
+/* Where a combo box's dropped list is, in surface pixels — the tests reach
+ * for it, since a list that stops at eight rows and can be dragged taller has
+ * a size worth checking. */
+void ween_combo_list_rect(HWND combo, RECT *out);
 void ween_controls_free(HWND w); /* per-class state, on destroy */
 
 /* Window text. Grows to fit whatever is stored; both return 0 only if the

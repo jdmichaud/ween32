@@ -484,6 +484,49 @@ int main(void)
         SendMessageA(field, WM_KEYDOWN, VK_ESCAPE, 0);
         CHECK(!SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
               "and Escape puts the list away");
+
+        /* More than it can show: the list stops at eight rows and puts a bar
+         * down its side, and the highlight walking past the bottom scrolls
+         * it rather than running off. */
+        {
+            RECT before, after;
+            for (int k = 0; k < 20; k++) {
+                char name[32];
+                sprintf(name, "item%02d", k);
+                SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)name);
+            }
+            SendMessageA(cb, CB_SETCURSEL, 0, 0);
+            SendMessageA(cb, CB_SHOWDROPDOWN, TRUE, 0);
+            ween_combo_list_rect(cb, &before);
+            CHECK(before.bottom - before.top < 20 * 16,
+                  "a long list stops rather than running the height of it");
+            /* three were already in it, so the twelfth step down lands on
+             * the ninth of the twenty added */
+            for (int k = 0; k < 12; k++)
+                SendMessageA(field, WM_KEYDOWN, VK_DOWN, 0);
+            GetWindowTextA(field, got, (int)sizeof(got));
+            CHECK(!strcmp(got, "item08"),
+                  "and the highlight goes on past what is shown");
+            /* Dragging the corner makes it taller. The points are the
+             * combo's own, as a routed press would arrive. */
+            {
+                int ox, oy;
+                ween_client_origin(cb, &ox, &oy);
+                ween_combo_list_rect(cb, &before);
+                SendMessageA(cb, WM_LBUTTONDOWN, 0,
+                             MAKELPARAM(before.right - 6 - ox,
+                                        before.bottom - 6 - oy));
+                SendMessageA(cb, WM_MOUSEMOVE, 0,
+                             MAKELPARAM(before.right - 6 - ox,
+                                        before.bottom + 40 - oy));
+                SendMessageA(cb, WM_LBUTTONUP, 0,
+                             MAKELPARAM(before.right - 6 - ox,
+                                        before.bottom + 40 - oy));
+                ween_combo_list_rect(cb, &after);
+                CHECK(after.bottom - after.top > before.bottom - before.top,
+                      "and the corner drags it taller");
+            }
+        }
         DestroyWindow(cb);
         DestroyWindow(list_only);
     }

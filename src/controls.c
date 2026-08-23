@@ -241,6 +241,37 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     int at = vert ? GET_Y_LPARAM(lp) : GET_X_LPARAM(lp);
     ween_sbstate st = scroll_state(wnd);
 
+    /* A corner rather than a bar: the hatched square a window is dragged
+     * bigger by. It has no range and no thumb — what it does is tell the
+     * window it is in that a resize has started, which the window answers by
+     * following the pointer. */
+    if (wnd->style & (SBS_SIZEGRIP | SBS_SIZEBOX)) {
+        switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            struct ween_wnd *top = ween_top_level(wnd);
+            RECT r;
+            int ox, oy;
+            BeginPaint(wnd, &ps);
+            GetClientRect(wnd, &r);
+            ween_client_origin(wnd, &ox, &oy);
+            ween_classic_sizegrip(&top->surface, ox + r.right - 1,
+                                  oy + r.bottom - 1);
+            EndPaint(wnd, &ps);
+            return 0;
+        }
+        case WM_NCHITTEST:
+            return HTBOTTOMRIGHT; /* the corner, so a frame resizes from it */
+        case WM_LBUTTONDOWN:
+            if (wnd->parent) /* the window it is in does the following */
+                SendMessageA(wnd->parent, WM_SYSCOMMAND,
+                             SC_SIZE | WMSZ_BOTTOMRIGHT, lp);
+            return 0;
+        default:
+            return DefWindowProcA(wnd, msg, wp, lp);
+        }
+    }
+
     switch (msg) {
     case WM_LBUTTONDOWN: {
         int grab, pos, code;
@@ -840,6 +871,11 @@ static void notify_parent(HWND wnd, UINT code)
 
 static void items_free(void *p); /* defined with ween_controls_free */
 
+/* How many rows a dropped list shows before it needs a bar, and how far it
+ * can be dragged. The machine's shows seven and can be pulled taller. */
+#define WEEN_CB_ROWS 8
+#define WEEN_CB_MIN_ROWS 2
+
 typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
@@ -854,6 +890,10 @@ typedef struct {
                  * in — which is what an address bar is */
     int quiet;  /* the control is writing in its own field: what comes back
                  * is not someone typing, and the owner is not told */
+    int rows;   /* how many the dropped list shows, once it has been dragged
+                 * taller or shorter; 0 until then */
+    int sizing; /* the grip is being dragged, and this is where from */
+    int size_y0, size_rows0;
     char was[260]; /* and what was in it when the typing started */
 } ween_items;
 
@@ -1186,13 +1226,29 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
-static int combo_list_height(HWND wnd)
+/* How many rows the list shows: what it was dragged to, or eight, and never
+ * more than it has to show. */
+static int combo_list_rows(HWND wnd)
 {
     ween_items *it = wnd->ctl;
     int n = it ? it->count : 0;
-    if (n > 8)
-        n = 8;
-    return n * item_height(wnd) + 2;
+    int want = it && it->rows ? it->rows : WEEN_CB_ROWS;
+    if (n < want)
+        want = n;
+    return want < 1 ? 1 : want;
+}
+
+/* Whether it has more than it can show, and so wants a bar down its side. */
+static int combo_list_scrolls(HWND wnd)
+{
+    ween_items *it = wnd->ctl;
+    return it && it->count > combo_list_rows(wnd);
+}
+
+static int combo_list_height(HWND wnd)
+{
+    /* the rows, the border, and the corner the grip stands in */
+    return combo_list_rows(wnd) * item_height(wnd) + 2 + ween_scroll_metric();
 }
 
 /* Where the dropped list sits, in surface coordinates: directly under the
@@ -1227,11 +1283,25 @@ void ween_popup_paint(void)
      * two sides and a white one on the other two: no border to speak of. */
     ween_surface_fill(&top->surface, x, y, w, h, WEEN_BLACK);
     ween_surface_fill(&top->surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
-    for (int i = 0; it && i < it->count; i++) {
-        int iy = y + 1 + i * ih;
+    /* The rows that fit, from wherever the list is scrolled to; a bar down
+     * the side when there are more than that, and the corner it can be
+     * dragged bigger by underneath it. */
+    {
+        int sb = ween_scroll_metric();
+        int rows = combo_list_rows(g_dropped);
+        int wide = w - 2 - (combo_list_scrolls(g_dropped) ? sb : 0);
+        if (combo_list_scrolls(g_dropped))
+            ween_draw_scrollbar(&top->surface, x + w - 1 - sb, y + 1, sb,
+                                rows * ih, 1, 1, it ? it->top : 0, rows, 0,
+                                (it ? it->count : 1) - 1);
+        ween_classic_sizegrip(&top->surface, x + w - 2, y + h - 2);
+        (void)wide;
+    }
+    for (int i = it ? it->top : 0; it && i < it->count; i++) {
+        int iy = y + 1 + (i - it->top) * ih;
         int selected = i == (it->track >= 0 ? it->track : it->cursel);
         int tx = x + 2, th = f ? f->ascent - f->descent : ih;
-        if (iy + ih > y + h - 1)
+        if (i - it->top >= combo_list_rows(g_dropped))
             break;
         if (it->images) {
             /* image and indent: each step of the indent moves it in, and the
@@ -1244,7 +1314,9 @@ void ween_popup_paint(void)
             tx = ix + WEEN_CBEX_IMAGE + WEEN_CBEX_GAP;
         }
         if (selected) {
-            int bar = w - 2 - (tx - x - 1), by = iy + (ih - th) / 2, bh = th;
+            int sbw = combo_list_scrolls(g_dropped) ? ween_scroll_metric() : 0;
+            int bar = w - 2 - sbw - (tx - x - 1);
+            int by = iy + (ih - th) / 2, bh = th;
             if (it->images && f) {
                 bar = ween_strike_text_width(f, it->item[i],
                                              (int)strlen(it->item[i])) + 3;
@@ -1259,6 +1331,18 @@ void ween_popup_paint(void)
                              it->item[i], (int)strlen(it->item[i]),
                              selected ? WEEN_WHITE : WEEN_BLACK);
     }
+}
+
+void ween_combo_list_rect(HWND combo, RECT *out)
+{
+    int x, y, w, h;
+    if (!combo || !out)
+        return;
+    combo_list_rect(combo, &x, &y, &w, &h);
+    out->left = x;
+    out->top = y;
+    out->right = x + w;
+    out->bottom = y + h;
 }
 
 HWND ween_popup_hit(int x, int y)
@@ -1462,6 +1546,18 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         return DefWindowProcA(wnd, msg, wp, lp);
+    case WM_MOUSEWHEEL:
+        it = items_of(wnd);
+        if (g_dropped == wnd && it && combo_list_scrolls(wnd)) {
+            int rows = combo_list_rows(wnd);
+            it->top -= 3 * (GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
+            if (it->top > it->count - rows)
+                it->top = it->count - rows;
+            if (it->top < 0)
+                it->top = 0;
+            ween_top_level(wnd)->dirty = 1;
+        }
+        return 0;
     case WM_KEYDOWN: {
         /* Walking the list from the keyboard, whether the combo has a field
          * or is the list-only kind: Down opens it and moves through it, Up
@@ -1474,7 +1570,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         ih = item_height(wnd);
         GetClientRect(wnd, &cr);
-        per = 8; /* the list shows at most this many, as combo_list_height has it */
+        per = combo_list_rows(wnd); /* what a page is, is what it shows */
         switch (wp) {
         case VK_DOWN:
         case VK_NEXT:
@@ -1520,10 +1616,11 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             it->quiet = 0;
         }
         if (it->track >= 0) { /* keep the highlight in view */
+            int rows = combo_list_rows(wnd);
             if (it->track < it->top)
                 it->top = it->track;
-            else if (it->track >= it->top + per)
-                it->top = it->track - per + 1;
+            else if (it->track >= it->top + rows)
+                it->top = it->track - rows + 1;
         }
         ween_top_level(wnd)->dirty = 1;
         (void)ih;
@@ -1557,14 +1654,41 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 return 0;
             }
         }
-        SetFocus(wnd);
+        /* A press in the list the combo itself put up leaves the keyboard
+         * where it is: the field keeps it, as it does on Windows, and the
+         * owner is not told the typing ended by a click on a suggestion. */
+        if (!(it && it->edit && g_dropped == wnd))
+            SetFocus(wnd);
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
         if (g_dropped == wnd && sy >= 0 && sy < ph - 2) {
+            int sb = ween_scroll_metric();
+            int sx = oy; /* the press in the list's own coordinates */
+            int rows = combo_list_rows(wnd);
+            sx = ox + GET_X_LPARAM(lp) - px;
+            if (it && sx >= pw - 1 - sb && sy >= rows * ih) {
+                /* the corner: the list is being dragged taller or shorter */
+                it->sizing = 1;
+                it->size_y0 = oy + GET_Y_LPARAM(lp);
+                it->size_rows0 = rows;
+                SetCapture(wnd);
+                return 0;
+            }
+            if (it && combo_list_scrolls(wnd) && sx >= pw - 1 - sb) {
+                /* the bar down the side, which works the way every other
+                 * one does */
+                ween_sbstate st = { it->top, 0, it->count - 1, rows, 1 };
+                int grab;
+                int pos = sb_click(sy, rows * ih, &st, &grab);
+                it->top = sb_clamp(pos, &st);
+                ween_top_level(wnd)->dirty = 1;
+                SetCapture(wnd);
+                return 0;
+            }
             /* pressing in the open list starts tracking it */
             if (it)
-                it->track = sy / (ih ? ih : 1);
+                it->track = it->top + sy / (ih ? ih : 1);
             SetCapture(wnd);
         } else if (g_dropped == wnd) {
             g_dropped = NULL; /* a second click on the control closes it */
@@ -1595,8 +1719,22 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (it && it->sizing) {
+            /* following the corner: the list grows and shrinks by rows */
+            int moved = oy + GET_Y_LPARAM(lp) - it->size_y0;
+            int rows = it->size_rows0 + moved / (ih ? ih : 1);
+            if (rows < WEEN_CB_MIN_ROWS)
+                rows = WEEN_CB_MIN_ROWS;
+            if (rows > it->count)
+                rows = it->count;
+            if (rows != it->rows) {
+                it->rows = rows;
+                ween_top_level(wnd)->dirty = 1;
+            }
+            return 0;
+        }
         if (it) {
-            int at = sy >= 0 && sy < ph - 2 ? sy / (ih ? ih : 1) : -1;
+            int at = sy >= 0 && sy < ph - 2 ? it->top + sy / (ih ? ih : 1) : -1;
             if (at >= it->count)
                 at = -1;
             if (at != it->track) {
@@ -1614,12 +1752,16 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g_dropped != wnd)
             return 0;
         it = items_of(wnd);
+        if (it && it->sizing) { /* the drag is over; the size stays */
+            it->sizing = 0;
+            return 0;
+        }
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
         if (sy >= 0 && sy < ph - 2 && it) {
             /* releasing over an item picks it and closes the list */
-            int at = sy / (ih ? ih : 1);
+            int at = it->top + sy / (ih ? ih : 1);
             if (at >= 0 && at < it->count) {
                 it->cursel = at;
                 combo_show_sel(wnd, it); /* the field shows what was picked */

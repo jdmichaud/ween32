@@ -783,6 +783,11 @@ typedef struct tagTCITEMA {
 /* SCROLLBAR styles */
 #define SBS_HORZ 0x0000L
 #define SBS_VERT 0x0001L
+/* A scroll bar can be a corner instead: the hatched square a window is
+ * resized by, which is what a status bar's right end and a list that can be
+ * dragged bigger both put there. */
+#define SBS_SIZEBOX 0x0008L
+#define SBS_SIZEGRIP 0x0010L
 
 /* dialog styles */
 #define DS_3DLOOK 0x0004L
@@ -850,6 +855,12 @@ typedef struct tagTCITEMA {
 #define HTMAXBUTTON 9
 /* what a caption button asks the window to do */
 #define SC_SIZE 0xF000
+/* Which edge or corner a resize is being made from, added to SC_SIZE. */
+#define WMSZ_LEFT 1
+#define WMSZ_RIGHT 2
+#define WMSZ_TOP 3
+#define WMSZ_BOTTOM 6
+#define WMSZ_BOTTOMRIGHT 8
 #define SC_MOVE 0xF010
 #define SC_MINIMIZE 0xF020
 #define SC_MAXIMIZE 0xF030
