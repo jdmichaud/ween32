@@ -341,6 +341,11 @@ Shortcuts the current code takes deliberately; each is a candidate task.
   `WM_QUIT` is final. (`SetWindowLongPtrA`/`CallWindowProcA`, `PostMessageA`
   and `GetDC`/`ReleaseDC` are all there now, and the explorer subclasses both
   a list view's label editor and a combo box's field.)
+- **The View page's tree is the machine's rows, not the machine's list.** The
+  twelve it shows are the ones the capture shows, in that order, and the
+  settings this example has no field for are remembered and nothing else. The
+  machine has more below them, which is why its scroll bar's thumb is shorter
+  than ours.
 - **Folder Options has no pictures beside its group boxes.** The machine puts
   a 32-pixel one against each of Active Desktop, Web View, Browse Folders,
   Click items and Folder views; none of the five is among the icons that were
@@ -481,6 +486,13 @@ sampler's tree has lines at the root and no images, the shell's has images and
 no lines at the root — so the machine is followed and about 1270 pixels of
 `reference.png`, all of them in the tree's band, are now a deliberate
 difference.
+
+The tick box before a label is another: the machine keeps one column more
+between a check box and its text than it does between an option button and
+its, with the same font and the same thirteen-pixel glyph. Wine gives the two
+the same offset, so the sampler's check boxes now differ from it by about
+1213 pixels — measured on Folder Options, whose boxes and option buttons sit
+on the same page.
 
 The list view is the third. Against the machine, a report row is as tall as
 the tallest thing in it and one more — seventeen with small icons, fourteen

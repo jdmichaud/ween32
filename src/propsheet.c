@@ -350,7 +350,7 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx + 55, y, 50, 14,
             IDCANCEL, PS_ATOM_BUTTON, NULL, "Cancel");
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED, bx + 110, y,
-            50, 14, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "Apply");
+            50, 14, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "&Apply");
     if (b.p > b.end)
         return -1;
 

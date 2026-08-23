@@ -65,7 +65,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 13804 / 298596 — 4.6%
+tools/refcapture/pxdiff.py                  # expect 15017 / 298596 — 5.0%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -73,7 +73,7 @@ PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
   tools/refcapture/pxdiff.py                # expect 3931 / 39200 — 10.0%
 ```
 
-Most of both — 3170 of the menu's and 6622 of the sampler's — is one thing:
+Most of both — 3170 of the menu's and 7835 of the sampler's — is one thing:
 the caption's gradient. Where it stops is measured off the machine, which
 holds its end colour two pixels before the leftmost caption button; wine
 stops one pixel before it. A window with nothing but a close box is where the
@@ -81,6 +81,12 @@ two disagree, and every pixel of the ramp shifts by a step when its span
 changes by two, so the whole caption strip counts as different. The machine's
 own Column Settings comes out on the gradient exactly, which is what settled
 it — see the note on the ramp below.
+
+Another 1213 of the sampler's is where a tick box puts its label: the machine
+keeps one column more between a check box and its text than an option button
+gets, and wine gives the two the same. That was measured on two Folder
+Options pages at once — the boxes on Offline Files and the option buttons on
+General — and the machine is followed.
 
 Fourteen of the rest are two mnemonic underlines a control draws only once Alt
 has been pressed, which wine draws always — the same rule that keeps a menu's
@@ -289,18 +295,28 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
 | page | differing | of 180648 | what is left |
 | --- | --- | --- | --- |
-| General | 1658 | 0.9% | the caption's bold title, the machine's own mouse pointer in the shot, the focus rectangle it draws |
-| View | 13960 | 7.7% | the Advanced settings list |
-| File Types | 27989 | 15.5% | the list's contents |
-| Offline Files | 9180 | 5.1% | the up-down beside the minutes box, the trackbar's thumb position |
+| General | 1228 | 0.7% | the machine's own mouse pointer in the shot, the caption's bold title |
+| View | 1411 | 0.8% | the same two, the folder a heading wears, the scroll bar |
+| File Types | 9643 | 5.3% | the list's contents |
+| Offline Files | 1041 | 0.6% | the same two, and the arrows' bevel |
 
-Two of those cannot close. The machine's **File Types** list is its own
-registry — a hundred extensions this example has never heard of — while ours
-is what `type_of` knows; the page's frame, its buttons and its wording match,
-its rows never can. The machine's **Advanced settings** is not a list but a
-tree: rows indented by level, with three kinds of picture in the state
-column — a folder for a heading, a check box, an option button — which is
-what ween32's tree view would need before the page could be counted properly.
+Only **File Types** cannot close: the machine's list is its own registry — a
+hundred extensions this example has never heard of — while ours is what
+`type_of` knows. The page's frame, its columns, its buttons, its wording and
+the seventeen-pixel pitch of its rows all match; the rows themselves never
+can, and about 7000 of that 9643 is them.
+
+**View**'s Advanced settings is a tree, as the machine's is: rows indented by
+level, a folder on a heading, and a tick box or an option button in the state
+column before the label. What is left of it is the folder icon — ours is the
+one the rest of this shell uses, and the machine's is its own — and the
+scroll bar, which is shorter here because the machine offers more settings
+below the ones it shows.
+
+Two things are in every one of these counts and in the Column Settings one:
+the caption's bold title, which ween32 synthesises, is about 300, and the
+machine's mouse pointer, which is in the screenshot and not in ours, another
+300 where it happens to sit.
 
 ```sh
 # View > Choose Columns — the 330x313 frame is the dialog. Opened by key, so

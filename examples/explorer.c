@@ -2574,7 +2574,7 @@ static const fo_place g_fo_general_at[] = {
     { IDC_FO_UNDERLINE_ALWAYS, 85, 268, 263, 16 },
     { IDC_FO_UNDERLINE_POINT, 85, 286, 263, 16 },
     { IDC_FO_DOUBLE, 66, 304, 282, 16 },
-    { IDC_FO_DEFAULTS, 245, 342, 107, 23 },
+    { IDC_FO_DEFAULTS, 245, 342, 108, 23 },
     { IDC_FO_I1, 24, 30, 32, 32 },
     { IDC_FO_I2, 24, 105, 32, 32 },
     { IDC_FO_I3, 24, 178, 32, 32 },
