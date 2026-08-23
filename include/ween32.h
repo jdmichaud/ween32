@@ -405,6 +405,7 @@ HCURSOR SetCursor(HCURSOR cursor);
  * application that has been given a height to fit into says so instead. */
 #define CB_SETITEMHEIGHT 0x0153
 #define CB_GETITEMHEIGHT 0x0154
+#define CB_GETITEMHEIGHT 0x0154
 #define CBEM_SETIMAGELIST (WM_USER + 2)
 #define CBEIF_TEXT 0x0001
 #define CBEIF_IMAGE 0x0002

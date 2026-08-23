@@ -527,6 +527,48 @@ int main(void)
                       "and the corner drags it taller");
             }
         }
+
+        /* The height a combo box is created with is the height it has with
+         * its list *down*: that is what the number in CreateWindowEx means
+         * for this class, and it is what decides how many rows it drops. The
+         * machine's address bar drops ten rows in 162 pixels — 10 * 16 + 2,
+         * and nothing else in it — so a list with everything in it is exactly
+         * its rows tall, and only one with more than it can show gives up the
+         * strip along the bottom the corner stands in. */
+        {
+            HWND tall;
+            RECT r;
+            int ih, k;
+            tall = CreateWindowExA(0, "COMBOBOX", "",
+                                   WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+                                   350, 200, 160, 21, w, NULL, NULL, NULL);
+            ih = (int)SendMessageA(tall, CB_GETITEMHEIGHT, 0, 0);
+            DestroyWindow(tall);
+            tall = CreateWindowExA(0, "COMBOBOX", "",
+                                   WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+                                   350, 200, 160, 21 + 10 * ih + 2, w, NULL,
+                                   NULL, NULL);
+            for (k = 0; k < 10; k++) {
+                char name[32];
+                sprintf(name, "row%02d", k);
+                SendMessageA(tall, CB_ADDSTRING, 0, (LPARAM)name);
+            }
+            SendMessageA(tall, CB_SETCURSEL, 0, 0);
+            SendMessageA(tall, CB_SHOWDROPDOWN, TRUE, 0);
+            ween_combo_list_rect(tall, &r);
+            CHECK(r.bottom - r.top == 10 * ih + 2,
+                  "a list that fits is its rows tall and no more");
+            for (k = 10; k < 30; k++) {
+                char name[32];
+                sprintf(name, "row%02d", k);
+                SendMessageA(tall, CB_ADDSTRING, 0, (LPARAM)name);
+            }
+            ween_combo_list_rect(tall, &r);
+            CHECK(r.bottom - r.top == 10 * ih + 2,
+                  "one with more to show stops at the same ten rows, and is "
+                  "no taller for the bar and the corner it grows");
+            DestroyWindow(tall);
+        }
         DestroyWindow(cb);
         DestroyWindow(list_only);
     }

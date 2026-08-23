@@ -1371,15 +1371,20 @@ static LRESULT CALLBACK suggest_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     static int sizing, from_y, was_h;
     switch (msg) {
     case WM_SIZE: {
+        /* The list fills it, and the corner stands at the foot of the list's
+         * own bar rather than in a strip below it — which is where the
+         * machine puts it, and why its bar stops short of the bottom. */
         RECT cr;
         int sb = GetSystemMetrics(SM_CXVSCROLL);
         GetClientRect(w, &cr);
         if (g_sugg_list)
-            MoveWindow(g_sugg_list, 1, 1, cr.right - 2, cr.bottom - 2 - sb,
+            MoveWindow(g_sugg_list, 1, 1, cr.right - 2, cr.bottom - 2, TRUE);
+        if (g_sugg_grip) {
+            RECT lr;
+            GetClientRect(g_sugg_list, &lr);
+            MoveWindow(g_sugg_grip, lr.right - sb, lr.bottom - sb, sb, sb,
                        TRUE);
-        if (g_sugg_grip)
-            MoveWindow(g_sugg_grip, cr.right - 1 - sb, cr.bottom - 1 - sb, sb,
-                       sb, TRUE);
+        }
         return 0;
     }
     case WM_SYSCOMMAND:
@@ -1475,17 +1480,23 @@ static LRESULT CALLBACK address_field_proc(HWND box, UINT msg, WPARAM wp,
  * taller is left at the height it was dragged to. */
 static void suggest_show(int count)
 {
+    HWND field = (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0,
+                                             0);
     RECT band;
     int sb = GetSystemMetrics(SM_CXVSCROLL);
     int rows = count < SUGG_ROWS ? count : SUGG_ROWS;
     int ih, h;
-    if (!g_sugg)
+    if (!g_sugg || !field)
         return;
     /* the list box knows how tall a name is; asking it is the only way to
      * end up showing whole ones */
     ih = (int)SendMessageA(g_sugg_list, LB_GETITEMHEIGHT, 0, 0);
-    h = rows * ih + 2 + sb;
-    GetWindowRect(g_address, &band);
+    h = rows * ih + 2;
+    (void)sb;
+    /* It hangs off the field, not off the control the field is in: the
+     * machine's starts at the foot of the box the path is typed in, inside
+     * the bar's own border, and runs its width. */
+    GetWindowRect(field, &band);
     if (IsWindowVisible(g_sugg)) {
         RECT was;
         GetWindowRect(g_sugg, &was);
@@ -3119,10 +3130,14 @@ static void build_bands(HWND w)
                                  (HMENU)(UINT_PTR)ID_ADDRBAND, NULL, NULL);
     /* CBS_DROPDOWN, not the list-only kind: the path you are looking at is
      * there to be typed over, which is what an address bar is. */
+    /* A combo box is created as tall as it is with its list down, not as tall
+     * as the closed control: 24 for the bar itself and 162 for the list,
+     * which is the ten sixteen-pixel rows the machine's address bar drops.
+     * Created at 24 there would be nothing to drop. */
     g_address = CreateWindowExA(WS_EX_CLIENTEDGE, WC_COMBOBOXEXA, "",
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                                     CBS_DROPDOWN, 0, 0,
-                                300, 21, g_addrband,
+                                300, 24 + 162, g_addrband,
                                 (HMENU)(UINT_PTR)ID_ADDRESS, NULL, NULL);
     g_go = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                            WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST |
@@ -3274,11 +3289,14 @@ static void build_views(HWND w)
         g_sugg_list = CreateWindowExA(0, "LISTBOX", "",
                                       WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                           LBS_NOTIFY,
-                                      1, 1, 198, 100 - 2 - sb, g_sugg, NULL,
-                                      NULL, NULL);
+                                      1, 1, 198, 98, g_sugg, NULL, NULL,
+                                      NULL);
+        /* inside the list, so it stands at the foot of the list's bar and
+         * the list draws the bar short of it */
         g_sugg_grip = CreateWindowExA(0, "SCROLLBAR", "",
                                       WS_CHILD | WS_VISIBLE | SBS_SIZEGRIP, 0,
-                                      0, sb, sb, g_sugg, NULL, NULL, NULL);
+                                      0, sb, sb, g_sugg_list, NULL, NULL,
+                                      NULL);
         if (g_sugg_list)
             SendMessageA(g_sugg_list, WM_SETFONT, (WPARAM)g_font, TRUE);
     }

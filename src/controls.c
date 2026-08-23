@@ -899,6 +899,8 @@ typedef struct {
                  * is not someone typing, and the owner is not told */
     int rows;   /* how many the dropped list shows, once it has been dragged
                  * taller or shorter; 0 until then */
+    int drop_h; /* the height it was created with, which is the height it has
+                 * with its list down — where the row count comes from */
     int sizing; /* the grip is being dragged, and this is where from */
     int size_y0, size_rows0;
     char was[260]; /* and what was in it when the typing started */
@@ -1009,6 +1011,19 @@ static void draw_item(HWND w, HDC dc, const char *text, int x, int y, int width,
 
 /* ---- the LISTBOX class ---------------------------------------------------- */
 
+/* How much of the list box's height its bar gets. Something standing in the
+ * corner takes the foot of it: a corner to drag the window bigger by is put
+ * there as a child of the box it belongs to, and the machine draws the bar
+ * short of it rather than under it — 82 pixels of bar in a 98 pixel list,
+ * with the sixteen below it the grip. */
+static int lb_bar_h(HWND wnd, int client_h)
+{
+    for (struct ween_wnd *c = wnd->first_child; c; c = c->next_sibling)
+        if (c->visible && (c->style & (SBS_SIZEGRIP | SBS_SIZEBOX)))
+            return client_h - ween_scroll_metric();
+    return client_h;
+}
+
 static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
@@ -1029,8 +1044,9 @@ static void listbox_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (sb) {
         int visible = (r.bottom - r.top) / ih;
         int maxpos = it && it->count > visible ? it->count - visible : 0;
-        ween_draw_scrollbar(&top->surface, ox + width, oy, sb, r.bottom - r.top, 1,
-                            1, it ? it->top : 0, visible, 0,
+        ween_draw_scrollbar(&top->surface, ox + width, oy, sb,
+                            lb_bar_h(wnd, r.bottom - r.top), 1, 1,
+                            it ? it->top : 0, visible, 0,
                             maxpos ? maxpos : (it ? it->count - 1 : 0));
     }
 }
@@ -1089,8 +1105,9 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if ((wnd->style & WS_VSCROLL) && it &&
             GET_X_LPARAM(lp) >= cr.right - ween_scroll_metric()) {
             int visible = cr.bottom / (ih ? ih : 1);
+            int bar = lb_bar_h(wnd, cr.bottom);
             ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
-            int grab, pos = sb_click(GET_Y_LPARAM(lp), cr.bottom, &st, &grab);
+            int grab, pos = sb_click(GET_Y_LPARAM(lp), bar, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
                 wnd->drag_offset = grab;
@@ -1133,9 +1150,10 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (it) {
                 int visible = cr.bottom / (ih ? ih : 1);
                 ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
-                it->top = sb_clamp(
-                    sb_drag(GET_Y_LPARAM(lp), cr.bottom, &st, wnd->drag_offset),
-                    &st);
+                it->top = sb_clamp(sb_drag(GET_Y_LPARAM(lp),
+                                           lb_bar_h(wnd, cr.bottom), &st,
+                                           wnd->drag_offset),
+                                   &st);
                 InvalidateRect(wnd, NULL, FALSE);
             }
         }
@@ -1281,11 +1299,31 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
 /* How many rows the list shows: what it was dragged to, or eight, and never
  * more than it has to show. */
+/* How many rows the list drops. A combo box is created as tall as it is with
+ * its list *down* — that is what the height in CreateWindowEx means for this
+ * class — so the height the application asked for is the answer, once the
+ * closed control and the border come off it. Worked out each time rather than
+ * kept, because the row height changes under it: a ComboBoxEx given an image
+ * list afterwards has taller rows than the one that was created.
+ *
+ * Dragging the corner overrides it, and eight is what is left when the
+ * application asked for a height with no room to drop into. */
 static int combo_list_rows(HWND wnd)
 {
     ween_items *it = wnd->ctl;
     int n = it ? it->count : 0;
-    int want = it && it->rows ? it->rows : WEEN_CB_ROWS;
+    int ih = item_height(wnd);
+    int want = WEEN_CB_ROWS;
+    if (it && it->rows)
+        want = it->rows;
+    else if (it && ih) {
+        /* what is left of the asked-for height once the closed control and
+         * the list's border come off it — measured against the height the
+         * control has now, since a bar or a dialog lays it out afterwards */
+        int room = it->drop_h - wnd->h - 2;
+        if (room >= ih)
+            want = room / ih;
+    }
     if (n < want)
         want = n;
     return want < 1 ? 1 : want;
@@ -1300,8 +1338,19 @@ static int combo_list_scrolls(HWND wnd)
 
 static int combo_list_height(HWND wnd)
 {
-    /* the rows, the border, and the corner the grip stands in */
-    return combo_list_rows(wnd) * item_height(wnd) + 2 + ween_scroll_metric();
+    /* the rows and the border, and nothing else: the machine's is 162 pixels
+     * for ten sixteen-pixel ones, which is 10 * 16 + 2. The corner it can be
+     * dragged by does not add a strip underneath — it stands at the foot of
+     * the bar's own column, which is why the bar is short of the bottom. */
+    return combo_list_rows(wnd) * item_height(wnd) + 2;
+}
+
+/* How tall the bar down the side is: the rows, less the corner standing at
+ * the foot of it. The machine's is 82 pixels in a 98 pixel list, and the
+ * sixteen below it are the grip. */
+static int combo_bar_h(HWND wnd)
+{
+    return combo_list_rows(wnd) * item_height(wnd) - ween_scroll_metric();
 }
 
 /* Where the dropped list sits, in surface coordinates: directly under the
@@ -1339,16 +1388,16 @@ void ween_popup_paint(void)
     /* The rows that fit, from wherever the list is scrolled to; a bar down
      * the side when there are more than that, and the corner it can be
      * dragged bigger by underneath it. */
-    {
+    if (combo_list_scrolls(g_dropped)) {
+        /* Only a list with more in it than it can show has either: the
+         * machine's, with everything in it, is white right up to the border
+         * in the corner. */
         int sb = ween_scroll_metric();
         int rows = combo_list_rows(g_dropped);
-        int wide = w - 2 - (combo_list_scrolls(g_dropped) ? sb : 0);
-        if (combo_list_scrolls(g_dropped))
-            ween_draw_scrollbar(&top->surface, x + w - 1 - sb, y + 1, sb,
-                                rows * ih, 1, 1, it ? it->top : 0, rows, 0,
-                                (it ? it->count : 1) - 1);
+        ween_draw_scrollbar(&top->surface, x + w - 1 - sb, y + 1, sb,
+                            combo_bar_h(g_dropped), 1, 1, it ? it->top : 0,
+                            rows, 0, (it ? it->count : 1) - 1);
         ween_classic_sizegrip(&top->surface, x + w - 2, y + h - 2);
-        (void)wide;
     }
     for (int i = it ? it->top : 0; it && i < it->count; i++) {
         int iy = y + 1 + (i - it->top) * ih;
@@ -1720,23 +1769,25 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int sx = oy; /* the press in the list's own coordinates */
             int rows = combo_list_rows(wnd);
             sx = ox + GET_X_LPARAM(lp) - px;
-            if (it && sx >= pw - 1 - sb && sy >= rows * ih) {
-                /* the corner: the list is being dragged taller or shorter */
-                it->sizing = 1;
-                it->size_y0 = oy + GET_Y_LPARAM(lp);
-                it->size_rows0 = rows;
-                SetCapture(wnd);
-                return 0;
-            }
             if (it && combo_list_scrolls(wnd) && sx >= pw - 1 - sb) {
-                /* the bar down the side, which works the way every other
-                 * one does */
-                ween_sbstate st = { it->top, 0, it->count - 1, rows, 1 };
-                int grab;
-                int pos = sb_click(sy, rows * ih, &st, &grab);
-                it->top = sb_clamp(pos, &st);
-                ween_top_level(wnd)->dirty = 1;
-                SetCapture(wnd);
+                if (sy >= combo_bar_h(wnd)) {
+                    /* the corner at the foot of the bar: the list is being
+                     * dragged taller or shorter */
+                    it->sizing = 1;
+                    it->size_y0 = oy + GET_Y_LPARAM(lp);
+                    it->size_rows0 = rows;
+                    SetCapture(wnd);
+                    return 0;
+                }
+                /* the bar itself, which works the way every other one does */
+                {
+                    ween_sbstate st = { it->top, 0, it->count - 1, rows, 1 };
+                    int grab;
+                    int pos = sb_click(sy, combo_bar_h(wnd), &st, &grab);
+                    it->top = sb_clamp(pos, &st);
+                    ween_top_level(wnd)->dirty = 1;
+                    SetCapture(wnd);
+                }
                 return 0;
             }
             /* pressing in the open list starts tracking it */
@@ -1852,6 +1903,9 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * was created with, and a closed drop-down list is one item tall
          * however high the app asked for. */
         wnd->ex_style |= WS_EX_CLIENTEDGE;
+        it = items_of(wnd);
+        if (it)
+            it->drop_h = wnd->h; /* what it will be when the list is down */
         wnd->h = item_height(wnd) + 4 + 2 * ween_ex_edge(wnd);
         combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
@@ -1864,6 +1918,10 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case CB_ADDSTRING:
         return items_add(wnd, (const char *)lp);
+    case CB_GETITEMHEIGHT:
+        /* how tall one row of the dropped list is, which is what anyone
+         * sizing a combo box to a number of rows has to ask */
+        return item_height(wnd);
     case CBEM_SETIMAGELIST: {
         HIMAGELIST was;
         it = items_of(wnd);
@@ -1912,16 +1970,22 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * rather than keeping the item that was there. An app that refills a
          * combo — an address bar, say — otherwise piles new entries behind
          * the first one and goes on showing that one for ever. */
-        {   /* The items go. The image list and the field are the control's
-             * rather than the list's, and stay: emptying an address bar to
-             * refill it must not take away the box the path is typed in. */
-            HIMAGELIST keep = wnd->ctl ? ((ween_items *)wnd->ctl)->images : NULL;
-            HWND field = wnd->ctl ? ((ween_items *)wnd->ctl)->edit : NULL;
+        {   /* The items go and nothing else does. The image list, the field,
+             * the height the list drops to and how far the corner has been
+             * dragged all belong to the control rather than to what is in it:
+             * emptying an address bar to refill it must not take away the box
+             * the path is typed in, nor make its list a different size. */
+            ween_items keep;
+            memset(&keep, 0, sizeof(keep));
+            if (wnd->ctl)
+                keep = *(ween_items *)wnd->ctl;
             ween_controls_free(wnd);
             it = items_of(wnd);
             if (it) {
-                it->images = keep;
-                it->edit = field;
+                it->images = keep.images;
+                it->edit = keep.edit;
+                it->drop_h = keep.drop_h;
+                it->rows = keep.rows;
             }
         }
         if (g_dropped == wnd)
