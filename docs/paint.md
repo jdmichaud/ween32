@@ -204,6 +204,14 @@ the pictures were cut out of a capture of it by
 `tools/refcapture/shellart.py`, background and all, since each of them sits on
 a colour the library knows.
 
+The dialog is resizable, as the machine's is -- `WS_THICKFRAME`, which is
+where its size grip comes from and why its frame is four pixels rather than
+three. A window that can be resized is one a window manager may decide to
+resize, so it says what it is: `WM_TRANSIENT_FOR` names the window that put
+it up and `_NET_WM_WINDOW_TYPE_DIALOG` says it is a dialog. Without those two,
+a window manager that arranges windows for you has no reason not to arrange
+this one, and the Open box comes up as big as the screen.
+
     tools/refcapture/shellart.py > src/shellart.c     # the pictures
     PXDIFF_REF=tools/refcapture/paint/dlg-open.png \
     PXDIFF_OUR=/tmp/open-ours.png tools/refcapture/pxdiff.py

@@ -392,6 +392,10 @@ struct ween_wnd {
                    * after — which is how a control that hosts another one
                    * takes the keys it needs off it */
     struct ween_wnd *parent;
+    /* For a window of its own: the one it was created against. win32 calls
+     * that its owner -- a dialog's is the window that put it up -- and passes
+     * it in the same argument a child's parent goes in. */
+    struct ween_wnd *owner;
     struct ween_wnd *first_child;
     struct ween_wnd *next_sibling;
     DWORD style;
@@ -646,6 +650,11 @@ typedef struct {
      * picture of its own when `custom` is not null -- in which case `shape`
      * is what to fall back to. */
     void (*set_cursor)(void *win, int shape, const ween_cursor *custom);
+    /* Whose window this one belongs to, and whether it is a dialog. A
+     * window manager that is told neither has no reason to treat a modal box
+     * differently from an application's main window: a tiling one gives it a
+     * tile of the screen, which is how a dialog comes up full screen. */
+    void (*set_owner)(void *win, void *owner, int dialog);
     /* How big the screen is, in the pixels a window is measured in. A
      * backend without one leaves the numbers alone, and the classic default
      * stands — which is what keeps a headless render the same everywhere. */

@@ -725,6 +725,19 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
+        /* Who put it up, and whether it is a dialog. A window system that is
+         * told neither has no reason to treat a modal box differently from an
+         * application's main window -- and a window manager that arranges
+         * windows for you will arrange it. */
+        wnd->owner = parent;
+        if (wnd->backend_win && ween_active_backend->set_owner) {
+            int is_dialog = (style & DS_MODALFRAME) != 0 ||
+                            (cls->name && !strcmp(cls->name, "#32770"));
+            ween_active_backend->set_owner(
+                wnd->backend_win,
+                parent && parent->backend_win ? parent->backend_win : NULL,
+                is_dialog);
+        }
         /* A window that did not say where it goes is put somewhere by the
          * window system, and where that is has to be read back rather than
          * assumed: taking it for the origin is what left a maximised window
