@@ -21,6 +21,11 @@ const colorbox = @import("colorbox.zig");
 const canvas = @import("canvas.zig");
 const artwork = @import("artwork.zig");
 const art_icon = @import("art_icon.zig");
+const dialogs = @import("dialogs.zig");
+const undo = @import("undo.zig");
+const tools = @import("tools.zig");
+const bmp = @import("file.zig");
+const selection = @import("selection.zig");
 const app = &A.app;
 
 // ---- geometry -------------------------------------------------------------
@@ -274,16 +279,151 @@ pub fn setHelpText(text: [*:0]const u8) void {
 
 fn command(id: u16) void {
     switch (id) {
+        ID.file_new => {
+            app.pic.resize(512, 384, w.RGB(255, 255, 255));
+            app.pic.clear();
+            undo.forget();
+            setPath("");
+            refresh();
+        },
+        ID.file_save, ID.file_save_as => {
+            const path = savePath();
+            bmp.save(path) catch {
+                _ = w.MessageBoxA(app.frame, "The picture could not be saved.", "Paint", w.MB_OK | w.MB_ICONERROR);
+                return;
+            };
+            setPath(path);
+            app.dirty = false;
+        },
+        ID.file_open => {
+            const path = savePath();
+            bmp.open(path) catch {
+                _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
+                return;
+            };
+            undo.forget();
+            setPath(path);
+            refresh();
+        },
         ID.file_exit => _ = w.SendMessageA(app.frame, w.WM_CLOSE, 0, 0),
+
+        ID.edit_undo => {
+            undo.undo();
+            refresh();
+        },
+        ID.edit_repeat => {
+            undo.repeat();
+            refresh();
+        },
+        ID.edit_select_all => {
+            selection.selectAll();
+            refresh();
+        },
+        ID.edit_cut => {
+            selection.cut();
+            refresh();
+        },
+        ID.edit_copy => selection.copy(),
+        ID.edit_paste => {
+            selection.paste();
+            refresh();
+        },
+        ID.edit_clear => {
+            selection.clear();
+            refresh();
+        },
+
         ID.view_tool_box => toggleBar(&app.show_toolbox, app.toolbox, ID.view_tool_box),
         ID.view_color_box => toggleBar(&app.show_colorbox, app.colorbox, ID.view_color_box),
         ID.view_status_bar => toggleBar(&app.show_status, app.status, ID.view_status_bar),
-        ID.image_clear => {
-            app.pic.clear();
-            _ = w.InvalidateRect(app.view, null, w.FALSE);
+        ID.view_zoom_normal => setZoom(1),
+        ID.view_zoom_large => setZoom(4),
+        ID.view_show_grid => {
+            app.grid = !app.grid;
+            _ = w.CheckMenuItem(w.GetMenu(app.frame), ID.view_show_grid, if (app.grid) w.MF_CHECKED else w.MF_UNCHECKED);
+            refresh();
         },
+
+        ID.image_flip_rotate => dialogs.flipRotate(app.frame),
+        ID.image_stretch_skew => dialogs.stretchSkew(app.frame),
+        ID.image_attributes => dialogs.attributes(app.frame),
+        ID.image_invert => {
+            undo.take();
+            // every pixel to its opposite, which is one blit
+            _ = w.PatBlt(app.pic.dc, 0, 0, app.pic.width, app.pic.height, w.DSTINVERT);
+            refresh();
+        },
+        ID.image_clear => {
+            undo.take();
+            const brush = w.CreateSolidBrush(app.bg).?;
+            const r = w.RECT{ .left = 0, .top = 0, .right = app.pic.width, .bottom = app.pic.height };
+            _ = w.FillRect(app.pic.dc, &r, brush);
+            _ = w.DeleteObject(brush);
+            refresh();
+        },
+        ID.image_draw_opaque => {
+            app.draw_opaque = !app.draw_opaque;
+            _ = w.CheckMenuItem(w.GetMenu(app.frame), ID.image_draw_opaque, if (app.draw_opaque) w.MF_CHECKED else w.MF_UNCHECKED);
+        },
+
+        ID.help_about => dialogs.about(app.frame),
         else => {},
     }
+}
+
+/// Everything that shows the picture, after something has changed it.
+pub fn refresh() void {
+    canvas.updateScroll(app.view);
+    _ = w.InvalidateRect(app.view, null, w.TRUE);
+    _ = w.InvalidateRect(app.colorbox, null, w.FALSE);
+    updateMenus();
+}
+
+fn setZoom(z: i32) void {
+    canvas.setZoom(z, .{ .x = @divTrunc(app.pic.width, 2), .y = @divTrunc(app.pic.height, 2) });
+    const menu = w.GetSubMenu(w.GetSubMenu(w.GetMenu(app.frame), 2), 5);
+    _ = w.CheckMenuRadioItem(menu, ID.view_zoom_normal, ID.view_zoom_large, if (z == 1) ID.view_zoom_normal else ID.view_zoom_large, w.MF_BYCOMMAND);
+    _ = w.EnableMenuItem(w.GetMenu(app.frame), ID.view_show_grid, if (z >= 4) w.MF_ENABLED else w.MF_GRAYED);
+}
+
+/// The menu items that are only sometimes available.
+pub fn updateMenus() void {
+    const m = w.GetMenu(app.frame);
+    const on = w.MF_ENABLED;
+    const off = w.MF_GRAYED;
+    _ = w.EnableMenuItem(m, ID.edit_undo, if (undo.canUndo()) on else off);
+    _ = w.EnableMenuItem(m, ID.edit_repeat, if (undo.canRedo()) on else off);
+    const sel = selection.active();
+    _ = w.EnableMenuItem(m, ID.edit_cut, if (sel) on else off);
+    _ = w.EnableMenuItem(m, ID.edit_copy, if (sel) on else off);
+    _ = w.EnableMenuItem(m, ID.edit_clear, if (sel) on else off);
+    _ = w.EnableMenuItem(m, ID.edit_paste, if (w.IsClipboardFormatAvailable(w.CF_BITMAP) != 0) on else off);
+}
+
+/// The window's title: the file's name, or "untitled".
+fn setPath(path: []const u8) void {
+    @memset(&app.path, 0);
+    if (path.len > 0 and path.len < app.path.len)
+        @memcpy(app.path[0..path.len], path);
+    var title: [300]u8 = undefined;
+    const name = if (path.len == 0) "untitled" else blk: {
+        var i = path.len;
+        while (i > 0) : (i -= 1) {
+            if (path[i - 1] == '/' or path[i - 1] == '\\') break;
+        }
+        break :blk path[i..];
+    };
+    const t = std.fmt.bufPrintSentinel(&title, "{s} - Paint", .{name}, 0) catch return;
+    _ = w.SetWindowTextA(app.frame, t.ptr);
+}
+
+/// Where the picture is saved: what was opened, or what the command line
+/// named, or a file beside the program.
+fn savePath() []const u8 {
+    var i: usize = 0;
+    while (i < app.path.len and app.path[i] != 0) : (i += 1) {}
+    if (i > 0) return app.path[0..i];
+    return "untitled.bmp";
 }
 
 fn toggleBar(flag: *bool, hwnd: w.HWND, id: u32) void {
@@ -294,6 +434,37 @@ fn toggleBar(flag: *bool, hwnd: w.HWND, id: u32) void {
     _ = w.GetClientRect(app.frame, &cr);
     layout(cr.right, cr.bottom);
     _ = w.InvalidateRect(app.frame, null, w.TRUE);
+}
+
+/// Paint's accelerators, the ones its menu advertises.
+fn accelerators() w.HACCEL {
+    const v = w.FVIRTKEY | w.FCONTROL;
+    const S = struct {
+        var table: [20]w.ACCEL = undefined;
+    };
+    S.table = .{
+        .{ .fVirt = v, .key = 'N', .cmd = ID.file_new },
+        .{ .fVirt = v, .key = 'O', .cmd = ID.file_open },
+        .{ .fVirt = v, .key = 'S', .cmd = ID.file_save },
+        .{ .fVirt = v, .key = 'P', .cmd = ID.file_print },
+        .{ .fVirt = v, .key = 'Z', .cmd = ID.edit_undo },
+        .{ .fVirt = v, .key = 'Y', .cmd = ID.edit_repeat },
+        .{ .fVirt = v, .key = 'X', .cmd = ID.edit_cut },
+        .{ .fVirt = v, .key = 'C', .cmd = ID.edit_copy },
+        .{ .fVirt = v, .key = 'V', .cmd = ID.edit_paste },
+        .{ .fVirt = v, .key = 'A', .cmd = ID.edit_select_all },
+        .{ .fVirt = w.FVIRTKEY, .key = w.VK_DELETE, .cmd = ID.edit_clear },
+        .{ .fVirt = v, .key = 'T', .cmd = ID.view_tool_box },
+        .{ .fVirt = v, .key = 'L', .cmd = ID.view_color_box },
+        .{ .fVirt = v, .key = 'F', .cmd = ID.view_bitmap },
+        .{ .fVirt = v, .key = 'G', .cmd = ID.view_show_grid },
+        .{ .fVirt = v, .key = 'R', .cmd = ID.image_flip_rotate },
+        .{ .fVirt = v, .key = 'W', .cmd = ID.image_stretch_skew },
+        .{ .fVirt = v, .key = 'I', .cmd = ID.image_invert },
+        .{ .fVirt = v, .key = 'E', .cmd = ID.image_attributes },
+        .{ .fVirt = v | w.FSHIFT, .key = 'N', .cmd = ID.image_clear },
+    };
+    return w.CreateAcceleratorTableA(&S.table, S.table.len);
 }
 
 pub fn main() void {
@@ -318,8 +489,12 @@ pub fn main() void {
     const frame = w.CreateWindowExA(0, "MSPaintApp", "untitled - Paint", w.WS_OVERLAPPEDWINDOW | w.WS_CLIPCHILDREN | w.WS_CLIPSIBLINGS, w.CW_USEDEFAULT, w.CW_USEDEFAULT, 275, 400, null, buildMenu(), null, null).?;
     _ = w.ShowWindow(frame, w.SW_SHOWNORMAL);
 
+    const accel = accelerators();
+    updateMenus();
+
     var msg: w.MSG = undefined;
     while (w.GetMessageA(&msg, null, 0, 0) != 0) {
+        if (w.TranslateAcceleratorA(frame, accel, &msg) != 0) continue;
         _ = w.TranslateMessage(&msg);
         _ = w.DispatchMessageA(&msg);
     }

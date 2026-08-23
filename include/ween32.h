@@ -1860,6 +1860,7 @@ BOOL ScreenToClient(HWND wnd, POINT *pt);
  * Ctrl+X, Ctrl+C, Ctrl+V and Ctrl+A directly. */
 typedef void *HANDLE;
 #define CF_TEXT 1
+#define CF_BITMAP 2
 #define WM_CUT 0x0300
 #define WM_COPY 0x0301
 #define WM_PASTE 0x0302

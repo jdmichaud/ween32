@@ -9,6 +9,8 @@ const A = @import("app.zig");
 const app = &A.app;
 const tools = @import("tools.zig");
 const undo = @import("undo.zig");
+const selection = @import("selection.zig");
+const textbox = @import("textbox.zig");
 
 pub const class_name = "PaintView";
 
@@ -24,6 +26,15 @@ fn clientSize(hwnd: w.HWND) w.RECT {
 
 /// The bars follow the picture: their range is its size and their page is
 /// what fits, which is what makes the thumb the right length.
+/// The picture's size on the screen, which is its own size times the zoom.
+pub fn shownWidth() i32 {
+    return app.pic.width * app.zoom;
+}
+
+pub fn shownHeight() i32 {
+    return app.pic.height * app.zoom;
+}
+
 pub fn updateScroll(hwnd: w.HWND) void {
     const cr = clientSize(hwnd);
     // The page a bar shows is the window less the margin the picture is
@@ -33,12 +44,12 @@ pub fn updateScroll(hwnd: w.HWND) void {
     var si = w.SCROLLINFO{
         .fMask = w.SIF_RANGE | w.SIF_PAGE | w.SIF_POS,
         .nMin = 0,
-        .nMax = app.pic.width - 1,
+        .nMax = shownWidth() - 1,
         .nPage = @intCast(@max(0, cr.right - margin)),
         .nPos = app.scroll_x,
     };
     _ = w.SetScrollInfo(hwnd, w.SB_HORZ, &si, w.TRUE);
-    si.nMax = app.pic.height - 1;
+    si.nMax = shownHeight() - 1;
     si.nPage = @intCast(@max(0, cr.bottom - margin));
     si.nPos = app.scroll_y;
     _ = w.SetScrollInfo(hwnd, w.SB_VERT, &si, w.TRUE);
@@ -62,8 +73,8 @@ const highlight = w.RGB(10, 36, 106);
 /// other five are hollow, which is how Paint says they do nothing.
 fn drawHandles(dc: w.HDC) void {
     const o = pageOrigin();
-    const xs = [3]i32{ o.x - handle, o.x + @divTrunc(app.pic.width, 2) - 1, o.x + app.pic.width };
-    const ys = [3]i32{ o.y - handle, o.y + @divTrunc(app.pic.height, 2) - 1, o.y + app.pic.height };
+    const xs = [3]i32{ o.x - handle, o.x + @divTrunc(shownWidth(), 2) - 1, o.x + shownWidth() };
+    const ys = [3]i32{ o.y - handle, o.y + @divTrunc(shownHeight(), 2) - 1, o.y + shownHeight() };
     for (ys, 0..) |hy, row| {
         for (xs, 0..) |hx, col| {
             if (row == 1 and col == 1) continue; // the middle is the picture
@@ -92,20 +103,44 @@ fn paint(hwnd: w.HWND) void {
     _ = w.FillRect(dc, &r, grey);
     r = .{ .left = 0, .top = o.y, .right = o.x, .bottom = cr.bottom };
     _ = w.FillRect(dc, &r, grey);
-    r = .{ .left = o.x + app.pic.width, .top = o.y, .right = cr.right, .bottom = cr.bottom };
+    r = .{ .left = o.x + shownWidth(), .top = o.y, .right = cr.right, .bottom = cr.bottom };
     _ = w.FillRect(dc, &r, grey);
-    r = .{ .left = o.x, .top = o.y + app.pic.height, .right = o.x + app.pic.width, .bottom = cr.bottom };
+    r = .{ .left = o.x, .top = o.y + shownHeight(), .right = o.x + shownWidth(), .bottom = cr.bottom };
     _ = w.FillRect(dc, &r, grey);
 
-    _ = w.BitBlt(dc, o.x, o.y, app.pic.width, app.pic.height, app.pic.dc, 0, 0, w.SRCCOPY);
-    // What the drag is making, drawn over the picture but not into it: the
-    // origin moves to the picture's, so the tools work in its coordinates
-    // whichever context they are handed.
-    _ = w.SetViewportOrgEx(dc, o.x, o.y, null);
-    tools.drawDrag(dc);
-    _ = w.SetViewportOrgEx(dc, 0, 0, null);
+    if (app.zoom == 1) {
+        _ = w.BitBlt(dc, o.x, o.y, app.pic.width, app.pic.height, app.pic.dc, 0, 0, w.SRCCOPY);
+        // What the drag is making, drawn over the picture but not into it:
+        // the origin moves to the picture's, so the tools work in its
+        // coordinates whichever context they are handed.
+        _ = w.SetViewportOrgEx(dc, o.x, o.y, null);
+        selection.draw(dc);
+        textbox.draw(dc, true);
+        tools.drawDrag(dc);
+        _ = w.SetViewportOrgEx(dc, 0, 0, null);
+    } else {
+        _ = w.StretchBlt(dc, o.x, o.y, shownWidth(), shownHeight(), app.pic.dc, 0, 0, app.pic.width, app.pic.height, w.SRCCOPY);
+        if (app.grid and app.zoom >= 4) drawGrid(dc, o);
+    }
     drawHandles(dc);
     _ = w.EndPaint(hwnd, &ps);
+}
+
+/// The grid a magnified view can show: one line between each pair of
+/// picture pixels, which Paint offers from four times up.
+fn drawGrid(dc: w.HDC, o: w.POINT) void {
+    const grey = w.CreateSolidBrush(w.RGB(192, 192, 192)).?;
+    defer _ = w.DeleteObject(grey);
+    var i: i32 = 0;
+    while (i <= app.pic.width) : (i += 1) {
+        const r = w.RECT{ .left = o.x + i * app.zoom, .top = o.y, .right = o.x + i * app.zoom + 1, .bottom = o.y + shownHeight() };
+        _ = w.FillRect(dc, &r, grey);
+    }
+    i = 0;
+    while (i <= app.pic.height) : (i += 1) {
+        const r = w.RECT{ .left = o.x, .top = o.y + i * app.zoom, .right = o.x + shownWidth(), .bottom = o.y + i * app.zoom + 1 };
+        _ = w.FillRect(dc, &r, grey);
+    }
 }
 
 /// One scroll message, for either bar: the same arithmetic with a different
@@ -132,7 +167,10 @@ fn scroll(hwnd: w.HWND, bar: i32, code: u16, pos: *i32) void {
 /// A point in the window, in the picture's coordinates.
 fn toImage(lp: w.LPARAM) w.POINT {
     const o = pageOrigin();
-    return .{ .x = w.GET_X_LPARAM(lp) - o.x, .y = w.GET_Y_LPARAM(lp) - o.y };
+    return .{
+        .x = @divFloor(w.GET_X_LPARAM(lp) - o.x, app.zoom),
+        .y = @divFloor(w.GET_Y_LPARAM(lp) - o.y, app.zoom),
+    };
 }
 
 fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
@@ -156,6 +194,31 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     d.cur = p;
     d.shift = (wp & w.MK_SHIFT) != 0;
     _ = w.SetCapture(hwnd);
+    _ = w.SetFocus(hwnd); // the view takes the keyboard: the text tool needs it
+
+    // A press outside an open text box finishes it.
+    if (textbox.active() and app.tool != .text) textbox.commit();
+    if (textbox.active() and (p.x < textbox.box.rect.left or p.x >= textbox.box.rect.right or
+        p.y < textbox.box.rect.top or p.y >= textbox.box.rect.bottom))
+    {
+        textbox.commit();
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+    }
+
+    // A press inside a selection picks it up and moves it; one outside puts
+    // it down where it lies and starts a new one.
+    if (app.tool == .select or app.tool == .free_select) {
+        const s2 = &selection.sel;
+        if (s2.live and p.x >= s2.rect.left and p.x < s2.rect.right and
+            p.y >= s2.rect.top and p.y < s2.rect.bottom)
+        {
+            moving = true;
+            d.count = 0; // nothing to rubber-band: this is a move
+            return;
+        }
+        selection.drop();
+        moving = false;
+    }
 
     switch (app.tool) {
         .pencil, .brush, .eraser, .airbrush => {
@@ -187,9 +250,18 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     }
 }
 
+/// Whether the drag under way is moving a selection rather than making one.
+var moving = false;
+
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    if (moving and d.active) {
+        selection.moveBy(p.x - d.last.x, p.y - d.last.y);
+        d.last = p;
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        return;
+    }
     if (!d.active) {
         // a curve or a polygon in the middle of being made follows the
         // pointer even with the button up
@@ -217,6 +289,12 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     d.cur = toImage(lp);
     d.active = false;
     _ = w.ReleaseCapture();
+    if (moving) {
+        moving = false;
+        d.* = .{};
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        return;
+    }
     switch (d.tool) {
         .pencil, .brush, .eraser, .airbrush, .fill, .pick => {},
         .curve => {
@@ -244,7 +322,31 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
             if (d.count > 2 and @abs(d.cur.x - first.x) < 4 and @abs(d.cur.y - first.y) < 4)
                 commit();
         },
+        .select, .free_select => {
+            // a drag that went nowhere is a click, and clears the selection
+            const r = w.RECT{
+                .left = @max(0, @min(d.start.x, d.cur.x)),
+                .top = @max(0, @min(d.start.y, d.cur.y)),
+                .right = @min(app.pic.width, @max(d.start.x, d.cur.x)),
+                .bottom = @min(app.pic.height, @max(d.start.y, d.cur.y)),
+            };
+            selection.take(r);
+            d.* = .{};
+        },
+        .text => {
+            const r = w.RECT{
+                .left = @min(d.start.x, d.cur.x),
+                .top = @min(d.start.y, d.cur.y),
+                .right = @max(d.start.x, d.cur.x),
+                .bottom = @max(d.start.y, d.cur.y),
+            };
+            if (r.right - r.left > 4 and r.bottom - r.top > 4) textbox.start(r);
+            d.* = .{};
+        },
         .magnifier => {
+            // click the picture with the magnifier and it goes to the zoom
+            // the settings box is showing, centred on where you clicked
+            setZoom(zoomFor(A.option()), d.cur);
             d.count = 0;
         },
         else => commit(),
@@ -279,6 +381,30 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             buttonUp(hwnd, lp);
             return 0;
         },
+        w.WM_CHAR => {
+            if (textbox.active()) {
+                textbox.typed(@intCast(wp & 0xff));
+                _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                return 0;
+            }
+            return 0;
+        },
+        w.WM_KEYDOWN => {
+            // the arrows nudge a selection, as they do in Paint
+            if (selection.active() and !textbox.active()) {
+                const step: i32 = 1;
+                switch (wp) {
+                    w.VK_LEFT => selection.moveBy(-step, 0),
+                    w.VK_RIGHT => selection.moveBy(step, 0),
+                    w.VK_UP => selection.moveBy(0, -step),
+                    w.VK_DOWN => selection.moveBy(0, step),
+                    else => return w.DefWindowProcA(hwnd, msg, wp, lp),
+                }
+                _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                return 0;
+            }
+            return w.DefWindowProcA(hwnd, msg, wp, lp);
+        },
         w.WM_LBUTTONDBLCLK => {
             // a double click ends a polygon
             if (tools.drag.tool == .polygon and tools.drag.count > 2) commit();
@@ -302,6 +428,27 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
         },
         else => return w.DefWindowProcA(hwnd, msg, wp, lp),
     }
+}
+
+/// The four magnifications the settings box offers.
+pub fn zoomFor(option: u8) i32 {
+    return switch (option) {
+        0 => 1,
+        1 => 2,
+        2 => 6,
+        else => 8,
+    };
+}
+
+/// Change the magnification, keeping `at` (a point in the picture) in view.
+pub fn setZoom(z: i32, at: w.POINT) void {
+    if (z == app.zoom) return;
+    app.zoom = z;
+    const cr = clientSize(app.view);
+    app.scroll_x = @max(0, at.x * z - @divTrunc(cr.right, 2));
+    app.scroll_y = @max(0, at.y * z - @divTrunc(cr.bottom, 2));
+    updateScroll(app.view);
+    _ = w.InvalidateRect(app.view, null, w.TRUE);
 }
 
 pub fn register() void {

@@ -1164,6 +1164,7 @@ pub const SM_CYHSCROLL = 3;
 pub const SM_CXMENUCHECK = 71;
 pub const SM_CYMENUCHECK = 72;
 pub const CF_TEXT = 1;
+pub const CF_BITMAP = 2;
 pub const WM_CUT = 0x0300;
 pub const WM_COPY = 0x0301;
 pub const WM_PASTE = 0x0302;

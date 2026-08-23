@@ -1443,6 +1443,7 @@ static void fire_due_timers(void)
  * so cut and paste work within an application and not yet between them. */
 
 static char *g_clipboard;   /* CF_TEXT, owned here */
+static HBITMAP g_clipboard_bitmap; /* CF_BITMAP, likewise */
 static HWND g_clipboard_owner;
 static int g_clipboard_open;
 
@@ -1469,28 +1470,51 @@ BOOL EmptyClipboard(void)
         return FALSE;
     free(g_clipboard);
     g_clipboard = NULL;
+    if (g_clipboard_bitmap) {
+        DeleteObject(g_clipboard_bitmap);
+        g_clipboard_bitmap = NULL;
+    }
     return TRUE;
 }
 
 HANDLE SetClipboardData(UINT format, HANDLE data)
 {
-    if (!g_clipboard_open || format != CF_TEXT)
+    if (!g_clipboard_open)
         return NULL;
-    free(g_clipboard);
-    g_clipboard = (char *)data; /* the clipboard owns it from here */
-    return data;
+    if (format == CF_TEXT) {
+        free(g_clipboard);
+        g_clipboard = (char *)data; /* the clipboard owns it from here */
+        return data;
+    }
+    if (format == CF_BITMAP) {
+        /* A picture, which is what a drawing program cuts and pastes. The
+         * clipboard owns the bitmap from here, as it does the text. */
+        if (g_clipboard_bitmap)
+            DeleteObject(g_clipboard_bitmap);
+        g_clipboard_bitmap = (HBITMAP)data;
+        return data;
+    }
+    return NULL;
 }
 
 HANDLE GetClipboardData(UINT format)
 {
-    if (!g_clipboard_open || format != CF_TEXT)
+    if (!g_clipboard_open)
         return NULL;
-    return g_clipboard;
+    if (format == CF_TEXT)
+        return g_clipboard;
+    if (format == CF_BITMAP)
+        return g_clipboard_bitmap;
+    return NULL;
 }
 
 BOOL IsClipboardFormatAvailable(UINT format)
 {
-    return format == CF_TEXT && g_clipboard != NULL;
+    if (format == CF_TEXT)
+        return g_clipboard != NULL;
+    if (format == CF_BITMAP)
+        return g_clipboard_bitmap != NULL;
+    return FALSE;
 }
 
 /* ---- messages ------------------------------------------------------------ */

@@ -78,6 +78,9 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
             .root_source_file = b.path("examples/mspaint/main.zig"),
             .target = target,
             .optimize = optimize,
+            // for the C runtime's file calls, which is how a win32 program
+            // reads and writes a .bmp
+            .link_libc = true,
         }),
     });
     paint.root_module.addImport("ween32", mod);

@@ -37,8 +37,10 @@ const ween_surface *ween_headless_surface(void)
 
 /* WEEN32_SCRIPT: space-separated scripted input, e.g. "d:110,146 u:110,146
  * k:27" — d/u/m = mouse down/up/move at window coordinates, k = a virtual-key
- * press, K = the same with Shift held, w = milliseconds of timer time to let
- * pass. Lets any example run and be screenshotted with no display. */
+ * press, K = the same with Shift held, c = with Control held and C = with
+ * both (which is how an accelerator is reached), w = milliseconds of timer
+ * time to let pass. Lets any example run and be screenshotted with no
+ * display. */
 static void inject_script(const char *script)
 {
     const char *p = script;
@@ -50,12 +52,15 @@ static void inject_script(const char *script)
         char kind = *p;
         ween_event ev;
         memset(&ev, 0, sizeof(ev));
-        if ((kind == 'k' || kind == 'K') && p[1] == ':') {
+        if ((kind == 'k' || kind == 'K' || kind == 'c' || kind == 'C') &&
+            p[1] == ':') {
             ev.kind = WEEN_EV_KEY;
             /* a virtual key only: VK_END and '#' share a code, so typing is
              * what t: is for. The capital holds Shift down over it, which is
-             * the difference between Tab and Shift+Tab. */
-            ev.shift = kind == 'K';
+             * the difference between Tab and Shift+Tab; c and C hold Control
+             * as well, which is how an accelerator is pressed. */
+            ev.shift = kind == 'K' || kind == 'C';
+            ev.ctrl = kind == 'c' || kind == 'C';
             ev.vk = (unsigned)strtol(p + 2, (char **)&p, 10);
             ween_headless_inject(ev);
         } else if (kind == 't' && p[1] == ':') {
