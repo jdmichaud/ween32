@@ -151,6 +151,15 @@ static const ween_class *find_class(LPCSTR name)
     return NULL;
 }
 
+/* Say that a class draws its own scroll bars, so that a window of it never
+ * gets the non-client ones as well. Called once per class, at registration.*/
+void ween_class_owns_scroll(LPCSTR name)
+{
+    ween_class *cls = (ween_class *)find_class(name);
+    if (cls)
+        cls->own_scroll = 1;
+}
+
 static void register_builtin(const char *name, WNDPROC proc, UINT style)
 {
     if (find_class(name))
@@ -439,7 +448,16 @@ BOOL GetClientRect(HWND wnd, LPRECT rect)
                     : ween_ex_edge(wnd) + (has_flat_border(wnd) ? 1 : 0);
     rect->right = wnd->w - ox - trail;
     rect->bottom = wnd->h - oy - trail;
-    (void)0;
+    /* A window's own scroll bars live outside the client area, which is why
+     * asking for one makes the client rectangle smaller. */
+    if (ween_wnd_sb_shown(wnd, 1))
+        rect->right -= ween_scroll_metric();
+    if (ween_wnd_sb_shown(wnd, 0))
+        rect->bottom -= ween_scroll_metric();
+    if (rect->right < 0)
+        rect->right = 0;
+    if (rect->bottom < 0)
+        rect->bottom = 0;
     return TRUE;
 }
 
@@ -539,7 +557,13 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
     wnd->y = y == CW_USEDEFAULT ? 0 : y;
     wnd->w = w;
     wnd->h = h;
-    wnd->id = (UINT_PTR)menu;
+    /* The same parameter means two things, as it does in win32: a child's
+     * control id, and a top-level window's menu. */
+    if (style & WS_CHILD)
+        wnd->id = (UINT_PTR)menu;
+    else
+        wnd->menu = (HMENU)menu;
+    wnd->menu_hot = -1;
     wnd->font = ween_gui_font();
     wnd->visible = (style & WS_VISIBLE) != 0;
     if (!ween_wnd_set_text(wnd, window_name)) {
@@ -1229,6 +1253,7 @@ static void paint_tree(struct ween_wnd *w)
         int b = wy + w->h < outer.bottom ? wy + w->h : outer.bottom;
         ween_surface_clip(&top->surface, l, t, r - l, b - t);
         ween_paint_ex_edge(w);
+        ween_wnd_sb_paint(w);
     }
 
     {   /* the client area, within whatever the parent allows */
@@ -1677,6 +1702,31 @@ static void apply_cursor(struct ween_wnd *top, struct ween_wnd *under)
 /* What is held down as far as the backend has told us: the events carry it,
  * and a mouse message passes it on in its wParam the way win32 does. */
 static int g_mods;
+/* What was held when the last event arrived, which is as much as one
+ * keyboard can say between messages. GetKeyState answers from it. */
+static int g_shift_down, g_ctrl_down, g_alt_down;
+
+/* Whether a modifier is down right now. win32 answers for every key; here
+ * only the three an application asks about mid-gesture are tracked -- a
+ * drawing program holding Shift to constrain a line, say. */
+SHORT GetKeyState(int vk)
+{
+    int down = 0;
+    switch (vk) {
+    case VK_SHIFT:
+        down = g_shift_down;
+        break;
+    case VK_CONTROL:
+        down = g_ctrl_down;
+        break;
+    case VK_MENU:
+        down = g_alt_down;
+        break;
+    default:
+        return 0;
+    }
+    return (SHORT)(down ? (short)0x8000 : 0);
+}
 
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
@@ -1711,6 +1761,10 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
             y += ty - dy;
         }
     }
+    /* A press in the window's own scroll bar is not a click in its client
+     * area: the library owns those pixels, as USER32 does. */
+    if (ween_wnd_sb_mouse(dst, msg, x, y))
+        return;
     ween_client_origin(dst, &ox, &oy);
     /* x,y are window coords of the top-level == surface coords */
     post_msg(dst, msg, (WPARAM)g_mods,
@@ -2083,6 +2137,9 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
     /* Every event says what was held when it happened; a mouse message passes
      * that on as win32 does, in the low bits of its wParam. */
     g_mods = (ev->shift ? MK_SHIFT : 0) | (ev->ctrl ? MK_CONTROL : 0);
+    g_shift_down = ev->shift;
+    g_ctrl_down = ev->ctrl;
+    g_alt_down = ev->alt;
     switch (ev->kind) {
     case WEEN_EV_EXPOSE:
         top->dirty = 1;
@@ -2295,6 +2352,14 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_TIMER:
+        /* The repeat behind a held scroll-bar arrow. Windows runs this on a
+         * timer of its own that the application never sees; here it arrives
+         * as a WM_TIMER the application has passed on, which is the same
+         * thing as long as it does pass it on. */
+        if (wp == (WPARAM)WEEN_SB_TIMER_ID)
+            return ween_wnd_sb_timer(wnd);
+        return 0;
     case WM_RBUTTONUP: {
         /* What asks for a context menu, carrying the point in desktop
          * coordinates the way TrackPopupMenu wants it. A control that does

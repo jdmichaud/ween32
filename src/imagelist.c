@@ -379,27 +379,46 @@ BOOL ImageList_GetIconSize(HIMAGELIST il, int *cx, int *cy)
 
 /* Copy one image in, taking everything of the given colour as transparent.
  * CLR_NONE keeps the lot. */
-int ImageList_AddMasked(HIMAGELIST il, HBITMAP bmp, COLORREF transparent)
+/* One image out of a strip: `slot` is where it goes in the list and `from`
+ * is which cell of the bitmap it comes from. */
+static void add_one(HIMAGELIST il, HBITMAP bmp, COLORREF transparent, int from)
 {
-    if (!il || !bmp || bmp->kind != WEEN_OBJ_BITMAP)
-        return -1;
-    if (!ween_imagelist_reserve(il, il->count + 1))
-        return -1;
     ween_color clear = ween_cr_to_px(transparent);
     size_t base = (size_t)il->count * il->cx * il->cy;
+    int x0 = from * il->cx;
     for (int y = 0; y < il->cy; y++) {
         for (int x = 0; x < il->cx; x++) {
             size_t at = base + (size_t)y * il->cx + x;
-            int inside = x < bmp->bitmap.w && y < bmp->bitmap.h;
-            ween_color c =
-                inside ? bmp->bitmap.px[(size_t)y * bmp->bitmap.w + x] : 0;
+            int inside = x0 + x < bmp->bitmap.w && y < bmp->bitmap.h;
+            ween_color c = inside ? bmp->bitmap.px[(size_t)y * bmp->bitmap.w +
+                                                   x0 + x]
+                                  : 0;
             il->px[at] = c;
             il->mask[at] = (unsigned char)(inside &&
                                            (transparent == CLR_NONE ||
                                             c != clear));
         }
     }
-    return il->count++;
+    il->count++;
+}
+
+/* A bitmap wider than one image is a strip of them, which is how toolbar art
+ * has always been shipped: win32 cuts it into width/cx images and adds them
+ * all, and returns the index of the first. */
+int ImageList_AddMasked(HIMAGELIST il, HBITMAP bmp, COLORREF transparent)
+{
+    int n, first;
+    if (!il || !bmp || bmp->kind != WEEN_OBJ_BITMAP || il->cx <= 0)
+        return -1;
+    n = bmp->bitmap.w / il->cx;
+    if (n < 1)
+        n = 1;
+    if (!ween_imagelist_reserve(il, il->count + n))
+        return -1;
+    first = il->count;
+    for (int i = 0; i < n; i++)
+        add_one(il, bmp, transparent, i);
+    return first;
 }
 
 /* An icon brings its own mask, which is the whole reason it is not a bitmap:
@@ -461,13 +480,16 @@ int ImageList_Add(HIMAGELIST il, HBITMAP bmp, HBITMAP mask)
     if (index < 0 || !mask || mask->kind != WEEN_OBJ_BITMAP)
         return index;
     /* a separate mask bitmap: black means draw, white means leave alone, as
-     * every win32 icon has done since 3.0 */
-    size_t base = (size_t)index * il->cx * il->cy;
-    for (int y = 0; y < il->cy && y < mask->bitmap.h; y++)
-        for (int x = 0; x < il->cx && x < mask->bitmap.w; x++)
-            il->mask[base + (size_t)y * il->cx + x] =
-                (unsigned char)(mask->bitmap.px[(size_t)y * mask->bitmap.w + x]
-                                == 0);
+     * every win32 icon has done since 3.0. It is a strip too, cut the same
+     * way the picture was. */
+    for (int i = index; i < il->count; i++) {
+        size_t base = (size_t)i * il->cx * il->cy;
+        int x0 = (i - index) * il->cx;
+        for (int y = 0; y < il->cy && y < mask->bitmap.h; y++)
+            for (int x = 0; x < il->cx && x0 + x < mask->bitmap.w; x++)
+                il->mask[base + (size_t)y * il->cx + x] = (unsigned char)(
+                    mask->bitmap.px[(size_t)y * mask->bitmap.w + x0 + x] == 0);
+    }
     return index;
 }
 

@@ -48,7 +48,10 @@ static ween_color sys_color_px(int index)
         return WEEN_FACE;
     case COLOR_BTNSHADOW:
     case COLOR_GRAYTEXT:
+    case COLOR_APPWORKSPACE: /* the grey behind a document window */
         return WEEN_SHADOW;
+    case COLOR_WINDOWFRAME:
+        return WEEN_BLACK;
     case COLOR_HIGHLIGHT:
         return WEEN_CAP_LEFT; /* the Win2k selection navy is the caption navy */
     case COLOR_HIGHLIGHTTEXT:
@@ -142,6 +145,17 @@ HGDIOBJ GetStockObject(int what)
     static ween_gdiobj gray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00808080, .is_static = 1 };
     static ween_gdiobj ltgray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00c0c0c0, .is_static = 1 };
     static ween_gdiobj dkgray = { .kind = WEEN_OBJ_BRUSH, .color = 0x00404040, .is_static = 1 };
+    static ween_gdiobj hollow = { .kind = WEEN_OBJ_BRUSH, .color = 0,
+                                  .is_null = 1, .is_static = 1 };
+    static ween_gdiobj white_pen = { .kind = WEEN_OBJ_PEN, .color = 0x00ffffff,
+                                     .pen_style = PS_SOLID, .pen_width = 1,
+                                     .is_static = 1 };
+    static ween_gdiobj black_pen = { .kind = WEEN_OBJ_PEN, .color = 0,
+                                     .pen_style = PS_SOLID, .pen_width = 1,
+                                     .is_static = 1 };
+    static ween_gdiobj null_pen = { .kind = WEEN_OBJ_PEN, .color = 0,
+                                    .pen_style = PS_NULL, .pen_width = 1,
+                                    .is_null = 1, .is_static = 1 };
     switch (what) {
     case DEFAULT_GUI_FONT:
     case SYSTEM_FONT:
@@ -157,6 +171,14 @@ HGDIOBJ GetStockObject(int what)
         return &ltgray;
     case DKGRAY_BRUSH:
         return &dkgray;
+    case NULL_BRUSH:
+        return &hollow;
+    case WHITE_PEN:
+        return &white_pen;
+    case BLACK_PEN:
+        return &black_pen;
+    case NULL_PEN:
+        return &null_pen;
     default:
         return NULL;
     }
@@ -190,13 +212,20 @@ HGDIOBJ SelectObject(HDC dc, HGDIOBJ obj)
         return prev;
     }
     if (obj->kind == WEEN_OBJ_BRUSH) {
-        /* Nothing draws with the DC's brush yet — FillRect and the rest take
-         * one explicitly — but the selection is tracked so the idiom works. */
+        /* FillRect and the rest take a brush explicitly; the shapes in draw.c
+         * fill with the selected one, as GDI's do. */
         HGDIOBJ prev = dc->brush_obj ? dc->brush_obj
                                      : GetStockObject(WHITE_BRUSH);
         dc->brush_obj = obj;
         return prev;
     }
+    if (obj->kind == WEEN_OBJ_PEN) {
+        HGDIOBJ prev = dc->pen_obj ? dc->pen_obj : GetStockObject(BLACK_PEN);
+        dc->pen_obj = obj;
+        return prev;
+    }
+    if (obj->kind == WEEN_OBJ_BITMAP)
+        return ween_select_bitmap(dc, obj);
     return NULL;
 }
 

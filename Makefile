@@ -12,7 +12,7 @@ CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Wundef -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o src/propsheet.o \
-       src/gdi.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
+       src/gdi.o src/draw.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
 ifeq ($(X11),1)

@@ -25,6 +25,8 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag == .windows) {
         mod.linkSystemLibrary("user32", .{});
         mod.linkSystemLibrary("gdi32", .{});
+        mod.linkSystemLibrary("comctl32", .{});
+        addExamples(b, mod, target, optimize);
         return;
     }
 
@@ -41,8 +43,12 @@ pub fn build(b: *std.Build) void {
             "src/marlett.c",
             "src/fonts.c",
             "src/gdi.c",
+            "src/draw.c",
+            "src/menu.c",
+            "src/imagelist.c",
             "src/user.c",
             "src/dialog.c",
+            "src/controls.c",
             "src/headless.c",
             "src/x11.c",
         },
@@ -60,4 +66,22 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 
     mod.linkLibrary(lib);
+    addExamples(b, mod, target, optimize);
+}
+
+/// The Zig examples. `zig build mspaint` builds Paint; `zig build` builds it
+/// along with the library, on either kind of host.
+fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const paint = b.addExecutable(.{
+        .name = "mspaint",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/mspaint/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    paint.root_module.addImport("ween32", mod);
+    b.installArtifact(paint);
+    const step = b.step("mspaint", "Build Paint");
+    step.dependOn(&b.addInstallArtifact(paint, .{}).step);
 }

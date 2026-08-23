@@ -36,6 +36,7 @@ extern "C" {
 typedef int BOOL;
 typedef unsigned char BYTE;
 typedef uint16_t WORD;
+typedef int16_t SHORT;
 typedef uint32_t DWORD;
 typedef int32_t LONG;
 typedef uint32_t UINT;
@@ -304,6 +305,10 @@ typedef struct {
     DWORD dwHoverTime;
 } TRACKMOUSEEVENT, *LPTRACKMOUSEEVENT;
 BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
+/* Whether Shift, Control or Alt is down now, as win32 reports it: the high
+ * bit set means held. Asked mid-gesture, when there is no message to read
+ * it from -- constraining a drag to a square while it is being dragged. */
+SHORT GetKeyState(int vk);
 
 /* ---- cursors -------------------------------------------------------------
  *
@@ -348,6 +353,11 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define WS_HSCROLL 0x00100000L
 #define WS_GROUP 0x00020000L
 #define WS_TABSTOP 0x00010000L
+#define WS_CLIPSIBLINGS 0x04000000L
+#define WS_CLIPCHILDREN 0x02000000L
+/* The frame an application window wears: a caption with a system menu, a
+ * sizing border, and both size boxes. */
+#define WS_OVERLAPPEDWINDOW (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)
 
 /* extended styles: the two field borders */
 #define WS_EX_DLGMODALFRAME 0x00000001L
@@ -1093,6 +1103,8 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define VK_TAB 0x09
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
+#define VK_SHIFT 0x10
+#define VK_CONTROL 0x11
 #define VK_MENU 0x12 /* Alt */
 #define VK_PRIOR 0x21 /* Page Up */
 #define VK_NEXT 0x22  /* Page Down */
@@ -1115,6 +1127,10 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 /* ---- system colors (indices as on Windows) ------------------------------ */
 
 #define COLOR_ACTIVECAPTION 2
+#define COLOR_WINDOWFRAME 6
+/* The grey a document window's spare space is filled with -- the surround a
+ * picture smaller than its window sits on. */
+#define COLOR_APPWORKSPACE 12
 #define COLOR_WINDOW 5
 #define COLOR_MENU 4
 #define COLOR_MENUTEXT 7
@@ -1219,6 +1235,215 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DEFAULT_PITCH 0
 #define FIXED_PITCH 1
 #define FF_DONTCARE (0 << 4)
+
+/* ---- a window's own scroll bars -------------------------------------------
+ *
+ * WS_HSCROLL and WS_VSCROLL put a bar in the window's non-client area, below
+ * and to the right of the client rectangle — which is why GetClientRect
+ * shrinks when they appear. The window hears WM_HSCROLL/WM_VSCROLL with a
+ * null lParam (a SCROLLBAR *control* puts its own handle there), and moves
+ * its contents itself.
+ */
+#define SB_HORZ 0
+#define SB_VERT 1
+#define SB_CTL 2
+#define SB_BOTH 3
+
+#define SIF_RANGE 0x0001
+#define SIF_PAGE 0x0002
+#define SIF_POS 0x0004
+#define SIF_DISABLENOSCROLL 0x0008
+#define SIF_TRACKPOS 0x0010
+#define SIF_ALL (SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
+
+#define ESB_ENABLE_BOTH 0x0000
+#define ESB_DISABLE_BOTH 0x0003
+
+typedef struct tagSCROLLINFO {
+    UINT cbSize;
+    UINT fMask;
+    int nMin;
+    int nMax;
+    UINT nPage;
+    int nPos;
+    int nTrackPos;
+} SCROLLINFO, *LPSCROLLINFO;
+
+int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw);
+BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *info);
+int SetScrollPos(HWND wnd, int bar, int pos, BOOL redraw);
+int GetScrollPos(HWND wnd, int bar);
+BOOL SetScrollRange(HWND wnd, int bar, int min, int max, BOOL redraw);
+BOOL GetScrollRange(HWND wnd, int bar, int *min, int *max);
+BOOL ShowScrollBar(HWND wnd, int bar, BOOL show);
+BOOL EnableScrollBar(HWND wnd, UINT bar, UINT flags);
+
+/* ---- pens, bitmaps and raster operations ----------------------------------
+ *
+ * The half of GDI a drawing program is made of: a memory device context with
+ * a bitmap selected into it, a pen to draw lines with, and BitBlt to move
+ * pixels between the two. The raster operation codes are the real ones, and
+ * the general case is implemented rather than a handful of special cases --
+ * the high byte of a ROP3 is the truth table of (pattern, source, dest), and
+ * that is exactly how it is evaluated.
+ */
+
+#define NULL_BRUSH 5
+#define HOLLOW_BRUSH NULL_BRUSH
+#define WHITE_PEN 6
+#define BLACK_PEN 7
+#define NULL_PEN 8
+
+/* CreatePen styles. A cosmetic pen wider than one unit draws solid whatever
+ * style it was given, as it does in GDI. */
+#define PS_SOLID 0
+#define PS_DASH 1
+#define PS_DOT 2
+#define PS_DASHDOT 3
+#define PS_DASHDOTDOT 4
+#define PS_NULL 5
+#define PS_INSIDEFRAME 6
+
+/* SetROP2: how a pen or a brush combines with what is already there. */
+#define R2_BLACK 1
+#define R2_NOTMERGEPEN 2
+#define R2_MASKNOTPEN 3
+#define R2_NOTCOPYPEN 4
+#define R2_MASKPENNOT 5
+#define R2_NOT 6
+#define R2_XORPEN 7
+#define R2_NOTMASKPEN 8
+#define R2_MASKPEN 9
+#define R2_NOTXORPEN 10
+#define R2_NOP 11
+#define R2_MERGENOTPEN 12
+#define R2_COPYPEN 13
+#define R2_MERGEPENNOT 14
+#define R2_MERGEPEN 15
+#define R2_WHITE 16
+
+/* Ternary raster operations, as BitBlt takes them. */
+#define BLACKNESS 0x00000042
+#define NOTSRCERASE 0x001100A6
+#define NOTSRCCOPY 0x00330008
+#define SRCERASE 0x00440328
+#define DSTINVERT 0x00550009
+#define PATINVERT 0x005A0049
+#define SRCINVERT 0x00660046
+#define SRCAND 0x008800C6
+#define MERGEPAINT 0x00BB0226
+#define MERGECOPY 0x00C000CA
+#define SRCCOPY 0x00CC0020
+#define SRCPAINT 0x00EE0086
+#define PATCOPY 0x00F00021
+#define PATPAINT 0x00FB0A09
+#define WHITENESS 0x00FF0062
+
+/* SetStretchBltMode. Only the two a paint program uses are distinguished:
+ * dropping pixels (which is what shrinking a picture in Paint does) and the
+ * colour-preserving halftone. */
+#define BLACKONWHITE 1
+#define WHITEONBLACK 2
+#define COLORONCOLOR 3
+#define HALFTONE 4
+#define STRETCH_DELETESCANS WHITEONBLACK
+#define STRETCH_ANDSCANS BLACKONWHITE
+
+/* ExtFloodFill */
+#define FLOODFILLBORDER 0
+#define FLOODFILLSURFACE 1
+
+/* GetObject */
+#define OBJ_PEN 1
+#define OBJ_BRUSH 2
+#define OBJ_DC 3
+#define OBJ_BITMAP 7
+#define OBJ_FONT 6
+
+typedef struct ween_gdiobj *HPEN;
+
+typedef struct tagBITMAP {
+    LONG bmType;
+    LONG bmWidth;
+    LONG bmHeight;
+    LONG bmWidthBytes;
+    WORD bmPlanes;
+    WORD bmBitsPixel;
+    LPVOID bmBits;
+} BITMAP, *PBITMAP;
+
+typedef struct tagRGBQUAD {
+    BYTE rgbBlue;
+    BYTE rgbGreen;
+    BYTE rgbRed;
+    BYTE rgbReserved;
+} RGBQUAD;
+
+typedef struct tagBITMAPINFOHEADER {
+    DWORD biSize;
+    LONG biWidth;
+    LONG biHeight;
+    WORD biPlanes;
+    WORD biBitCount;
+    DWORD biCompression;
+    DWORD biSizeImage;
+    LONG biXPelsPerMeter;
+    LONG biYPelsPerMeter;
+    DWORD biClrUsed;
+    DWORD biClrImportant;
+} BITMAPINFOHEADER, *LPBITMAPINFOHEADER;
+
+typedef struct tagBITMAPINFO {
+    BITMAPINFOHEADER bmiHeader;
+    RGBQUAD bmiColors[1];
+} BITMAPINFO, *LPBITMAPINFO;
+
+#define BI_RGB 0
+#define DIB_RGB_COLORS 0
+
+/* A device context whose surface is a bitmap rather than a window: this is
+ * where an application keeps the picture it is editing. A fresh one has a
+ * 1x1 bitmap in it, as GDI's does, so nothing can be drawn until one is
+ * selected. */
+HDC CreateCompatibleDC(HDC dc);
+BOOL DeleteDC(HDC dc);
+HBITMAP CreateCompatibleBitmap(HDC dc, int w, int h);
+int GetObjectA(HGDIOBJ obj, int size, LPVOID out);
+
+HPEN CreatePen(int style, int width, COLORREF color);
+int SetROP2(HDC dc, int mode);
+int GetROP2(HDC dc);
+COLORREF SetBkColor(HDC dc, COLORREF color);
+COLORREF GetBkColor(HDC dc);
+int SetStretchBltMode(HDC dc, int mode);
+
+BOOL MoveToEx(HDC dc, int x, int y, POINT *prev);
+BOOL LineTo(HDC dc, int x, int y);
+BOOL Polyline(HDC dc, const POINT *pts, int count);
+BOOL PolyBezier(HDC dc, const POINT *pts, DWORD count);
+BOOL Polygon(HDC dc, const POINT *pts, int count);
+BOOL Rectangle(HDC dc, int left, int top, int right, int bottom);
+BOOL Ellipse(HDC dc, int left, int top, int right, int bottom);
+BOOL RoundRect(HDC dc, int left, int top, int right, int bottom, int ew, int eh);
+COLORREF SetPixel(HDC dc, int x, int y, COLORREF color);
+COLORREF GetPixel(HDC dc, int x, int y);
+BOOL ExtFloodFill(HDC dc, int x, int y, COLORREF color, UINT type);
+
+BOOL BitBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
+            DWORD rop);
+BOOL StretchBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
+                int sw, int sh, DWORD rop);
+BOOL PatBlt(HDC dc, int x, int y, int w, int h, DWORD rop);
+BOOL InvertRect(HDC dc, const RECT *rect);
+BOOL DrawFocusRect(HDC dc, const RECT *rect);
+
+/* The pixels of a bitmap, as a device-independent bitmap: how a program that
+ * has to write a .bmp file, or work on the picture a pixel at a time, gets
+ * at them. 24 and 32 bits per pixel, bottom-up as a DIB is. */
+int GetDIBits(HDC dc, HBITMAP bmp, UINT start, UINT lines, LPVOID bits,
+              LPBITMAPINFO info, UINT usage);
+int SetDIBits(HDC dc, HBITMAP bmp, UINT start, UINT lines, const void *bits,
+              const BITMAPINFO *info, UINT usage);
 
 /* ---- implemented controls -------------------------------------------------
  * examples/controls.c switches its blocks on these: a control is announced

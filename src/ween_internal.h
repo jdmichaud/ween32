@@ -171,11 +171,14 @@ const ween_marlett *ween_caption_font(void);
 /* ---- GDI objects and device contexts ------------------------------------ */
 
 typedef struct ween_gdiobj {
-    enum { WEEN_OBJ_BRUSH, WEEN_OBJ_FONT, WEEN_OBJ_BITMAP, WEEN_OBJ_ICON } kind;
-    ween_color color;         /* brush fill (surface format) */
+    enum { WEEN_OBJ_BRUSH, WEEN_OBJ_FONT, WEEN_OBJ_BITMAP, WEEN_OBJ_ICON,
+           WEEN_OBJ_PEN } kind;
+    ween_color color;         /* brush fill / pen colour (surface format) */
     const ween_strike *font;  /* font strike */
     ween_surface bitmap;      /* WEEN_OBJ_BITMAP/ICON: the pixels */
     unsigned char *mask;      /* WEEN_OBJ_ICON: 1 where a pixel is drawn */
+    int pen_style, pen_width; /* WEEN_OBJ_PEN: PS_*, and its width in pixels */
+    int is_null;              /* NULL_PEN / NULL_BRUSH: draws nothing */
     int is_static;            /* stock/system object: DeleteObject is a no-op */
 } ween_gdiobj;
 
@@ -188,9 +191,23 @@ struct ween_dc {
     const ween_strike *font;    /* the strike drawing uses, from font_obj */
     struct ween_gdiobj *font_obj;  /* what SelectObject was handed, so the */
     struct ween_gdiobj *brush_obj; /* previous one can be given back */
+    struct ween_gdiobj *pen_obj;   /* and the pen lines are drawn with */
     /* The font a fresh DC comes with, as an object, so that restoring the
      * "previous" one puts back what was really there. */
     struct ween_gdiobj initial_font;
+
+    /* ---- the drawing half (draw.c) ----
+     * Zero is a working default for every one of these, which is what lets
+     * the few DCs the library builds on the stack keep working: rop2 0 is
+     * read as R2_COPYPEN and stretch 0 as the default mode. */
+    int cur_x, cur_y;   /* the current position: MoveToEx, LineTo */
+    int rop2;           /* R2_*: how a pen combines with the destination */
+    COLORREF bk_color;  /* the gap colour of a styled pen, and OPAQUE text */
+    int stretch_mode;   /* SetStretchBltMode */
+    int is_memory;      /* CreateCompatibleDC: the surface is a bitmap */
+    int owns_surface;   /* a memory DC's own 1x1 bitmap, freed with it */
+    struct ween_gdiobj *bitmap_obj; /* what is selected into a memory DC */
+    struct ween_gdiobj default_bitmap; /* the 1x1 one it starts with */
 };
 
 /* ---- the letterbox --------------------------------------------------------
@@ -290,6 +307,11 @@ UINT ween_menu_track_bar(HWND top, int index, int from_keyboard);
 typedef struct ween_class {
     UINT style;  /* CS_*: only CS_DBLCLKS is acted on */
     int cursor;  /* WEEN_CURSOR_*: the shape over a window of this class */
+    /* The control draws WS_VSCROLL/WS_HSCROLL itself, inside its client
+     * area, rather than leaving them to the window's non-client one: an
+     * edit, a list box and the two views all do. Without this they would
+     * wear both, and the client rectangle would lose the width twice. */
+    int own_scroll;
     char *name;
     WNDPROC proc;
     HBRUSH background;
@@ -326,6 +348,17 @@ struct ween_wnd {
     int pressed; /* BUTTON down-state */
     UINT check;  /* BUTTON check state (BST_*) */
     int scroll_pos, scroll_page, scroll_min, scroll_max; /* SCROLLBAR */
+    /* WS_HSCROLL/WS_VSCROLL: the bars a window wears in its own non-client
+     * area, [0] horizontal and [1] vertical. A control that hosts SCROLLBAR
+     * children uses the four fields above instead; these belong to the
+     * window itself, which is what SetScrollInfo addresses. */
+    struct {
+        int pos, min, max, page;
+        int hidden;   /* ShowScrollBar(FALSE) */
+        int disabled; /* EnableScrollBar */
+        int grab;     /* where in the thumb a drag took hold, -1 for none */
+        int repeat;   /* the SB_ code a held arrow or track is repeating */
+    } sb[2];
     int drag_offset;   /* where a drag grabbed the thumb */
     int drag_vertical; /* which of a view's two bars is being dragged */
     int sb_repeat;     /* the SB_ code a held scroll-bar arrow is repeating */
@@ -393,7 +426,19 @@ void ween_paint_ex_edge(struct ween_wnd *w);
 int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
+/* The bars a window wears itself (WS_HSCROLL/WS_VSCROLL): how much of the
+ * window they take, drawing them, and the mouse landing in one. */
+int ween_wnd_sb_shown(const struct ween_wnd *w, int vert);
+void ween_wnd_sb_paint(struct ween_wnd *w);
+/* x,y in surface coordinates; returns 1 if the point (and the message) was
+ * the window's own scroll bar and has been dealt with. */
+int ween_wnd_sb_mouse(struct ween_wnd *w, UINT msg, int x, int y);
+int ween_wnd_sb_at(const struct ween_wnd *w, int x, int y);
+int ween_wnd_sb_timer(struct ween_wnd *w); /* the held-arrow repeat */
+#define WEEN_SB_TIMER_ID 0x5343524C /* the id that repeat runs on */
 void ween_register_controls(void);
+/* Mark a class as drawing its own WS_*SCROLL bars (user.c). */
+void ween_class_owns_scroll(LPCSTR name);
 /* A toolbar in menu mode, for the menu tracker: which bar has a drop-down up,
  * which of its buttons that is, whether the keyboard opened it, what is under
  * a point, and which button an arrow key walks to. */
@@ -422,6 +467,8 @@ void ween_controls_free(HWND w); /* per-class state, on destroy */
  * allocation failed, and leave the old text intact when they do. */
 void ween_kill_timers_of(HWND w); /* a destroyed window's timers, on destroy */
 void ween_dc_set_font(struct ween_dc *dc, const ween_strike *font);
+/* SelectObject's bitmap case, which only a memory DC has (draw.c). */
+HGDIOBJ ween_select_bitmap(HDC dc, HGDIOBJ obj);
 int ween_wnd_set_text(struct ween_wnd *w, const char *text);
 int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
 

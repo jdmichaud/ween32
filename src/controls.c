@@ -164,7 +164,7 @@ static void sb_thumb(int len, const ween_sbstate *st, int *tpos, int *tsize)
 /* Wine's scroll.c: one step, then a pause, then a steady repeat. */
 #define WEEN_SCROLL_FIRST_DELAY 200
 #define WEEN_SCROLL_REPEAT_DELAY 50
-#define WEEN_SB_TIMER 0x5343524C /* an id an app is unlikely to also pick */
+#define WEEN_SB_TIMER WEEN_SB_TIMER_ID /* shared with the window's own bars */
 
 static int sb_click(int at, int len, const ween_sbstate *st, int *grab)
 {
@@ -204,6 +204,374 @@ static int sb_clamp(int pos, const ween_sbstate *st)
     if (pos > max)
         pos = max;
     return pos;
+}
+
+/* ---- the bars a window wears itself ---------------------------------------
+ *
+ * WS_HSCROLL and WS_VSCROLL are not controls: the bar lives in the window's
+ * own non-client area, outside the client rectangle, and the window hears
+ * WM_HSCROLL/WM_VSCROLL with a null lParam. A view that scrolls its contents
+ * — an image bigger than the pane showing it — is written against these,
+ * and everything below is the same arithmetic the SCROLLBAR class uses.
+ */
+
+static ween_sbstate wnd_sbstate(const struct ween_wnd *w, int vert)
+{
+    ween_sbstate st;
+    st.pos = w->sb[vert].pos;
+    st.min = w->sb[vert].min;
+    st.max = w->sb[vert].max;
+    st.page = w->sb[vert].page;
+    st.line = 1;
+    return st;
+}
+
+int ween_wnd_sb_shown(const struct ween_wnd *w, int vert)
+{
+    DWORD bit = vert ? WS_VSCROLL : WS_HSCROLL;
+    if (w->cls && w->cls->own_scroll)
+        return 0;
+    return (w->style & bit) && !w->sb[vert].hidden;
+}
+
+/* Where the bar sits within the window, in window coordinates. The two meet
+ * in a square at the corner, which belongs to neither and is filled with the
+ * face colour, as win32 does it. */
+static void wnd_sb_rect(const struct ween_wnd *w, int vert, RECT *r)
+{
+    int sz = ween_scroll_metric();
+    int edge = ween_ex_edge(w);
+    int right = w->w - edge, bottom = w->h - edge;
+    if (vert) {
+        r->left = right - sz;
+        r->right = right;
+        r->top = edge;
+        r->bottom = bottom - (ween_wnd_sb_shown(w, 0) ? sz : 0);
+    } else {
+        r->left = edge;
+        r->right = right - (ween_wnd_sb_shown(w, 1) ? sz : 0);
+        r->top = bottom - sz;
+        r->bottom = bottom;
+    }
+}
+
+void ween_wnd_sb_paint(struct ween_wnd *w)
+{
+    struct ween_wnd *top = ween_top_level(w);
+    int ox, oy, edge = ween_ex_edge(w);
+    if (!ween_wnd_sb_shown(w, 0) && !ween_wnd_sb_shown(w, 1))
+        return;
+    ween_client_origin(w, &ox, &oy);
+    ox -= edge; /* the window's own top-left, frame included */
+    oy -= edge;
+    for (int vert = 0; vert < 2; vert++) {
+        RECT r;
+        ween_sbstate st;
+        if (!ween_wnd_sb_shown(w, vert))
+            continue;
+        wnd_sb_rect(w, vert, &r);
+        st = wnd_sbstate(w, vert);
+        ween_draw_scrollbar(&top->surface, ox + r.left, oy + r.top,
+                            r.right - r.left, r.bottom - r.top, vert,
+                            !w->sb[vert].disabled && sb_maxpos(&st) > st.min,
+                            st.pos, st.page, st.min, st.max);
+    }
+    if (ween_wnd_sb_shown(w, 0) && ween_wnd_sb_shown(w, 1)) {
+        int sz = ween_scroll_metric();
+        ween_surface_fill(&top->surface, ox + w->w - edge - sz,
+                          oy + w->h - edge - sz, sz, sz, WEEN_FACE);
+    }
+}
+
+/* Which bar a point in window coordinates is in: 0 horizontal, 1 vertical,
+ * -1 neither. */
+static int wnd_sb_which(const struct ween_wnd *w, int wx, int wy)
+{
+    for (int vert = 0; vert < 2; vert++) {
+        RECT r;
+        if (!ween_wnd_sb_shown(w, vert))
+            continue;
+        wnd_sb_rect(w, vert, &r);
+        if (wx >= r.left && wx < r.right && wy >= r.top && wy < r.bottom)
+            return vert;
+    }
+    return -1;
+}
+
+int ween_wnd_sb_at(const struct ween_wnd *w, int x, int y)
+{
+    int ox, oy, edge = ween_ex_edge(w);
+    ween_client_origin((HWND)w, &ox, &oy);
+    return wnd_sb_which(w, x - ox + edge, y - oy + edge);
+}
+
+static void wnd_sb_notify(struct ween_wnd *w, int vert, int code)
+{
+    SendMessageA(w, vert ? WM_VSCROLL : WM_HSCROLL,
+                 MAKEWPARAM((WORD)code, (WORD)w->sb[vert].pos), 0);
+}
+
+static void wnd_sb_set(struct ween_wnd *w, int vert, int pos, int code)
+{
+    ween_sbstate st = wnd_sbstate(w, vert);
+    pos = sb_clamp(pos, &st);
+    if (pos != w->sb[vert].pos) {
+        w->sb[vert].pos = pos;
+        InvalidateRect(w, NULL, FALSE);
+    }
+    wnd_sb_notify(w, vert, code);
+}
+
+/* Which window is mid-gesture, so that the moves and the release after a
+ * press in a bar go to the same place. */
+static struct ween_wnd *g_sb_track;
+static int g_sb_track_vert;
+
+int ween_wnd_sb_mouse(struct ween_wnd *w, UINT msg, int x, int y)
+{
+    int ox, oy, edge = ween_ex_edge(w), wx, wy, vert, at, len;
+    RECT r;
+    ween_sbstate st;
+
+    if (msg == WM_MOUSEMOVE || msg == WM_LBUTTONUP) {
+        if (g_sb_track != w)
+            return 0;
+        vert = g_sb_track_vert;
+    } else if (msg == WM_LBUTTONDOWN) {
+        vert = -1;
+    } else {
+        return 0;
+    }
+
+    ween_client_origin(w, &ox, &oy);
+    wx = x - ox + edge;
+    wy = y - oy + edge;
+    if (vert < 0) {
+        vert = wnd_sb_which(w, wx, wy);
+        if (vert < 0)
+            return 0;
+        if (w->sb[vert].disabled)
+            return 1;
+    }
+    wnd_sb_rect(w, vert, &r);
+    at = vert ? wy - r.top : wx - r.left;
+    len = vert ? r.bottom - r.top : r.right - r.left;
+    st = wnd_sbstate(w, vert);
+
+    switch (msg) {
+    case WM_LBUTTONDOWN: {
+        int grab, pos = sb_click(at, len, &st, &grab), code;
+        g_sb_track = w;
+        g_sb_track_vert = vert;
+        SetCapture(w);
+        if (grab >= 0) {
+            w->sb[vert].grab = grab;
+            w->sb[vert].repeat = 0;
+            return 1;
+        }
+        w->sb[vert].grab = -1;
+        code = pos < st.pos
+                   ? (at < ween_scroll_metric() ? SB_LINEUP : SB_PAGEUP)
+                   : (at >= len - ween_scroll_metric() ? SB_LINEDOWN
+                                                       : SB_PAGEDOWN);
+        w->sb[vert].repeat = code;
+        wnd_sb_set(w, vert, pos, code);
+        SetTimer(w, WEEN_SB_TIMER, WEEN_SCROLL_FIRST_DELAY, NULL);
+        return 1;
+    }
+    case WM_MOUSEMOVE:
+        if (w->sb[vert].grab >= 0)
+            wnd_sb_set(w, vert, sb_drag(at, len, &st, w->sb[vert].grab),
+                       SB_THUMBTRACK);
+        return 1;
+    case WM_LBUTTONUP:
+        g_sb_track = NULL;
+        ReleaseCapture();
+        if (w->sb[vert].repeat) {
+            KillTimer(w, WEEN_SB_TIMER);
+            w->sb[vert].repeat = 0;
+        } else if (w->sb[vert].grab >= 0) {
+            wnd_sb_notify(w, vert, SB_THUMBPOSITION);
+        }
+        w->sb[vert].grab = -1;
+        wnd_sb_notify(w, vert, SB_ENDSCROLL);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* A held arrow or track keeps going: the same one step, pause, repeat the
+ * SCROLLBAR class has. Called from the window's WM_TIMER. */
+int ween_wnd_sb_timer(struct ween_wnd *w)
+{
+    int vert = g_sb_track_vert;
+    ween_sbstate st;
+    int step, pos;
+    if (g_sb_track != w || !w->sb[vert].repeat)
+        return 0;
+    st = wnd_sbstate(w, vert);
+    step = 1;
+    if (w->sb[vert].repeat == SB_PAGEUP || w->sb[vert].repeat == SB_PAGEDOWN)
+        step = st.page > 0 ? st.page : 1;
+    pos = w->sb[vert].pos;
+    if (w->sb[vert].repeat == SB_LINEUP || w->sb[vert].repeat == SB_PAGEUP)
+        pos -= step;
+    else
+        pos += step;
+    wnd_sb_set(w, vert, pos, w->sb[vert].repeat);
+    SetTimer(w, WEEN_SB_TIMER, WEEN_SCROLL_REPEAT_DELAY, NULL);
+    return 1;
+}
+
+/* ---- SetScrollInfo and the rest ------------------------------------------ */
+
+static int sb_index(HWND wnd, int bar)
+{
+    if (bar == SB_VERT)
+        return 1;
+    if (bar == SB_HORZ)
+        return 0;
+    if (bar == SB_CTL) /* the control's own four fields, not the window's */
+        return -1;
+    (void)wnd;
+    return -1;
+}
+
+int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw)
+{
+    int i;
+    if (!wnd || !info)
+        return 0;
+    i = sb_index(wnd, bar);
+    if (i < 0) { /* SB_CTL: the SCROLLBAR control's own state */
+        if (info->fMask & SIF_RANGE) {
+            wnd->scroll_min = info->nMin;
+            wnd->scroll_max = info->nMax;
+        }
+        if (info->fMask & SIF_PAGE)
+            wnd->scroll_page = (int)info->nPage;
+        if (info->fMask & SIF_POS)
+            wnd->scroll_pos = info->nPos;
+        if (redraw)
+            InvalidateRect(wnd, NULL, FALSE);
+        return wnd->scroll_pos;
+    }
+    if (info->fMask & SIF_RANGE) {
+        wnd->sb[i].min = info->nMin;
+        wnd->sb[i].max = info->nMax;
+    }
+    if (info->fMask & SIF_PAGE)
+        wnd->sb[i].page = (int)info->nPage;
+    if (info->fMask & SIF_POS)
+        wnd->sb[i].pos = info->nPos;
+    {
+        ween_sbstate st = wnd_sbstate(wnd, i);
+        wnd->sb[i].pos = sb_clamp(wnd->sb[i].pos, &st);
+    }
+    if (redraw)
+        InvalidateRect(wnd, NULL, FALSE);
+    return wnd->sb[i].pos;
+}
+
+BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *info)
+{
+    int i;
+    if (!wnd || !info)
+        return FALSE;
+    i = sb_index(wnd, bar);
+    if (i < 0) {
+        if (info->fMask & SIF_RANGE) {
+            info->nMin = wnd->scroll_min;
+            info->nMax = wnd->scroll_max;
+        }
+        if (info->fMask & SIF_PAGE)
+            info->nPage = (UINT)wnd->scroll_page;
+        if (info->fMask & (SIF_POS | SIF_TRACKPOS))
+            info->nPos = info->nTrackPos = wnd->scroll_pos;
+        return TRUE;
+    }
+    if (info->fMask & SIF_RANGE) {
+        info->nMin = wnd->sb[i].min;
+        info->nMax = wnd->sb[i].max;
+    }
+    if (info->fMask & SIF_PAGE)
+        info->nPage = (UINT)wnd->sb[i].page;
+    if (info->fMask & (SIF_POS | SIF_TRACKPOS))
+        info->nPos = info->nTrackPos = wnd->sb[i].pos;
+    return TRUE;
+}
+
+int SetScrollPos(HWND wnd, int bar, int pos, BOOL redraw)
+{
+    SCROLLINFO si;
+    int prev = GetScrollPos(wnd, bar);
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_POS;
+    si.nPos = pos;
+    si.nMin = si.nMax = si.nTrackPos = 0;
+    si.nPage = 0;
+    SetScrollInfo(wnd, bar, &si, redraw);
+    return prev;
+}
+
+int GetScrollPos(HWND wnd, int bar)
+{
+    int i;
+    if (!wnd)
+        return 0;
+    i = sb_index(wnd, bar);
+    return i < 0 ? wnd->scroll_pos : wnd->sb[i].pos;
+}
+
+BOOL SetScrollRange(HWND wnd, int bar, int min, int max, BOOL redraw)
+{
+    SCROLLINFO si;
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE;
+    si.nMin = min;
+    si.nMax = max;
+    si.nPos = si.nTrackPos = 0;
+    si.nPage = 0;
+    SetScrollInfo(wnd, bar, &si, redraw);
+    return TRUE;
+}
+
+BOOL GetScrollRange(HWND wnd, int bar, int *min, int *max)
+{
+    int i;
+    if (!wnd)
+        return FALSE;
+    i = sb_index(wnd, bar);
+    if (min)
+        *min = i < 0 ? wnd->scroll_min : wnd->sb[i].min;
+    if (max)
+        *max = i < 0 ? wnd->scroll_max : wnd->sb[i].max;
+    return TRUE;
+}
+
+BOOL ShowScrollBar(HWND wnd, int bar, BOOL show)
+{
+    if (!wnd)
+        return FALSE;
+    if (bar == SB_HORZ || bar == SB_BOTH)
+        wnd->sb[0].hidden = !show;
+    if (bar == SB_VERT || bar == SB_BOTH)
+        wnd->sb[1].hidden = !show;
+    InvalidateRect(wnd, NULL, TRUE);
+    return TRUE;
+}
+
+BOOL EnableScrollBar(HWND wnd, UINT bar, UINT flags)
+{
+    if (!wnd)
+        return FALSE;
+    if (bar == SB_HORZ || bar == SB_BOTH)
+        wnd->sb[0].disabled = (flags == ESB_DISABLE_BOTH);
+    if (bar == SB_VERT || bar == SB_BOTH)
+        wnd->sb[1].disabled = (flags == ESB_DISABLE_BOTH);
+    InvalidateRect(wnd, NULL, FALSE);
+    return TRUE;
 }
 
 /* ---- the SCROLLBAR class --------------------------------------------------
@@ -4939,6 +5307,11 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * A strip along the bottom of its parent's client area, divided into parts,
  * each in a status-field border, with the size grip in the corner. */
 
+/* The border above a status bar's parts. Windows leaves two rows of face
+ * between the top of the bar and the first part's sunken edge, whatever the
+ * bar's height: the parts grow downward with the window, not upward. */
+#define WEEN_SB_VBORDER 2
+
 static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
@@ -4952,12 +5325,15 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         grip = 15; /* the corner square the grip is drawn in */
 
     for (int i = 0; it && i < it->count; i++) {
-        int right = it->edge[i];
+        /* A bar whose parts were never set has one, the width of the window:
+         * SB_SETTEXTA alone is enough to make a status bar, and win32 gives
+         * that text the whole strip. */
+        int right = it->edge ? it->edge[i] : -1;
         RECT part;
         if (right < 0 || right > r.right)
             right = r.right;
         part.left = left;
-        part.top = r.top;
+        part.top = r.top + WEEN_SB_VBORDER;
         part.right = right;
         part.bottom = r.bottom;
         ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
@@ -4979,7 +5355,11 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
             int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
             part.left += it->icon[i] ? 22 : 2;
-            part.top += (part.bottom - part.top - cell) / 2 - 1;
+            /* Centred with the odd pixel above, then one higher again. Both
+             * halves are measured: the explorer's 18-pixel part and Paint's
+             * 21-pixel one put their text one row apart, and only rounding
+             * this division up puts each of them where the machine does. */
+            part.top += (part.bottom - part.top - cell + 1) / 2 - 1;
         }
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         DrawTextA(dc, it->item[i], -1, &part, DT_LEFT | DT_SINGLELINE);
@@ -4999,10 +5379,21 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* the strip sits along the bottom of the parent's client area, and
          * follows it when the window is resized — the app forwards WM_SIZE,
          * as a win32 app does. Its height is its font's, not the caller's:
-         * that is what a status bar does with the rectangle it is given. */
+         * that is what a status bar does with the rectangle it is given.
+         *
+         * Unless it was asked not to. CCS_NORESIZE means the application
+         * places the bar itself, and an application that wants a taller one
+         * than the font implies — Paint's is 23 — has no other way to say
+         * so. */
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
         RECT pc;
-        wnd->h = (f ? f->ascent - f->descent : 13) + 5;
+        if (wnd->style & CCS_NORESIZE) {
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
+        /* The parts do not start at the very top: two rows of the bar are a
+         * border above them, and the height accounts for it. */
+        wnd->h = (f ? f->ascent - f->descent : 13) + 5 + WEEN_SB_VBORDER;
         if (wnd->parent && GetClientRect(wnd->parent, &pc)) {
             wnd->w = pc.right;
             wnd->x = 0;
@@ -5206,6 +5597,15 @@ void ween_register_controls(void)
     wc.lpszClassName = REBARCLASSNAMEA;
     RegisterClassA(&wc);
 
+    /* The controls that draw their own bars inside their client area. A
+     * window's non-client bars must stay off them, or an edit with
+     * WS_VSCROLL would come out with two. */
+    ween_class_owns_scroll("EDIT");
+    ween_class_owns_scroll("LISTBOX");
+    ween_class_owns_scroll("COMBOBOX");
+    ween_class_owns_scroll(WC_COMBOBOXEXA);
+    ween_class_owns_scroll(WC_TREEVIEWA);
+    ween_class_owns_scroll(WC_LISTVIEWA);
 }
 
 

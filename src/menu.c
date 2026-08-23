@@ -31,13 +31,17 @@
  * seventeen and separators of nine, then margin and edge again. Every one of
  * those numbers tiles the real menu exactly — 121 x 195 for its nine items and
  * four separators. */
-/* A bar item is its label plus this, half of it each side. Measured off the
- * Windows 2000 screenshot's own menu bar: the gap between one label's ink and
- * the next is a constant seventeen pixels across File, Edit, View, Favorites
- * and Tools, which comes out as exactly sixteen of padding on every one of
- * them once the label's drawn width is taken off. Wine's MENU_BAR_ITEMS_SPACE
- * is twelve, and it was twelve here until the screenshot said otherwise. */
-#define MENU_BAR_ITEMS_SPACE 16
+/* A bar item is its label plus this, half of it each side. Twelve, which is
+ * Wine's MENU_BAR_ITEMS_SPACE and what a Windows 2000 menu bar measures: in a
+ * screenshot of Paint's, the gap between one label's ink and the next is a
+ * constant thirteen pixels across File, Edit, View, Image and Colors, and the
+ * first label starts six in.
+ *
+ * It was sixteen here for a while, measured off the explorer's bar — but that
+ * bar is not a menu bar at all. The shell's is a *toolbar* of drop-down
+ * buttons inside its rebar, and a toolbar button's padding is not a menu
+ * item's. Measure a menu bar against a program that has one. */
+#define MENU_BAR_ITEMS_SPACE 12
 #define MENU_BORDER 2       /* the raised edge */
 #define MENU_PAD 1          /* between the edge and the first/last item */
 #define MENU_GUTTER 20      /* the popup's left edge to the label */
@@ -522,9 +526,12 @@ void ween_menu_draw_bar(HMENU menu, ween_surface *s, int ox, int oy, int width,
                               BDR_SUNKENOUTER, BF_RECT, NULL);
         if (it->flags & MF_GRAYED)
             fg = WEEN_SHADOW;
-        /* One below centred, which is where the reference puts it. */
+        /* One *above* centred, which is where the machine puts it: in a
+         * screenshot of Paint the six titles' ink starts four rows into the
+         * nineteen-row bar, and centring the cell alone would put it six.
+         * Wine draws it a row lower again; this follows the machine. */
         draw_label(s, f, ox + it->x + ween_ncm(MENU_BAR_ITEMS_SPACE) / 2,
-                   oy + (h - cell) / 2 + ween_ncm(1), it->text, len, fg);
+                   oy + (h - cell) / 2 - ween_ncm(1), it->text, len, fg);
     }
 }
 

@@ -100,12 +100,14 @@ int main(void)
         const ween_strike *f = ween_gui_font();
         ween_menu_layout_bar(g_bar, f, 300);
         ween_menuitem *it = ween_menu_item(g_bar, 0);
-        /* Sixteen, on the width the glyphs occupy — measured off a Windows
-         * 2000 screenshot, where that is the same on five labels from "File"
-         * to "Favorites". Wine uses twelve; this used to as well. */
+        /* Twelve, on the width the glyphs occupy — Wine's number, and what a
+         * Windows 2000 menu bar measures: Paint's six titles sit thirteen
+         * pixels of ink apart and the first starts six in. It was sixteen
+         * here for a while, measured off the explorer's bar, which is a
+         * toolbar rather than a menu bar. */
         int label = ween_strike_text_width(f, "File", 4);
-        CHECK(it->x == 0 && it->w == label + 16,
-              "a bar item is its drawn label plus sixteen");
+        CHECK(it->x == 0 && it->w == label + 12,
+              "a bar item is its drawn label plus twelve");
         CHECK(ween_menu_hit(g_bar, 3, 5) == 0, "and hit-tests to itself");
         CHECK(ween_menu_hit(g_bar, it->w + 40, 5) == -1,
               "past the last item, nothing is hit");
