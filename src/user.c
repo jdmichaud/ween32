@@ -2712,6 +2712,14 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
                  MAKELPARAM((WORD)ev->x, (WORD)ev->y));
         break;
     case WEEN_EV_KEY:
+        /* Alt with anything brings the underlines out, whether or not a menu
+         * wants the key: they are what the window has been told about how it
+         * is being driven, and Alt and Enter — which opens a Properties sheet
+         * without going near a menu — brings them out on the machine. */
+        if (ev->alt) {
+            ween_menu_cues = 1;
+            ween_ui_focus_cues = 1;
+        }
         /* the character rides in the high word, where win32 keeps the scan
          * code and repeat count; TranslateMessage turns it into WM_CHAR */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,
