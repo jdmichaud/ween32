@@ -13,7 +13,8 @@ Windows 2000 running the real program, it differs by **six pixels of
 where Paint's MFC status bar draws two empty panes as zero-height boxes
 beside the size grip. The tool box, the settings box under it, the colour
 box, the menu bar and the view are pixel for pixel, in every one of the
-sixteen tool states.
+sixteen tool states — and so is what the tools draw, which is checked by
+drawing the same thing on both and counting (see [Checking it](#checking-it)).
 
 ## Where the numbers came from
 
@@ -46,10 +47,26 @@ text and greyed states included, and the line each item puts in the status
 bar is the machine's own — checked against it by hovering and reading the
 bar back.
 
-**The dialogs.** The probe dumps a dialog's controls the same way. Every
-pixel it reports divides exactly by the dialog base units (6 and 13), so
-`examples/mspaint/dialogs.zig` writes them in dialog units and the dialog
-manager puts them back on the same pixels.
+**The dialogs.** The probe dumps a dialog's controls the same way, and
+`tools/mspaint/dlu.py` runs the dialog manager backwards over that dump:
+
+```sh
+tools/vm/drive.py key KeyR:OSLeft ... 'Z:\probe.exe "Custom Zoom" Z:\zoom.txt'
+tools/mspaint/dlu.py ~/paintshare/zoom.txt
+```
+
+```
+dialog 300x135 px = 200 x 83 du   style=94C820C4
+  Static   id=1065   .x = 13, .y = 7, .cx = 47, .cy = 7,  ...  'Current zoom:'
+  Button   id=1082   .x = 13, .y = 38, .cx = 33, .cy = 10, ...  '&100%'
+```
+
+Every control of every box Paint opens lands on a whole number of units,
+which is what says these are the resource's own numbers and not a fit to
+them. `examples/mspaint/dialogs.zig` writes those units and the dialog
+manager puts them back on the same pixels. The four little pictures in
+Stretch and Skew, and the icon in About, are cut out of the machine's own
+dialogs the way the tool glyphs are.
 
 **The pictures.** The sixteen tool glyphs and the icon in the caption are cut
 out of screenshots of the machine and generated into Zig by
@@ -105,6 +122,28 @@ What matches exactly: a pen dot at every width, horizontal and vertical lines
 at every width, one-pixel lines at any angle, all twelve brushes, the four
 rubber sizes, the flood fill, and a rectangle.
 
+And the selection, which is most of what Paint is:
+
+```sh
+# a rectangle, the page flooded round it, the rectangle selected
+# transparently and dragged onto the flood
+tools/mspaint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87" \
+    "color 17" "tool 3" "click 200,200" \
+    "tool 1" "option 1" "drag 70,50 132,92" "drag 100,70 160,150"
+canvas: 0 differing pixels of 48433
+```
+
+Zero with the setting off as well, zero for a free-form selection round a
+square path, and zero for the colour eraser — the rubber held with the right
+button, which changes the pixels that are the foreground colour and passes
+over the rest — down to which two pixels of a stroke it leaves behind.
+
+Three measurements came out of getting there. A selection includes the pixel
+the drag ended on, where a shape does not. A free-form one is a pixel wider
+than its path on every side. And the border round it is a four-by-four
+chequer of the highlight colour and white, aligned to the view's corner
+rather than to the selection, with eight three-pixel handles on it.
+
 What does not:
 
 | | how far off | why |
@@ -113,6 +152,7 @@ What does not:
 | an ellipse | ~86 px of an 80x60 outline | GDI's ellipse comes out flatter across the top than the mathematically inscribed one ween32 draws |
 | a rounded rectangle | the same, in its corners | the same arithmetic |
 | the dialogs' text | every glyph | Windows dialogs are set in MS Sans Serif; ween32 has only Tahoma |
+| a free-form selection round a *diagonal* | its edge, by a pixel a row | the machine's lasso is the points its mouse driver delivered, walked in twos; ours is the path we sent. The two polygons are genuinely different |
 
 The first three are ween32's rasteriser, not Paint's drawing code.
 
@@ -149,5 +189,3 @@ answers.
 - **Paint's own cursors.** Each tool has a drawing of its own — a pencil, a
   bucket, a brush — and those are cursor resources; ween32 has no way yet to
   make a cursor out of a bitmap, so the nearest stock shape is used.
-- **Custom zoom** and the free-form select's lasso: the first takes the
-  fixed magnifications, the second takes a rectangle.

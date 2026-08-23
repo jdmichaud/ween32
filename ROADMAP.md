@@ -38,9 +38,6 @@ that no application has asked for:
   than stamping it along a walk. Both are measured in
   [docs/mspaint.md](docs/mspaint.md).
 
-- [ ] **DS_CONTEXTHELP**, the `?` a Windows 2000 dialog wears beside its
-  close box.
-
 - [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
   is the arrangement a shell uses, but a shell also puts a fixed-width band
   beside one that stretches — `RBBIM_SIZE`, `RBBS_FIXEDSIZE`, `RBBS_BREAK` —
@@ -129,6 +126,12 @@ Ctrl+X/C/V/A and `WM_CUT`/`WM_COPY`/`WM_PASTE`, and a double click selecting
 the word under it. Within one process: sharing with other X clients still
 needs selection ownership.
 
+**A static that is not text** — the low five bits of a `STATIC`'s style are a
+type: `SS_BITMAP` and `SS_ICON` draw the picture hung on it with
+`STM_SETIMAGE`, `SS_ETCHEDHORZ`/`VERT`/`FRAME` the rules a dialog divides
+itself with, `SS_BLACKRECT`/`GRAYRECT`/`WHITERECT` a block of a system
+colour, and `SS_NOPREFIX` says an ampersand is an ampersand.
+
 **Images and icons** — `CreateBitmap` from pixels in memory, `LoadImageA` for
 a `.bmp` or a `.ico` on disk, image lists (`ImageList_Create`/`Add`/
 `AddMasked`/`AddIcon`/`Draw`/`Destroy`) with one-bit transparency, and
@@ -182,9 +185,16 @@ the hue-and-saturation field, the brightness bar and the six numbers.
 
 **Dialogs** — `CreateDialogIndirectParamA` (+ `CreateDialogIndirectA`) builds a
 dialog from a `DLGTEMPLATE`/`DLGITEMTEMPLATE`, instantiating each control and
-mapping its dialog units to pixels; `DLGPROC` (`WM_INITDIALOG`), `DefDlgProcA`,
-`EndDialog`, `IsDialogMessageA` (Tab / Enter→default / Esc), `DM_SETDEFID`,
-`GetDlgCtrlID`, `GetDialogBaseUnits`, `MapDialogRect`, `MulDiv`.
+mapping its dialog units to pixels — the position and the size each mapped on
+their own, as Windows maps them, and not as a pair of edges; `DLGPROC`
+(`WM_INITDIALOG`), `DefDlgProcA`, `EndDialog`, `IsDialogMessageA` (Tab /
+Enter→default / Esc), `DM_SETDEFID`, `GetDlgCtrlID`, `GetDialogBaseUnits`,
+`MapDialogRect`, `MulDiv`. A template that says `DS_CONTEXTHELP` gets the `?`
+beside its close box, and pressing it sends `SC_CONTEXTHELP`.
+
+**What the machine has** — `GlobalMemoryStatus`, from the page count, capped
+at four gigabytes in its thirty-two-bit fields exactly as Windows caps it.
+An About box is the one place a program says something about the machine.
 
 **DPI** — one system dpi detected from the desktop's `Xft.dpi` (overridable
 with `WEEN32_DPI`); point-sized font strikes, scaled non-client metrics, and

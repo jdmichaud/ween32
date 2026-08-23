@@ -129,6 +129,24 @@ magick /tmp/paint-ours.bmp /tmp/paint-ours.png
 tools/refcapture/paintdiff.py               # expect 6 of 110000
 ```
 
+What the tools draw is checked the same way, by drawing it on both and
+counting. These four are the ones to run after touching a tool, a selection
+or the rasteriser — each should print zero:
+
+```sh
+tools/mspaint/compare.py "tool 10" "option 0" "tool 12" "drag 76,57 126,87"
+tools/mspaint/compare.py "tool 1" "drag 81,61 141,101" "drag 100,80 130,110"
+tools/mspaint/compare.py "tool 0" "drag 90,70 130,70 130,110 90,110 90,70"
+tools/mspaint/compare.py "color 16" "tool 7" "option 6" "click 90,100" \
+    "color 20" "click 120,100" "color 16" "tool 2" "option 0" \
+    "rclick 90,100" "rclick 120,100"
+```
+
+Name the settings a gesture depends on. The machine keeps a tool's setting
+between runs, so a rectangle drawn without saying `"tool 10" "option 0"`
+first comes out in whatever pen width the last test left behind, and the
+difference looks like a bug in the shape.
+
 ### The explorer beside the machine
 
 `WEEN32_EXPLORER_FIXTURE=1` fills both panes with what a Windows 2000
