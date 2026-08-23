@@ -778,8 +778,22 @@ BOOL DestroyWindow(HWND wnd)
                 break;
             }
         }
-        if (g_active == wnd)
-            g_active = g_tops;
+        if (g_active == wnd) {
+            /* What takes the keyboard when the active window goes: the first
+             * one that can have it. A window put up not to be activated — a
+             * menu, the box under an address bar — never becomes active, and
+             * neither does one that is hidden or disabled. Handing it to
+             * whichever window happens to be newest is how a hidden popup
+             * came to swallow every press meant for the window behind it. */
+            struct ween_wnd *next = NULL;
+            for (struct ween_wnd *t = g_tops; t; t = t->next_top)
+                if (t->visible && !(t->style & WS_DISABLED) &&
+                    !(t->ex_style & WS_EX_NOACTIVATE)) {
+                    next = t;
+                    break;
+                }
+            g_active = next;
+        }
     }
     if (g_focus == wnd)
         g_focus = g_active;
@@ -1273,6 +1287,13 @@ LONG SetWindowLongA(HWND wnd, int index, LONG value)
         break;
     }
     return was;
+}
+
+/* The window the keyboard belongs to at the top level: what a menu, a dialog
+ * or a box put up beside something is measured against. */
+HWND GetActiveWindow(void)
+{
+    return g_active;
 }
 
 HWND SetFocus(HWND wnd)
@@ -2111,8 +2132,28 @@ SHORT GetKeyState(int vk)
     return (SHORT)(down ? (short)0x8000 : 0);
 }
 
+/* Where the pointer last was, in screen coordinates. Win32 keeps this for the
+ * asking, and a control needs it: WM_SETCURSOR says only that the pointer
+ * moved, so a header works out which divider it is over from here. */
+static POINT g_cursor_pos;
+
+BOOL GetCursorPos(POINT *pt)
+{
+    if (!pt)
+        return FALSE;
+    *pt = g_cursor_pos;
+    return TRUE;
+}
+
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
+
+    {   /* x,y are the top-level window's; the pointer's own is the screen's */
+        int wx = 0, wy = 0;
+        ween_window_origin(top, &wx, &wy);
+        g_cursor_pos.x = wx + x;
+        g_cursor_pos.y = wy + y;
+    }
     int ox, oy;
     struct ween_wnd *dst = g_capture;
     if (!dst)

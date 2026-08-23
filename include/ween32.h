@@ -1992,6 +1992,12 @@ void GlobalMemoryStatus(LPMEMORYSTATUS status);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);
 HWND GetParent(HWND wnd);
 BOOL ClientToScreen(HWND wnd, POINT *pt);
+/* Where the pointer is, in screen coordinates: what a control asks when a
+ * message tells it something moved but not where. */
+BOOL GetCursorPos(POINT *pt);
+/* Which top-level window is active — the one a press with no window of its
+ * own is measured against, and the one a dialog is put up over. */
+HWND GetActiveWindow(void);
 BOOL ScreenToClient(HWND wnd, POINT *pt);
 
 /* ---- the clipboard -------------------------------------------------------

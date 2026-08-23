@@ -4658,14 +4658,27 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
-    case WM_SETCURSOR:
-        /* a resize arrow over a divider, an ordinary one everywhere else */
+    case WM_SETCURSOR: {
+        /* A resize arrow over a divider, an ordinary one everywhere else —
+         * over it, not merely while one is being dragged: the shape is how a
+         * person is told the column can be pulled wider at all. WM_SETCURSOR
+         * says only that the pointer moved, so where it is comes from the
+         * pointer itself. */
+        POINT at;
         l = list_of(wnd);
         if (l && l->sizing >= 0) {
             SetCursor(LoadCursorA(NULL, IDC_SIZEWE));
             return TRUE;
         }
+        if (l && lv_header_h(wnd) && GetCursorPos(&at) &&
+            ScreenToClient(wnd, &at) && at.y >= 0 &&
+            at.y < lv_header_h(wnd) &&
+            lv_divider_at(l, at.x + l->scroll_x, at.y) >= 0) {
+            SetCursor(LoadCursorA(NULL, IDC_SIZEWE));
+            return TRUE;
+        }
         return DefWindowProcA(wnd, msg, wp, lp);
+    }
 
     case WM_MOUSEMOVE:
         l = list_of(wnd);

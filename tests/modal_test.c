@@ -36,8 +36,14 @@ static int g_dlg_x, g_dlg_y;
 static int g_close_case;
 static int g_cancel_commands;
 
+static int g_owner_clicks;
+
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+    if (msg == WM_LBUTTONDOWN) {
+        g_owner_clicks++;
+        return 0;
+    }
     if (msg == WM_DESTROY) {
         PostQuitMessage(0);
         return 0;
@@ -174,6 +180,33 @@ int main(void)
     CHECK((g_owner->style & WS_DISABLED) == 0,
           "the owner is usable again after a dialog is closed that way");
     g_close_case = 0;
+
+    /* What takes the keyboard when a dialog closes. A box put up not to be
+     * activated — a menu, the suggestions under an address bar — must never
+     * become the active window, or every press meant for the window behind
+     * it goes there instead and the program looks dead. */
+    {
+        WNDCLASSA pc;
+        HWND box;
+        memset(&pc, 0, sizeof(pc));
+        pc.lpfnWndProc = host_proc;
+        pc.lpszClassName = "weenmodalbox";
+        pc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+        RegisterClassA(&pc);
+        /* made after the owner, and never shown: the newest window is what
+         * activation used to fall to */
+        box = CreateWindowExA(WS_EX_NOACTIVATE, "weenmodalbox", "",
+                              WS_POPUP | WS_BORDER, 0, 0, 300, 200, NULL, NULL,
+                              NULL, NULL);
+        CHECK(box != NULL, "a box that is not to be activated, and not shown");
+        g_cancel_commands = 0;
+        key(VK_ESCAPE);
+        DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, g_owner, dlg_proc,
+                                0);
+        CHECK(GetActiveWindow() == g_owner,
+              "and when it closes the owner is active again, not the box");
+        DestroyWindow(box);
+    }
 
     DestroyWindow(g_owner);
 

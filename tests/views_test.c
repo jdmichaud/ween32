@@ -612,6 +612,8 @@ int main(void)
         CHECK(bar != NULL, "a splitter with a resize cursor on its class");
 
         ween_event ev;
+        POINT at;
+        RECT wr;
         memset(&ev, 0, sizeof(ev));
         ev.kind = WEEN_EV_MOUSE_MOVE;
         ev.win = w->backend_win;
@@ -620,13 +622,23 @@ int main(void)
         ween_headless_inject(ev);
         ev.x = WEEN_NC_FRAME + 100; /* back over the list view */
         ween_headless_inject(ev);
+        /* And over the list's own column divider, which is not a class
+         * cursor but the view answering for a strip of itself: the list sits
+         * ten in with a two-pixel border, and its first column is 120 wide,
+         * so the divider is at the end of that. The shape has to be there
+         * before the press — it is the only sign the column can be pulled. */
+        ev.x = WEEN_NC_FRAME + 10 + 2 + 120;
+        ev.y = WEEN_NC_FRAME + WEEN_NC_CAPTION + 10 + 2 + 5;
+        ween_headless_inject(ev);
+        ev.x -= 40; /* the middle of the heading, not its edge */
+        ween_headless_inject(ev);
         ween_event end;
         memset(&end, 0, sizeof(end));
         end.kind = WEEN_EV_END;
         ween_headless_inject(end);
 
         MSG msg;
-        int over_bar = -1, over_list = -1;
+        int over_bar = -1, over_list = -1, over_div = -1, over_head = -1;
         while (GetMessageA(&msg, NULL, 0, 0)) {
             DispatchMessageA(&msg);
             if (msg.message == WM_MOUSEMOVE) {
@@ -634,12 +646,24 @@ int main(void)
                     over_bar = ween_headless_cursor(w->backend_win);
                 else if (over_list < 0)
                     over_list = ween_headless_cursor(w->backend_win);
+                else if (over_div < 0)
+                    over_div = ween_headless_cursor(w->backend_win);
+                else if (over_head < 0)
+                    over_head = ween_headless_cursor(w->backend_win);
             }
         }
         CHECK(over_bar == WEEN_CURSOR_SIZEWE,
               "the pointer over the splitter is a resize arrow");
         CHECK(over_list == WEEN_CURSOR_ARROW,
               "and an ordinary one again once it moves off");
+        CHECK(over_div == WEEN_CURSOR_SIZEWE,
+              "over a column divider it is a resize arrow too");
+        CHECK(over_head == WEEN_CURSOR_ARROW,
+              "and an ordinary one over the heading itself");
+        GetWindowRect(w, &wr);
+        CHECK(GetCursorPos(&at) && at.x == wr.left + ev.x &&
+                  at.y == wr.top + ev.y,
+              "and the pointer says where it is on the screen");
         DestroyWindow(bar);
     }
 
