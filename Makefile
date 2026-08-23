@@ -120,17 +120,29 @@ test: $(TESTS)
 # The other half of the promise: the same example source has to build against
 # the real windows.h, and the constants have to be the numbers Windows gives
 # them. Needs zig for its bundled mingw-w64 headers; skipped without it.
-ZIGWIN = zig cc -target x86_64-windows-gnu -std=c99 -Iinclude
+ZIGWIN = $(ZIG) cc -target x86_64-windows-gnu -std=c99 -Iinclude
+
+# Which zig. The C half needs nothing but its bundled mingw-w64 headers, so
+# any will do; the package -- and with it examples/mspaint, which is written
+# in Zig -- needs the version build.zig.zon asks for, and is skipped rather
+# than failed when the one on PATH is older.
+ZIG ?= zig
+ZIG_NEEDS = 0.17
 
 win32:
-	@command -v zig >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
+	@command -v $(ZIG) >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
 	@for src in $(EXAMPLES:%=%.c); do \
 	   echo "  win32 $$src"; \
 	   $(ZIGWIN) $$src -luser32 -lgdi32 -lcomctl32 -o /tmp/ween32-win32.exe || exit 1; \
 	 done
 	@python3 tools/win32check/genconsts.py > /tmp/ween32-consts.c
-	@zig cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
+	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
 	   /tmp/ween32-consts.c && echo "  win32 constants agree"
+	@case "$$($(ZIG) version)" in \
+	   $(ZIG_NEEDS)*) echo "  win32 examples/mspaint (zig)"; \
+	      $(ZIG) build mspaint -Dtarget=x86_64-windows-gnu || exit 1;; \
+	   *) echo "  win32 examples/mspaint: needs zig $(ZIG_NEEDS), skipped";; \
+	 esac
 
 clean:
 	rm -f $(OBJS) libween32.a $(EXAMPLES) $(TESTS)

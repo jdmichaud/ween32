@@ -363,6 +363,10 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define WS_EX_DLGMODALFRAME 0x00000001L
 #define WS_EX_CLIENTEDGE 0x00000200L
 #define WS_EX_CONTROLPARENT 0x00010000L
+/* A caption with a question mark in it, left of the close box: the window is
+ * offering per-control help. A window with either size box does not get one,
+ * which is why it is a dialog's mark. */
+#define WS_EX_CONTEXTHELP 0x00000400L
 /* A window that does not take the keyboard when it appears — which is what a
  * menu is: the window under it keeps its focus, and its caret with it. */
 #define WS_EX_NOACTIVATE 0x08000000L
@@ -1005,6 +1009,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DS_SETFONT 0x40L
 #define DS_MODALFRAME 0x80L
 #define DS_CENTER 0x0800L
+#define DS_CONTEXTHELP 0x2000L
 
 /* standard command ids */
 #define IDOK 1
@@ -1026,19 +1031,38 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define SS_LEFT 0x00000000L
 #define SS_CENTER 0x00000001L
 #define SS_RIGHT 0x00000002L
-/* A picture instead of a line of text: the icon the control is given with
- * STM_SETICON, drawn at its top-left corner. */
+/* The low five bits of a static's style are a type, not a set of flags: a
+ * label, a rectangle of one of the system colours, a picture, or a line. */
 #define SS_ICON 0x00000003L
+#define SS_BLACKRECT 0x00000004L
+#define SS_GRAYRECT 0x00000005L
+#define SS_WHITERECT 0x00000006L
+#define SS_BLACKFRAME 0x00000007L
+#define SS_GRAYFRAME 0x00000008L
+#define SS_WHITEFRAME 0x00000009L
+/* The two that stay on one line; every other kind wraps at its own width. */
+#define SS_SIMPLE 0x0000000BL
+#define SS_LEFTNOWORDWRAP 0x0000000CL
+#define SS_OWNERDRAW 0x0000000DL
+#define SS_BITMAP 0x0000000EL
 /* A rule across the dialog: two pixels, shadow over white. What a dialog puts
  * between what it asks and the buttons that answer. */
 #define SS_ETCHEDHORZ 0x00000010L
 #define SS_ETCHEDVERT 0x00000011L
 #define SS_ETCHEDFRAME 0x00000012L
+#define SS_TYPEMASK 0x0000001FL
+#define SS_NOPREFIX 0x00000080L
+#define SS_CENTERIMAGE 0x00000200L
+#define SS_SUNKEN 0x00001000L
+
+/* One picture, hung on the control: an icon with STM_SETICON, a bitmap with
+ * STM_SETIMAGE, and IMAGE_BITMAP says which kind wParam names. */
 #define STM_SETICON 0x0170
 #define STM_GETICON 0x0171
-/* The two that stay on one line; every other kind wraps at its own width. */
-#define SS_SIMPLE 0x0000000BL
-#define SS_LEFTNOWORDWRAP 0x0000000CL
+#define STM_SETIMAGE 0x0172
+#define STM_GETIMAGE 0x0173
+#define IMAGE_BITMAP 0
+#define IMAGE_ICON 1
 
 /* button notifications */
 #define BN_CLICKED 0
@@ -1075,6 +1099,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define HTBOTTOMLEFT 16
 #define HTBOTTOMRIGHT 17
 #define HTCLOSE 20
+#define HTHELP 21
 #define HTMINBUTTON 8
 #define HTMAXBUTTON 9
 /* what a caption button asks the window to do */
@@ -1089,6 +1114,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define SC_MINIMIZE 0xF020
 #define SC_MAXIMIZE 0xF030
 #define SC_CLOSE 0xF060
+#define SC_CONTEXTHELP 0xF180
 #define SC_RESTORE 0xF120
 
 /* ---- ShowWindow --------------------------------------------------------- */
@@ -1244,33 +1270,12 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
  * null lParam (a SCROLLBAR *control* puts its own handle there), and moves
  * its contents itself.
  */
-#define SB_HORZ 0
-#define SB_VERT 1
-#define SB_CTL 2
-#define SB_BOTH 3
-
-#define SIF_RANGE 0x0001
-#define SIF_PAGE 0x0002
-#define SIF_POS 0x0004
-#define SIF_DISABLENOSCROLL 0x0008
-#define SIF_TRACKPOS 0x0010
-#define SIF_ALL (SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
-
+/* SB_HORZ, SB_VERT, SB_CTL and the SIF_* mask, with SCROLLINFO itself, are
+ * declared with the scroll bar control above; these are what a window's own
+ * bars add to them. */
 #define ESB_ENABLE_BOTH 0x0000
 #define ESB_DISABLE_BOTH 0x0003
 
-typedef struct tagSCROLLINFO {
-    UINT cbSize;
-    UINT fMask;
-    int nMin;
-    int nMax;
-    UINT nPage;
-    int nPos;
-    int nTrackPos;
-} SCROLLINFO, *LPSCROLLINFO;
-
-int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw);
-BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *info);
 int SetScrollPos(HWND wnd, int bar, int pos, BOOL redraw);
 int GetScrollPos(HWND wnd, int bar);
 BOOL SetScrollRange(HWND wnd, int bar, int min, int max, BOOL redraw);
@@ -1346,8 +1351,10 @@ BOOL EnableScrollBar(HWND wnd, UINT bar, UINT flags);
 #define WHITEONBLACK 2
 #define COLORONCOLOR 3
 #define HALFTONE 4
-#define STRETCH_DELETESCANS WHITEONBLACK
 #define STRETCH_ANDSCANS BLACKONWHITE
+#define STRETCH_ORSCANS WHITEONBLACK
+#define STRETCH_DELETESCANS COLORONCOLOR
+#define STRETCH_HALFTONE HALFTONE
 
 /* ExtFloodFill */
 #define FLOODFILLBORDER 0
@@ -1907,6 +1914,20 @@ BOOL TrackPopupMenu(HMENU menu, UINT flags, int x, int y, int reserved,
 #define SM_CXMENUCHECK 71
 #define SM_CYMENUCHECK 72
 int GetSystemMetrics(int index);
+
+/* How much memory the machine has, which is the one thing an About box says
+ * that is about the machine rather than the program. */
+typedef struct {
+    DWORD dwLength;
+    DWORD dwMemoryLoad;
+    DWORD dwTotalPhys;
+    DWORD dwAvailPhys;
+    DWORD dwTotalPageFile;
+    DWORD dwAvailPageFile;
+    DWORD dwTotalVirtual;
+    DWORD dwAvailVirtual;
+} MEMORYSTATUS, *LPMEMORYSTATUS;
+void GlobalMemoryStatus(LPMEMORYSTATUS status);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);
 HWND GetParent(HWND wnd);
 BOOL ClientToScreen(HWND wnd, POINT *pt);

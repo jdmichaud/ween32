@@ -262,7 +262,11 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         py += owner_rect.top + coy;
     }
 
-    HWND dlg = CreateWindowExA(ex_style, "#32770", title, style, px, py, win_w,
+    /* A template asking for context help wears the question mark: the style
+     * bit is on the dialog, the extended one is what the caption reads, and
+     * it goes on top of whatever extended style the template carries. */
+    DWORD dex = ex_style | ((style & DS_CONTEXTHELP) ? WS_EX_CONTEXTHELP : 0);
+    HWND dlg = CreateWindowExA(dex, "#32770", title, style, px, py, win_w,
                                win_h, parent, NULL, inst, NULL);
     if (!dlg)
         return NULL;
@@ -270,8 +274,12 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     dlg->dlgproc = proc;
     dlg->font = dlg_font;
 
-    /* Instantiate every control, mapping its DLU rect to pixels edge by edge
-     * (MapDialogRect semantics) so shared DLU edges land on shared pixels. */
+    /* Instantiate every control. Its position and its size are mapped
+     * *separately* -- pixel_x = MulDiv(x, bx, 4) and pixel_cx = MulDiv(cx,
+     * bx, 4) -- and not as a pair of edges. The difference shows on any odd
+     * dialog unit: Paint's Custom Zoom has a label 47 units wide at unit 13,
+     * which Windows puts at x=20 and makes 71 wide, where mapping the far
+     * edge (MulDiv(60) - MulDiv(13) = 90 - 20) would have made it 70. */
     for (int i = 0; i < cdit; i++) {
         p = (p + 3) & ~(size_t)3; /* items are DWORD-aligned in the stream */
         DWORD istyle = rd_d(b, p);
@@ -293,9 +301,8 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
         p += 2 + cdata; /* creation data block */
 
         const char *cls = cls_str[0] ? cls_str : class_from_ord(cls_ord);
-        int px = MX(ix), py = MY(iy);
-        HWND c = CreateWindowExA(iex, cls, itext, istyle | WS_CHILD, px, py,
-                                 MX(ix + icx) - px, MY(iy + icy) - py, dlg,
+        HWND c = CreateWindowExA(iex, cls, itext, istyle | WS_CHILD, MX(ix),
+                                 MY(iy), MX(icx), MY(icy), dlg,
                                  (HMENU)(UINT_PTR)id, inst, NULL);
         /* The strike straight on, not through WM_SETFONT: that takes an
          * HFONT, and the face named in a template is the dialog manager's own

@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "ween_internal.h"
@@ -386,6 +387,32 @@ BOOL ScreenToClient(HWND wnd, POINT *pt)
     pt->x -= zero.x;
     pt->y -= zero.y;
     return TRUE;
+}
+
+/* What the machine has, read where this machine keeps it. On Windows this
+ * is kernel32's; here it is the page count, which is the same number. */
+void GlobalMemoryStatus(LPMEMORYSTATUS status)
+{
+    if (!status)
+        return;
+    memset(status, 0, sizeof(*status));
+    status->dwLength = sizeof(*status);
+#ifdef _SC_PHYS_PAGES
+    long pages = sysconf(_SC_PHYS_PAGES), avail = sysconf(_SC_AVPHYS_PAGES);
+    long page = sysconf(_SC_PAGESIZE);
+    if (pages > 0 && page > 0) {
+        /* The fields are 32 bits wide, so a machine with more than four
+         * gigabytes reports four: the same answer Windows gives, and the
+         * reason it grew a GlobalMemoryStatusEx. */
+        double total = (double)pages * (double)page;
+        double free_ = (double)(avail > 0 ? avail : 0) * (double)page;
+        double cap = 4294967295.0;
+        status->dwTotalPhys = (DWORD)(total > cap ? cap : total);
+        status->dwAvailPhys = (DWORD)(free_ > cap ? cap : free_);
+        status->dwMemoryLoad =
+            (DWORD)(100 - (avail > 0 ? avail * 100 / pages : 0));
+    }
+#endif
 }
 
 int GetSystemMetrics(int index)
@@ -1907,9 +1934,10 @@ static void nc_track_button(struct ween_wnd *top, int which)
             ween_flush_paint();
             if (acted)
                 SendMessageA(top, WM_SYSCOMMAND,
-                             which == 1 ? (top->maximized ? SC_RESTORE
-                                                          : SC_MAXIMIZE)
-                                        : SC_MINIMIZE,
+                             which != 1 ? SC_MINIMIZE
+                             : nc_has_help(top)
+                                 ? SC_CONTEXTHELP
+                                 : top->maximized ? SC_RESTORE : SC_MAXIMIZE,
                              0);
             return;
         }
@@ -2207,7 +2235,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
             nc_drag_caption(top, ev);
         else if (hit == HTCLOSE)
             nc_track_close(top);
-        else if (hit == HTMAXBUTTON)
+        else if (hit == HTMAXBUTTON || hit == HTHELP)
             nc_track_button(top, 1);
         else if (hit == HTMINBUTTON)
             nc_track_button(top, 2);
@@ -2465,10 +2493,10 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         RECT c = nc_button_rect(wnd, 0);
         if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
             return HTCLOSE;
-        if (nc_has_max(wnd)) {
+        if (nc_has_max(wnd) || nc_has_help(wnd)) {
             c = nc_button_rect(wnd, 1);
             if (x >= c.left && x < c.right && y >= c.top && y < c.bottom)
-                return HTMAXBUTTON;
+                return nc_has_max(wnd) ? HTMAXBUTTON : HTHELP;
         }
         if (nc_has_min(wnd)) {
             c = nc_button_rect(wnd, 2);
@@ -2611,8 +2639,10 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (nc_has_max(wnd)) {
                 c = nc_button_rect(wnd, 1);
                 DrawFrameControl(&dc, &c, DFC_CAPTION,
-                                 (wnd->maximized ? DFCS_CAPTIONRESTORE
-                                                 : DFCS_CAPTIONMAX) |
+                                 (nc_has_help(wnd)
+                                      ? DFCS_CAPTIONHELP
+                                      : wnd->maximized ? DFCS_CAPTIONRESTORE
+                                                       : DFCS_CAPTIONMAX) |
                                      (wnd->nc_button_pressed == 1 ? DFCS_PUSHED
                                                                   : 0));
             }
@@ -3025,32 +3055,69 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case STM_GETICON:
         return (LRESULT)(INT_PTR)wnd->icon;
+    /* The same for a bitmap: a static that says SS_BITMAP draws what was
+     * hung on it here rather than its text. */
+    case STM_SETIMAGE: {
+        HANDLE was = wnd->image;
+        wnd->image = (HANDLE)lp;
+        InvalidateRect(wnd, NULL, FALSE);
+        (void)wp;
+        return (LRESULT)(INT_PTR)was;
+    }
+    case STM_GETIMAGE:
+        return (LRESULT)(INT_PTR)wnd->image;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
-        {   /* a rule, a column or a frame of them: an etched edge and no
-             * text at all */
-            DWORD kind = wnd->style & 0x1F;
-            if (kind == SS_ETCHEDHORZ || kind == SS_ETCHEDVERT ||
-                kind == SS_ETCHEDFRAME) {
-                RECT r;
-                GetClientRect(wnd, &r);
-                DrawEdge(dc, &r, EDGE_ETCHED,
-                         kind == SS_ETCHEDHORZ   ? BF_TOP
-                         : kind == SS_ETCHEDVERT ? BF_LEFT
-                                                 : BF_RECT);
-                EndPaint(wnd, &ps);
-                return 0;
-            }
-        }
-        if ((wnd->style & 0x1F) == SS_ICON) {
-            RECT r;
-            GetClientRect(wnd, &r);
+        RECT r;
+        GetClientRect(wnd, &r);
+        /* The low five bits are a type, not a set of flags. */
+        DWORD kind = wnd->style & SS_TYPEMASK;
+        switch (kind) {
+        case SS_ICON:
             if (wnd->icon)
                 DrawIconEx(dc, 0, 0, wnd->icon, r.right, r.bottom, 0, NULL,
                            DI_NORMAL);
             EndPaint(wnd, &ps);
             return 0;
+        case SS_BITMAP:
+            FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
+            if (wnd->image) {
+                BITMAP bm;
+                HDC src = CreateCompatibleDC(dc);
+                HGDIOBJ old = SelectObject(src, (HGDIOBJ)wnd->image);
+                if (GetObjectA((HGDIOBJ)wnd->image, sizeof bm, &bm))
+                    BitBlt(dc, 0, 0, bm.bmWidth, bm.bmHeight, src, 0, 0,
+                           SRCCOPY);
+                if (old)
+                    SelectObject(src, old);
+                DeleteDC(src);
+            }
+            EndPaint(wnd, &ps);
+            return 0;
+        /* A rule, a column or a frame of them: an etched edge and no text at
+         * all. What a dialog rules a section off with. */
+        case SS_ETCHEDHORZ:
+        case SS_ETCHEDVERT:
+        case SS_ETCHEDFRAME:
+            DrawEdge(dc, &r, EDGE_ETCHED,
+                     kind == SS_ETCHEDHORZ   ? BF_TOP
+                     : kind == SS_ETCHEDVERT ? BF_LEFT
+                                             : BF_RECT);
+            EndPaint(wnd, &ps);
+            return 0;
+        case SS_BLACKRECT:
+        case SS_GRAYRECT:
+        case SS_WHITERECT: {
+            int c = kind == SS_BLACKRECT  ? COLOR_WINDOWFRAME
+                    : kind == SS_GRAYRECT ? COLOR_BTNSHADOW
+                                          : COLOR_WINDOW;
+            FillRect(dc, &r, GetSysColorBrush(c));
+            EndPaint(wnd, &ps);
+            return 0;
+        }
+        default:
+            break;
         }
         FillRect(dc, &ps.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
@@ -3058,10 +3125,11 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * what SS_LEFT means in win32 and what a paragraph in a dialog needs.
          * SS_SIMPLE and SS_LEFTNOWORDWRAP are the ones that stay on one
          * line. */
-        DWORD kind = wnd->style & 0x1F;
         UINT fmt = (kind == SS_SIMPLE || kind == SS_LEFTNOWORDWRAP)
                        ? DT_SINGLELINE
                        : DT_WORDBREAK;
+        if (wnd->style & SS_NOPREFIX) /* an ampersand that means one */
+            fmt |= DT_NOPREFIX;
         if (!ween_menu_cues) /* as a control's mnemonic hides, so does a label's */
             fmt |= DT_HIDEPREFIX;
         switch (wnd->style & 0x03) {
@@ -3078,8 +3146,6 @@ static LRESULT static_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* Laid out in the whole label, not in whatever part of it was
          * damaged: where a line breaks is a property of the control's width,
          * so a repaint of half of it must not rewrap the words. */
-        RECT r;
-        GetClientRect(wnd, &r);
         DrawTextA(dc, wnd->text, -1, &r, fmt);
         EndPaint(wnd, &ps);
         return 0;

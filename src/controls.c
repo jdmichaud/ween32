@@ -426,6 +426,10 @@ int ween_wnd_sb_timer(struct ween_wnd *w)
 
 /* ---- SetScrollInfo and the rest ------------------------------------------ */
 
+/* The SCROLLBAR control's own range, page and position, which live in
+ * different fields from a window's two bars; defined with the control. */
+static ween_sbstate scroll_state(HWND wnd);
+
 static int sb_index(HWND wnd, int bar)
 {
     if (bar == SB_VERT)
@@ -445,6 +449,7 @@ int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw)
         return 0;
     i = sb_index(wnd, bar);
     if (i < 0) { /* SB_CTL: the SCROLLBAR control's own state */
+        ween_sbstate st;
         if (info->fMask & SIF_RANGE) {
             wnd->scroll_min = info->nMin;
             wnd->scroll_max = info->nMax;
@@ -453,6 +458,8 @@ int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw)
             wnd->scroll_page = (int)info->nPage;
         if (info->fMask & SIF_POS)
             wnd->scroll_pos = info->nPos;
+        st = scroll_state(wnd);
+        wnd->scroll_pos = sb_clamp(wnd->scroll_pos, &st);
         if (redraw)
             InvalidateRect(wnd, NULL, FALSE);
         return wnd->scroll_pos;
@@ -631,46 +638,6 @@ static void scroll_set(HWND wnd, int pos, int code)
         InvalidateRect(wnd, NULL, FALSE);
     }
     scroll_notify(wnd, code);
-}
-
-/* What a program puts in a scroll bar, and reads back out of it. A bar owns
- * no content: the range, the page and the position are the program's, and
- * this is how it hands them over. */
-int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *si, BOOL redraw)
-{
-    ween_sbstate st;
-    if (!wnd || !si || bar != SB_CTL)
-        return wnd ? wnd->scroll_pos : 0;
-    if (si->fMask & SIF_RANGE) {
-        wnd->scroll_min = si->nMin;
-        wnd->scroll_max = si->nMax;
-    }
-    if (si->fMask & SIF_PAGE)
-        wnd->scroll_page = (int)si->nPage;
-    if (si->fMask & SIF_POS)
-        wnd->scroll_pos = si->nPos;
-    st = scroll_state(wnd);
-    wnd->scroll_pos = sb_clamp(wnd->scroll_pos, &st);
-    if (redraw)
-        InvalidateRect(wnd, NULL, FALSE);
-    return wnd->scroll_pos;
-}
-
-BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si)
-{
-    if (!wnd || !si || bar != SB_CTL)
-        return FALSE;
-    if (si->fMask & SIF_RANGE) {
-        si->nMin = wnd->scroll_min;
-        si->nMax = wnd->scroll_max;
-    }
-    if (si->fMask & SIF_PAGE)
-        si->nPage = (UINT)wnd->scroll_page;
-    if (si->fMask & (SIF_POS | SIF_TRACKPOS)) {
-        si->nPos = wnd->scroll_pos;
-        si->nTrackPos = wnd->scroll_pos;
-    }
-    return TRUE;
 }
 
 static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
