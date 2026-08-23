@@ -33,6 +33,25 @@ pub const Drag = struct {
 
 pub var drag: Drag = .{};
 
+/// The free-form select's path, which is not a shape made of a few presses
+/// but every point the pointer went through while the button was down.
+pub const max_lasso = 1024;
+pub var lasso: [max_lasso]w.POINT = undefined;
+pub var lasso_n: usize = 0;
+
+pub fn lassoAdd(p: w.POINT) void {
+    if (lasso_n > 0 and lasso[lasso_n - 1].x == p.x and lasso[lasso_n - 1].y == p.y) return;
+    if (lasso_n == max_lasso) {
+        // out of room: thin what is there and carry on, so a long drag
+        // loses detail rather than its end
+        var i: usize = 0;
+        while (i * 2 + 1 < lasso_n) : (i += 1) lasso[i] = lasso[i * 2];
+        lasso_n = i;
+    }
+    lasso[lasso_n] = p;
+    lasso_n += 1;
+}
+
 /// The colour the outline is drawn in, and the one the inside is filled
 /// with: the foreground and the background, swapped for the right button.
 pub fn penColor() w.COLORREF {
@@ -109,6 +128,20 @@ fn fillRun(dc: w.HDC, x: i32, y: i32, len: i32, color: w.COLORREF) void {
 fn eraseAt(dc: w.HDC, x: i32, y: i32) void {
     const size: i32 = 4 + @as(i32, @intCast(A.option())) * 2;
     const r = w.RECT{ .left = x - @divTrunc(size, 2), .top = y - @divTrunc(size, 2), .right = x - @divTrunc(size, 2) + size, .bottom = y - @divTrunc(size, 2) + size };
+    if (drag.right) {
+        // The colour eraser: dragged with the right button it changes only
+        // the pixels that are the foreground colour, and changes them to the
+        // background one. Everything else it passes over untouched.
+        var py = r.top;
+        while (py < r.bottom) : (py += 1) {
+            var px = r.left;
+            while (px < r.right) : (px += 1) {
+                if (w.GetPixel(dc, px, py) == app.fg)
+                    _ = w.SetPixel(dc, px, py, app.bg);
+            }
+        }
+        return;
+    }
     const brush = w.CreateSolidBrush(fillColor()).?;
     _ = w.FillRect(dc, &r, brush);
     _ = w.DeleteObject(brush);
@@ -314,7 +347,21 @@ fn drawPolygon(dc: w.HDC) void {
 pub fn drawDrag(dc: w.HDC) void {
     if (!drag.active and drag.stage == 0 and drag.count == 0) return;
     switch (drag.tool) {
-        .select, .free_select => {
+        .free_select => {
+            // the lasso itself, inverted onto the picture, closed back to
+            // where it started as Paint closes it
+            if (lasso_n < 2) return;
+            const pen = w.CreatePen(w.PS_SOLID, 1, w.RGB(255, 255, 255)) orelse return;
+            const old = w.SelectObject(dc, pen);
+            const rop = w.SetROP2(dc, w.R2_NOT);
+            _ = w.Polyline(dc, &lasso, @intCast(lasso_n));
+            _ = w.MoveToEx(dc, lasso[lasso_n - 1].x, lasso[lasso_n - 1].y, null);
+            _ = w.LineTo(dc, lasso[0].x, lasso[0].y);
+            _ = w.SetROP2(dc, rop);
+            if (old) |o| _ = w.SelectObject(dc, o);
+            _ = w.DeleteObject(pen);
+        },
+        .select => {
             const r = dragRect();
             // the marching rectangle, drawn by inverting what is under it
             _ = w.DrawFocusRect(dc, &r);

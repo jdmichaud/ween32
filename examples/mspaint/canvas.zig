@@ -114,7 +114,11 @@ fn paint(hwnd: w.HWND) void {
         // the origin moves to the picture's, so the tools work in its
         // coordinates whichever context they are handed.
         _ = w.SetViewportOrgEx(dc, o.x, o.y, null);
-        selection.draw(dc);
+        selection.draw(dc, o);
+        if (sizing != null) {
+            var sr = size_rect;
+            _ = w.DrawFocusRect(dc, &sr);
+        }
         textbox.draw(dc, true);
         tools.drawDrag(dc);
         _ = w.SetViewportOrgEx(dc, 0, 0, null);
@@ -209,6 +213,13 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     // it down where it lies and starts a new one.
     if (app.tool == .select or app.tool == .free_select) {
         const s2 = &selection.sel;
+        // a press on one of the eight handles stretches it instead
+        if (selection.handleAt(p)) |h| {
+            sizing = h;
+            size_rect = s2.rect;
+            d.count = 0;
+            return;
+        }
         if (s2.live and p.x >= s2.rect.left and p.x < s2.rect.right and
             p.y >= s2.rect.top and p.y < s2.rect.bottom)
         {
@@ -218,6 +229,10 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
         }
         selection.drop();
         moving = false;
+        if (app.tool == .free_select) {
+            tools.lasso_n = 0;
+            tools.lassoAdd(p);
+        }
     }
 
     switch (app.tool) {
@@ -254,9 +269,25 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
 /// Whether the drag under way is moving a selection rather than making one.
 var moving = false;
 
+/// Which handle is being dragged, and what the selection would become.
+var sizing: ?usize = null;
+var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
+
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    if (sizing) |h| {
+        if (!d.active) return;
+        var r = selection.sel.rect;
+        // the edges the handle owns follow the pointer; the others stay
+        if (h % 3 == 0) r.left = @min(p.x, r.right - 1);
+        if (h % 3 == 2) r.right = @max(p.x + 1, r.left + 1);
+        if (h / 3 == 0) r.top = @min(p.y, r.bottom - 1);
+        if (h / 3 == 2) r.bottom = @max(p.y + 1, r.top + 1);
+        size_rect = r;
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        return;
+    }
     if (moving and d.active) {
         selection.moveBy(p.x - d.last.x, p.y - d.last.y);
         d.last = p;
@@ -274,6 +305,7 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     }
     d.shift = (wp & w.MK_SHIFT) != 0;
     d.cur = p;
+    if (d.tool == .free_select) tools.lassoAdd(p);
     switch (d.tool) {
         .pencil, .brush, .eraser, .airbrush => {
             tools.stroke(app.pic.dc, d.last, p);
@@ -293,6 +325,13 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     d.cur = toImage(lp);
     d.active = false;
     _ = w.ReleaseCapture();
+    if (sizing != null) {
+        sizing = null;
+        selection.resizeTo(size_rect);
+        d.* = .{};
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+        return;
+    }
     if (moving) {
         moving = false;
         d.* = .{};
@@ -326,15 +365,23 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
             if (d.count > 2 and @abs(d.cur.x - first.x) < 4 and @abs(d.cur.y - first.y) < 4)
                 commit();
         },
-        .select, .free_select => {
-            // a drag that went nowhere is a click, and clears the selection
+        .select => {
+            // A drag that went nowhere is a click, and clears the selection.
+            // Both ends are inside: dragging from 70 to 132 takes 63 columns,
+            // which is what the machine lifts.
             const r = w.RECT{
                 .left = @max(0, @min(d.start.x, d.cur.x)),
                 .top = @max(0, @min(d.start.y, d.cur.y)),
-                .right = @min(app.pic.width, @max(d.start.x, d.cur.x)),
-                .bottom = @min(app.pic.height, @max(d.start.y, d.cur.y)),
+                .right = @min(app.pic.width, @max(d.start.x, d.cur.x) + 1),
+                .bottom = @min(app.pic.height, @max(d.start.y, d.cur.y) + 1),
             };
             selection.take(r);
+            d.* = .{};
+        },
+        .free_select => {
+            tools.lassoAdd(d.cur);
+            selection.takeFreeForm(tools.lasso[0..tools.lasso_n]);
+            tools.lasso_n = 0;
             d.* = .{};
         },
         .text => {

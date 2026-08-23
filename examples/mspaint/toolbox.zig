@@ -14,6 +14,7 @@ const A = @import("app.zig");
 const art = @import("art_tools.zig");
 const artwork = @import("artwork.zig");
 const opts = @import("art_options.zig");
+const selection = @import("selection.zig");
 const app = &A.app;
 
 pub const class_name = "PaintToolBox";
@@ -193,6 +194,11 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             } else if (optionAt(x, y)) |o| {
                 A.setOption(o);
                 _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                if (app.tool == .select or app.tool == .free_select) {
+                    // a selection already up takes the new setting at once
+                    selection.rebuild();
+                    _ = w.InvalidateRect(app.view, null, w.FALSE);
+                }
             }
             return 0;
         },

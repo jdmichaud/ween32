@@ -17,7 +17,9 @@ difference left is ours.
     tools/mspaint/compare.py --keep "tool 10" "drag 80,120 120,159"
 
 Steps: `tool N` picks the Nth tool button, `option N` the Nth setting,
-`click X,Y`, `drag X,Y X,Y ...`, `key NAME`.
+`click X,Y`, `drag X,Y X,Y ...`, `key NAME`, `color N`/`bgcolor N` for the
+Nth palette square, and `rclick`/`rdrag` for a gesture with the right
+button.
 """
 import os
 import subprocess
@@ -37,6 +39,12 @@ VIEW = (66, 47, 187, 259)
 
 def tool_point(n):
     return (8 + (n % 2) * 25 + 12, 42 + (n // 2) * 25 + 12)
+
+
+def color_point(n):
+    """The middle of the nth palette square: fourteen across, two down, the
+    first at (35,331) in window coordinates."""
+    return (35 + 16 * (n % 14) + 8, 331 + 16 * (n // 14) + 8)
 
 
 # Which settings each tool offers, and where they sit — read out of the
@@ -87,7 +95,13 @@ def drive(*args):
 
 
 def grab(path):
-    drive("park", "sleep", "400", "shot", path, "0,0,275,400")
+    # The pointer leaves its last picture behind: when it goes off the
+    # window without anything invalidating the canvas, the guest does not
+    # paint over where it was, and a tool cursor -- the eraser's square, say
+    # -- is still sitting in the shot. So it is walked out over the status
+    # bar first, where a leftover lands outside the paper being compared.
+    drive("move", "150,385", "sleep", "200", "park", "sleep", "400",
+          "shot", path, "0,0,275,400")
     from PIL import Image
 
     return Image.open(path).convert("RGB")
@@ -102,9 +116,19 @@ def ink(im, bg=(255, 255, 255)):
 
 
 def clear_machine():
-    # the caption, not the canvas: a click on the canvas would draw
-    drive("click", "150,12", "sleep", "300", "key", "KeyN:ControlLeft+ShiftLeft",
-          "sleep", "600")
+    # the caption, not the canvas: a click on the canvas would draw.
+    # The two colours are put back as well: they outlive Clear Image, and a
+    # gesture that does not name them expects the black on white a fresh
+    # Paint starts with.
+    # the pencil first: picking another tool drops whatever selection is
+    # floating, and Clear Image on its own would leave it hanging over the
+    # fresh page
+    drive("click", "150,12", "sleep", "300",
+          "click", "%d,%d" % tool_point(6), "sleep", "300",
+          "key", "KeyN:ControlLeft+ShiftLeft",
+          "sleep", "600",
+          "click", "%d,%d" % color_point(0), "sleep", "200",
+          "rclick", "%d,%d" % color_point(14), "sleep", "200")
 
 
 def calibrate(points):
@@ -134,7 +158,7 @@ def parse(steps):
     for s in steps:
         parts = s.split()
         kind = parts[0]
-        if kind in ("tool", "option"):
+        if kind in ("tool", "option", "color", "bgcolor"):
             out.append((kind, [int(parts[1])]))
         elif kind == "key":
             out.append((kind, parts[1:]))
@@ -147,11 +171,15 @@ def main(argv):
     keep = "--keep" in argv
     steps = parse([a for a in argv if not a.startswith("--")])
 
-    # every point the gesture touches, so they can all be calibrated at once
+    # every point the gesture touches, so they can all be calibrated at once.
+    # The same point twice is one dot to read back, not two, so what is
+    # calibrated is the distinct set.
     pts = []
     for kind, args in steps:
-        if kind in ("click", "drag"):
-            pts += args
+        if kind in ("click", "drag", "rclick", "rdrag"):
+            for p in args:
+                if p not in pts:
+                    pts.append(p)
     tool_now = 6
     fixed = calibrate(pts) if pts else []
     real = dict(zip(pts, fixed))
@@ -171,10 +199,13 @@ def main(argv):
             p = option_point(tool_now, a[0])
             if p:
                 args += ["click", "%d,%d" % p, "sleep", "300"]
-        elif kind == "click":
-            args += ["click", "%d,%d" % a[0], "sleep", "300"]
-        elif kind == "drag":
-            args += ["drag"] + ["%d,%d" % p for p in a] + ["sleep", "400"]
+        elif kind in ("color", "bgcolor"):
+            args += ["rclick" if kind == "bgcolor" else "click",
+                     "%d,%d" % color_point(a[0]), "sleep", "300"]
+        elif kind in ("click", "rclick"):
+            args += [kind, "%d,%d" % a[0], "sleep", "300"]
+        elif kind in ("drag", "rdrag"):
+            args += [kind] + ["%d,%d" % p for p in a] + ["sleep", "400"]
         elif kind == "key":
             args += ["key", a[0], "sleep", "400"]
     drive(*args)
@@ -192,15 +223,23 @@ def main(argv):
             p = option_point(tool_now, a[0])
             if p:
                 script += ["d:%d,%d" % p, "u:%d,%d" % p, "w:50"]
-        elif kind == "click":
+        elif kind in ("color", "bgcolor"):
+            x, y = color_point(a[0])
+            d, u = ("D", "U") if kind == "bgcolor" else ("d", "u")
+            script += ["%s:%d,%d" % (d, x, y), "%s:%d,%d" % (u, x, y), "w:50"]
+        elif kind in ("click", "rclick"):
             x, y = real.get(a[0], a[0])
-            script += ["d:%d,%d" % (x, y), "u:%d,%d" % (x, y), "w:50"]
-        elif kind == "drag":
+            # the capitals are the right button, which is the eraser's
+            # second meaning and the shapes' swapped colours
+            down, up = ("D", "U") if kind == "rclick" else ("d", "u")
+            script += ["%s:%d,%d" % (down, x, y), "%s:%d,%d" % (up, x, y), "w:50"]
+        elif kind in ("drag", "rdrag"):
             ps = [real.get(p, p) for p in a]
-            script.append("d:%d,%d" % ps[0])
+            down, up = ("D", "U") if kind == "rdrag" else ("d", "u")
+            script.append("%s:%d,%d" % (down, ps[0][0], ps[0][1]))
             for p in ps[1:]:
                 script.append("m:%d,%d" % p)
-            script += ["u:%d,%d" % ps[-1], "w:50"]
+            script += ["%s:%d,%d" % (up, ps[-1][0], ps[-1][1]), "w:50"]
         elif kind == "key":
             script.append("k:%s" % a[0])
     env = dict(os.environ, WEEN32_HEADLESS="1", WEEN32_DPI="96",

@@ -300,4 +300,9 @@ pub fn option() u8 {
 
 pub fn setOption(v: u8) void {
     app.option[app.tool.index()] = v;
+    // The two selection tools share one setting: whether the background
+    // colour shows through is a property of the selection, not of how it
+    // was drawn round.
+    if (app.tool == .select) app.option[Tool.free_select.index()] = v;
+    if (app.tool == .free_select) app.option[Tool.select.index()] = v;
 }
