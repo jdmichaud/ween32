@@ -5618,9 +5618,27 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     /* The page below the tabs, in the plain raised edge a window frame wears
      * — outer line COLOR_3DLIGHT, which is face, and the white one inside it.
      * The soft edge a button wears would put the white a pixel out, which is
-     * a pixel the machine's tab control does not have. */
-    ween_classic_edge(&top->surface, ox, oy + body, r.right, r.bottom - body,
-                      EDGE_RAISED, BF_RECT, NULL);
+     * a pixel the machine's tab control does not have.
+     *
+     * Drawn here rather than through DrawEdge because a tab control lays the
+     * four sides down in an order of its own: the shadowed sides first and
+     * the lit ones over them, so the white top line keeps the corner where it
+     * meets the shadow at the top right, and the white left one keeps the
+     * corner at the bottom left. Every other frame in the window is the other
+     * way round, which is what DrawEdge draws. */
+    {
+        ween_surface *s = &top->surface;
+        int l = ox, t = oy + body, rr = ox + r.right - 1,
+            b = oy + r.bottom - 1;
+        ween_surface_hline(s, l, b, rr - l + 1, WEEN_DKSHADOW);
+        ween_surface_vline(s, rr, t, b - t + 1, WEEN_DKSHADOW);
+        ween_surface_hline(s, l, t, rr - l + 1, WEEN_FACE);
+        ween_surface_vline(s, l, t, b - t + 1, WEEN_FACE);
+        ween_surface_hline(s, l + 1, b - 1, rr - l - 1, WEEN_SHADOW);
+        ween_surface_vline(s, rr - 1, t + 1, b - t - 1, WEEN_SHADOW);
+        ween_surface_hline(s, l + 1, t + 1, rr - l - 1, WEEN_WHITE);
+        ween_surface_vline(s, l + 1, t + 1, b - t - 1, WEEN_WHITE);
+    }
 
     /* right to left, so each tab's dark edge covers the next one's white.
      * The first tab starts three in, so the selected one — which is drawn two
