@@ -291,6 +291,17 @@ Shortcuts the current code takes deliberately; each is a candidate task.
   machine disagree and the machine is right. Changing it moves every list
   box, combo box and status bar, so it wants its own pass with a sampler
   captured from the machine rather than from wine.
+- **A bordered edit starts its text two pixels short of the machine's** when
+  it is set in MS Sans Serif. Ours is wine's rule — half the average
+  character width, three for both faces ween32 has — and it puts Tahoma's
+  text exactly where wine does; the machine's Column Settings puts MS Sans
+  Serif's five in. No metric ween32 can compute tells the two faces apart
+  (both average six and top out at eleven), so the rule that yields both is
+  still unknown. 77 pixels of that dialog.
+- **Choose Columns offers eight columns where the machine's shell offers some
+  fifty.** The first eight are the machine's own, in its order, but the scroll
+  bar says how much is below them: 718 pixels of the dialog, and all of its
+  remaining difference that is not font or caption.
 - **Fixed caps still left**: eight columns in a list view, and 64 buttons in
   one group of option buttons. Window text, the class table and the message queue
   grow; a window may have any number of tab stops.
@@ -405,12 +416,19 @@ As with the tree the two configurations do not overlap, so the machine is
 followed.
 
 And the caption gradient is the fourth: it holds its start colour behind the
-icon, runs from there to three pixels before the leftmost caption button, and
-holds its end colour behind the buttons — measured on a window with three
-buttons, whose gradient reaches its end at x=596 of 654. Wine reserves one
-button's width whatever the window has, and both sampler windows have one
-button, so that case keeps wine's number: the machine has never been measured
-with a caption that has only a close box.
+icon, runs from there to two pixels before the leftmost caption button, and
+holds its end colour behind the buttons — measured first on a window with
+three buttons, whose gradient reaches its end at x=596 of 654, and then on the
+machine's Column Settings, which has only a close box and ends its ramp two
+pixels before it just the same. Wine ends it one pixel before, so both
+sampler windows — each with a single close box — now differ from their
+reference render across the whole caption strip: about 6620 pixels of
+`reference.png` and 3170 of `menu-reference.png`, and not a regression.
+
+The ramp is stepped in 16.16 from a step rounded down once, rather than
+divided per pixel. The two agree except where a channel would land exactly on
+an integer, and there the machine is a shade below; with it, all 305 pixels of
+that caption's gradient are the machine's.
 
 The caption's buttons are the fifth: their bevel is a soft edge — white on
 the outside of the top and left rather than a pixel in — and the three glyphs
