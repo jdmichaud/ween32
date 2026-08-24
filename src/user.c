@@ -874,9 +874,15 @@ BOOL ShowWindow(HWND wnd, int cmd)
     wnd->visible = cmd != SW_HIDE;
     /* A window of its own is put on the screen or taken off it; a child is
      * only a rectangle in its parent's, and repainting is the whole of it. */
-    if (!wnd->parent && wnd->backend_win && ween_active_backend &&
-        ween_active_backend->show)
-        ween_active_backend->show(wnd->backend_win, wnd->visible);
+    if (!wnd->parent && wnd->backend_win && ween_active_backend) {
+        /* Told before it goes up, not after: a window manager decides where
+         * the keyboard goes at the moment it puts a window on the screen. */
+        if (wnd->visible && (cmd == SW_SHOWNA || cmd == SW_SHOWNOACTIVATE) &&
+            ween_active_backend->no_activate)
+            ween_active_backend->no_activate(wnd->backend_win);
+        if (ween_active_backend->show)
+            ween_active_backend->show(wnd->backend_win, wnd->visible);
+    }
     /* Showing a window of its own is what makes it the active one — that is
      * where a dialog gets the keyboard from. The two commands that say "and
      * do not activate it" are how a palette is floated over the window being
@@ -2893,12 +2899,13 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
             if (!target)
                 continue;
             /* What a window is sent is not what makes it the active one. A
-             * repaint or the pointer crossing it changes nothing; a press or
-             * a key is a person turning to it, and that does. Without the
-             * distinction a palette floated over a picture came up active
-             * the moment it was first painted, and wore the blue caption
-             * while the picture under it was being typed into. */
-            if ((ev.kind == WEEN_EV_MOUSE_DOWN || ev.kind == WEEN_EV_KEY) &&
+             * press is a person turning to it, and that does; a repaint, the
+             * pointer crossing it, or a key are none of them. A key least of
+             * all: it arrives at whatever window the window system thinks
+             * has the keyboard, and a palette it handed the keyboard to on
+             * its own account must not take the typing away from the window
+             * being worked in. Where a key goes is settled here, not there. */
+            if (ev.kind == WEEN_EV_MOUSE_DOWN &&
                 !(target->ex_style & WS_EX_NOACTIVATE)) {
                 ween_set_active(target);
                 if (!g_focus || ween_top_level(g_focus) != target)

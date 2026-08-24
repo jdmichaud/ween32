@@ -551,6 +551,29 @@ static void x11_set_owner(void *win, void *owner, int dialog)
     XFlush(g_dpy);
 }
 
+/* Ask the window manager not to give this window the keyboard when it goes
+ * up. _NET_WM_USER_TIME is when a window last had a person's attention, and
+ * zero is the value that says "never": a window manager reading it knows
+ * this one was not put up in answer to anything and leaves the keyboard
+ * where it was. It has to be there before the map, which is why this is a
+ * call of its own rather than part of showing.
+ *
+ * A window manager that ignores it is not the end of the matter -- where a
+ * key goes is settled by the library, not by which window the key arrived
+ * on -- but the caption then reads active when it should not. */
+static void x11_no_activate(void *win)
+{
+    x11_win *xw = win;
+    XAtom user_time;
+    long zero = 0;
+    if (!xw || !g_dpy)
+        return;
+    user_time = XInternAtom(g_dpy, "_NET_WM_USER_TIME", 0);
+    XChangeProperty(g_dpy, xw->win, user_time, 6 /* XA_CARDINAL */, 32, 0,
+                    &zero, 1);
+    XFlush(g_dpy);
+}
+
 static void x11_screen_size(int *w, int *h)
 {
     if (!g_dpy)
@@ -941,6 +964,7 @@ const ween_backend *ween_backend_x11(void)
                                     .set_resizable = x11_set_resizable,
                                     .show = x11_show,
                                     .set_cursor = x11_set_cursor,
+                                    .no_activate = x11_no_activate,
                                     .set_owner = x11_set_owner,
                                     .screen_size = x11_screen_size,
                                     .origin = x11_origin,

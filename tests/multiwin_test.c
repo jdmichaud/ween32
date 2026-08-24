@@ -94,9 +94,24 @@ int main(void)
     ev.y = WEEN_NC_FRAME + WEEN_NC_CAPTION + 20;
     ween_headless_inject(ev);
 
+    /* A key arriving on a window does not make it the active one. Which
+     * window a key arrives on is the window system's business -- a window
+     * manager hands a palette the keyboard the moment it puts it up -- and
+     * where the key goes is settled here, by what the library holds to be
+     * active. The press above made the second window active; a key on the
+     * first has to leave it that way. */
+    ev.kind = WEEN_EV_KEY;
+    ev.win = a->backend_win;
+    ev.vk = 'A';
+    ev.ch = 'a';
+    ween_headless_inject(ev);
+
     MSG msg;
     while (GetMessageA(&msg, NULL, 0, 0))
         DispatchMessageA(&msg);
+
+    CHECK(GetActiveWindow() == b,
+          "a key on the other window leaves the active one where it was");
 
     CHECK(g_painted_a > 0, "the first window painted");
     CHECK(g_painted_b > 0, "the second window painted as well");

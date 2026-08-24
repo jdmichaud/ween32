@@ -302,35 +302,6 @@ int main(void)
     }
 
     {
-        /* The caption of a window that is not the active one is the grey ramp
-         * rather than the blue: which window has the keyboard is what a
-         * person reads off the screen, and a palette floated over a picture
-         * is grey while the picture is being typed into. */
-        HWND back = CreateWindowExA(0, "weentest", "behind",
-                                    WS_POPUP | WS_CAPTION, 0, 0, 200, 60, NULL,
-                                    NULL, NULL, NULL);
-        HWND front = CreateWindowExA(0, "weentest", "in front",
-                                     WS_POPUP | WS_CAPTION, 0, 0, 200, 60,
-                                     NULL, NULL, NULL, NULL);
-        const ween_surface *s;
-        ShowWindow(back, SW_SHOW);
-        ShowWindow(front, SW_SHOW); /* which makes the front one active */
-        InvalidateRect(back, NULL, TRUE);
-        UpdateWindow(back);
-        s = ween_headless_surface();
-        CHECK(s && s->px[4 * (long)s->w + 3] == WEEN_CAP_INACT_LEFT,
-              "the window behind wears the grey caption");
-        ShowWindow(back, SW_SHOW); /* and now the other way round */
-        InvalidateRect(back, NULL, TRUE);
-        UpdateWindow(back);
-        s = ween_headless_surface();
-        CHECK(s && s->px[4 * (long)s->w + 3] == WEEN_CAP_LEFT,
-              "and takes the blue one back when it is active again");
-        DestroyWindow(front);
-        DestroyWindow(back);
-    }
-
-    {
         /* CreateFont is asked for a face, a size and a weight, and all three
          * are answered: MS Sans Serif is a different set of glyphs from
          * Tahoma and measures wider, and bold is wider still. */

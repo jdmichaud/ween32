@@ -697,6 +697,13 @@ typedef struct {
      * picture of its own when `custom` is not null -- in which case `shape`
      * is what to fall back to. */
     void (*set_cursor)(void *win, int shape, const ween_cursor *custom);
+    /* Say that this window is not to be given the keyboard when it appears.
+     * A palette floated over the window being worked in is put up this way:
+     * the window manager decides who has the keyboard, and one that is not
+     * told will hand it to whatever it has just put on the screen -- and the
+     * typing that was meant for the picture underneath goes into the palette
+     * instead. May be NULL. */
+    void (*no_activate)(void *win);
     /* Whose window this one belongs to, and whether it is a dialog. A
      * window manager that is told neither has no reason to treat a modal box
      * differently from an application's main window: a tiling one gives it a
