@@ -1333,6 +1333,21 @@ int main(void)
                 then_top = y;
         CHECK(then_top > first_top,
               "and moving over the next one moves the highlight to it");
+
+        /* A list opened by a press stays open when the button comes up,
+         * even if the pointer stirred in between. It is one click: the
+         * pointer never keeps perfectly still between the press and the
+         * release, and a list that shut itself the moment it opened was
+         * unusable. */
+        SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(140, 8));
+        SendMessageA(cb, WM_LBUTTONDOWN, 0, MAKELPARAM(140, 8));
+        SendMessageA(cb, WM_MOUSEMOVE, 0, MAKELPARAM(141, 9));
+        SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(141, 9));
+        memset(&cbi, 0, sizeof(cbi));
+        cbi.cbSize = sizeof(cbi);
+        GetComboBoxInfo(cb, &cbi);
+        CHECK(cbi.hwndList != NULL,
+              "a twitch of the pointer between press and release leaves it up");
         DestroyWindow(cw);
     }
 

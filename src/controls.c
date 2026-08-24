@@ -2567,12 +2567,20 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         if (it) {
-            int at = sy >= 0 && sy < ph - 2 ? it->top + sy / (ih ? ih : 1) : -1;
+            int on_list = sy >= 0 && sy < ph - 2;
+            int at = on_list ? it->top + sy / (ih ? ih : 1) : -1;
             if (at >= it->count)
                 at = -1;
-            if (at != it->track) {
+            /* Off the list the highlight stays where it was: what the pointer
+             * is over out there is no item, not none, and the list is not
+             * about to be closed by it either. Only a move onto the list
+             * makes this a drag, and a drag is what commits on release --
+             * without that distinction the smallest stir of the pointer
+             * between the press and the release shut the list again, which
+             * is a click, and which happened often enough to be unusable. */
+            if (at >= 0 && at != it->track) {
                 it->track = at;
-                it->opened = 0; /* a drag into the list commits on release */
+                it->opened = 0;
                 combo_damage(wnd);
             }
         }
