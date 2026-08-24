@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **491 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **514 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -467,6 +467,38 @@ about this dialog at all:
   without going near a menu, and the machine's has them.
 
 Two of those move pixels in the wine samplers, deliberately: see below.
+
+#### The tips
+
+Rest the pointer on a toolbar button that is a picture and nothing else and the
+machine names it in a little pale-yellow window; rest it on a name the columns
+have cut short and the whole name appears in the place it was drawn. Both are
+the same box, and both are measured off the machine:
+
+| what | the machine's | how it was read |
+| --- | --- | --- |
+| the box | 1px black line, `COLOR_INFOBK` inside, 17 tall | a capture of "Delete" and one of "Copy To" |
+| its width | the words as they draw, and six | 31 → 37 and 40 → 46 |
+| the words | three in from the line, two down | the same two |
+| a button's tip | at the pointer, 21 pixels down | the pointer's own position in the shot |
+| against the right edge | pushed left, one column of screen kept clear | a button at x 1013 whose tip starts at 986 |
+| a name's tip | over the name, so the full one lands where the short one was | the list unfolding "Documents and S..." |
+| how long | about half a second to show | four shots at 0.5, 0.8, 1.2 and 2.0 seconds |
+
+A button that wears its own label gets none: hovering Search or Folders on the
+machine shows nothing where hovering Delete or Views shows a tip.
+
+Counted against the machine's own capture, our "Delete" tip differs by **one
+pixel of 629** — and that one is a colour the machine quantised.
+
+The tips are driven from a script the same way anything else is:
+
+```sh
+# rest on the Delete button; the 37x17 frame is the tip
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/tp%d.bmp \
+  WEEN32_SCRIPT="w:400 m:300,60 w:200 m:395,60 w:900" ./examples/explorer
+```
 
 #### The bars that can be put away
 
