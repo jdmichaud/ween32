@@ -101,6 +101,8 @@ var page_sizing: ?u8 = null;
 /// its border — which is how the machine's is moved and resized.
 var box_handle: ?usize = null;
 var box_carry: ?w.POINT = null;
+/// A drag through the letters, which picks out the run it passes over.
+var box_pick = false;
 var page_size: w.POINT = .{ .x = 0, .y = 0 };
 
 const page_handle = struct {
@@ -346,8 +348,12 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
         }
         const r = textbox.box.rect;
         if (p.x >= r.left and p.x < r.right and p.y >= r.top and p.y < r.bottom) {
+            // Shift keeps the far end where it is, so a press picks out
+            // everything between there and here -- as it does in a field.
             const dc = w.GetDC(hwnd).?;
-            textbox.place(p, dc);
+            textbox.place(p, dc, (wp & w.MK_SHIFT) != 0);
+            box_pick = true;
+            _ = w.SetCapture(hwnd);
             _ = w.ReleaseDC(hwnd, dc);
             invalidateBox(hwnd);
             return;
@@ -440,6 +446,13 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
         invalidateBox(hwnd);
         textbox.moveBy(p.x - from.x, p.y - from.y);
         box_carry = p;
+        invalidateBox(hwnd);
+        return;
+    }
+    if (box_pick) {
+        const dc = w.GetDC(hwnd).?;
+        textbox.place(p, dc, true);
+        _ = w.ReleaseDC(hwnd, dc);
         invalidateBox(hwnd);
         return;
     }
@@ -597,9 +610,10 @@ const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
-    if (box_handle != null or box_carry != null) {
+    if (box_handle != null or box_carry != null or box_pick) {
         box_handle = null;
         box_carry = null;
+        box_pick = false;
         _ = w.ReleaseCapture();
         invalidateBox(hwnd);
         return;
@@ -726,6 +740,25 @@ fn setCursor(hwnd: w.HWND) void {
         if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0)
             h = liveHandleAt(pt);
     }
+    // Over an open text box the pointer is the one for choosing letters,
+    // which is what says the box can be typed in and picked through.
+    if (textbox.active()) {
+        var pt: w.POINT = undefined;
+        if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0) {
+            const o = pageOrigin();
+            const ip = w.POINT{
+                .x = @divFloor(pt.x - o.x, app.zoom),
+                .y = @divFloor(pt.y - o.y, app.zoom),
+            };
+            const r = textbox.box.rect;
+            if (textbox.handleAt(ip) == null and !textbox.onBorder(ip) and
+                ip.x >= r.left and ip.x < r.right and ip.y >= r.top and ip.y < r.bottom)
+            {
+                _ = w.SetCursor(w.LoadCursorA(null, w.IDC_IBEAM));
+                return;
+            }
+        }
+    }
     if (h) |which| {
         const shape = switch (which) {
             page_handle.right => w.IDC_SIZEWE,
@@ -776,7 +809,8 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             // typed, and Delete takes out the character in front of it.
             if (textbox.active()) {
                 const dc = w.GetDC(hwnd).?;
-                const took = textbox.key(@intCast(wp), dc);
+                const shift = w.GetKeyState(w.VK_SHIFT) < 0;
+                const took = textbox.key(@intCast(wp), shift, dc);
                 _ = w.ReleaseDC(hwnd, dc);
                 if (took) {
                     invalidateBox(hwnd);
@@ -800,6 +834,18 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             return w.DefWindowProcA(hwnd, msg, wp, lp);
         },
         w.WM_LBUTTONDBLCLK => {
+            // in a text box, a double press picks out the word under it
+            if (textbox.active()) {
+                const p = toImage(lp);
+                const r = textbox.box.rect;
+                if (p.x >= r.left and p.x < r.right and p.y >= r.top and p.y < r.bottom) {
+                    const dc = w.GetDC(hwnd).?;
+                    textbox.selectWord(p, dc);
+                    _ = w.ReleaseDC(hwnd, dc);
+                    invalidateBox(hwnd);
+                    return 0;
+                }
+            }
             // A double click ends a polygon, wherever it lands: the click
             // before it has already put its point down, so what is left is
             // to close the shape and draw it.

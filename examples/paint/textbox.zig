@@ -30,6 +30,9 @@ pub const State = struct {
     /// Where the next letter goes, counted in characters from the start —
     /// the machine's box is a field you can walk back into, not a tape.
     caret: usize = 0,
+    /// The other end of what is picked out. Equal to the caret when nothing
+    /// is: a run is what lies between the two, either way round.
+    anchor: usize = 0,
     caret_on: bool = true,
 };
 
@@ -86,6 +89,7 @@ pub fn start(r: w.RECT) void {
     box = .{ .open = true, .rect = r };
     box.len = 0;
     box.caret = 0;
+    box.anchor = 0;
     box.caret_on = true;
     // the machine floats its Fonts bar the moment there is a box to letter
     fontbar.show();
@@ -96,7 +100,9 @@ pub fn start(r: w.RECT) void {
 pub fn typed(ch: u8) void {
     if (!box.open) return;
     if (ch == 8) {
-        if (box.caret > 0) {
+        if (hasSelection()) {
+            removeSelection();
+        } else if (box.caret > 0) {
             remove(box.caret - 1);
             box.caret -= 1;
         }
@@ -112,14 +118,37 @@ pub fn typed(ch: u8) void {
     // reaching here would come out as a hollow box, which is what a menu
     // shortcut used to leave behind.
     if (ch < ' ' and ch != '\r' and ch != '\n') return;
+    // what is picked out is what the letter replaces
+    if (hasSelection()) removeSelection();
     if (box.len + 1 < box.text.len) {
         var i = box.len;
         while (i > box.caret) : (i -= 1) box.text[i] = box.text[i - 1];
         box.text[box.caret] = ch;
         box.len += 1;
         box.caret += 1;
+        box.anchor = box.caret;
     }
     box.caret_on = true;
+}
+
+/// What is picked out, low end first; the two are equal when nothing is.
+pub fn selection() struct { from: usize, to: usize } {
+    const a = @min(box.anchor, box.caret);
+    const b = @max(box.anchor, box.caret);
+    return .{ .from = a, .to = b };
+}
+
+pub fn hasSelection() bool {
+    return box.anchor != box.caret;
+}
+
+/// Take out the run that is picked, and leave the caret where it was.
+fn removeSelection() void {
+    const sel = selection();
+    var i = sel.from;
+    while (i < sel.to) : (i += 1) remove(sel.from);
+    box.caret = sel.from;
+    box.anchor = sel.from;
 }
 
 /// Take out the character at `at`, closing the gap after it.
@@ -132,21 +161,31 @@ fn remove(at: usize) void {
 
 /// The keys that are not letters: the arrows walk the caret, Home and End go
 /// to the ends of the line it is on, Delete takes out what is in front of it.
-pub fn key(vk: i32, dc: w.HDC) bool {
+/// Held with Shift, the walking keys drag the far end of a picked-out run
+/// behind them instead of collapsing it, which is how a field works.
+pub fn key(vk: i32, shift: bool, dc: w.HDC) bool {
     if (!box.open) return false;
     var lines: [64]Line = undefined;
     const n = measure(dc, &lines);
     const row = lineOf(lines[0..n], box.caret);
     switch (vk) {
-        w.VK_LEFT => if (box.caret > 0) {
+        w.VK_LEFT => if (hasSelection() and !shift) {
+            box.caret = selection().from;
+        } else if (box.caret > 0) {
             box.caret -= 1;
         },
-        w.VK_RIGHT => if (box.caret < box.len) {
+        w.VK_RIGHT => if (hasSelection() and !shift) {
+            box.caret = selection().to;
+        } else if (box.caret < box.len) {
             box.caret += 1;
         },
         w.VK_HOME => box.caret = lines[row].from,
         w.VK_END => box.caret = lines[row].to,
-        w.VK_DELETE => remove(box.caret),
+        w.VK_DELETE => if (hasSelection()) {
+            removeSelection();
+        } else {
+            remove(box.caret);
+        },
         w.VK_UP, w.VK_DOWN => {
             // the same many characters along, on the line above or below
             const want = box.caret - lines[row].from;
@@ -158,6 +197,9 @@ pub fn key(vk: i32, dc: w.HDC) bool {
         },
         else => return false,
     }
+    // Shift leaves the other end where it was; anything else brings it along,
+    // which is what makes the run go away when you simply walk off it.
+    if (!shift) box.anchor = box.caret;
     box.caret_on = true;
     return true;
 }
@@ -183,8 +225,9 @@ fn measure(dc: w.HDC, out: *[64]Line) usize {
 }
 
 /// A press inside the box puts the caret where it landed: the line under the
-/// pointer, and the character its middle is nearest.
-pub fn place(p: w.POINT, dc: w.HDC) void {
+/// pointer, and the character its middle is nearest. Dragging moves only the
+/// caret, so what lies between it and where the press was is picked out.
+pub fn place(p: w.POINT, dc: w.HDC, dragging: bool) void {
     if (!box.open) return;
     const old_font = w.SelectObject(dc, textFont());
     defer if (old_font) |o| {
@@ -195,6 +238,7 @@ pub fn place(p: w.POINT, dc: w.HDC) void {
     const n = layout(dc, in.right - in.left, &lines);
     if (n == 0) {
         box.caret = 0;
+        if (!dragging) box.anchor = 0;
         return;
     }
     const height = lineHeight(dc);
@@ -211,6 +255,7 @@ pub fn place(p: w.POINT, dc: w.HDC) void {
         if (in.left + @divTrunc(before + upto, 2) > p.x) break;
     }
     box.caret = at;
+    if (!dragging) box.anchor = at;
     box.caret_on = true;
 }
 
@@ -273,6 +318,29 @@ fn layout(dc: w.HDC, room: i32, out: *[64]Line) usize {
     return lines;
 }
 
+/// A double press picks out the word under it, as it does in a field: the
+/// run of letters and digits the caret landed in, or the run of anything
+/// else when it landed between words.
+pub fn selectWord(p: w.POINT, dc: w.HDC) void {
+    if (!box.open) return;
+    place(p, dc, false);
+    if (box.len == 0) return;
+    const at = @min(box.caret, box.len - 1);
+    const word = isWord(box.text[at]);
+    var from = at;
+    while (from > 0 and isWord(box.text[from - 1]) == word) from -= 1;
+    var to = at;
+    while (to < box.len and isWord(box.text[to]) == word) to += 1;
+    box.anchor = from;
+    box.caret = to;
+    box.caret_on = true;
+}
+
+fn isWord(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or c == '_';
+}
+
 /// The box grows down to hold what has been typed: the machine's never hides
 /// a line, it lengthens the box under it instead. Says whether it changed,
 /// so that what has to be painted again can be.
@@ -315,11 +383,37 @@ pub fn draw(dc: w.HDC, with_border: bool) void {
     const n = layout(dc, in.right - in.left, &lines);
     const prev = w.SetTextColor(dc, app.fg);
     _ = w.SetBkMode(dc, w.TRANSPARENT);
+    const sel = selection();
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        const line = box.text[lines[i].from..lines[i].to];
+        const from = lines[i].from;
+        const to = lines[i].to;
+        const y = in.top + @as(i32, @intCast(i)) * height;
+        const line = box.text[from..to];
+        // The run that is picked out is lettered white on the highlight
+        // navy, the way a field shows one -- and only while the box is open,
+        // since what goes into the picture is the text alone.
+        if (with_border and sel.to > sel.from and sel.to > from and sel.from < to) {
+            const a = @max(sel.from, from);
+            const b = @min(sel.to, to);
+            const x0 = in.left + widthOf(dc, box.text[from..a]);
+            const x1 = in.left + widthOf(dc, box.text[from..b]);
+            const brush = w.CreateSolidBrush(navy).?;
+            var bar = w.RECT{ .left = x0, .top = y, .right = x1, .bottom = y + height };
+            _ = w.FillRect(dc, &bar, brush);
+            _ = w.DeleteObject(brush);
+            if (a > from)
+                _ = w.TextOutA(dc, in.left, y, box.text[from..a].ptr, @intCast(a - from));
+            _ = w.SetTextColor(dc, w.RGB(255, 255, 255));
+            if (b > a)
+                _ = w.TextOutA(dc, x0, y, box.text[a..b].ptr, @intCast(b - a));
+            _ = w.SetTextColor(dc, app.fg);
+            if (to > b)
+                _ = w.TextOutA(dc, x1, y, box.text[b..to].ptr, @intCast(to - b));
+            continue;
+        }
         if (line.len > 0)
-            _ = w.TextOutA(dc, in.left, in.top + @as(i32, @intCast(i)) * height, line.ptr, @intCast(line.len));
+            _ = w.TextOutA(dc, in.left, y, line.ptr, @intCast(line.len));
     }
     _ = w.SetTextColor(dc, prev);
 
