@@ -66,18 +66,29 @@ pub fn canRedo() bool {
     return redo.used;
 }
 
+/// Put a picture back, size and all.
+///
+/// The size matters as much as the pixels: Attributes, Stretch/Skew and a
+/// drag of the page's corner all change it, and an undo that put the old
+/// pixels into a picture still the new size left the page the wrong shape
+/// with its old contents in the corner.
+fn restore(s: *const Snapshot) void {
+    if (s.width != app.pic.width or s.height != app.pic.height)
+        app.pic.resize(s.width, s.height, app.bg);
+    _ = w.BitBlt(app.pic.dc, 0, 0, s.width, s.height, s.dc, 0, 0, w.SRCCOPY);
+}
+
 pub fn undo() void {
     if (count == 0) return;
     capture(&redo);
     count -= 1;
-    const s = &stack[count];
-    _ = w.BitBlt(app.pic.dc, 0, 0, s.width, s.height, s.dc, 0, 0, w.SRCCOPY);
+    restore(&stack[count]);
 }
 
 pub fn repeat() void {
     if (!redo.used) return;
     take();
-    _ = w.BitBlt(app.pic.dc, 0, 0, redo.width, redo.height, redo.dc, 0, 0, w.SRCCOPY);
+    restore(&redo);
 }
 
 /// A new picture has nothing behind it.

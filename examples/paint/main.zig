@@ -411,10 +411,12 @@ fn command(id: u16) void {
         ID.file_exit => _ = w.SendMessageA(app.frame, w.WM_CLOSE, 0, 0),
 
         ID.edit_undo => {
+            selection.cancel(); // the picture that comes back has none
             undo.undo();
             refresh();
         },
         ID.edit_repeat => {
+            selection.cancel();
             undo.repeat();
             refresh();
         },

@@ -213,6 +213,18 @@ pub fn drop() void {
     sel.lifted = false;
 }
 
+/// Throw the floating pixels away without putting them down.
+///
+/// Undo does this: what it restores is a picture with no selection in it, and
+/// the machine leaves none hanging over it either -- move a selection, press
+/// Ctrl+Z, and the pixels are back where they were with nothing at the place
+/// they had been dragged to.
+pub fn cancel() void {
+    if (sel.live) free();
+    sel.live = false;
+    sel.lifted = false;
+}
+
 fn free() void {
     _ = w.DeleteDC(sel.dc);
     _ = w.DeleteObject(sel.bmp);
