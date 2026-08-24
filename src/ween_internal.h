@@ -339,6 +339,10 @@ typedef struct {
 } ween_lv_view;
 
 void ween_listview_view(HWND w, ween_lv_view *out);
+/* The window a view shows a name too long for its room in, for a test to look
+ * at; NULL until one has been needed. */
+HWND ween_listview_tip(HWND w);
+HWND ween_treeview_tip(HWND w);
 
 int ween_menu_bar_height(const struct ween_wnd *w);
 int ween_menu_key(HWND top, unsigned vk, unsigned ch); /* Alt / Alt+letter */

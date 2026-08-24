@@ -224,6 +224,56 @@ int main(void)
         CHECK(g_returns == 1, "and says nothing when nothing is picked");
     }
 
+    /* A name too long for its column says itself in full when the pointer
+     * rests on it: a tip in the same clothes as a button's, put over the name
+     * rather than under the pointer — the machine's list does this, and its
+     * tree does it too. */
+    {
+        LVITEMA it;
+        RECT row, tr;
+        POINT origin;
+        HWND tip;
+        const ween_strike *f = ween_gui_font();
+        const char *longname = "a name far too long for the column it is in";
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT;
+        it.iItem = 0;
+        it.pszText = (char *)longname;
+        SendMessageA(g_list, LVM_SETITEMTEXTA, 0, (LPARAM)&it);
+        SendMessageA(g_list, WM_KEYDOWN, VK_HOME, 0);
+
+        row.left = LVIR_BOUNDS;
+        SendMessageA(g_list, LVM_GETITEMRECT, 0, (LPARAM)&row);
+        SendMessageA(g_list, WM_MOUSEMOVE, 0,
+                     MAKELPARAM(20, (row.top + row.bottom) / 2));
+        SendMessageA(g_list, WM_TIMER, 0x7e01, 0);
+        origin.x = 0;
+        origin.y = 0;
+        ClientToScreen(g_list, &origin);
+        tip = ween_listview_tip(g_list);
+        CHECK(tip != NULL && IsWindowVisible(tip),
+              "a name cut short by its column shows itself in full");
+        if (tip) {
+            GetWindowRect(tip, &tr);
+            CHECK(tr.bottom - tr.top == 17, "the tip is seventeen tall");
+            CHECK(tr.right - tr.left ==
+                      ween_strike_text_width(f, longname,
+                                             (int)strlen(longname)) + 6,
+                  "and as wide as the whole name and six");
+            CHECK(tr.top == origin.y + row.top,
+                  "it sits on the row it is about");
+        }
+        /* a name that fits needs none */
+        it.pszText = (char *)"short";
+        SendMessageA(g_list, LVM_SETITEMTEXTA, 0, (LPARAM)&it);
+        SendMessageA(g_list, WM_MOUSEMOVE, 0, MAKELPARAM(200, row.top + 2));
+        SendMessageA(g_list, WM_MOUSEMOVE, 0,
+                     MAKELPARAM(20, (row.top + row.bottom) / 2));
+        SendMessageA(g_list, WM_TIMER, 0x7e01, 0);
+        CHECK(!IsWindowVisible(ween_listview_tip(g_list)),
+              "and one that fits shows none");
+    }
+
     /* The bar down the right, driven by clicking it rather than by the wheel.
      * The wheel goes through the clamp and always lands somewhere sane; the
      * bar goes through win32's arithmetic, where nMax is the last row and a
@@ -355,6 +405,40 @@ int main(void)
         CHECK(g_expandings == 1, "opening what is already open asks nothing");
         SendMessageA(g_tree, TVM_EXPAND, TVE_COLLAPSE, (LPARAM)lazy);
         CHECK(g_expandings == 2, "and closing it is a change worth telling");
+
+        /* A name the pane cuts short says itself in full here too. */
+        {
+            HTREEITEM longone;
+            RECT tr;
+            TVHITTESTINFO hi;
+            const char *name = "a folder whose name is far wider than this pane";
+            SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
+            longone = add_node(NULL, name);
+            add_node(NULL, "short");
+            memset(&hi, 0, sizeof(hi));
+            hi.pt.x = 30;
+            hi.pt.y = 8;
+            CHECK((HTREEITEM)SendMessageA(g_tree, TVM_HITTEST, 0, (LPARAM)&hi) ==
+                      longone,
+                  "the long name is the item at the top of the tree");
+            SendMessageA(g_tree, WM_MOUSEMOVE, 0, MAKELPARAM(30, 8));
+            SendMessageA(g_tree, WM_TIMER, 0x7e01, 0);
+            CHECK(ween_treeview_tip(g_tree) &&
+                      IsWindowVisible(ween_treeview_tip(g_tree)),
+                  "a name the pane cuts short shows itself in full");
+            GetWindowRect(ween_treeview_tip(g_tree), &tr);
+            CHECK(tr.bottom - tr.top == 17, "in a tip seventeen tall");
+            CHECK(tr.right - tr.left ==
+                      ween_strike_text_width(ween_gui_font(), name,
+                                             (int)strlen(name)) + 6,
+                  "as wide as the whole name and six");
+            /* and the one that fits gets none */
+            SendMessageA(g_tree, WM_MOUSEMOVE, 0, MAKELPARAM(30, 8 + 16));
+            SendMessageA(g_tree, WM_TIMER, 0x7e01, 0);
+            CHECK(!IsWindowVisible(ween_treeview_tip(g_tree)),
+                  "and a name that fits shows none");
+            SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
+        }
 
         /* Where an item goes among its brothers and sisters. TVI_SORT is
          * what a folder tree is built with: a directory hands its names back

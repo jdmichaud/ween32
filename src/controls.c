@@ -2759,6 +2759,129 @@ static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 }
 
+/* ---- the tip a button shows when the pointer rests on it -------------------
+ *
+ * A window of its own, which is what win32 makes it: pale yellow, a black
+ * line round it, the shell's face inside, and no frame of any kind. It is
+ * measured off the machine's own — a tip saying "Copy To" is forty-six by
+ * seventeen with its text three in and two down, which is the text's own
+ * width and three.
+ *
+ * Where it goes is measured off the machine too: its top left corner is the
+ * pointer's own, twenty-one pixels down — the height of the arrow, so the tip
+ * sits under the pointer rather than beneath what it is pointing at. Against
+ * the right edge of the screen it is pushed left to fit, and against the
+ * bottom it goes above the pointer instead.
+ */
+/* How long the pointer has to rest before a tip shows, and how long it then
+ * stays: win32's own defaults, which is what the machine waits and shows. */
+#define WEEN_TIP_WAIT 500
+#define WEEN_TIP_STAY 5000
+#define WEEN_TIP_TIMER 0x7e01
+#define WEEN_TIP_GONE 0x7e02
+
+#define WEEN_TIP_PAD_X 3 /* the text's left edge, past the line */
+#define WEEN_TIP_PAD_Y 2
+#define WEEN_TIP_DROP 21 /* how far below the pointer the corner sits */
+#define WEEN_TIP_EDGE 1  /* the column it keeps clear of the screen's edge */
+
+static LRESULT CALLBACK tooltip_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        struct ween_wnd *top = ween_top_level(wnd);
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        RECT r;
+        int ox, oy;
+        BeginPaint(wnd, &ps);
+        GetClientRect(wnd, &r);
+        ween_client_origin(wnd, &ox, &oy);
+        ween_surface_fill(&top->surface, ox, oy, r.right, r.bottom,
+                          ween_cr_to_px(GetSysColor(COLOR_INFOBK)));
+        ween_surface_rect(&top->surface, ox, oy, r.right, r.bottom,
+                          ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
+        if (f && wnd->text)
+            ween_strike_draw(f, &top->surface, ox + WEEN_TIP_PAD_X,
+                             oy + WEEN_TIP_PAD_Y, wnd->text,
+                             (int)strlen(wnd->text),
+                             ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TTM_UPDATETIPTEXTA:
+        /* what it says, and with it how big it is */
+        ween_wnd_set_text(wnd, lp ? (const char *)lp : "");
+        InvalidateRect(wnd, NULL, TRUE);
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+    (void)wp;
+}
+
+/* How big a tip has to be to hold what it says, and where it goes for a
+ * pointer at `pt` on the screen. */
+static void tooltip_place(HWND tip, POINT pt, RECT *out)
+{
+    const ween_strike *f = (tip && tip->font) ? tip->font : ween_gui_font();
+    int tw = f && tip->text
+                 ? ween_strike_text_width(f, tip->text, (int)strlen(tip->text))
+                 : 0;
+    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    /* the words, a line either side and two of air: "Delete" is thirty-one
+     * wide and its tip thirty-seven, "Copy To" forty and forty-six */
+    int w = tw + 2 * WEEN_TIP_PAD_X, h = cell + WEEN_TIP_PAD_Y * 2 + 1;
+    int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+    out->left = pt.x;
+    out->top = pt.y + WEEN_TIP_DROP;
+    /* against the right edge it is pushed left until it fits, keeping the
+     * one column of screen the machine's keeps */
+    if (out->left + w > sw - WEEN_TIP_EDGE)
+        out->left = sw - WEEN_TIP_EDGE - w;
+    if (out->left < 0)
+        out->left = 0;
+    if (out->top + h > sh)
+        out->top = pt.y - h - WEEN_TIP_EDGE;
+    if (out->top < 0)
+        out->top = 0;
+    out->right = out->left + w;
+    out->bottom = out->top + h;
+}
+
+/* Make the tip window if it is not there yet, put `text` in it and show it —
+ * `sx`, `sy` are where the text itself is to land on the screen, which is how
+ * a view puts one over a name rather than under the pointer. */
+static void view_tip_at(HWND owner, HWND *tip, const char *text, int sx, int sy)
+{
+    const ween_strike *f;
+    int w, h, cell;
+    if (!*tip) {
+        *tip = CreateWindowExA(WS_EX_NOACTIVATE, TOOLTIPS_CLASSA, "", WS_POPUP,
+                               0, 0, 10, 10, ween_top_level(owner), NULL, NULL,
+                               NULL);
+        if (!*tip)
+            return;
+        SendMessageA(*tip, WM_SETFONT, (WPARAM)owner->font, FALSE);
+    }
+    SendMessageA(*tip, TTM_UPDATETIPTEXTA, 0, (LPARAM)text);
+    f = (*tip)->font ? (*tip)->font : ween_gui_font();
+    cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    w = (f ? ween_strike_text_width(f, text, (int)strlen(text)) : 0) +
+        2 * WEEN_TIP_PAD_X;
+    h = cell + WEEN_TIP_PAD_Y * 2 + 1;
+    MoveWindow(*tip, sx - WEEN_TIP_PAD_X, sy - WEEN_TIP_PAD_Y, w, h, FALSE);
+    ShowWindow(*tip, SW_SHOW);
+}
+
+static void view_tip_hide(HWND wnd, HWND tip)
+{
+    KillTimer(wnd, WEEN_TIP_TIMER);
+    KillTimer(wnd, WEEN_TIP_GONE);
+    if (tip)
+        ShowWindow(tip, SW_HIDE);
+}
+
 /* ---- the tree view --------------------------------------------------------
  *
  * Items on 16-pixel rows, each level indented 19; a 9x9 button with a plus or
@@ -2783,6 +2906,8 @@ typedef struct {
     ween_tvitem *sel;
     int scroll_x, content_w; /* horizontal scroll, and what there is to scroll */
     int scroll_row, rows;    /* vertical, counted in items */
+    HWND tip;                /* a name too long for the pane, shown in full */
+    ween_tvitem *tip_item;   /* which item that is about */
 } ween_tree;
 
 #define WEEN_TV_ITEM_H 16
@@ -3157,6 +3282,53 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                           sb, sb, WEEN_FACE);
 }
 
+/* Where an item's name is drawn, in the tree's own coordinates, and whether
+ * the pane cuts it short — the same question a list asks of its columns. */
+static int tv_name_cut(HWND wnd, ween_tree *t, ween_tvitem *item, POINT *at)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int icon_w = 0, icon_h = 0, st_w = 0, st_h = 0;
+    int at_root = (wnd->style & TVS_LINESATROOT) != 0;
+    int row = 0, depth = 0, want, tx, ox, oy, cell, th;
+    ween_tvitem *found = NULL;
+    RECT cr;
+    if (!f || !item || !item->text || !item->text[0])
+        return 0;
+    /* which row it is on, and how deep: the same walk the hit test makes.
+     * Walked until the tree runs out rather than to the row count, which is
+     * only known once the tree has been drawn. */
+    for (want = 0;; want++) {
+        row = 0;
+        depth = 0;
+        found = tree_at_row(t->root, 0, want, &row, &depth);
+        if (!found)
+            return 0;
+        if (found == item)
+            break;
+    }
+    if (t->images)
+        ImageList_GetIconSize(t->images, &icon_w, &icon_h);
+    if (t->state_images)
+        ImageList_GetIconSize(t->state_images, &st_w, &st_h);
+    ween_client_origin(wnd, &ox, &oy);
+    tx = (depth + (at_root ? 1 : 0)) * WEEN_TV_INDENT - t->scroll_x;
+    if (t->state_images)
+        tx += st_w + 5;
+    if (t->images && item->image >= 0)
+        tx += icon_w + 5;
+    th = f->ascent - f->descent;
+    cell = f->cell_h ? f->cell_h : th;
+    GetClientRect(wnd, &cr);
+    if (tx + ween_strike_text_width(f, item->text, (int)strlen(item->text)) <=
+        cr.right - (t->rows * WEEN_TV_ITEM_H > cr.bottom ? ween_scroll_metric()
+                                                         : 0))
+        return 0; /* all of it is there already */
+    at->x = ox + tx;
+    at->y = oy + WEEN_TV_TOP_MARGIN + (want - t->scroll_row) * WEEN_TV_ITEM_H +
+            (WEEN_TV_ITEM_H - 2 - cell) / 2;
+    return 1;
+}
+
 static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_tree *t;
@@ -3272,8 +3444,52 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     sb_drag(GET_X_LPARAM(lp), view_w, &st, wnd->drag_offset), &st);
                 InvalidateRect(wnd, NULL, FALSE);
             }
+            return 0;
+        }
+        {   /* A name the pane cuts short says itself in full when the pointer
+             * rests on it, the same way a list's does. */
+            TVHITTESTINFO hi;
+            ween_tvitem *over = NULL;
+            t = tree_of(wnd);
+            if (!t)
+                return 0;
+            memset(&hi, 0, sizeof(hi));
+            hi.pt.x = GET_X_LPARAM(lp);
+            hi.pt.y = GET_Y_LPARAM(lp);
+            if (SendMessageA(wnd, TVM_HITTEST, 0, (LPARAM)&hi) &&
+                (hi.flags & TVHT_ONITEMLABEL))
+                over = (ween_tvitem *)hi.hItem;
+            if (over != t->tip_item) {
+                view_tip_hide(wnd, t->tip);
+                t->tip_item = over;
+                if (over)
+                    SetTimer(wnd, WEEN_TIP_TIMER, WEEN_TIP_WAIT, NULL);
+            }
         }
         return 0;
+    case WM_TIMER:
+        t = tree_of(wnd);
+        if (!t)
+            return 0;
+        if (wp == WEEN_TIP_TIMER) {
+            POINT at;
+            KillTimer(wnd, WEEN_TIP_TIMER);
+            if (t->tip_item && tv_name_cut(wnd, t, t->tip_item, &at)) {
+                struct ween_wnd *top = ween_top_level(wnd);
+                int wx = 0, wy = 0;
+                ween_window_origin(top, &wx, &wy);
+                view_tip_at(wnd, &t->tip, t->tip_item->text, wx + at.x,
+                            wy + at.y);
+                SetTimer(wnd, WEEN_TIP_GONE, WEEN_TIP_STAY, NULL);
+            }
+            return 0;
+        }
+        if (wp == WEEN_TIP_GONE) {
+            view_tip_hide(wnd, t->tip);
+            t->tip_item = NULL;
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_LBUTTONUP:
         if (GetCapture() == wnd)
             ReleaseCapture();
@@ -3650,6 +3866,8 @@ typedef struct {
                    * first one until a heading is carried somewhere else, and
                    * then wherever that one went — the machine's icons travel
                    * with the Name column */
+    HWND tip;     /* the name too long for its room, shown in full */
+    int tip_row;  /* which row that is about, -1 for none */
     int band;     /* a rectangle being dragged over the view to pick with */
     int band_x0, band_y0; /* where the press landed */
     int band_x, band_y;   /* and where the pointer is now */
@@ -3693,6 +3911,7 @@ static ween_list *list_of(HWND w)
             ((ween_list *)w->ctl)->pressed = -1;
             ((ween_list *)w->ctl)->sizing = -1;
             ((ween_list *)w->ctl)->drag_col = -1;
+            ((ween_list *)w->ctl)->tip_row = -1;
         }
     }
     return w->ctl;
@@ -4235,6 +4454,40 @@ static void lv_band_select(HWND wnd, ween_list *l, int add)
         notify_parent(wnd, LVN_ITEMCHANGED);
 }
 
+/* Where a row's name is drawn, on the screen, and whether the room it has cut
+ * it short. A name that fits needs no tip; one that does not shows itself in
+ * full in the place it was drawn, which is what the machine's views do. */
+static int lv_name_cut(HWND wnd, ween_list *l, int row, POINT *at)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int icon_w = 0, icon_h = 0, indent, lead, avail, cx = 0, ox, oy;
+    char buf[260];
+    int len;
+    const char *full, *shown;
+    if (!f || row < 0 || row >= l->nrow || lv_mode(wnd) != LVS_REPORT)
+        return 0;
+    full = l->row[row].text[l->icon_col];
+    if (!full || !full[0])
+        return 0;
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
+    if (lv_check_w(l))
+        indent += lv_check_w(l) + (indent ? 0 : 2);
+    lead = (indent ? indent + 2 : indent + 7);
+    for (int c = 0; c < l->icon_col; c++)
+        cx += l->width[c];
+    avail = l->width[l->icon_col] - lead - 3;
+    shown = fit_text(f, full, avail, buf, sizeof(buf), &len);
+    if (shown == full)
+        return 0; /* all of it is there already */
+    ween_client_origin(wnd, &ox, &oy);
+    at->x = ox + cx - l->scroll_x + lead;
+    at->y = oy + lv_header_h(wnd) + WEEN_LV_ROW_TOP +
+            (row - l->top) * lv_item_h(wnd, l) + 2;
+    return 1;
+}
+
 static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
 {
     ween_lv_layout g;
@@ -4637,6 +4890,18 @@ static char *dup_str(const char *src)
     if (copy)
         memcpy(copy, src ? src : "", n);
     return copy;
+}
+
+HWND ween_treeview_tip(HWND w)
+{
+    ween_tree *t = w ? tree_of(w) : NULL;
+    return t ? t->tip : NULL;
+}
+
+HWND ween_listview_tip(HWND w)
+{
+    ween_list *l = w ? list_of(w) : NULL;
+    return l ? l->tip : NULL;
 }
 
 void ween_listview_view(HWND w, ween_lv_view *out)
@@ -5102,6 +5367,22 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_MOUSEMOVE:
         l = list_of(wnd);
+        /* A name the columns have cut short says itself in full when the
+         * pointer rests on it — the machine's list does this, and so does its
+         * tree. Moving to another row starts the wait again. */
+        if (l && !l->band && GetCapture() != wnd) {
+            UINT where = 0;
+            int over = lv_item_hit(wnd, l, GET_X_LPARAM(lp), GET_Y_LPARAM(lp),
+                                   &where);
+            if (!(where & LVHT_ONITEMLABEL))
+                over = -1;
+            if (over != l->tip_row) {
+                view_tip_hide(wnd, l->tip);
+                l->tip_row = over;
+                if (over >= 0)
+                    SetTimer(wnd, WEEN_TIP_TIMER, WEEN_TIP_WAIT, NULL);
+            }
+        }
         if (l && l->band && GetCapture() == wnd) {
             l->band_x = GET_X_LPARAM(lp);
             l->band_y = GET_Y_LPARAM(lp);
@@ -5158,6 +5439,29 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         }
         return 0;
+    case WM_TIMER:
+        l = list_of(wnd);
+        if (!l)
+            return 0;
+        if (wp == WEEN_TIP_TIMER) {
+            POINT at;
+            KillTimer(wnd, WEEN_TIP_TIMER);
+            if (l->tip_row >= 0 && lv_name_cut(wnd, l, l->tip_row, &at)) {
+                struct ween_wnd *top = ween_top_level(wnd);
+                int wx = 0, wy = 0;
+                ween_window_origin(top, &wx, &wy);
+                view_tip_at(wnd, &l->tip, l->row[l->tip_row].text[l->icon_col],
+                            wx + at.x, wy + at.y);
+                SetTimer(wnd, WEEN_TIP_GONE, WEEN_TIP_STAY, NULL);
+            }
+            return 0;
+        }
+        if (wp == WEEN_TIP_GONE) {
+            view_tip_hide(wnd, l->tip);
+            l->tip_row = -1;
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_LBUTTONUP:
         l = list_of(wnd);
         if (l && l->band) {
@@ -6452,96 +6756,7 @@ typedef struct {
     int tip_for; /* the button that one is about, -1 for none */
 } ween_toolbar;
 
-/* How long the pointer has to rest on a button before its tip shows, and how
- * long the tip then stays: win32's own defaults, which is what the machine
- * waits and shows. */
-#define WEEN_TIP_WAIT 500
-#define WEEN_TIP_STAY 5000
-#define WEEN_TIP_TIMER 0x7e01
-#define WEEN_TIP_GONE 0x7e02
 
-/* ---- the tip a button shows when the pointer rests on it -------------------
- *
- * A window of its own, which is what win32 makes it: pale yellow, a black
- * line round it, the shell's face inside, and no frame of any kind. It is
- * measured off the machine's own — a tip saying "Copy To" is forty-six by
- * seventeen with its text three in and two down, which is the text's own
- * width and three.
- *
- * Where it goes is measured off the machine too: its top left corner is the
- * pointer's own, twenty-one pixels down — the height of the arrow, so the tip
- * sits under the pointer rather than beneath what it is pointing at. Against
- * the right edge of the screen it is pushed left to fit, and against the
- * bottom it goes above the pointer instead.
- */
-#define WEEN_TIP_PAD_X 3 /* the text's left edge, past the line */
-#define WEEN_TIP_PAD_Y 2
-#define WEEN_TIP_DROP 21 /* how far below the pointer the corner sits */
-#define WEEN_TIP_EDGE 1  /* the column it keeps clear of the screen's edge */
-
-static LRESULT CALLBACK tooltip_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
-{
-    switch (msg) {
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        struct ween_wnd *top = ween_top_level(wnd);
-        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-        RECT r;
-        int ox, oy;
-        BeginPaint(wnd, &ps);
-        GetClientRect(wnd, &r);
-        ween_client_origin(wnd, &ox, &oy);
-        ween_surface_fill(&top->surface, ox, oy, r.right, r.bottom,
-                          ween_cr_to_px(GetSysColor(COLOR_INFOBK)));
-        ween_surface_rect(&top->surface, ox, oy, r.right, r.bottom,
-                          ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
-        if (f && wnd->text)
-            ween_strike_draw(f, &top->surface, ox + WEEN_TIP_PAD_X,
-                             oy + WEEN_TIP_PAD_Y, wnd->text,
-                             (int)strlen(wnd->text),
-                             ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
-        EndPaint(wnd, &ps);
-        return 0;
-    }
-    case TTM_UPDATETIPTEXTA:
-        /* what it says, and with it how big it is */
-        ween_wnd_set_text(wnd, lp ? (const char *)lp : "");
-        InvalidateRect(wnd, NULL, TRUE);
-        return 0;
-    default:
-        return DefWindowProcA(wnd, msg, wp, lp);
-    }
-    (void)wp;
-}
-
-/* How big a tip has to be to hold what it says, and where it goes for a
- * pointer at `pt` on the screen. */
-static void tooltip_place(HWND tip, POINT pt, RECT *out)
-{
-    const ween_strike *f = (tip && tip->font) ? tip->font : ween_gui_font();
-    int tw = f && tip->text
-                 ? ween_strike_text_width(f, tip->text, (int)strlen(tip->text))
-                 : 0;
-    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
-    /* the words, a line either side and two of air: "Delete" is thirty-one
-     * wide and its tip thirty-seven, "Copy To" forty and forty-six */
-    int w = tw + 2 * WEEN_TIP_PAD_X, h = cell + WEEN_TIP_PAD_Y * 2 + 1;
-    int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
-    out->left = pt.x;
-    out->top = pt.y + WEEN_TIP_DROP;
-    /* against the right edge it is pushed left until it fits, keeping the
-     * one column of screen the machine's keeps */
-    if (out->left + w > sw - WEEN_TIP_EDGE)
-        out->left = sw - WEEN_TIP_EDGE - w;
-    if (out->left < 0)
-        out->left = 0;
-    if (out->top + h > sh)
-        out->top = pt.y - h - WEEN_TIP_EDGE;
-    if (out->top < 0)
-        out->top = 0;
-    out->right = out->left + w;
-    out->bottom = out->top + h;
-}
 
 static void toolbar_free(void *p)
 {
