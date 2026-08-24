@@ -434,6 +434,22 @@ var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    // The status bar says where the pointer is, in the picture's own
+    // pixels, and stops saying it once the pointer is off the picture.
+    // While something is being dragged out — a shape, or the picture's own
+    // corner — it leaves the position where it was and says how big the
+    // thing is instead; carrying a selection about is not that, and there
+    // the position goes on following the pointer. All three are the
+    // machine's.
+    if ((!d.active and page_sizing == null) or moving or sizing != null) {
+        if (p.x >= 0 and p.y >= 0 and p.x < app.pic.width and p.y < app.pic.height)
+            A.showPos(p.x, p.y)
+        else
+            A.clearPos();
+        // ask to hear when the pointer leaves, so the pane can be emptied
+        var tme = w.TRACKMOUSEEVENT{ .cbSize = @sizeOf(w.TRACKMOUSEEVENT), .dwFlags = w.TME_LEAVE, .hwndTrack = hwnd, .dwHoverTime = 0 };
+        _ = w.TrackMouseEvent(&tme);
+    }
     if (box_handle) |h| {
         invalidateBox(hwnd); // where the box was
         textbox.dragHandle(h, p);
@@ -460,6 +476,10 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
         invalidateBand(hwnd, pagePreviewRect()); // where the band was
         page_size = size;
         invalidateBand(hwnd, pagePreviewRect()); // and where it is now
+        // the pane that says how big a thing being dragged out is says how
+        // big the picture is about to be, which is what the machine puts
+        // there while its corner is dragged
+        A.showSize(size.x, size.y);
         return;
     }
     if (sizing) |h| {
@@ -483,17 +503,17 @@ fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
         invalidatePreview(hwnd); // and where it is now
         return;
     }
-    if (!d.active) {
-        // a curve or a polygon in the middle of being made follows the
-        // pointer even with the button up
-        if (d.stage > 0 or (d.tool == .polygon and d.count > 0)) {
-            d.cur = p;
-            invalidatePreview(hwnd);
-        }
-        return;
-    }
+    // A curve waiting to be bent and a polygon waiting for its next corner
+    // stay as they are until the button goes down again: the machine's do
+    // not follow the pointer about between one press and the next.
+    if (!d.active) return;
     d.shift = (wp & w.MK_SHIFT) != 0;
     d.cur = p;
+    // How big what is being dragged out is, counted inclusively: a drag
+    // across a hundred pixels covers a hundred and one of them, which is
+    // what the machine's pane says — and it says it for the pencil as much
+    // as for a rectangle.
+    A.showSize(@intCast(@abs(p.x - d.start.x) + 1), @intCast(@abs(p.y - d.start.y) + 1));
     if (d.tool == .free_select) tools.lassoAdd(p);
     switch (d.tool) {
         .pencil, .brush, .eraser, .airbrush => {
@@ -608,6 +628,7 @@ const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
+    A.clearSize(); // nothing is being dragged out any more
     if (box_pick or box_handle != null or box_carry != null) {
         box_pick = false;
         box_handle = null;
@@ -654,7 +675,9 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
             // press one: the line and its two ends. Presses two and three
             // pull it about; after the third it is finished.
             if (d.stage == 0) {
-                d.points[1] = d.cur;
+                // where the line ended, which Shift may have put on a
+                // compass point rather than under the pointer
+                d.points[1] = tools.constrainedEnd();
                 d.stage = 1;
             } else if (d.stage == 1) {
                 d.points[2] = d.cur;
@@ -808,6 +831,11 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             mouseMove(hwnd, wp, lp);
             return 0;
         },
+        w.WM_MOUSELEAVE => {
+            // off the picture, so there is no position to give
+            A.clearPos();
+            return 0;
+        },
         w.WM_LBUTTONUP, w.WM_RBUTTONUP => {
             buttonUp(hwnd, lp);
             return 0;
@@ -821,6 +849,20 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             return 0;
         },
         w.WM_KEYDOWN => {
+            // Escape gives up whatever is half-drawn: the curve waiting to
+            // be bent, the polygon waiting to be closed, the shape being
+            // dragged out. The machine drops them and leaves the picture as
+            // it was.
+            if (wp == w.VK_ESCAPE and !textbox.active()) {
+                const d = &tools.drag;
+                if (d.active or d.stage > 0 or d.count > 0) {
+                    d.* = .{};
+                    if (w.GetCapture() == hwnd) _ = w.ReleaseCapture();
+                    A.clearSize();
+                    _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                    return 0;
+                }
+            }
             // In a text box the arrows walk the caret through what has been
             // typed, and Delete takes out the character in front of it.
             if (textbox.active()) {

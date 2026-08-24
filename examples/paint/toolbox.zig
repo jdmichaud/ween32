@@ -16,6 +16,7 @@ const artwork = @import("artwork.zig");
 const opts = @import("art_options.zig");
 const selection = @import("selection.zig");
 const textbox = @import("textbox.zig");
+const tools = @import("tools.zig");
 const app = &A.app;
 
 pub const class_name = "PaintToolBox";
@@ -193,6 +194,10 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
                 // picture: what was typed is not lost by looking away from
                 // it, which is what the machine does.
                 if (t != .text and textbox.active()) textbox.commit();
+                // A curve waiting to be bent or a polygon waiting to be
+                // closed is given up rather than left hanging over the
+                // picture, which is what the machine does with them.
+                tools.drag = .{};
                 app.tool = t;
                 _ = w.InvalidateRect(hwnd, null, w.FALSE);
                 _ = w.InvalidateRect(app.view, null, w.FALSE);

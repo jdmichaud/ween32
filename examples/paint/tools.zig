@@ -211,13 +211,21 @@ pub fn stroke(dc: w.HDC, from: w.POINT, to: w.POINT) void {
 
 /// Held Shift squares a rectangle, circles an ellipse and puts a line on one
 /// of the eight compass points, as it does in Paint.
+/// Where the drag ends once Shift has had its say, for the caller that has
+/// to keep that point rather than draw with it.
+pub fn constrainedEnd() w.POINT {
+    return constrained();
+}
+
 fn constrained() w.POINT {
     var p = drag.cur;
     if (!drag.shift) return p;
     const dx = p.x - drag.start.x;
     const dy = p.y - drag.start.y;
     switch (drag.tool) {
-        .line => {
+        // A curve starts as a line, and Shift puts that line on a compass
+        // point the same way; the two bends after it are free.
+        .line, .curve => {
             const ax = @abs(dx);
             const ay = @abs(dy);
             if (ax > ay * 2) {
@@ -319,7 +327,7 @@ fn shapeBody(dc: w.HDC) void {
 fn drawCurve(dc: w.HDC) void {
     var pts: [4]w.POINT = undefined;
     pts[0] = drag.points[0];
-    pts[3] = drag.points[1];
+    pts[3] = if (drag.stage == 0) constrained() else drag.points[1];
     if (drag.stage == 1) {
         pts[1] = drag.cur;
         pts[2] = drag.cur;

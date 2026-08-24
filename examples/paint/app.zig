@@ -306,3 +306,36 @@ pub fn setOption(v: u8) void {
     if (app.tool == .select) app.option[Tool.free_select.index()] = v;
     if (app.tool == .free_select) app.option[Tool.select.index()] = v;
 }
+
+/// The two panes on the right: where the pointer is in the picture, and how
+/// big what is being dragged out is. Both are the machine's, and both are
+/// empty when there is nothing to say — the pointer off the picture, or
+/// nothing being dragged.
+var pos_text: [32:0]u8 = @splat(0);
+var size_text: [32:0]u8 = @splat(0);
+
+fn say(part: i32, into: *[32:0]u8, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and i + 1 < into.len) : (i += 1) into[i] = text[i];
+    into[i] = 0;
+    const p: [*:0]const u8 = @ptrCast(into);
+    _ = w.SendMessageA(app.status, w.SB_SETTEXTA, @intCast(part), @bitCast(@intFromPtr(p)));
+}
+
+pub fn showPos(x: i32, y: i32) void {
+    var buf: [32]u8 = undefined;
+    say(1, &pos_text, std.fmt.bufPrint(&buf, "{d},{d}", .{ x, y }) catch return);
+}
+
+pub fn showSize(cx: i32, cy: i32) void {
+    var buf: [32]u8 = undefined;
+    say(2, &size_text, std.fmt.bufPrint(&buf, "{d}x{d}", .{ cx, cy }) catch return);
+}
+
+pub fn clearPos() void {
+    say(1, &pos_text, "");
+}
+
+pub fn clearSize() void {
+    say(2, &size_text, "");
+}

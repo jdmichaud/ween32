@@ -222,13 +222,20 @@ fn layout(cw: i32, ch: i32) void {
     if (app.show_status) {
         top -= status_h;
         _ = w.MoveWindow(app.status, 0, top, cw, status_h, w.TRUE);
-        // One part, the width of the bar. Paint's own has three — the two
-        // spare ones are what its MFC status bar keeps for panes it never
-        // writes in — but with no text they collapse to nothing, and what
-        // they leave on the screen is three pixels of hairline beside the
-        // size grip that no ordinary status bar would draw. Not worth
-        // reproducing, and the only three pixels of this window that are
-        // not the machine's.
+        // Three parts, as the machine has: the line of help, then where the
+        // pointer is in the picture, then how big what is being dragged out
+        // is. The two on the right are 119 and 117 wide, both measured off
+        // it. A bar with no room for them and the line of help as well keeps
+        // the help and drops them -- the machine squeezes them to a pair of
+        // hairlines instead, which is the only place this window differs
+        // from it, and a hairline is not worth the three pixels.
+        var parts = [_]i32{ cw - 236, cw - 117, cw };
+        var count: usize = parts.len;
+        if (cw - 236 < 250) {
+            parts[0] = -1;
+            count = 1;
+        }
+        _ = w.SendMessageA(app.status, w.SB_SETPARTS, count, @bitCast(@intFromPtr(&parts)));
     }
     if (app.show_colorbox) {
         top -= colorbox_h;
@@ -345,6 +352,8 @@ fn helpFor(id: u16) [*:0]const u8 {
 pub fn setHelpText(text: [*:0]const u8) void {
     _ = w.SendMessageA(app.status, w.SB_SETTEXTA, 0, @bitCast(@intFromPtr(text)));
 }
+
+
 
 fn command(id: u16) void {
     // Anything asked of the program while a text box is open puts what was
@@ -810,9 +819,14 @@ pub fn main() void {
         // the menu bar — so those go through as they always did.
         const with_alt = (msg.lParam & (1 << 29)) != 0;
         const with_ctrl = (msg.lParam & (1 << 28)) != 0;
-        const typing = textbox.active() and !with_alt and !with_ctrl and
-            (msg.message == w.WM_KEYDOWN or msg.message == w.WM_KEYUP or
-            msg.message == w.WM_CHAR);
+        const is_key = msg.message == w.WM_KEYDOWN or msg.message == w.WM_KEYUP or
+            msg.message == w.WM_CHAR;
+        // Escape belongs to whatever is half-drawn on the picture, not to
+        // the dialog conventions: they take it for a Cancel this window has
+        // no use for, and the curve waiting to be bent never heard it.
+        const escape = is_key and msg.wParam == w.VK_ESCAPE;
+        const typing = (textbox.active() and !with_alt and !with_ctrl and is_key) or
+            escape;
         if (!typing and w.TranslateAcceleratorA(frame, accel, &msg) != 0) continue;
         if (!typing and w.IsDialogMessageA(frame, &msg) != 0) continue;
         _ = w.TranslateMessage(&msg);
