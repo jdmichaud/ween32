@@ -2624,6 +2624,24 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case CB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;
+    case WM_SETTEXT:
+        /* the field is where a combo box's text lives, so setting one sets
+         * the other; a box with no field keeps it as any window does */
+        it = items_of(wnd);
+        if (it && it->edit) {
+            it->quiet = 1;
+            SetWindowTextA(it->edit, (const char *)lp);
+            it->quiet = 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+    case WM_GETTEXT:
+    case WM_GETTEXTLENGTH:
+        /* and reading one reads the other: what a box with a field in it is
+         * showing is in the field, not in the box */
+        it = items_of(wnd);
+        if (it && it->edit)
+            return SendMessageA(it->edit, msg, wp, lp);
+        return DefWindowProcA(wnd, msg, wp, lp);
     case CB_GETLBTEXTLEN: {
         int i = (int)wp;
         it = items_of(wnd);

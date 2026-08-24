@@ -1156,6 +1156,9 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
              WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 474, 263, 75, 23, IDOK);
         part(dlg, 0, "BUTTON", "Cancel", WS_TABSTOP | BS_PUSHBUTTON, 474, 289,
              75, 23, IDCANCEL);
+        /* The buttons are made here rather than named in the template, so the
+         * dialog has to be told which of them Enter presses. */
+        SendMessageA(dlg, DM_SETDEFID, IDOK, 0);
 
         fill_list(dlg);
         if (g_fd.ofn->lpstrFile && g_fd.ofn->lpstrFile[0])

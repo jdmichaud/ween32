@@ -908,6 +908,33 @@ int main(void)
         CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 2,
               "it counts them like any combo box");
 
+        {
+            /* A combo box's text is whatever is in its field, both ways
+             * round: that is what GetWindowText answers on win32, and it is
+             * how a dialog reads the name somebody typed into a file box --
+             * without it, Save As had nothing to save to. */
+            HWND ed = CreateWindowExA(0, "COMBOBOX", "",
+                                      WS_CHILD | WS_VISIBLE | CBS_DROPDOWN, 10,
+                                      120, 150, 100, cw,
+                                      (HMENU)(UINT_PTR)10, NULL, NULL);
+            char back[64];
+            SetWindowTextA(ed, "typed.bmp");
+            GetWindowTextA(ed, back, (int)sizeof(back));
+            CHECK(strcmp(back, "typed.bmp") == 0,
+                  "setting a combo box's text sets what its field shows");
+            {   /* and what the field is given comes back from the box */
+                HWND field = (HWND)SendMessageA(ed, CBEM_GETEDITCONTROL, 0, 0);
+                CHECK(field != NULL, "an editable box has a field");
+                if (field) {
+                    SetWindowTextA(field, "into the field");
+                    GetWindowTextA(ed, back, (int)sizeof(back));
+                    CHECK(strcmp(back, "into the field") == 0,
+                          "and typing in the field is the box's text");
+                }
+            }
+            DestroyWindow(ed);
+        }
+
         /* Emptying it is what an address bar does on every folder, and the
          * image list has to survive that — it belongs to the control, not to
          * the items that were in it. */
