@@ -97,9 +97,11 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
     if (ppem <= 0)
         ppem = ween_ncm(11);
     if (dialog) {
+        /* The face has no bold cut here, so a bold one is made the way GDI
+         * makes one out of a face that has none: the glyphs are struck twice,
+         * a pixel apart. */
         ttf = ween_mssans_ttf;
         len = ween_mssans_ttf_len;
-        bold = 0; /* the face has no bold cut here */
     } else if (bold) {
         ttf = ween_tahomabd_ttf;
         len = ween_tahomabd_ttf_len;
@@ -108,7 +110,8 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
         len = ween_tahoma_ttf_len;
     }
     for (int i = 0; i < count; i++)
-        if (kept[i].ttf == ttf && kept[i].ppem == ppem)
+        if (kept[i].ttf == ttf && kept[i].ppem == ppem &&
+            kept[i].bold == bold)
             return &kept[i].f;
     if (count == KEPT) {
         for (int i = 0; i < count; i++)
@@ -122,9 +125,10 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
     kept[count].ppem = ppem;
     kept[count].bold = bold;
     /* Wine's bold Tahoma has regular-weight stems at the larger strikes, and
-     * MS Sans Serif measures from its glyphs rather than an outline — the
-     * same two things ween_gui_font_bold and ween_dialog_font work around. */
-    if (bold && kept[count].f.ppem >= 13)
+     * a face with no bold cut has none at any size — both come out of the
+     * same overstrike. MS Sans Serif measures from its glyphs rather than an
+     * outline, which is the other thing ween_dialog_font works around. */
+    if (bold && (dialog || kept[count].f.ppem >= 13))
         kept[count].f.embolden = 1;
     if (dialog)
         kept[count].f.bitmap_only = 1;

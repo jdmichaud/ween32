@@ -2778,6 +2778,22 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         it = items_of(wnd);
         if (it && it->edit)
             return SendMessageA(it->edit, msg, wp, lp);
+        /* A box with no field keeps nothing of its own either: what it is
+         * showing is the item that is picked, and that is what asking it for
+         * its text means on one. */
+        if (it && it->cursel >= 0 && it->cursel < it->count) {
+            const char *t = it->item[it->cursel];
+            size_t len = strlen(t);
+            if (msg == WM_GETTEXTLENGTH)
+                return (LRESULT)len;
+            if (!lp || !wp)
+                return 0;
+            if (len > (size_t)wp - 1)
+                len = (size_t)wp - 1;
+            memcpy((char *)lp, t, len);
+            ((char *)lp)[len] = 0;
+            return (LRESULT)len;
+        }
         return DefWindowProcA(wnd, msg, wp, lp);
     case CB_GETLBTEXTLEN: {
         int i = (int)wp;
