@@ -2002,6 +2002,7 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max);
  * window it allocates an id and returns it. lpTimerFunc, when given, is called
  * by DispatchMessage instead of the window procedure. */
 typedef void(CALLBACK *TIMERPROC)(HWND, UINT, UINT_PTR, DWORD);
+UINT GetDoubleClickTime(void);
 UINT_PTR SetTimer(HWND wnd, UINT_PTR id, UINT elapse_ms, TIMERPROC fn);
 BOOL KillTimer(HWND wnd, UINT_PTR id);
 

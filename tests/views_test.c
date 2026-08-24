@@ -1190,6 +1190,9 @@ int main(void)
         it.pszText = (char *)"WINNT";
         it.iImage = 0;
         SendMessageA(names, LVM_INSERTITEMA, 0, (LPARAM)&it);
+        it.iItem = 1;
+        it.pszText = (char *)"boot";
+        SendMessageA(names, LVM_INSERTITEMA, 1, (LPARAM)&it);
 
         label.left = LVIR_LABEL;
         SendMessageA(names, LVM_GETITEMRECT, 0, (LPARAM)&label);
@@ -1216,7 +1219,50 @@ int main(void)
                       box.bottom - box.top == bounds.bottom - bounds.top,
                   "and stands on the row, as tall as the row");
         }
-        SendMessageA(names, WM_KEYDOWN, VK_ESCAPE, 0);
+        if (ed)
+            SendMessageA(ed, WM_KEYDOWN, VK_ESCAPE, 0);
+
+        /* A click on the name that is already picked asks to rename it, and
+         * the view waits out the double-click time before it does: that
+         * second press could be the first half of a double click, and opening
+         * what it is on comes first. Timed on the machine, whose box appears
+         * between 450 and 550 ms after such a click. */
+        {
+            int x = label.left + 4, y = (bounds.top + bounds.bottom) / 2;
+            SetFocus(names);
+            SendMessageA(names, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            CHECK(!SendMessageA(names, LVM_GETEDITCONTROL, 0, 0),
+                  "a second click on a picked name does not rename it at once");
+            SendMessageA(names, WM_TIMER, 0x7e03, 0); /* the wait running out */
+            CHECK(SendMessageA(names, LVM_GETEDITCONTROL, 0, 0) != 0,
+                  "it renames when the double-click time has passed");
+            ed = (HWND)(INT_PTR)SendMessageA(names, LVM_GETEDITCONTROL, 0, 0);
+            if (ed)
+                SendMessageA(ed, WM_KEYDOWN, VK_ESCAPE, 0);
+
+            /* and the pair that is a double click calls the wait off */
+            SendMessageA(names, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, y));
+            SendMessageA(names, WM_TIMER, 0x7e03, 0);
+            CHECK(!SendMessageA(names, LVM_GETEDITCONTROL, 0, 0),
+                  "a double click opens what it is on instead of renaming it");
+
+            /* a click on the other name picks it and nothing more */
+            {
+                int y2 = y + (bounds.bottom - bounds.top);
+                SendMessageA(names, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y2));
+                SendMessageA(names, WM_LBUTTONUP, 0, MAKELPARAM(x, y2));
+                SendMessageA(names, WM_TIMER, 0x7e03, 0);
+                CHECK(SendMessageA(names, LVM_GETNEXTITEM, (WPARAM)-1,
+                                   LVNI_SELECTED) == 1 &&
+                          !SendMessageA(names, LVM_GETEDITCONTROL, 0, 0),
+                      "and a click that picks a name does not rename it");
+            }
+        }
         DestroyWindow(rw);
     }
 

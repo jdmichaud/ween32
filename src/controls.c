@@ -2779,6 +2779,8 @@ static LRESULT progress_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 #define WEEN_TIP_STAY 5000
 #define WEEN_TIP_TIMER 0x7e01
 #define WEEN_TIP_GONE 0x7e02
+/* and the wait before a click on a picked name turns into a rename */
+#define WEEN_LV_EDIT_TIMER 0x7e03
 
 #define WEEN_TIP_PAD_X 3 /* the text's left edge, past the line */
 #define WEEN_TIP_PAD_Y 2
@@ -3878,6 +3880,9 @@ typedef struct {
     HWND header;  /* the header control, once something has asked for it */
     HWND edit;    /* the box a label is being typed over in, or NULL */
     int editing;  /* which row that is */
+    int edit_wait; /* the row a click on an already-picked name asked to
+                    * rename, plus one: it opens when the double-click time
+                    * has passed without a second press */
     DWORD exstyle; /* LVS_EX_*: what it was asked for after it was made */
 } ween_list;
 
@@ -4968,6 +4973,16 @@ static void lv_end_edit(HWND wnd, ween_list *l, int keep)
     SetFocus(wnd);
 }
 
+/* Whatever a click asked to rename, it is not going to happen: a second press
+ * arrived, or a key, or the view lost the keyboard. */
+static void lv_edit_wait_cancel(HWND wnd, ween_list *l)
+{
+    if (!l || !l->edit_wait)
+        return;
+    l->edit_wait = 0;
+    KillTimer(wnd, WEEN_LV_EDIT_TIMER);
+}
+
 static HWND lv_begin_edit(HWND wnd, ween_list *l, int row)
 {
     RECT r;
@@ -5046,6 +5061,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (!l)
             return 0;
+        lv_edit_wait_cancel(wnd, l);
         /* An arrow starts from the caret rather than from the selection: a
          * click on a row's size cell drops the selection but leaves the caret
          * on that row, and the next arrow moves from there. */
@@ -5208,6 +5224,19 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 notify_parent(wnd, LVN_ITEMCHANGED);
                 return 0;
             }
+            /* A press on the name that is already the one picked asks to
+             * rename it — but not yet: a second press within the double-click
+             * time is a double click, and opening what it is on comes first.
+             * The release starts the wait. The machine's box appears between
+             * 450 and 550 ms after such a click, timed on its C: window,
+             * which is the double-click time it ships with. */
+            lv_edit_wait_cancel(wnd, l);
+            if (on >= 0 && (where & LVHT_ONITEMLABEL) &&
+                (wnd->style & LVS_EDITLABELS) &&
+                !(wp & (MK_CONTROL | MK_SHIFT)) && l->row[on].selected &&
+                l->focus == on + 1 && lv_selected_count(l) == 1 &&
+                GetFocus() == wnd)
+                l->edit_wait = on + 1;
         }
         i = lv_item_hit(wnd, l, mx - l->scroll_x, my, NULL);
         if (i >= 0) {
@@ -5259,6 +5288,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l = list_of(wnd);
         if (!l)
             return 0;
+        lv_edit_wait_cancel(wnd, l); /* the pair opens it, never renames it */
         g = lv_layout(wnd, l);
         if (my < lv_header_h(wnd)) {
             /* A divider double-clicked sizes the column to the left of it to
@@ -5486,9 +5516,19 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             l->tip_row = -1;
             return 0;
         }
+        if (wp == WEEN_LV_EDIT_TIMER) {
+            int row = l->edit_wait - 1;
+            KillTimer(wnd, WEEN_LV_EDIT_TIMER);
+            l->edit_wait = 0;
+            if (row >= 0 && row < l->nrow && l->row[row].selected)
+                lv_begin_edit(wnd, l, row);
+            return 0;
+        }
         return DefWindowProcA(wnd, msg, wp, lp);
     case WM_LBUTTONUP:
         l = list_of(wnd);
+        if (l && l->edit_wait)
+            SetTimer(wnd, WEEN_LV_EDIT_TIMER, GetDoubleClickTime(), NULL);
         if (l && l->band) {
             l->band = 0;
             ReleaseCapture();
@@ -5846,6 +5886,12 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 lv_scroll_to(wnd, l, (int)wp - lv_visible(wnd) + 1);
         }
         return TRUE;
+    case WM_KILLFOCUS:
+        /* the keyboard went somewhere else: a rename that was waiting on the
+         * clock is off, and so is the caret the view was drawing */
+        lv_edit_wait_cancel(wnd, list_of(wnd));
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
     case WM_DESTROY:
         if (wnd->ctl) {
             list_ctl_free(wnd->ctl);

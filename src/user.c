@@ -1656,6 +1656,15 @@ static unsigned long now_ms(void)
     return (unsigned long)ts.tv_sec * 1000 + (unsigned long)(ts.tv_nsec / 1000000);
 }
 
+/* How close together two presses have to be to be a double click. win32 lets
+ * the mouse control panel set it; ween32 keeps the number Windows ships with,
+ * and a control that has to tell a pair from two clicks asks here rather than
+ * inventing its own delay. */
+UINT GetDoubleClickTime(void)
+{
+    return WEEN_DOUBLE_CLICK_MS;
+}
+
 UINT_PTR SetTimer(HWND wnd, UINT_PTR id, UINT elapse_ms, TIMERPROC fn)
 {
     if (!wnd) { /* no window: the id is ours to choose */
