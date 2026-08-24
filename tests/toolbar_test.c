@@ -30,6 +30,7 @@ static int g_command, g_dropdown = -1;
 /* the menu-mode bar under test, and how many times each of its titles was
  * asked to drop down */
 static HWND g_menu_bar;
+static int g_tip_asked = -1; /* the button the bar asked about */
 static int g_dropped[2];
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -40,6 +41,13 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     }
     if (msg == WM_NOTIFY) {
         const NMHDR *nm = (const NMHDR *)lp;
+        if (nm->code == TTN_GETDISPINFOA) {
+            NMTTDISPINFOA *ti = (NMTTDISPINFOA *)lp;
+            g_tip_asked = (int)ti->hdr.idFrom;
+            snprintf(ti->szText, sizeof(ti->szText), "Delete");
+            ti->lpszText = ti->szText;
+            return 0;
+        }
         if (nm->code == TBN_DROPDOWN)
             g_dropdown = ((const NMTOOLBAR *)lp)->iItem;
         if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_menu_bar) {
@@ -267,6 +275,67 @@ int main(void)
     SendMessageA(g_tb, WM_LBUTTONDOWN, 0, MAKELPARAM(button_middle(2), 10));
     SendMessageA(g_tb, WM_LBUTTONUP, 0, MAKELPARAM(button_middle(3), 10));
     CHECK(g_command == 0, "dragging off a button before letting go cancels it");
+
+    /* The tip a button shows when the pointer rests on it: the bar waits, asks
+     * the window it belongs to what to say, and puts a window of its own where
+     * the pointer is. Its shape and where it goes are the machine's, measured
+     * off its own Explorer — "Delete" is thirty-seven by seventeen, and its
+     * corner is the pointer's, twenty-one down. */
+    {
+        HWND bar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                   WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
+                                       TBSTYLE_TOOLTIPS,
+                                   0, 0, 200, 22, w, NULL, NULL, NULL);
+        TBBUTTON t[2];
+        HWND tip;
+        RECT r;
+        POINT pt;
+        memset(t, 0, sizeof(t));
+        t[0].iBitmap = 0;
+        t[0].idCommand = ID_BACK;
+        t[0].fsState = TBSTATE_ENABLED;
+        t[0].fsStyle = TBSTYLE_BUTTON;
+        t[1] = t[0];
+        t[1].idCommand = ID_UP;
+        t[1].iString = (INT_PTR) "Labelled"; /* one that says what it is */
+        SendMessageA(bar, TB_ADDBUTTONSA, 2, (LPARAM)t);
+
+        /* the pointer rests on the first button, and the tip goes where the
+         * window system says the pointer is — which is what it is being
+         * placed by */
+        SendMessageA(bar, WM_MOUSEMOVE, 0, MAKELPARAM(8, 10));
+        CHECK(SendMessageA(bar, TB_GETTOOLTIPS, 0, 0) == 0,
+              "no tip is made before one is needed");
+        SendMessageA(bar, WM_TIMER, 0x7e01, 0);
+        tip = (HWND)(INT_PTR)SendMessageA(bar, TB_GETTOOLTIPS, 0, 0);
+        CHECK(tip != NULL && IsWindowVisible(tip),
+              "resting on a button with no label of its own shows a tip");
+        CHECK(g_tip_asked == ID_BACK,
+              "and what it says was asked of the window the bar is in");
+        GetWindowRect(tip, &r);
+        GetCursorPos(&pt);
+        CHECK(r.left == pt.x && r.top == pt.y + 21,
+              "its corner is the pointer's, twenty-one pixels down");
+        CHECK(r.right - r.left ==
+                  ween_strike_text_width(ween_gui_font(), "Delete", 6) + 6,
+              "it is as wide as its words and six");
+        CHECK(r.bottom - r.top == 17, "and seventeen tall");
+
+        /* off the button, and it goes */
+        SendMessageA(bar, WM_MOUSEMOVE, 0, MAKELPARAM(150, 10));
+        CHECK(!IsWindowVisible(tip), "moving off the button puts it away");
+
+        /* a button that shows its own label is never asked about */
+        g_tip_asked = -1;
+        SendMessageA(bar, TB_GETITEMRECT, 1, (LPARAM)&r);
+        SendMessageA(bar, WM_MOUSEMOVE, 0,
+                     MAKELPARAM((r.left + r.right) / 2, 10));
+        SendMessageA(bar, WM_TIMER, 0x7e01, 0);
+        CHECK(g_tip_asked == -1 && !IsWindowVisible(tip),
+              "a button wearing its label gets no tip, as the machine's does "
+              "not");
+        DestroyWindow(bar);
+    }
 
     /* A rebar: the bands a shell's toolbars sit in, each a row with a gripper
      * and the control filling what is left of it. */

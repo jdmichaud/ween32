@@ -41,7 +41,10 @@ static ween_color sys_color_px(int index)
     case COLOR_WINDOWTEXT:
     case COLOR_BTNTEXT:
     case COLOR_MENUTEXT:
+    case COLOR_INFOTEXT:
         return WEEN_BLACK;
+    case COLOR_INFOBK: /* the pale yellow a tip is painted on */
+        return WEEN_RGBX(255, 255, 225);
     case COLOR_BTNFACE:
     case COLOR_3DLIGHT:
     case COLOR_MENU:

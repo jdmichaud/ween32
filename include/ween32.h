@@ -1267,6 +1267,9 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define COLOR_BTNHIGHLIGHT 20
 #define COLOR_3DDKSHADOW 21
 #define COLOR_3DLIGHT 22
+/* what a tip is painted in: the pale yellow behind it and the black on it */
+#define COLOR_INFOTEXT 23
+#define COLOR_INFOBK 24
 #define COLOR_GRADIENTACTIVECAPTION 27
 
 /* ---- DrawEdge / DrawFrameControl ---------------------------------------- */
@@ -1655,6 +1658,30 @@ BOOL ChooseColorA(CHOOSECOLORA *cc);
  * A button is a TBBUTTON: an image index, a command id, a state and a style.
  * iString may be a pointer to the button's text, which is what comctl32 5
  * allows and what an app writing its own toolbar actually does. */
+/* ---- tips ----------------------------------------------------------------
+ *
+ * The little window that says what a button is for when the pointer rests on
+ * it. A control with TBSTYLE_TOOLTIPS keeps one and asks its parent what to
+ * put in it — TTN_GETDISPINFO, answered by filling in lpszText — so the words
+ * belong to the application and the timing to the control.
+ */
+#define TOOLTIPS_CLASSA "tooltips_class32"
+#define TTS_ALWAYSTIP 0x01
+#define TTS_NOPREFIX 0x02
+#define TTM_ACTIVATE (WM_USER + 1)
+#define TTM_UPDATETIPTEXTA (WM_USER + 12)
+#define TTN_FIRST (0U - 520U)
+#define TTN_GETDISPINFOA (TTN_FIRST - 0U)
+
+typedef struct tagNMTTDISPINFOA {
+    NMHDR hdr;
+    LPSTR lpszText;  /* what to show: point it at your own, or fill szText */
+    char szText[80];
+    HINSTANCE hinst;
+    UINT uFlags;
+    LPARAM lParam;
+} NMTTDISPINFOA;
+
 #define TOOLBARCLASSNAMEA "ToolbarWindow32"
 
 #define TBSTYLE_BUTTON 0x0000
@@ -1673,6 +1700,8 @@ BOOL ChooseColorA(CHOOSECOLORA *cc);
 #define BTNS_NOPREFIX 0x0020
 #define BTNS_SHOWTEXT 0x0040
 #define BTNS_WHOLEDROPDOWN 0x0080
+#define TBSTYLE_TOOLTIPS 0x0100 /* the bar shows a tip for a button with no
+                                 * label of its own, as a shell's does */
 #define TBSTYLE_FLAT 0x0800
 #define TBSTYLE_LIST 0x1000 /* the text beside the icon, not under it */
 
@@ -1744,6 +1773,7 @@ typedef struct tagTBBUTTONINFOA {
  * drop-down, which is what a menu title is. */
 #define TB_SETEXTENDEDSTYLE (WM_USER + 84)
 #define TB_GETEXTENDEDSTYLE (WM_USER + 85)
+#define TB_GETTOOLTIPS (WM_USER + 35)
 #define TBSTYLE_EX_DRAWDDARROWS 0x00000001
 #define I_IMAGENONE (-2)
 #define TB_SETIMAGELIST (WM_USER + 48)

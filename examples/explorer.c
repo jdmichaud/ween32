@@ -3652,6 +3652,29 @@ static void toolbar_drop(int id)
     }
 }
 
+/* What the tip on a toolbar button says. Only the buttons that are a picture
+ * and nothing else have one — a button showing its own label needs no tip, and
+ * the machine gives it none. The words are the machine's. */
+static const char *button_tip(int id)
+{
+    switch (id) {
+    case IDM_UP:
+        return "Up One Level";
+    case IDM_MOVETO:
+        return "Move To";
+    case IDM_COPYTO:
+        return "Copy To";
+    case IDM_DELETE:
+        return "Delete";
+    case IDM_UNDO:
+        return "Undo";
+    case IDM_VIEWS:
+        return "Views";
+    default:
+        return NULL;
+    }
+}
+
 /* Select All, and its opposite. */
 static void do_select_all(int invert)
 {
@@ -5007,8 +5030,9 @@ static void build_bands(HWND w)
      * rebar band the band says where it goes, so this one must not. */
     g_toolbar = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                                 WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
-                                    TBSTYLE_LIST | CCS_NORESIZE |
-                                    CCS_NODIVIDER | CCS_NOPARENTALIGN,
+                                    TBSTYLE_LIST | TBSTYLE_TOOLTIPS |
+                                    CCS_NORESIZE | CCS_NODIVIDER |
+                                    CCS_NOPARENTALIGN,
                                 0, 0, 100, 22, g_rebar,
                                 (HMENU)(UINT_PTR)ID_TOOLBAR, NULL, NULL);
     SendMessageA(g_toolbar, WM_SETFONT, (WPARAM)g_font, TRUE);
@@ -5541,6 +5565,13 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
              * The bar keeps the button pushed in and slides to the next one
              * by itself; all this has to do is put the menu under it. */
             menubar_drop(((const NMTOOLBAR *)lp)->iItem - IDM_MENU_FIRST);
+        } else if (nm->code == TTN_GETDISPINFOA) {
+            /* the bar asking what the button under the pointer is called */
+            NMTTDISPINFOA *ti = (NMTTDISPINFOA *)lp;
+            const char *tip = button_tip((int)ti->hdr.idFrom);
+            if (tip)
+                snprintf(ti->szText, sizeof(ti->szText), "%s", tip);
+            ti->lpszText = ti->szText;
         } else if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_toolbar) {
             toolbar_drop(((const NMTOOLBAR *)lp)->iItem);
         } else if (nm->code == CBEN_ENDEDITA) {

@@ -6255,6 +6255,7 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 /* ---- registration --------------------------------------------------------- */
 
 static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
+static LRESULT CALLBACK tooltip_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
 
 /* ---- the header inside a list view ----------------------------------------
@@ -6378,6 +6379,10 @@ void ween_register_controls(void)
     wc.lpfnWndProc = toolbar_proc;
     wc.lpszClassName = TOOLBARCLASSNAMEA;
     RegisterClassA(&wc);
+    /* the little window a control puts up to say what something is */
+    wc.lpfnWndProc = tooltip_proc;
+    wc.lpszClassName = TOOLTIPS_CLASSA;
+    RegisterClassA(&wc);
     wc.lpfnWndProc = rebar_proc;
     wc.lpszClassName = REBARCLASSNAMEA;
     RegisterClassA(&wc);
@@ -6443,7 +6448,100 @@ typedef struct {
     int btn_h;   /* how tall a button is, when the app has said, else 0 */
     int keyed;   /* the hot item was put there by the keyboard, not the mouse */
     HWND unfocus; /* what had the focus when the keyboard reached this bar */
+    HWND tip;    /* the window its tips are shown in, made when first needed */
+    int tip_for; /* the button that one is about, -1 for none */
 } ween_toolbar;
+
+/* How long the pointer has to rest on a button before its tip shows, and how
+ * long the tip then stays: win32's own defaults, which is what the machine
+ * waits and shows. */
+#define WEEN_TIP_WAIT 500
+#define WEEN_TIP_STAY 5000
+#define WEEN_TIP_TIMER 0x7e01
+#define WEEN_TIP_GONE 0x7e02
+
+/* ---- the tip a button shows when the pointer rests on it -------------------
+ *
+ * A window of its own, which is what win32 makes it: pale yellow, a black
+ * line round it, the shell's face inside, and no frame of any kind. It is
+ * measured off the machine's own — a tip saying "Copy To" is forty-six by
+ * seventeen with its text three in and two down, which is the text's own
+ * width and three.
+ *
+ * Where it goes is measured off the machine too: its top left corner is the
+ * pointer's own, twenty-one pixels down — the height of the arrow, so the tip
+ * sits under the pointer rather than beneath what it is pointing at. Against
+ * the right edge of the screen it is pushed left to fit, and against the
+ * bottom it goes above the pointer instead.
+ */
+#define WEEN_TIP_PAD_X 3 /* the text's left edge, past the line */
+#define WEEN_TIP_PAD_Y 2
+#define WEEN_TIP_DROP 21 /* how far below the pointer the corner sits */
+#define WEEN_TIP_EDGE 1  /* the column it keeps clear of the screen's edge */
+
+static LRESULT CALLBACK tooltip_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        struct ween_wnd *top = ween_top_level(wnd);
+        const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+        RECT r;
+        int ox, oy;
+        BeginPaint(wnd, &ps);
+        GetClientRect(wnd, &r);
+        ween_client_origin(wnd, &ox, &oy);
+        ween_surface_fill(&top->surface, ox, oy, r.right, r.bottom,
+                          ween_cr_to_px(GetSysColor(COLOR_INFOBK)));
+        ween_surface_rect(&top->surface, ox, oy, r.right, r.bottom,
+                          ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
+        if (f && wnd->text)
+            ween_strike_draw(f, &top->surface, ox + WEEN_TIP_PAD_X,
+                             oy + WEEN_TIP_PAD_Y, wnd->text,
+                             (int)strlen(wnd->text),
+                             ween_cr_to_px(GetSysColor(COLOR_INFOTEXT)));
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case TTM_UPDATETIPTEXTA:
+        /* what it says, and with it how big it is */
+        ween_wnd_set_text(wnd, lp ? (const char *)lp : "");
+        InvalidateRect(wnd, NULL, TRUE);
+        return 0;
+    default:
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+    (void)wp;
+}
+
+/* How big a tip has to be to hold what it says, and where it goes for a
+ * pointer at `pt` on the screen. */
+static void tooltip_place(HWND tip, POINT pt, RECT *out)
+{
+    const ween_strike *f = (tip && tip->font) ? tip->font : ween_gui_font();
+    int tw = f && tip->text
+                 ? ween_strike_text_width(f, tip->text, (int)strlen(tip->text))
+                 : 0;
+    int cell = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
+    /* the words, a line either side and two of air: "Delete" is thirty-one
+     * wide and its tip thirty-seven, "Copy To" forty and forty-six */
+    int w = tw + 2 * WEEN_TIP_PAD_X, h = cell + WEEN_TIP_PAD_Y * 2 + 1;
+    int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+    out->left = pt.x;
+    out->top = pt.y + WEEN_TIP_DROP;
+    /* against the right edge it is pushed left until it fits, keeping the
+     * one column of screen the machine's keeps */
+    if (out->left + w > sw - WEEN_TIP_EDGE)
+        out->left = sw - WEEN_TIP_EDGE - w;
+    if (out->left < 0)
+        out->left = 0;
+    if (out->top + h > sh)
+        out->top = pt.y - h - WEEN_TIP_EDGE;
+    if (out->top < 0)
+        out->top = 0;
+    out->right = out->left + w;
+    out->bottom = out->top + h;
+}
 
 static void toolbar_free(void *p)
 {
@@ -6462,6 +6560,7 @@ static ween_toolbar *toolbar_of(HWND w)
         if (w->ctl) {
             ((ween_toolbar *)w->ctl)->hot = -1;
             ((ween_toolbar *)w->ctl)->pressed = -1;
+            ((ween_toolbar *)w->ctl)->tip_for = -1;
         }
     }
     return w->ctl;
@@ -6714,12 +6813,69 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 }
 
+/* Put the tip away, if one is up or on its way. */
+static void toolbar_tip_hide(HWND wnd, ween_toolbar *tb)
+{
+    KillTimer(wnd, WEEN_TIP_TIMER);
+    KillTimer(wnd, WEEN_TIP_GONE);
+    tb->tip_for = -1;
+    if (tb->tip)
+        ShowWindow(tb->tip, SW_HIDE);
+}
+
 static void toolbar_set_hot(HWND wnd, ween_toolbar *tb, int hot)
 {
     if (tb->hot == hot)
         return;
     tb->hot = hot;
+    /* The tip belongs to the button under the pointer, so moving off one puts
+     * it away and moving onto another starts the wait again. A button with a
+     * label of its own gets none: the machine's shell shows a tip for the
+     * ones that are a picture and nothing else. */
+    if (wnd->style & TBSTYLE_TOOLTIPS) {
+        toolbar_tip_hide(wnd, tb);
+        if (hot >= 0 && hot < tb->count && !tb->btn[hot].text &&
+            !(tb->btn[hot].style & TBSTYLE_SEP))
+            SetTimer(wnd, WEEN_TIP_TIMER, WEEN_TIP_WAIT, NULL);
+    }
     InvalidateRect(wnd, NULL, FALSE);
+}
+
+/* The wait is over: ask the window the bar belongs to what this button is
+ * called, and put the tip where the pointer is. */
+static void toolbar_tip_show(HWND wnd, ween_toolbar *tb)
+{
+    NMTTDISPINFOA nm;
+    POINT pt;
+    RECT r;
+    if (tb->hot < 0 || tb->hot >= tb->count || tb->btn[tb->hot].text)
+        return; /* nothing under the pointer, or it says what it is already */
+    memset(&nm, 0, sizeof(nm));
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = (UINT_PTR)tb->btn[tb->hot].id;
+    nm.hdr.code = TTN_GETDISPINFOA;
+    nm.lpszText = nm.szText;
+    if (wnd->parent)
+        SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+    if (!nm.lpszText || !nm.lpszText[0])
+        return; /* nothing to say about it */
+    if (!tb->tip) {
+        tb->tip = CreateWindowExA(WS_EX_NOACTIVATE, TOOLTIPS_CLASSA, "",
+                                  WS_POPUP, 0, 0, 10, 10, ween_top_level(wnd),
+                                  NULL, NULL, NULL);
+        if (tb->tip)
+            SendMessageA(tb->tip, WM_SETFONT, (WPARAM)wnd->font, FALSE);
+    }
+    if (!tb->tip)
+        return;
+    SendMessageA(tb->tip, TTM_UPDATETIPTEXTA, 0, (LPARAM)nm.lpszText);
+    GetCursorPos(&pt);
+    tooltip_place(tb->tip, pt, &r);
+    MoveWindow(tb->tip, r.left, r.top, r.right - r.left, r.bottom - r.top,
+               FALSE);
+    ShowWindow(tb->tip, SW_SHOW);
+    tb->tip_for = tb->hot;
+    SetTimer(wnd, WEEN_TIP_GONE, WEEN_TIP_STAY, NULL);
 }
 
 /* ---- menu mode ------------------------------------------------------------
@@ -6837,6 +6993,25 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     ween_toolbar *tb;
     switch (msg) {
+    case WM_TIMER:
+        /* the pointer has rested long enough for the tip to show, or the tip
+         * has been up long enough to go */
+        tb = toolbar_of(wnd);
+        if (!tb)
+            return 0;
+        if (wp == WEEN_TIP_TIMER) {
+            KillTimer(wnd, WEEN_TIP_TIMER);
+            toolbar_tip_show(wnd, tb);
+            return 0;
+        }
+        if (wp == WEEN_TIP_GONE) {
+            toolbar_tip_hide(wnd, tb);
+            return 0;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+    case TB_GETTOOLTIPS:
+        tb = toolbar_of(wnd);
+        return tb ? (LRESULT)(INT_PTR)tb->tip : 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(wnd, &ps);
