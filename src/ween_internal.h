@@ -100,7 +100,7 @@ const ween_shell_art *ween_shell_picture(int which);
 /* The same dots drawn in one colour instead of inverting what is under them:
  * what a button's rectangle is, where a view's caret inverts. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
-                                int ox, int oy, ween_color c);
+                                int phase, ween_color c);
 /* 24-bit uncompressed BMP, for headless render verification. */
 int ween_surface_write_bmp(const ween_surface *s, const char *path);
 /* Nearest-neighbour integer magnification (dst must be src * zoom). */

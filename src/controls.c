@@ -2852,7 +2852,7 @@ static int tree_has_button(const struct ween_wnd *wnd, const ween_tvitem *it,
 static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                      int ox, int oy, int depth, int row, int lines, int at_root,
                      const ween_tvitem *sel, int sel_state, HIMAGELIST images,
-                     HIMAGELIST state_images, int buttons)
+                     HIMAGELIST state_images, int buttons, int phase)
 {
     int th = f ? f->ascent - f->descent : 13;
     int icon_w = 0, icon_h = 0, st_w = 0, st_h = 0;
@@ -2938,7 +2938,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
                  * the same rule that brings out a menu's underlines */
                 if (sel_state == 2 && ween_ui_focus_cues)
                     ween_surface_focus_rect(s, tx - 2, y, tw + 4,
-                                            WEEN_TV_ITEM_H, 0);
+                                            WEEN_TV_ITEM_H, phase);
             }
             ween_strike_draw(f, s, tx, ty, it->text, (int)strlen(it->text),
                              sel_state == 2 && selected ? WEEN_WHITE
@@ -2948,7 +2948,7 @@ static int tree_draw(ween_surface *s, const ween_strike *f, ween_tvitem *first,
         if (it->expanded && it->child)
             row = tree_draw(s, f, it->child, ox, oy, depth + 1, row, lines,
                             at_root, sel, sel_state, images, state_images,
-                            buttons);
+                            buttons, phase);
         /* Down to the next sibling — past this item's children, when it has
          * any open. Drawn after them so the run is one length rather than
          * one per row, and so an item with a subtree under it still has the
@@ -3124,7 +3124,7 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
               : (wnd->style & TVS_SHOWSELALWAYS) ? 1
                                                  : 0,
               t->images, t->state_images,
-              (wnd->style & TVS_HASBUTTONS) != 0);
+              (wnd->style & TVS_HASBUTTONS) != 0, (ox + oy) & 1);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -4319,13 +4319,13 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
             if (icons)
                 ween_surface_focus_rect(&top->surface, ox + c.left,
                                         oy + c.top, WEEN_LV_ICON_W,
-                                        c.bottom - c.top, 0);
+                                        c.bottom - c.top, (ox + oy) & 1);
             else
                 ween_surface_focus_rect(&top->surface,
                                         ox + c.left + icon_w + 1,
                                         oy + c.top +
                                             (WEEN_LV_FLOW_H - th) / 2,
-                                        tw + 3, th, 0);
+                                        tw + 3, th, (ox + oy) & 1);
         }
     }
     (void)dc;
@@ -4440,7 +4440,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, ox - sx, y, rw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih, 0);
+                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih,
+                                        (ox + oy) & 1);
         } else if ((selected || caret) && f && l->row[i].text[l->icon_col]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
@@ -4449,7 +4450,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, lx, y, lw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, lx, y, lw, ih, 0);
+                ween_surface_focus_rect(&top->surface, lx, y, lw, ih,
+                                        (ox + oy) & 1);
         }
         if (has_image) {
             /* A picked row's picture is drawn as it is — the machine washes
