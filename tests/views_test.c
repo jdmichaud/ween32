@@ -175,12 +175,38 @@ int main(void)
         CHECK(st.sel == 40 && st.top == st.max_top,
               "End selects the last and scrolls to it");
 
+        /* Shift and an arrow takes the run from the end it started at, and
+         * keeps that end for the next press: measuring from the caret each
+         * time leaves two rows picked however many times it is pressed —
+         * which is what it used to do. The library's own shift bit is the low
+         * one of lParam. */
+        SendMessageA(g_list, WM_KEYDOWN, VK_HOME, 0);
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
+        CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 4,
+              "Shift and three downs pick the four rows they crossed");
+        SendMessageA(g_list, WM_KEYDOWN, VK_UP, 1);
+        CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 3,
+              "and coming back up gives one of them up again");
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 0);
+        CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
+              "an arrow with no Shift picks one and moves the end with it");
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
+        CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 2,
+              "so the next run is measured from where that left the caret");
+
         /* Enter says what a double click says — a shell opens what is picked
          * — and moves nothing while it says it. */
-        SendMessageA(g_list, WM_KEYDOWN, VK_RETURN, 0);
         ween_listview_view(g_list, &st);
-        CHECK(g_returns == 1, "Enter over the list asks the app to open a row");
-        CHECK(st.sel == 40, "and leaves the selection where it was");
+        {
+            int was = st.sel;
+            SendMessageA(g_list, WM_KEYDOWN, VK_RETURN, 0);
+            ween_listview_view(g_list, &st);
+            CHECK(g_returns == 1,
+                  "Enter over the list asks the app to open a row");
+            CHECK(st.sel == was, "and leaves the selection where it was");
+        }
         SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&(LVITEMA){
             .mask = LVIF_STATE, .state = 0, .stateMask = LVIS_SELECTED });
         SendMessageA(g_list, WM_KEYDOWN, VK_RETURN, 0);

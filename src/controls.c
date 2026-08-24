@@ -3616,6 +3616,11 @@ typedef struct {
     int focus;    /* 1-based: the row an arrow key moves from, which outlives
                    * the selection — clicking a file's size clears the one and
                    * leaves the other where it was */
+    int anchor;   /* 1-based: where a run picked with Shift is measured from.
+                   * A plain click or a plain arrow puts it under the caret;
+                   * Shift leaves it where it is, so a second Shift press
+                   * takes the run from the same end as the first — moving it
+                   * each time is what left only the last two picked. */
     int top;      /* the first row drawn: a file list has to scroll */
     int pressed;  /* the header column being held down, -1 for none */
     int drag_col; /* the heading being carried to another place, -1 for none */
@@ -4765,7 +4770,6 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         {
-        int anchor = l->sel ? l->sel : l->focus;
         l->sel = l->focus;
         switch (wp) {
         case VK_DOWN:
@@ -4794,9 +4798,9 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             break;
         case VK_RETURN:
             /* Enter says what a double click says: the application is being
-             * asked to open what is picked. Nothing moves, so the selection
-             * is put back before the parent is told. */
-            l->sel = anchor;
+             * asked to open what is picked. Nothing moves, so the caret is
+             * put back before the parent is told. */
+            l->sel = l->focus;
             if (lv_selected_count(l))
                 notify_parent(wnd, NM_RETURN);
             return 0;
@@ -4805,11 +4809,15 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         l->focus = l->sel;
         /* the arrow moves the one that is picked, unless Shift is held, which
-         * takes the run from where it started instead */
-        if (!(wnd->style & LVS_SINGLESEL) && (lp & 1))
-            lv_select_range(l, anchor - 1, l->sel - 1);
-        else
+         * takes the run from the end the run started at */
+        if (!(wnd->style & LVS_SINGLESEL) && (lp & 1)) {
+            if (!l->anchor)
+                l->anchor = l->sel;
+            lv_select_range(l, l->anchor - 1, l->sel - 1);
+        } else {
             lv_select_one(l, l->sel - 1);
+            l->anchor = l->sel;
+        }
         ween_ui_focus_cues = 1; /* the keyboard has been used, so it shows */
         /* keep the selection in view, which is the whole point of moving it */
         if (l->sel) {
