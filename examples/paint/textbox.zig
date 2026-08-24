@@ -6,9 +6,17 @@
 //! selection's navy, four of nothing — with the same eight handles a
 //! selection has; the opaque setting fills it with the background colour
 //! before the text goes on, as it does for a selection; what is typed wraps
-//! at the box's right edge, word by word; and a caret blinks after the last
-//! character. Escape throws the lot away, and so does anything that ends the
-//! box without there being anything in it.
+//! at the box's right edge, word by word; and a caret blinks where the next
+//! letter will go. Escape throws the lot away, and so does anything that
+//! ends the box without there being anything in it.
+//!
+//! Two things the machine does that are worth saying because they look like
+//! oversights and are not. The eight handles do nothing at all: the box
+//! cannot be moved or made bigger, and a press on one is a press outside the
+//! box, which puts the letters into the picture and starts another box where
+//! the drag goes. And a face, a size or a weight picked from the Fonts bar
+//! is the whole box's, not the picked-out run's — the machine changes every
+//! letter in the box however little of it was selected.
 
 const w = @import("ween32");
 const A = @import("app.zig");
@@ -79,6 +87,7 @@ pub fn setFont(name: []const u8, size: i32, b: bool, i: bool, u: bool) void {
         _ = w.DeleteObject(f);
         font = null;
     }
+    forgetWidths();
 }
 
 pub fn active() bool {
@@ -249,10 +258,13 @@ pub fn place(p: w.POINT, dc: w.HDC, dragging: bool) void {
     }
     const line = lines[row];
     var at = line.from;
+    var before: i32 = 0;
     while (at < line.to) : (at += 1) {
-        const upto = widthOf(dc, box.text[line.from .. at + 1]);
-        const before = widthOf(dc, box.text[line.from..at]);
+        // the caret goes to whichever side of the letter the press is
+        // nearer, which is where its middle falls
+        const upto = before + charWidth(dc, box.text[at]);
         if (in.left + @divTrunc(before + upto, 2) > p.x) break;
+        before = upto;
     }
     box.caret = at;
     if (!dragging) box.anchor = at;
@@ -284,6 +296,25 @@ fn widthOf(dc: w.HDC, s: []const u8) i32 {
     return size.cx;
 }
 
+/// What one character is worth, kept for as long as the font stays the same.
+/// Laying a paragraph out means asking this for every character of it and
+/// again for every line it might break at; measuring whole runs instead was
+/// asking the same question thousands of times over for one repaint.
+var widths: [256]i32 = @splat(-1);
+
+fn charWidth(dc: w.HDC, c: u8) i32 {
+    if (widths[c] < 0) {
+        var one = [_]u8{c};
+        widths[c] = widthOf(dc, &one);
+    }
+    return widths[c];
+}
+
+/// The measurements are the font's: a new one means they are all wrong.
+fn forgetWidths() void {
+    widths = @splat(-1);
+}
+
 /// Where each line of the typed text begins and ends once it has been broken
 /// to the box's width. Returns how many lines there are, and hands each to
 /// the caller — a return breaks a line, and so does running out of room,
@@ -296,11 +327,13 @@ fn layout(dc: w.HDC, room: i32, out: *[64]Line) usize {
     while (at <= box.len and lines < out.len) {
         var end = at;
         var take = at;
+        var used: i32 = 0;
         var last_space: ?usize = null;
         while (end < box.len) : (end += 1) {
             const ch = box.text[end];
             if (ch == '\r' or ch == '\n') break;
-            if (widthOf(dc, box.text[at .. end + 1]) > room and take > at) {
+            used += charWidth(dc, ch);
+            if (used > room and take > at) {
                 // too wide: back up to the last space that fitted
                 end = last_space orelse take;
                 break;
@@ -331,6 +364,10 @@ pub fn selectWord(p: w.POINT, dc: w.HDC) void {
     while (from > 0 and isWord(box.text[from - 1]) == word) from -= 1;
     var to = at;
     while (to < box.len and isWord(box.text[to]) == word) to += 1;
+    // and the spaces after it, the way a field takes them
+    if (word) while (to < box.len and box.text[to] == ' ') {
+        to += 1;
+    };
     box.anchor = from;
     box.caret = to;
     box.caret_on = true;
@@ -446,49 +483,16 @@ pub fn handleRect(i: usize) w.RECT {
     return .{ .left = hx, .top = hy, .right = hx + handle, .bottom = hy + handle };
 }
 
-/// Which handle is under a point, if any.
-pub fn handleAt(p: w.POINT) ?usize {
-    if (!box.open) return null;
-    for (0..9) |i| {
-        if (i == 4) continue;
-        const h = handleRect(i);
-        if (p.x >= h.left and p.x < h.right and p.y >= h.top and p.y < h.bottom)
-            return i;
-    }
-    return null;
-}
-
-/// Whether a point is on the border itself, which is what the box is carried
-/// by: within two pixels of the dashed line, inside or out.
-pub fn onBorder(p: w.POINT) bool {
+/// Whether a point is in the box's own room: the letters, the caret and the
+/// picking-out happen there, and everywhere else -- the border and the eight
+/// handles along with it -- belongs to the tool. The machine draws those
+/// handles and does nothing at all with them: a press on one puts the text
+/// into the picture and starts another box, the same as a press out in the
+/// open does.
+pub fn holds(p: w.POINT) bool {
     if (!box.open) return false;
     const r = box.rect;
-    if (p.x < r.left - 2 or p.x > r.right + 2 or p.y < r.top - 2 or p.y > r.bottom + 2)
-        return false;
-    return p.x <= r.left + 2 or p.x >= r.right - 2 or p.y <= r.top + 2 or
-        p.y >= r.bottom - 2;
-}
-
-/// Drag a handle: the edges it owns follow the pointer, and the box never
-/// closes past the room one line of letters needs.
-pub fn dragHandle(i: usize, p: w.POINT) void {
-    if (!box.open) return;
-    const least = 8;
-    var r = box.rect;
-    if (i % 3 == 0) r.left = @min(p.x, r.right - least);
-    if (i % 3 == 2) r.right = @max(p.x, r.left + least);
-    if (i / 3 == 0) r.top = @min(p.y, r.bottom - least);
-    if (i / 3 == 2) r.bottom = @max(p.y, r.top + least);
-    box.rect = r;
-}
-
-/// Carry the whole box, border and letters together.
-pub fn moveBy(dx: i32, dy: i32) void {
-    if (!box.open) return;
-    box.rect.left += dx;
-    box.rect.right += dx;
-    box.rect.top += dy;
-    box.rect.bottom += dy;
+    return p.x > r.left and p.x < r.right and p.y > r.top and p.y < r.bottom;
 }
 
 /// The dashed border and its eight handles.

@@ -100,6 +100,17 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
     }
 }
 
+/// The panel holding the three boxes passes on what they say. A dialog does
+/// this for the controls inside it; this is a window, so it has to be told —
+/// and without it a font picked from a list was heard by nobody.
+fn panelProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LRESULT {
+    if (msg == w.WM_COMMAND or msg == w.WM_NOTIFY) {
+        const parent = w.GetParent(hwnd) orelse return 0;
+        return w.SendMessageA(parent, msg, wp, lp);
+    }
+    return w.DefWindowProcA(hwnd, msg, wp, lp);
+}
+
 pub fn register() void {
     var wc = w.WNDCLASSA{
         .lpfnWndProc = proc,
@@ -109,7 +120,7 @@ pub fn register() void {
     };
     _ = w.RegisterClassA(&wc);
     var panel = w.WNDCLASSA{
-        .lpfnWndProc = w.DefWindowProcA,
+        .lpfnWndProc = panelProc,
         .hbrBackground = w.GetSysColorBrush(w.COLOR_BTNFACE),
         .hCursor = w.LoadCursorA(null, w.IDC_ARROW),
         .lpszClassName = "PaintFontsPanel",
@@ -119,11 +130,16 @@ pub fn register() void {
 
 fn build() void {
     if (bar != null) return;
-    // The window the machine has, to the pixel: 475x51 outside, 469x29 in.
+    // The window the machine has, to the pixel: 475x51 outside, 469x29 in,
+    // and fifteen in from the corner of the window it belongs to -- which is
+    // where the machine's own sits, its Paint being at the corner of the
+    // screen.
+    var fr: w.RECT = undefined;
+    _ = w.GetWindowRect(app.frame, &fr);
     // Made out of sight and shown afterwards without being activated: the
     // caret stays in the picture while the bar floats over it, which is how
     // the machine's behaves — its caption is grey while you type.
-    const h = w.CreateWindowExA(w.WS_EX_TOOLWINDOW, "PaintFontsBar", "Fonts", w.WS_POPUP | w.WS_CAPTION | w.WS_SYSMENU, 15, 15, 475, 51, app.frame, null, null, null).?;
+    const h = w.CreateWindowExA(w.WS_EX_TOOLWINDOW, "PaintFontsBar", "Fonts", w.WS_POPUP | w.WS_CAPTION | w.WS_SYSMENU, fr.left + 15, fr.top + 15, 475, 51, app.frame, null, null, null).?;
     bar = h;
 
     // The machine keeps the three boxes in a dialog of its own inside the

@@ -97,11 +97,8 @@ fn drawHandles(dc: w.HDC) void {
 /// the button comes up — until then it is a dotted rectangle, which is what
 /// the machine shows.
 var page_sizing: ?u8 = null;
-/// The open text box being stretched by one of its handles, or carried by
-/// its border — which is how the machine's is moved and resized.
-var box_handle: ?usize = null;
-var box_carry: ?w.POINT = null;
-/// A drag through the letters, which picks out the run it passes over.
+/// A drag through the letters of an open text box, which picks out the run
+/// it passes over.
 var box_pick = false;
 var page_size: w.POINT = .{ .x = 0, .y = 0 };
 
@@ -332,39 +329,22 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     _ = w.SetCapture(hwnd);
     _ = w.SetFocus(hwnd); // the view takes the keyboard: the text tool needs it
 
-    // A press inside an open box puts the caret where it landed, and one on
-    // its frame takes hold of it: a handle stretches it, the border between
-    // the handles carries it.
-    if (!right and textbox.active()) {
-        if (textbox.handleAt(p)) |h| {
-            box_handle = h;
-            _ = w.SetCapture(hwnd);
-            return;
-        }
-        if (textbox.onBorder(p)) {
-            box_carry = p;
-            _ = w.SetCapture(hwnd);
-            return;
-        }
-        const r = textbox.box.rect;
-        if (p.x >= r.left and p.x < r.right and p.y >= r.top and p.y < r.bottom) {
-            // Shift keeps the far end where it is, so a press picks out
-            // everything between there and here -- as it does in a field.
-            const dc = w.GetDC(hwnd).?;
-            textbox.place(p, dc, (wp & w.MK_SHIFT) != 0);
-            box_pick = true;
-            _ = w.SetCapture(hwnd);
-            _ = w.ReleaseDC(hwnd, dc);
-            invalidateBox(hwnd);
-            return;
-        }
+    // A press inside an open box puts the caret where it landed and starts
+    // picking out letters. Everywhere else -- the border and the handles
+    // included, which the machine draws but does nothing with -- a press
+    // ends the box and lets the tool have the drag.
+    if (!right and textbox.active() and textbox.holds(p)) {
+        // Shift keeps the far end where it is, so a press picks out
+        // everything between there and here -- as it does in a field.
+        const dc = w.GetDC(hwnd).?;
+        textbox.place(p, dc, (wp & w.MK_SHIFT) != 0);
+        _ = w.ReleaseDC(hwnd, dc);
+        box_pick = true;
+        _ = w.SetCapture(hwnd);
+        invalidateBox(hwnd);
+        return;
     }
-
-    // A press outside an open text box finishes it.
-    if (textbox.active() and app.tool != .text) textbox.commit();
-    if (textbox.active() and (p.x < textbox.box.rect.left or p.x >= textbox.box.rect.right or
-        p.y < textbox.box.rect.top or p.y >= textbox.box.rect.bottom))
-    {
+    if (textbox.active()) {
         textbox.commit();
         _ = w.InvalidateRect(hwnd, null, w.FALSE);
     }
@@ -436,19 +416,6 @@ var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
-    if (box_handle) |h| {
-        invalidateBox(hwnd); // where the box was
-        textbox.dragHandle(h, p);
-        invalidateBox(hwnd); // and where it is now
-        return;
-    }
-    if (box_carry) |from| {
-        invalidateBox(hwnd);
-        textbox.moveBy(p.x - from.x, p.y - from.y);
-        box_carry = p;
-        invalidateBox(hwnd);
-        return;
-    }
     if (box_pick) {
         const dc = w.GetDC(hwnd).?;
         textbox.place(p, dc, true);
@@ -610,9 +577,7 @@ const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
-    if (box_handle != null or box_carry != null or box_pick) {
-        box_handle = null;
-        box_carry = null;
+    if (box_pick) {
         box_pick = false;
         _ = w.ReleaseCapture();
         invalidateBox(hwnd);
@@ -740,8 +705,9 @@ fn setCursor(hwnd: w.HWND) void {
         if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0)
             h = liveHandleAt(pt);
     }
-    // Over an open text box the pointer is the one for choosing letters,
-    // which is what says the box can be typed in and picked through.
+    // Inside an open text box the pointer is the one for choosing letters;
+    // on its border, on its handles and anywhere else it is the tool's own,
+    // since a press there starts another box.
     if (textbox.active()) {
         var pt: w.POINT = undefined;
         if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0) {
@@ -750,10 +716,7 @@ fn setCursor(hwnd: w.HWND) void {
                 .x = @divFloor(pt.x - o.x, app.zoom),
                 .y = @divFloor(pt.y - o.y, app.zoom),
             };
-            const r = textbox.box.rect;
-            if (textbox.handleAt(ip) == null and !textbox.onBorder(ip) and
-                ip.x >= r.left and ip.x < r.right and ip.y >= r.top and ip.y < r.bottom)
-            {
+            if (textbox.holds(ip)) {
                 _ = w.SetCursor(w.LoadCursorA(null, w.IDC_IBEAM));
                 return;
             }
@@ -837,8 +800,7 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             // in a text box, a double press picks out the word under it
             if (textbox.active()) {
                 const p = toImage(lp);
-                const r = textbox.box.rect;
-                if (p.x >= r.left and p.x < r.right and p.y >= r.top and p.y < r.bottom) {
+                if (textbox.holds(p)) {
                     const dc = w.GetDC(hwnd).?;
                     textbox.selectWord(p, dc);
                     _ = w.ReleaseDC(hwnd, dc);

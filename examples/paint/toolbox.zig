@@ -15,6 +15,7 @@ const art = @import("art_tools.zig");
 const artwork = @import("artwork.zig");
 const opts = @import("art_options.zig");
 const selection = @import("selection.zig");
+const textbox = @import("textbox.zig");
 const app = &A.app;
 
 pub const class_name = "PaintToolBox";
@@ -188,6 +189,10 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             const x = w.GET_X_LPARAM(lp);
             const y = w.GET_Y_LPARAM(lp);
             if (toolAt(x, y)) |t| {
+                // Turning to another tool puts an open text box into the
+                // picture: what was typed is not lost by looking away from
+                // it, which is what the machine does.
+                if (t != .text and textbox.active()) textbox.commit();
                 app.tool = t;
                 _ = w.InvalidateRect(hwnd, null, w.FALSE);
                 _ = w.InvalidateRect(app.view, null, w.FALSE);
@@ -199,6 +204,8 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
                     selection.rebuild();
                     _ = w.InvalidateRect(app.view, null, w.FALSE);
                 }
+                // and an open text box takes it as it is drawn
+                if (textbox.active()) _ = w.InvalidateRect(app.view, null, w.FALSE);
             }
             return 0;
         },

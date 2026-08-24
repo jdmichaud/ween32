@@ -347,6 +347,15 @@ pub fn setHelpText(text: [*:0]const u8) void {
 }
 
 fn command(id: u16) void {
+    // Anything asked of the program while a text box is open puts what was
+    // typed into the picture first -- it is about to be saved, cleared,
+    // turned over or zoomed, and the letters belong in it before any of
+    // that. Showing and hiding the bar the box is lettered from is the one
+    // thing that is about the box itself.
+    if (id != ID.view_text_toolbar and textbox.active()) {
+        textbox.commit();
+        _ = w.InvalidateRect(app.view, null, w.FALSE);
+    }
     switch (id) {
         ID.file_new => {
             if (!askToSave()) return;
