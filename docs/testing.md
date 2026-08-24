@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **529 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **546 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -643,7 +643,7 @@ that did not exist yet, a menu title that was not a whole-button drop-down.
 Xvfb :99 -screen 0 1024x768x24 &          # no window manager needed
 export DISPLAY=:99 WINEPREFIX=${XDG_CACHE_HOME:-$HOME/.cache}/ween32-refcapture
 zig cc -target x86_64-windows-gnu -std=c99 -Iinclude examples/explorer.c \
-    -luser32 -lgdi32 -lcomctl32 -o examples/ween-explorer.exe
+    -luser32 -lgdi32 -lcomctl32 -lshell32 -o examples/ween-explorer.exe
 WEEN32_EXPLORER_FIXTURE=1 wine explorer /desktop=ween32test,760x600 \
     'Z:\path\to\ween32\examples\ween-explorer.exe' &
 xwininfo -root -tree | grep "Local Disk"   # the window id, to grab or click
@@ -672,7 +672,9 @@ pixels. ween32 puts them at 10, 42, 76, 114, 175 and 216. Wine puts them at 10,
 where ween32 lands; it is wine in between that cannot agree with itself.
 
 So the two builds will not come out pixel for pixel under wine, and chasing
-that is chasing wine.
+that is chasing wine — unless wine is given a Tahoma whose advances are what
+its own scaling arrives at, which is what `tools/winecmp/` is for and the one
+way to get the two pictures comparable.
 Ask for the geometry instead: paste a block into `layout()` that dumps every
 control's rectangle — `GetWindowRect` relative to the client origin, plus
 `TB_GETITEMRECT` for each button and `LVM_GETCOLUMNWIDTH` for each column —

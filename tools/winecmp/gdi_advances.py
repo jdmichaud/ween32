@@ -16,8 +16,9 @@ the stock font.
 
     tools/winecmp/gdi_advances.py fonts/tahoma.ttf out.ttf units.txt 11
 
-`units.txt` is what tools/winecmp/fit.py works out: one line per character,
-the advance in font units at which wine reports the pixel width ween32 draws.
+`units.txt` is one line per character: the advance in font units at which wine
+reports the pixel width ween32 draws — see tools/winecmp/README.md for how the
+table was found.
 """
 
 import struct, sys

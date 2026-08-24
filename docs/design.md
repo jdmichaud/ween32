@@ -31,10 +31,12 @@ pixels. Owner-drawn colored keys (`BS_OWNERDRAW`/`WM_DRAWITEM`), memory keys,
   colors are the Win2000 `GetSysColor` defaults; the caption is the real
   navy→blue gradient.
 - **The authentic text.** Small GDI text was never rasterized from outlines: it
-  came from hand-tuned 1-bit bitmaps embedded in the font. ween32 reads
-  Tahoma's 11-ppem embedded strikes (EBLC/EBDT) directly — the same glyphs GDI
-  showed. Caption glyphs (the close box ✕) come from Marlett's outlines,
-  scanline-filled with no antialiasing, as `DrawFrameControl` drew them.
+  came from hand-tuned 1-bit bitmaps embedded in the font. ween32 reads the
+  embedded strikes (EBLC/EBDT) directly — Tahoma and its bold cut for the
+  shell, MS Sans Serif for dialogs, which is what "MS Shell Dlg" resolves to
+  on this Windows — the same glyphs GDI showed. Caption glyphs (the close box
+  ✕) come from Marlett's outlines, scanline-filled with no antialiasing, as
+  `DrawFrameControl` drew them.
 - **The authentic layout.** Dialogs position controls in **dialog units** via
   `GetDialogBaseUnits`/`MapDialogRect` (`px = MulDiv(dlu, base, 4 or 8)`), so
   the standard 50×14 DLU button comes out 75×23 px — nothing is hand-placed.
@@ -44,10 +46,16 @@ pixels. Owner-drawn colored keys (`BS_OWNERDRAW`/`WM_DRAWITEM`), memory keys,
 ```
  your win32-style C code
  ────────────────────────────────────────────────
- win32 API layer      user.c  gdi.c  dialog.c
- software engine      surface.c classic.c font.c marlett.c   (zero deps)
+ win32 API layer      user.c  gdi.c  draw.c  dialog.c  menu.c
+                      controls.c  propsheet.c  comdlg.c  imagelist.c
+ software engine      surface.c classic.c font.c fonts.c marlett.c  (zero deps)
+                      shellart.c  cursorart.c   the art that is not a font
  presentation         x11.c (XPutImage blit + input)  headless.c (tests)
 ```
+
+`controls.c` holds the window classes an application asks for by name — the
+five USER32 ones and the common controls, including the two views a shell is
+built from — and `draw.c` the drawing half of GDI that a paint program needs.
 
 A top-level window owns one native (X11) window and one surface; the library
 draws the non-client chrome (caption, close box, drag) in `DefWindowProcA`,
@@ -58,7 +66,7 @@ draw. On Windows there is no backend: your code just uses the real thing.
 ## Build
 
 ```sh
-make            # libween32.a + examples (dialog, calc; libX11 to run them live)
+make            # libween32.a + the examples (libX11 to run them live)
 make test       # headless test suite: engine pixels + full API path, no display needed
 make X11=0      # library without the X11 backend
 ```
@@ -99,8 +107,8 @@ and headless runs default to 96 for determinism:
 
 ## Fonts and licensing
 
-The library code is MIT. The embedded fonts (`fonts/tahoma.ttf`,
-`fonts/marlett.ttf`) are Wine's redistributable Tahoma and Marlett replacements
-(see Wine's `fonts/` — LGPL); they carry their own license, not MIT. They are
-build-time embedded byte arrays; swap the files and regenerate (`xxd -i`) to use
+The library code is MIT. The embedded fonts are Wine's redistributable Tahoma,
+its bold cut, MS Sans Serif and Marlett replacements (see Wine's `fonts/` —
+LGPL); they carry their own license, not MIT. They are build-time embedded byte
+arrays in `fonts/*_ttf.h`; swap the files and regenerate (`xxd -i`) to use
 different metrics-compatible fonts.
