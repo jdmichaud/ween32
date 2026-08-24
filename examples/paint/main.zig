@@ -20,6 +20,7 @@ const toolbox = @import("toolbox.zig");
 const colorbox = @import("colorbox.zig");
 const canvas = @import("canvas.zig");
 const textbox = @import("textbox.zig");
+const fontbar = @import("fontbar.zig");
 const artwork = @import("artwork.zig");
 const art_icon = @import("art_icon.zig");
 const dialogs = @import("dialogs.zig");
@@ -164,6 +165,7 @@ fn buildMenu() w.HMENU {
         .{ .id = ID.view_tool_box, .text = "&Tool Box\tCtrl+T", .flags = checked },
         .{ .id = ID.view_color_box, .text = "&Color Box\tCtrl+L", .flags = checked },
         .{ .id = ID.view_status_bar, .text = "&Status Bar", .flags = checked },
+        // greyed until a text box is open, as the machine greys it
         .{ .id = ID.view_text_toolbar, .text = "T&ext Toolbar", .flags = grayed },
         .{},
     });
@@ -262,6 +264,12 @@ fn frameProc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c)
         },
         w.WM_COMMAND => {
             command(w.LOWORD(wp));
+            return 0;
+        },
+        w.WM_INITMENU => {
+            // what is available depends on what is going on, and the moment
+            // the menu is asked for is when that is known
+            updateMenus();
             return 0;
         },
         w.WM_MENUSELECT => {
@@ -442,6 +450,10 @@ fn command(id: u16) void {
         ID.view_tool_box => toggleBar(&app.show_toolbox, app.toolbox, ID.view_tool_box),
         ID.view_color_box => toggleBar(&app.show_colorbox, app.colorbox, ID.view_color_box),
         ID.view_status_bar => toggleBar(&app.show_status, app.status, ID.view_status_bar),
+        ID.view_text_toolbar => {
+            fontbar.toggle();
+            _ = w.CheckMenuItem(w.GetMenu(app.frame), ID.view_text_toolbar, if (fontbar.visible()) w.MF_CHECKED else w.MF_UNCHECKED);
+        },
         ID.view_bitmap => viewbitmap.show(),
         ID.view_show_thumbnail => {
             app.thumbnail = !app.thumbnail;
@@ -524,6 +536,9 @@ pub fn updateMenus() void {
     _ = w.EnableMenuItem(m, ID.edit_copy, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_clear, if (sel) on else off);
     _ = w.EnableMenuItem(m, ID.edit_paste, if (w.IsClipboardFormatAvailable(w.CF_BITMAP) != 0) on else off);
+    // the Fonts bar can only be asked for while there is a box to letter
+    _ = w.EnableMenuItem(m, ID.view_text_toolbar, if (textbox.active()) on else off);
+    _ = w.CheckMenuItem(m, ID.view_text_toolbar, if (fontbar.visible()) w.MF_CHECKED else w.MF_UNCHECKED);
 }
 
 /// Before anything that would lose the picture: save it, throw it away, or
@@ -766,6 +781,7 @@ pub fn main() void {
     canvas.register();
     viewbitmap.register();
     thumbnail.register();
+    fontbar.register();
 
     const frame = w.CreateWindowExA(0, "MSPaintApp", "untitled - Paint", w.WS_OVERLAPPEDWINDOW | w.WS_CLIPCHILDREN | w.WS_CLIPSIBLINGS, w.CW_USEDEFAULT, w.CW_USEDEFAULT, 275, 400, null, buildMenu(), null, null).?;
     _ = w.ShowWindow(frame, w.SW_SHOWNORMAL);
@@ -777,15 +793,19 @@ pub fn main() void {
 
     var msg: w.MSG = undefined;
     while (w.GetMessageA(&msg, null, 0, 0) != 0) {
-        if (w.TranslateAcceleratorA(frame, accel, &msg) != 0) continue;
-        // Alt and the letters after it: the menu bar is reached from the
-        // keyboard the same way a dialog's controls are, which is what the
-        // framework does for the real one.
-        //
-        // Not while there is a text box open, though: dialog navigation eats
-        // the space bar — it is how a dialog presses a button — and a space
-        // typed into a text box has to reach the box.
-        if (!textbox.active() and w.IsDialogMessageA(frame, &msg) != 0) continue;
+        // What is typed into a text box belongs to the box, and neither the
+        // shortcuts nor the dialog conventions may take it first: Delete is
+        // Clear Selection to the one and a space presses a button to the
+        // other, and both are ordinary typing to a box. A key held with
+        // Control or Alt is not typing — that is a shortcut or the way to
+        // the menu bar — so those go through as they always did.
+        const with_alt = (msg.lParam & (1 << 29)) != 0;
+        const with_ctrl = (msg.lParam & (1 << 28)) != 0;
+        const typing = textbox.active() and !with_alt and !with_ctrl and
+            (msg.message == w.WM_KEYDOWN or msg.message == w.WM_KEYUP or
+            msg.message == w.WM_CHAR);
+        if (!typing and w.TranslateAcceleratorA(frame, accel, &msg) != 0) continue;
+        if (!typing and w.IsDialogMessageA(frame, &msg) != 0) continue;
         _ = w.TranslateMessage(&msg);
         _ = w.DispatchMessageA(&msg);
     }

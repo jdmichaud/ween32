@@ -97,6 +97,10 @@ fn drawHandles(dc: w.HDC) void {
 /// the button comes up — until then it is a dotted rectangle, which is what
 /// the machine shows.
 var page_sizing: ?u8 = null;
+/// The open text box being stretched by one of its handles, or carried by
+/// its border — which is how the machine's is moved and resized.
+var box_handle: ?usize = null;
+var box_carry: ?w.POINT = null;
 var page_size: w.POINT = .{ .x = 0, .y = 0 };
 
 const page_handle = struct {
@@ -224,6 +228,14 @@ fn paint(hwnd: w.HWND) void {
             var sr = size_rect;
             _ = w.DrawFocusRect(dc, &sr);
         }
+        // The box lengthens under what has been typed; if it just has, what
+        // is under it has to be painted again.
+        if (textbox.reflow(dc)) {
+            _ = w.SetViewportOrgEx(dc, 0, 0, null);
+            _ = w.EndPaint(hwnd, &ps);
+            invalidateBox(hwnd);
+            return;
+        }
         textbox.draw(dc, true);
         tools.drawDrag(dc);
         _ = w.SetViewportOrgEx(dc, 0, 0, null);
@@ -318,6 +330,30 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     _ = w.SetCapture(hwnd);
     _ = w.SetFocus(hwnd); // the view takes the keyboard: the text tool needs it
 
+    // A press inside an open box puts the caret where it landed, and one on
+    // its frame takes hold of it: a handle stretches it, the border between
+    // the handles carries it.
+    if (!right and textbox.active()) {
+        if (textbox.handleAt(p)) |h| {
+            box_handle = h;
+            _ = w.SetCapture(hwnd);
+            return;
+        }
+        if (textbox.onBorder(p)) {
+            box_carry = p;
+            _ = w.SetCapture(hwnd);
+            return;
+        }
+        const r = textbox.box.rect;
+        if (p.x >= r.left and p.x < r.right and p.y >= r.top and p.y < r.bottom) {
+            const dc = w.GetDC(hwnd).?;
+            textbox.place(p, dc);
+            _ = w.ReleaseDC(hwnd, dc);
+            invalidateBox(hwnd);
+            return;
+        }
+    }
+
     // A press outside an open text box finishes it.
     if (textbox.active() and app.tool != .text) textbox.commit();
     if (textbox.active() and (p.x < textbox.box.rect.left or p.x >= textbox.box.rect.right or
@@ -394,6 +430,19 @@ var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    if (box_handle) |h| {
+        invalidateBox(hwnd); // where the box was
+        textbox.dragHandle(h, p);
+        invalidateBox(hwnd); // and where it is now
+        return;
+    }
+    if (box_carry) |from| {
+        invalidateBox(hwnd);
+        textbox.moveBy(p.x - from.x, p.y - from.y);
+        box_carry = p;
+        invalidateBox(hwnd);
+        return;
+    }
     if (page_sizing) |h| {
         const size = pageSizeFor(h, clientPoint(lp));
         if (size.x == page_size.x and size.y == page_size.y) return;
@@ -548,6 +597,13 @@ const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
+    if (box_handle != null or box_carry != null) {
+        box_handle = null;
+        box_carry = null;
+        _ = w.ReleaseCapture();
+        invalidateBox(hwnd);
+        return;
+    }
     if (page_sizing) |h| {
         page_size = pageSizeFor(h, clientPoint(lp));
         page_sizing = null;
@@ -716,6 +772,18 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             return 0;
         },
         w.WM_KEYDOWN => {
+            // In a text box the arrows walk the caret through what has been
+            // typed, and Delete takes out the character in front of it.
+            if (textbox.active()) {
+                const dc = w.GetDC(hwnd).?;
+                const took = textbox.key(@intCast(wp), dc);
+                _ = w.ReleaseDC(hwnd, dc);
+                if (took) {
+                    invalidateBox(hwnd);
+                    return 0;
+                }
+                return w.DefWindowProcA(hwnd, msg, wp, lp);
+            }
             // the arrows nudge a selection, as they do in Paint
             if (selection.active() and !textbox.active()) {
                 const step: i32 = 1;
