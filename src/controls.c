@@ -4697,6 +4697,14 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (l->sel < 1)
                 l->sel = l->nrow ? 1 : 0;
             break;
+        case VK_RETURN:
+            /* Enter says what a double click says: the application is being
+             * asked to open what is picked. Nothing moves, so the selection
+             * is put back before the parent is told. */
+            l->sel = anchor;
+            if (lv_selected_count(l))
+                notify_parent(wnd, NM_RETURN);
+            return 0;
         default:
             return DefWindowProcA(wnd, msg, wp, lp);
         }

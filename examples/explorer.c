@@ -1454,6 +1454,19 @@ static void make_new_item(const char *base, const char *ext)
     begin_rename_of(name);
 }
 
+/* Open what the list has picked: a folder is walked into, and anything else
+ * is left alone — this shell has nothing to open a file with. */
+static void open_picked_row(void)
+{
+    int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
+                                LVNI_SELECTED);
+    char path[PATH_MAX_LEN];
+    if (sel < 0 || sel >= g_entries || !g_entry[sel].is_dir)
+        return;
+    snprintf(path, sizeof(path), "%s%s%s", g_path,
+             strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
+    show_directory(path);
+}
 
 /* Delete: the shell asks first, and says what it is about to do. */
 static void do_delete(void)
@@ -5446,27 +5459,15 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
                    g_opt.single_click) {
             /* one click opens, when Folder Options says a click is what
              * opening takes */
-            int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
-                                        LVNI_SELECTED);
-            if (sel >= 0 && sel < g_entries && g_entry[sel].is_dir) {
-                char path[1400];
-                snprintf(path, sizeof(path), "%s%s%s", g_path,
-                         strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
-                show_directory(path);
-            }
-        } else if (nm->code == NM_DBLCLK && nm->hwndFrom == g_list) {
+            open_picked_row();
+        } else if ((nm->code == NM_DBLCLK || nm->code == NM_RETURN) &&
+                   nm->hwndFrom == g_list) {
             /* opening a folder is what a double click does in a shell — in
-             * the list. The tree answers its own double click by opening the
-             * branch, and NM_DBLCLK carries no control in its code, so the
-             * one that sent it has to be asked for. */
-            int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
-                                        LVNI_SELECTED);
-            if (sel >= 0 && sel < g_entries && g_entry[sel].is_dir) {
-                char path[1400];
-                snprintf(path, sizeof(path), "%s%s%s", g_path,
-                         strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
-                show_directory(path);
-            }
+             * the list — and Enter over the list says the same thing. The
+             * tree answers its own double click by opening the branch, and
+             * neither code carries a control, so the one that sent it has to
+             * be asked for. */
+            open_picked_row();
         } else if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_menubar) {
             /* A title of the menu bar was pressed, or the keyboard opened it.
              * The bar keeps the button pushed in and slides to the next one
@@ -6086,11 +6087,17 @@ int main(int argc, char **argv)
         HWND addr_box =
             (HWND)(INT_PTR)SendMessageA(g_address, CBEM_GETEDITCONTROL, 0, 0);
         int typing = label_box || (addr_box && focus == addr_box);
+        /* And Enter over the list is the list's, which opens what is picked
+         * — the dialog manager takes Enter for a default button, and this
+         * window has none for it to press. */
+        int list_enter = msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN &&
+                         focus == g_list;
         /* the shortcuts first, and not while something is being typed: Ctrl+C
          * there belongs to the box */
         if (!typing && TranslateAcceleratorA(w, g_accel, &msg))
             continue;
-        if (focus != g_menubar && !typing && IsDialogMessageA(w, &msg))
+        if (focus != g_menubar && !typing && !list_enter &&
+            IsDialogMessageA(w, &msg))
             continue;
         TranslateMessage(&msg);
         DispatchMessageA(&msg);

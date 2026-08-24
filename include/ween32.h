@@ -970,9 +970,11 @@ typedef struct tagNMTREEVIEWA {
 /* Sent by any common control that a double click landed on. A shell opens
  * what was double-clicked on this. */
 /* A press on an item and a double press on one, which a view sends its
- * parent so a program can decide what either means. */
+ * parent so a program can decide what either means. Enter over a view says
+ * the same thing as the double press: a shell opens what is picked. */
 #define NM_CLICK (0U - 2U)
 #define NM_DBLCLK (0U - 3U)
+#define NM_RETURN (0U - 4U)
 #define LVN_ITEMCHANGED (0U - 101U)
 #define LVN_COLUMNCLICK (0U - 108U)
 /* A row's label is being typed over, and has been. The app answers the end

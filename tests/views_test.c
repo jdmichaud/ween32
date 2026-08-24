@@ -37,6 +37,7 @@ static LRESULT CALLBACK sub_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     } while (0)
 
 static HWND g_list, g_tree;
+static int g_returns; /* Enter over the list, which is what opens a row */
 static int g_column_clicked = -1;
 static int g_column_dragged = -1, g_column_dropped = -1;
 /* what the tree said it was about to open, and how many times it said so */
@@ -56,6 +57,8 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (nm->code == LVN_COLUMNCLICK)
             g_column_clicked = ((const NMLISTVIEW *)lp)->iSubItem;
+        if (nm->code == NM_RETURN && nm->hwndFrom == g_list)
+            g_returns++;
         if (nm->code == HDN_ENDDRAG) {
             g_column_dragged = ((const NMHEADERA *)lp)->iItem;
             g_column_dropped = ((const NMHEADERA *)lp)->iButton;
@@ -171,6 +174,17 @@ int main(void)
         ween_listview_view(g_list, &st);
         CHECK(st.sel == 40 && st.top == st.max_top,
               "End selects the last and scrolls to it");
+
+        /* Enter says what a double click says — a shell opens what is picked
+         * — and moves nothing while it says it. */
+        SendMessageA(g_list, WM_KEYDOWN, VK_RETURN, 0);
+        ween_listview_view(g_list, &st);
+        CHECK(g_returns == 1, "Enter over the list asks the app to open a row");
+        CHECK(st.sel == 40, "and leaves the selection where it was");
+        SendMessageA(g_list, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&(LVITEMA){
+            .mask = LVIF_STATE, .state = 0, .stateMask = LVIS_SELECTED });
+        SendMessageA(g_list, WM_KEYDOWN, VK_RETURN, 0);
+        CHECK(g_returns == 1, "and says nothing when nothing is picked");
     }
 
     /* The bar down the right, driven by clicking it rather than by the wheel.
