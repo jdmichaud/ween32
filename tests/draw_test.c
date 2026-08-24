@@ -326,6 +326,82 @@ static void test_window_scrollbars(void)
     DestroyWindow(plain);
 }
 
+/* DrawFocusRect, whose dots were measured against the machine while Paint's
+ * page was being sized: the pattern falls on the coordinates of the window
+ * being drawn in, and the corner where two of the four inverted strips
+ * overlap comes out blank because inverting twice is not drawing. */
+static void test_focus_rect(void)
+{
+    HBITMAP bmp;
+    HDC dc = scratch(40, 20, &bmp);
+    RECT all = {0, 0, 40, 20};
+    HBRUSH white = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    /* a corner on an even sum, so that the pixel the top and the left both
+     * want is one the pattern would otherwise have filled */
+    RECT r = {2, 4, 20, 12};
+    FillRect(dc, &all, white);
+    DrawFocusRect(dc, &r);
+    CHECK(GetPixel(dc, 2, 4) == RGB(255, 255, 255),
+          "the corner two of a focus rectangle's sides share is left blank");
+    CHECK(GetPixel(dc, 4, 4) == RGB(0, 0, 0) &&
+              GetPixel(dc, 6, 4) == RGB(0, 0, 0),
+          "its top is dotted on the even sum of its coordinates");
+    CHECK(GetPixel(dc, 5, 4) == RGB(255, 255, 255) &&
+              GetPixel(dc, 7, 4) == RGB(255, 255, 255),
+          "and blank on the odd one");
+    CHECK(GetPixel(dc, 2, 6) == RGB(0, 0, 0) &&
+              GetPixel(dc, 2, 5) == RGB(255, 255, 255),
+          "its left side keeps the same pattern going down");
+    /* drawn twice, it is gone again: that is what makes a rubber band cheap */
+    DrawFocusRect(dc, &r);
+    CHECK(GetPixel(dc, 4, 4) == RGB(255, 255, 255),
+          "drawn a second time it takes itself away");
+    DeleteDC(dc);
+    DeleteObject(bmp);
+}
+
+/* IntersectClipRect: what a drag past the edge of Paint's picture is cut
+ * with. The rectangle is in the caller's coordinates when it is given and in
+ * the window's from then on, so moving the origin afterwards does not move
+ * the clip with it. */
+static void test_clip_rect(void)
+{
+    HBITMAP bmp;
+    HDC dc = scratch(40, 20, &bmp);
+    RECT all = {0, 0, 40, 20};
+    RECT half = {0, 0, 40, 20};
+    HBRUSH white = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    FillRect(dc, &all, white);
+    CHECK(IntersectClipRect(dc, 10, 5, 20, 15) == SIMPLEREGION,
+          "IntersectClipRect narrows the context to a rectangle");
+    FillRect(dc, &half, black);
+    CHECK(GetPixel(dc, 10, 5) == RGB(0, 0, 0) &&
+              GetPixel(dc, 19, 14) == RGB(0, 0, 0),
+          "a fill of the whole thing reaches the corners it left");
+    CHECK(GetPixel(dc, 9, 5) == RGB(255, 255, 255) &&
+              GetPixel(dc, 20, 14) == RGB(255, 255, 255) &&
+              GetPixel(dc, 10, 4) == RGB(255, 255, 255) &&
+              GetPixel(dc, 19, 15) == RGB(255, 255, 255),
+          "and nothing outside them");
+    /* a line, which goes by another path than a fill */
+    FillRect(dc, &all, white); /* clipped: only the middle goes white again */
+    SelectObject(dc, GetStockObject(BLACK_PEN));
+    MoveToEx(dc, 0, 8, NULL);
+    LineTo(dc, 40, 8);
+    CHECK(GetPixel(dc, 5, 8) == RGB(255, 255, 255) &&
+              GetPixel(dc, 12, 8) == RGB(0, 0, 0),
+          "a line is cut at the same edge");
+    /* narrowing again only ever narrows */
+    CHECK(IntersectClipRect(dc, 0, 0, 12, 20) == SIMPLEREGION,
+          "narrowing it again is an intersection, not a replacement");
+    FillRect(dc, &all, black);
+    CHECK(GetPixel(dc, 15, 10) == RGB(255, 255, 255),
+          "so what the first rectangle left out stays out");
+    DeleteDC(dc);
+    DeleteObject(bmp);
+}
+
 int main(void)
 {
     setenv("WEEN32_HEADLESS", "1", 1);
@@ -338,6 +414,8 @@ int main(void)
     test_dibits();
     test_viewport();
     test_window_scrollbars();
+    test_focus_rect();
+    test_clip_rect();
     printf(g_failures ? "%d failure(s)\n" : "draw_test: all passed\n",
            g_failures);
     return g_failures ? 1 : 0;

@@ -137,23 +137,34 @@ static void invert_pixel(ween_surface *s, int x, int y)
     s->px[(long)y * s->w + x] ^= 0x00ffffffu;
 }
 
-void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h)
+/* `phase` shifts which of the two chequers the dots fall on. The pattern is
+ * laid on the coordinates of the window being drawn in, not of the surface it
+ * lives in, so a window whose corner sits on an odd pixel needs the other
+ * chequer to come out where win32 puts it. */
+static void focus_dot(ween_surface *s, int x, int y, int phase)
+{
+    if (!((x + y + phase) & 1))
+        invert_pixel(s, x, y);
+}
+
+void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h,
+                             int phase)
 {
     int r = x + w - 1, b = y + h - 1;
     if (w <= 0 || h <= 0)
         return;
-    for (int i = x; i <= r; i++) {
-        if (!((i + y) & 1))
-            invert_pixel(s, i, y);
-        if (!((i + b) & 1))
-            invert_pixel(s, i, b);
-    }
-    for (int j = y + 1; j < b; j++) {
-        if (!((x + j) & 1))
-            invert_pixel(s, x, j);
-        if (!((r + j) & 1))
-            invert_pixel(s, r, j);
-    }
+    /* The four sides in the order and the extents win32 lays them down, which
+     * matters because the pattern is inverted rather than drawn: the left side
+     * and the top overlap in one pixel, and a pixel inverted twice is not
+     * there at all. That blank top-left corner is on the machine too. */
+    for (int j = y; j <= b - 1; j++) /* left */
+        focus_dot(s, x, j, phase);
+    for (int i = x + 1; i <= r; i++) /* bottom */
+        focus_dot(s, i, b, phase);
+    for (int j = y; j <= b - 1; j++) /* right */
+        focus_dot(s, r, j, phase);
+    for (int i = x; i <= r - 1; i++) /* top */
+        focus_dot(s, i, y, phase);
 }
 
 /* The same dots in a colour of their own rather than inverted. A view's

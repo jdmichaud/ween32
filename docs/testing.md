@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **437 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **479 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -121,7 +121,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 15841 / 298596 — 5.3%
+tools/refcapture/pxdiff.py                  # expect 15649 / 298596 — 5.2%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png

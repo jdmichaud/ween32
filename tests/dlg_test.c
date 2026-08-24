@@ -69,6 +69,57 @@ static ween_event ev_key(unsigned vk)
     return e;
 }
 
+#define ID_EDIT1 10
+#define ID_EDIT2 11
+
+static INT_PTR CALLBACK fields_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)hwnd;
+    (void)wp;
+    (void)lp;
+    if (msg == WM_INITDIALOG)
+        return TRUE; /* let the manager set the focus */
+    return FALSE;
+}
+
+/* A dialog hands a field the focus with everything in it selected, so that
+ * what is typed replaces what was there rather than joining it. It is the
+ * dialog that does this and not the field — the manager asks WM_GETDLGCODE
+ * and sends EM_SETSEL to whatever says it keeps a selection. Paint's
+ * Attributes box is the reason it was noticed: 120 typed over a width of 512
+ * came out as 120512. */
+static void test_field_focus(void)
+{
+    static const dlg_item items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 10, 10, 40, 12,
+          ID_EDIT1, ATOM_EDIT, "512", NULL, 0 },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER, 60, 10, 40, 12,
+          ID_EDIT2, ATOM_EDIT, "384", NULL, 0 },
+    };
+    static unsigned char tmpl[1024];
+    char buf[32];
+    build_dialog_template(tmpl, sizeof(tmpl),
+                          WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 140,
+                          60, "Fields", items, 2);
+    HWND dlg = CreateDialogIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, NULL,
+                                          fields_proc, 0);
+    SendMessageA(GetFocus(), WM_CHAR, '7', 0);
+    GetWindowTextA(GetDlgItem(dlg, ID_EDIT1), buf, sizeof(buf));
+    CHECK(!strcmp(buf, "7"),
+          "a dialog selects a field's text when it hands it the focus");
+
+    MSG m;
+    memset(&m, 0, sizeof(m));
+    m.hwnd = dlg;
+    m.message = WM_KEYDOWN;
+    m.wParam = VK_TAB;
+    IsDialogMessageA(dlg, &m);
+    SendMessageA(GetFocus(), WM_CHAR, '9', 0);
+    GetWindowTextA(GetDlgItem(dlg, ID_EDIT2), buf, sizeof(buf));
+    CHECK(!strcmp(buf, "9"), "and again for the field Tab moves on to");
+    DestroyWindow(dlg);
+}
+
 int main(void)
 {
     setenv("WEEN32_DPI", "96", 1); /* pixel asserts are 96-dpi */
@@ -127,6 +178,7 @@ int main(void)
         }
     }
     CHECK(g_ok_clicks == 2, "clicking OK routed a second WM_COMMAND");
+    test_field_focus();
     (void)g_enter_clicks;
 
     if (g_failures) {

@@ -1008,9 +1008,13 @@ int main(void)
         HIMAGELIST il2 = ImageList_Create(16, 16, ILC_MASK, 2, 2);
         int was_h = cb->h;
 
+        /* A box of this class keeps room for a picture whether or not it has
+         * been given any, which is why the machine's file dialog has its file
+         * name box a pixel taller than the plain one under it. */
+        CHECK(was_h >= 16 + 6, "a box that carries pictures has room for one");
         SendMessageA(cb, CBEM_SETIMAGELIST, 0, (LPARAM)il2);
-        CHECK(cb->h > was_h,
-              "an image list makes the rows tall enough for the images");
+        CHECK(cb->h == was_h,
+              "and an image list does not change that");
 
         memset(&ci, 0, sizeof(ci));
         ci.mask = CBEIF_TEXT | CBEIF_IMAGE | CBEIF_INDENT;
@@ -1033,7 +1037,7 @@ int main(void)
         SendMessageA(cb, CB_RESETCONTENT, 0, 0);
         CHECK(SendMessageA(cb, CB_GETCOUNT, 0, 0) == 0, "and can be emptied");
         CHECK(SendMessageA(cb, CBEM_INSERTITEMA, 0, (LPARAM)&ci) == 0 &&
-                  cb->h > was_h,
+                  cb->h == was_h,
               "with the image list still on it afterwards");
         DestroyWindow(cw);
         ImageList_Destroy(il2);

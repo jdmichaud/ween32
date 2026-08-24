@@ -221,6 +221,20 @@ static void ensure_dialog_class(void)
     RegisterClassA(&wc); /* idempotent: RegisterClassA ignores a dup name */
 }
 
+/* Handing a control the focus, the way the dialog manager does it rather than
+ * the way SetFocus does: a control that says it keeps a selection has all of
+ * it selected first, so that what is typed replaces what was there. It is the
+ * dialog that does this, not the control — clicking into a field puts the
+ * caret where the click was, and leaves the rest alone. */
+static void dlg_focus(HWND ctl)
+{
+    if (!ctl)
+        return;
+    if (SendMessageA(ctl, WM_GETDLGCODE, 0, 0) & DLGC_HASSETSEL)
+        SendMessageA(ctl, EM_SETSEL, 0, (LPARAM)-1);
+    SetFocus(ctl);
+}
+
 HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
                                 HWND parent, DLGPROC proc, LPARAM init_param)
 {
@@ -336,11 +350,20 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
             dlg->defid = id;
     }
 
+    /* A dialog put up after somebody has typed shows the letters its
+     * mnemonics are on; one put up from a menu walked with the mouse does
+     * not. That is win32's UISF_HIDEACCEL, which a new window takes from the
+     * system rather than from its owner. */
+    if (ween_kbd_used) {
+        ween_menu_cues = 1;
+        ween_ui_focus_cues = 1;
+    }
+
     /* WM_INITDIALOG (after the controls exist). TRUE => set default focus. */
     HWND first = ween_tab_next(dlg, NULL, 1);
     INT_PTR r = SendMessageA(dlg, WM_INITDIALOG, (WPARAM)first, init_param);
     if (r && first) {
-        SetFocus(first);
+        dlg_focus(first);
     } else if (!r) {
         /* It placed the keyboard itself, which is the whole of what answering
          * FALSE means. Remembered because a dialog that is a page of a
@@ -404,7 +427,7 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
             return TRUE;
         HWND target = ween_mnemonic_target(dlg, key);
         if (target) {
-            SetFocus(target);
+            dlg_focus(target);
             SendMessageA(target, BM_CLICK, 0, 0);
             return TRUE;
         }
@@ -415,7 +438,7 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     case VK_TAB: {
         HWND nx = ween_tab_next(dlg, focus, !shift);
         if (nx)
-            SetFocus(nx);
+            dlg_focus(nx);
         return TRUE;
     }
     case VK_SPACE:

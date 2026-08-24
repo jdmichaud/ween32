@@ -225,6 +225,7 @@ extern int XChangeWindowAttributes(XDisplay *, XWindow, unsigned long,
 extern int XFlush(XDisplay *);
 extern XAtom XInternAtom(XDisplay *, const char *, int);
 extern int XSetWMProtocols(XDisplay *, XWindow, XAtom *, int);
+extern int XSetTransientForHint(XDisplay *, XWindow, XWindow);
 extern void XSetWMNormalHints(XDisplay *, XWindow, XSizeHints *);
 extern int XMoveWindow(XDisplay *, XWindow, int, int);
 extern int XTranslateCoordinates(XDisplay *, XWindow, XWindow, int, int, int *,
@@ -466,6 +467,30 @@ static void x11_present(void *win, const ween_surface *s, const RECT *damage)
 
 /* The desktop's size, in the pixels a window is measured in: at 2x a window
  * as wide as the screen is half as many of them. */
+/* Who put this window up, and whether it is a dialog.
+ *
+ * WM_TRANSIENT_FOR and _NET_WM_WINDOW_TYPE_DIALOG are the two things a window
+ * manager reads to tell a modal box from an application: without them a
+ * tiling one has every reason to give the box a tile of the screen, and the
+ * Open dialog comes up as big as the display. */
+static void x11_set_owner(void *win, void *owner, int dialog)
+{
+    x11_win *xw = win;
+    x11_win *ow = owner;
+    if (!xw || !g_dpy)
+        return;
+    if (ow)
+        XSetTransientForHint(g_dpy, xw->win, ow->win);
+    if (dialog) {
+        XAtom type = XInternAtom(g_dpy, "_NET_WM_WINDOW_TYPE", 0);
+        XAtom is_dialog = XInternAtom(g_dpy, "_NET_WM_WINDOW_TYPE_DIALOG", 0);
+        long value = (long)is_dialog;
+        XChangeProperty(g_dpy, xw->win, type, 4 /* XA_ATOM */, 32, 0, &value,
+                        1);
+    }
+    XFlush(g_dpy);
+}
+
 static void x11_screen_size(int *w, int *h)
 {
     if (!g_dpy)
@@ -589,6 +614,7 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
         unsigned long cur = x11_cursor_image(custom);
         if (cur) {
             XDefineCursor(xw->dpy, xw->win, cur);
+            XFlush(xw->dpy);
             return;
         }
     }
@@ -597,6 +623,10 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
     if (!made[shape])
         made[shape] = XCreateFontCursor(g_dpy, cursor_glyph(shape));
     XDefineCursor(xw->dpy, xw->win, made[shape]);
+    /* The pointer's shape is not part of a frame: nothing else is going to
+     * flush this. A cursor that changes only the next time the window happens
+     * to repaint is one that does not change when it should. */
+    XFlush(xw->dpy);
 }
 
 /* Where the surface's top-left is on the desktop.
@@ -874,6 +904,7 @@ const ween_backend *ween_backend_x11(void)
                                     .set_resizable = x11_set_resizable,
                                     .show = x11_show,
                                     .set_cursor = x11_set_cursor,
+                                    .set_owner = x11_set_owner,
                                     .screen_size = x11_screen_size,
                                     .origin = x11_origin,
                                     .next_event = x11_next_event,

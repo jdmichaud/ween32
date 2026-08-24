@@ -33,6 +33,9 @@ pub fn build(b: *std.Build) void {
         mod.linkSystemLibrary("gdi32", .{});
         mod.linkSystemLibrary("comctl32", .{});
         mod.linkSystemLibrary("comdlg32", .{});
+        // and the one a program without a C runtime would otherwise be
+        // missing: the file calls, and what Zig's own start-up needs
+        mod.linkSystemLibrary("kernel32", .{});
         addExamples(b, mod, target, optimize);
         return;
     }
@@ -58,6 +61,8 @@ pub fn build(b: *std.Build) void {
             "src/user.c",
             "src/dialog.c",
             "src/controls.c",
+            "src/file.c",
+            "src/shellart.c",
             "src/headless.c",
             "src/x11.c",
         },
@@ -87,12 +92,18 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
             .root_source_file = b.path("examples/paint/main.zig"),
             .target = target,
             .optimize = optimize,
-            // for the C runtime's file calls, which is how a win32 program
-            // reads and writes a .bmp
-            .link_libc = true,
+            // On Windows it carries no C runtime: it reads and writes a
+            // .bmp with CreateFile and ReadFile, as a win32 program does,
+            // and has nothing else to ask one for. Everywhere else the
+            // library it links against is C and wants one.
+            .link_libc = target.result.os.tag != .windows,
         }),
     });
     paint.root_module.addImport("ween32", mod);
+    // A program with windows, not a console one: without this the loader
+    // opens a console beside it.
+    if (target.result.os.tag == .windows)
+        paint.subsystem = .Windows;
     b.installArtifact(paint);
     const step = b.step("paint", "Build Paint");
     step.dependOn(&b.addInstallArtifact(paint, .{}).step);

@@ -235,14 +235,28 @@ HGDIOBJ SelectObject(HDC dc, HGDIOBJ obj)
  * coordinates. Returns 0 for an empty result. */
 static int dc_rect(HDC dc, const RECT *r, int *x, int *y, int *w, int *h)
 {
-    LONG left = r->left < 0 ? 0 : r->left;
-    LONG top = r->top < 0 ? 0 : r->top;
-    LONG right = r->right > dc->clip_w ? dc->clip_w : r->right;
-    LONG bottom = r->bottom > dc->clip_h ? dc->clip_h : r->bottom;
+    /* on the surface first, since that is where the clip is measured: a view
+     * that has moved its origin draws in coordinates of its own, and clamping
+     * those against the window's size would pull what is off the left edge
+     * back into view instead of cutting it off */
+    RECT box;
+    LONG left = dc->org_x + dc->vp_x + r->left;
+    LONG top = dc->org_y + dc->vp_y + r->top;
+    LONG right = dc->org_x + dc->vp_x + r->right;
+    LONG bottom = dc->org_y + dc->vp_y + r->bottom;
+    ween_dc_clip_box(dc, &box);
+    if (left < box.left)
+        left = box.left;
+    if (top < box.top)
+        top = box.top;
+    if (right > box.right)
+        right = box.right;
+    if (bottom > box.bottom)
+        bottom = box.bottom;
     if (right <= left || bottom <= top)
         return 0;
-    *x = dc->org_x + dc->vp_x + left;
-    *y = dc->org_y + dc->vp_y + top;
+    *x = left;
+    *y = top;
     *w = right - left;
     *h = bottom - top;
     return 1;
@@ -504,6 +518,28 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             underline = -1; /* the '&' goes, the line under it never comes */
     }
 
+    /* Too wide for the rectangle, and told to cut it: as many characters as
+     * fit with three dots after them, which is what a places bar does with
+     * "My Network Places" and a status bar with a long path. */
+    char cut[512];
+    if ((format & DT_END_ELLIPSIS) && rect->right > rect->left &&
+        ween_strike_text_extent(f, text, len) > rect->right - rect->left) {
+        int avail = rect->right - rect->left;
+        int dots = ween_strike_text_extent(f, "...", 3);
+        int take = len;
+        while (take > 0 &&
+               ween_strike_text_extent(f, text, take) + dots > avail)
+            take--;
+        if (take > (int)sizeof(cut) - 4)
+            take = (int)sizeof(cut) - 4;
+        memcpy(cut, text, (size_t)take);
+        memcpy(cut + take, "...", 4);
+        text = cut;
+        len = take + 3;
+        if (underline >= len)
+            underline = -1;
+    }
+
     /* Alignment is by the width the glyphs will actually take, not by what
      * the face measures: for a bitmap strike the two are the same, but the
      * shell's face is measured off its outline and comes out wider than it
@@ -572,14 +608,22 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
      * hands over a rectangle usually means it: a status bar's part, a list
      * view's cell. Without this a long string runs straight through whatever
      * is beside it. */
-    RECT saved;
+    RECT saved, box;
     ween_surface_get_clip(dc->s, &saved);
-    if (!(format & DT_NOCLIP)) {
-        RECT c;
-        c.left = dc->org_x + dc->vp_x + rect->left;
-        c.top = dc->org_y + dc->vp_y + rect->top;
-        c.right = dc->org_x + dc->vp_x + rect->right;
-        c.bottom = dc->org_y + dc->vp_y + rect->bottom;
+    /* whatever the caller asked for, a DC never draws outside itself */
+    ween_dc_clip_box(dc, &box);
+    {
+        RECT c = box;
+        if (!(format & DT_NOCLIP)) {
+            if (dc->org_x + dc->vp_x + rect->left > c.left)
+                c.left = dc->org_x + dc->vp_x + rect->left;
+            if (dc->org_y + dc->vp_y + rect->top > c.top)
+                c.top = dc->org_y + dc->vp_y + rect->top;
+            if (dc->org_x + dc->vp_x + rect->right < c.right)
+                c.right = dc->org_x + dc->vp_x + rect->right;
+            if (dc->org_y + dc->vp_y + rect->bottom < c.bottom)
+                c.bottom = dc->org_y + dc->vp_y + rect->bottom;
+        }
         if (c.left < saved.left)
             c.left = saved.left;
         if (c.top < saved.top)
@@ -588,6 +632,10 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
             c.right = saved.right;
         if (c.bottom > saved.bottom)
             c.bottom = saved.bottom;
+        if (c.right < c.left)
+            c.right = c.left;
+        if (c.bottom < c.top)
+            c.bottom = c.top;
         ween_surface_clip(dc->s, c.left, c.top, c.right - c.left,
                           c.bottom - c.top);
     }

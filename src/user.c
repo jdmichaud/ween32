@@ -81,6 +81,11 @@ int ween_render_dpi(void)
     return g_render_dpi;
 }
 
+/* Whether anything has been typed yet. A dialog created after it has takes
+ * its keyboard cues from this, the way win32 takes them from the system's
+ * own "the last thing the user did was type" flag. */
+int ween_kbd_used = 0;
+
 int ween_zoom(void)
 {
     dpi_init();
@@ -383,6 +388,29 @@ BOOL ClientToScreen(HWND wnd, POINT *pt)
     ween_window_origin(top, &ox, &oy);
     pt->x += wx + ox;
     pt->y += wy + oy;
+    return TRUE;
+}
+
+/* Where the pointer is now, in desktop coordinates.
+ *
+ * The pump remembers where it last saw it, in the coordinates events arrive
+ * in — its top-level window's — and this puts that back on the desktop the
+ * same way ClientToScreen does, so that a window asking where the pointer is
+ * inside itself gets an answer that agrees with its own rectangle. A window
+ * that wants the pointer while handling WM_SETCURSOR has no other way to ask:
+ * the message does not carry it. */
+static struct ween_wnd *g_cursor_top;
+static int g_cursor_x, g_cursor_y;
+
+BOOL GetCursorPos(POINT *pt)
+{
+    int ox = 0, oy = 0;
+    if (!pt)
+        return FALSE;
+    if (g_cursor_top)
+        ween_window_origin(g_cursor_top, &ox, &oy);
+    pt->x = g_cursor_x + ox;
+    pt->y = g_cursor_y + oy;
     return TRUE;
 }
 
@@ -697,6 +725,19 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         if (wnd->backend_win && (style & WS_THICKFRAME) &&
             ween_active_backend->set_resizable)
             ween_active_backend->set_resizable(wnd->backend_win, 1);
+        /* Who put it up, and whether it is a dialog. A window system that is
+         * told neither has no reason to treat a modal box differently from an
+         * application's main window -- and a window manager that arranges
+         * windows for you will arrange it. */
+        wnd->owner = parent;
+        if (wnd->backend_win && ween_active_backend->set_owner) {
+            int is_dialog = (style & DS_MODALFRAME) != 0 ||
+                            (cls->name && !strcmp(cls->name, "#32770"));
+            ween_active_backend->set_owner(
+                wnd->backend_win,
+                parent && parent->backend_win ? parent->backend_win : NULL,
+                is_dialog);
+        }
         /* A window that did not say where it goes is put somewhere by the
          * window system, and where that is has to be read back rather than
          * assumed: taking it for the origin is what left a maximised window
@@ -2132,30 +2173,13 @@ SHORT GetKeyState(int vk)
     return (SHORT)(down ? (short)0x8000 : 0);
 }
 
-/* Where the pointer last was, in screen coordinates. Win32 keeps this for the
- * asking, and a control needs it: WM_SETCURSOR says only that the pointer
- * moved, so a header works out which divider it is over from here. */
-static POINT g_cursor_pos;
-
-BOOL GetCursorPos(POINT *pt)
-{
-    if (!pt)
-        return FALSE;
-    *pt = g_cursor_pos;
-    return TRUE;
-}
-
 static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
 {
-
-    {   /* x,y are the top-level window's; the pointer's own is the screen's */
-        int wx = 0, wy = 0;
-        ween_window_origin(top, &wx, &wy);
-        g_cursor_pos.x = wx + x;
-        g_cursor_pos.y = wy + y;
-    }
     int ox, oy;
     struct ween_wnd *dst = g_capture;
+    g_cursor_top = top; /* the last place the pointer was seen */
+    g_cursor_x = x;
+    g_cursor_y = y;
     if (!dst)
         dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst)
@@ -2720,6 +2744,12 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
             ween_menu_cues = 1;
             ween_ui_focus_cues = 1;
         }
+        /* Somebody is using the keyboard, which is what a window put up from
+         * here on has to know: the machine shows the underlines under the
+         * mnemonics of a dialog opened by key and not of one opened by mouse,
+         * and Ctrl+O is enough to count -- its Open box comes up with them.
+         * The windows already on the screen keep what they had. */
+        ween_kbd_used = 1;
         /* the character rides in the high word, where win32 keeps the scan
          * code and repeat count; TranslateMessage turns it into WM_CHAR */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,

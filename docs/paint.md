@@ -151,10 +151,106 @@ was and where it is now, grown by the pen. Freehand does the same with the
 segment just drawn. Three thousand moves of an ellipse's corner take nine
 milliseconds, and nothing is left behind on the page.
 
+**A drag stops at the edge of the picture.** Everything a drag shows before
+it is drawn — a rectangle's outline, a line, a lasso, a selection being moved
+— goes on the window over the picture rather than into it, and a drag that
+leaves the picture would otherwise put it on the tool box or the grey beside
+it, where it stays until something repaints. The machine clips all of it to
+the picture, to the pixel: on a page starting at x=66 the outline of a
+rectangle dragged out to the left ends at 66, and on a 199-wide picture the
+one dragged right ends at 264. Ours does the same, with `IntersectClipRect` —
+which ween32 did not have, and which is the whole of the clipping win32
+offers that anything here needs. The handles round the page and the rubber
+band of a drag of one of them are drawn first, because those are the two
+things that belong outside.
+
+**The three handles that size the picture.** Eight sit round the page and
+only three do anything — the right edge, the bottom edge and the corner
+between them; the other five are drawn hollow to say so. What they do was
+read off the machine: the picture does not change while the drag is on, a
+dotted rectangle runs from the page's top-left corner to the pointer, and on
+release the picture becomes exactly that — pointer minus origin, so a drag to
+window x=246 with the page at x=66 gives a width of 180. What is there stays
+in the top left and the new part is the background colour, which is Image >
+Attributes' rule as well; the least a picture can be is one pixel by one, and
+dragging past the corner stops there rather than going negative. It is one
+step of undo. Over the three the pointer is the arrows for that edge, and the
+status bar says nothing at all while it happens.
+
+The dotted rectangle is `DrawFocusRect`, which put two library faults on
+show. Its dots were laid on the coordinates of the *surface* rather than of
+the window being drawn in, so in a window whose client corner sits on an odd
+pixel every dot was one out — half a rectangle's perimeter wrong, invisible
+until something in a child window was compared against the machine. And win32
+draws a focus rectangle as four inverted strips, of which the left one and
+the top overlap in a single pixel: inverted twice, that corner is not drawn
+at all. The machine's rectangle has that blank top-left corner, and ours now
+matches it dot for dot.
+
 **A polyline ends where the drawing stops.** A double click closes it, which
 means the window has to be told it wants double clicks (`CS_DBLCLKS`) and the
 second click has to reach the tool with the vertices in it rather than start a
 new one.
+
+**The Open box is the shell's.** What a program gets when it calls
+`GetOpenFileNameA` on the machine is not the plain dialog the API had in 1993
+but the shell's browser: a places bar down the left with History, Desktop, My
+Documents, My Computer and My Network Places, a tool bar beside the "Look in"
+box, the files in a list view, and a size grip in the corner because the
+dialog can be resized. Every rectangle in ours was read off the machine with
+`tools/vm/probe.c`, which dumps the dialog's window tree -- they are in
+pixels, not dialog units, because the shell lays this one out itself -- and
+the pictures were cut out of a capture of it by
+`tools/refcapture/shellart.py`, background and all, since each of them sits on
+a colour the library knows.
+
+The dialog is resizable, as the machine's is -- `WS_THICKFRAME`, which is
+where its size grip comes from and why its frame is four pixels rather than
+three. A window that can be resized is one a window manager may decide to
+resize, so it says what it is: `WM_TRANSIENT_FOR` names the window that put
+it up and `_NET_WM_WINDOW_TYPE_DIALOG` says it is a dialog. Without those two,
+a window manager that arranges windows for you has no reason not to arrange
+this one, and the Open box comes up as big as the screen.
+
+    tools/refcapture/shellart.py > src/shellart.c     # the pictures
+    PXDIFF_REF=tools/refcapture/paint/dlg-open.png \
+    PXDIFF_OUR=/tmp/open-ours.png tools/refcapture/pxdiff.py
+
+Against the machine's own, in the same folder with the same file in it: **319
+pixels of 195361**, and 218 of those are two letters. The machine's MS Sans
+Serif draws a `y` with a straighter tail than the one Wine redistributes and
+ween32 embeds, so every label with a `y` in it -- History, My Documents, My
+Computer, My Network Places, "Files of type:", "My Pictures" -- differs by a
+handful; and the bold `O` of the word "Open" in the caption differs the same
+way. The rest is 47 pixels scattered over the list and the boxes.
+
+What the box does, as well as what it looks like, was read off the machine:
+the tool bar's buttons wear a raised edge under the pointer and a sunken one
+with the picture a pixel down and right while they are held; "Look in" drops
+the shell's tree -- History and Desktop, what is under Desktop, then the path
+down to here a step at a time, ten pixels a step, with the folder picked out
+-- and the view menu offers Large Icons, Small Icons, List, Details and
+Thumbnails, with a dot against the one in use. Thumbnails is greyed, because
+there are none. Every one of those numbers is the machine's.
+
+It resizes the way the machine's does, too, which was measured by dragging
+that one bigger and dumping its window tree again: at 555x320 and at 636x356
+every part either stays where it is, moves by the difference or grows by it,
+so the layout is that difference applied and nothing else. A file dialog with
+its own layout was also where two ids collided -- the shell's view is inside a
+SHELLDLL_DefView and so can be id 1 alongside the Open button; ours are
+siblings, and moving one moved the other.
+
+Five things came out of getting there, and all of them are the library's
+rather than Paint's: `IntersectClipRect` was already there, but the file
+dialog wanted `CBS_OWNERDRAWFIXED` with `WM_DRAWITEM` and `WM_MEASUREITEM`
+(the "Look in" box is drawn by the shell, not by the control, which is why it
+is a pixel taller than the box below it), `CB_GETLBTEXT`, `LVM_GETITEM`, and
+`DT_END_ELLIPSIS` for "My Network P...". Two were faults rather than gaps: a
+list view counted a column header's height in every view rather than only in
+the report view, so the top seventeen pixels of a List view -- where the file
+dialog's first file sits -- answered clicks as though they were a column
+button; and a combo box put its text a pixel below where the machine has it.
 
 ## Checking it
 
@@ -291,6 +387,52 @@ and it draws. It will not be pixel for pixel there — wine measures text one
 way and draws it another, and with no window manager nothing takes the focus
 — but it is the same source, and every call it makes is a call Windows
 answers.
+
+The things this side of the port cannot check are what to look at there.
+Attributes opens with the width already selected, which is user32's dialog
+manager doing what ween32 was taught to; the page's corner handle drags out a
+dotted rectangle and the picture becomes it; a shape dragged out past the left
+of the picture stops at the picture's edge rather than crossing the tool box;
+and Save As followed by File > Open writes a .bmp and reads it back with the
+file calls Windows has, no C runtime in it anywhere. XTEST drives all of that
+from a script — press, move, screenshot, release — and the pixels say the
+same thing on both sides.
+
+One difference worth knowing, since it is the sort of thing a comparison
+against wine would otherwise "fix": wine's `DrawFocusRect` puts its dots on
+the other chequer from the machine's. Both leave the corner the top and the
+left share blank, and both step every other pixel; they simply start on
+opposite ones. The machine is what ween32 follows.
+
+## What the win32 build is
+
+`paint.exe` is a 64-bit Windows program with windows rather than a console —
+`subsystem = .Windows`, or the loader opens one beside it — and it carries no
+C runtime at all. It reads and writes its .bmp with `CreateFile`, `ReadFile`
+and `WriteFile` like any other win32 program, which is the only thing it ever
+wanted a runtime for, so what it imports is USER32, GDI32, COMCTL32,
+COMDLG32, and from KERNEL32 the six file calls and `GetCommandLineA` and
+`GlobalMemoryStatus`. `make win32` builds it, so it cannot quietly stop
+building.
+
+It was worth finding out how far that goes, and the answer is: the same
+source runs on the Windows 2000 in the emulator, beside the Paint it is a
+copy of — drawing with that machine's own USER32 and GDI32, sizing its page
+by the handles, saving a .bmp to a share and opening it again. That needed
+three things this repository does not keep, because none of them is about
+being a faithful win32 program and each of them is a tax on every line that
+calls one: a 32-bit build (NT is not 64-bit) and with it stdcall on every
+declaration; a PE stamped NT 4.0, which `tools/vm/pe2k.py` does; and an entry
+point of its own, because Zig's start-up leaves through ntdll's
+`RtlExitUserProcess`, which arrived with XP — a program that so much as names
+a procedure ntdll has not got is refused by the loader before a line of it
+runs.
+
+The one thing to know if it is ever tried again: Zig's `.winapi` calling
+convention is chosen by the *architecture*, not by the system. Writing it on
+a 64-bit Linux, where these names are ween32's rather than user32's, asks for
+the Microsoft register order and the first call into the library takes its
+arguments from the wrong registers.
 
 ## What is not there
 

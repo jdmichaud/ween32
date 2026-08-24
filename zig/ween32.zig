@@ -14,6 +14,7 @@
 
 const std = @import("std");
 
+
 // ---- fundamental types (LLP64-faithful) ---------------------------------
 
 pub const BOOL = c_int;
@@ -282,40 +283,40 @@ pub const IDC_HAND = MAKEINTRESOURCE(32649);
 
 // ---- USER32: windows and messages ---------------------------------------
 
-pub extern fn RegisterClassA(wc: *const WNDCLASSA) ATOM;
-pub extern fn CreateWindowExA(ex_style: DWORD, class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) ?HWND;
+pub extern fn RegisterClassA(wc: *const WNDCLASSA) callconv(.c) ATOM;
+pub extern fn CreateWindowExA(ex_style: DWORD, class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) callconv(.c) ?HWND;
 pub fn CreateWindowA(class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) ?HWND {
     return CreateWindowExA(0, class_name, window_name, style, x, y, w, h, parent, menu, inst, param);
 }
-pub extern fn DestroyWindow(wnd: HWND) BOOL;
-pub extern fn ShowWindow(wnd: HWND, cmd: c_int) BOOL;
-pub extern fn SetWindowTextA(wnd: HWND, text: LPCSTR) BOOL;
-pub extern fn GetWindowTextA(wnd: HWND, out: LPSTR, max: c_int) c_int;
-pub extern fn GetClientRect(wnd: HWND, rect: *RECT) BOOL;
-pub extern fn GetWindowRect(wnd: HWND, rect: *RECT) BOOL;
-pub extern fn AdjustWindowRect(rect: *RECT, style: DWORD, menu: BOOL) BOOL;
-pub extern fn AdjustWindowRectEx(rect: *RECT, style: DWORD, menu: BOOL, ex_style: DWORD) BOOL;
-pub extern fn GetDpiForSystem() UINT;
-pub extern fn MoveWindow(wnd: HWND, x: c_int, y: c_int, w: c_int, h: c_int, repaint: BOOL) BOOL;
-pub extern fn InvalidateRect(wnd: HWND, rect: ?*const RECT, erase: BOOL) BOOL;
-pub extern fn UpdateWindow(wnd: HWND) BOOL;
-pub extern fn GetDlgItem(dlg: HWND, id: c_int) ?HWND;
-pub extern fn GetDlgCtrlID(wnd: HWND) c_int;
-pub extern fn GetDlgItemTextA(dlg: HWND, id: c_int, out: LPSTR, max: c_int) UINT;
-pub extern fn SetDlgItemTextA(dlg: HWND, id: c_int, text: LPCSTR) BOOL;
-pub extern fn SetFocus(wnd: ?HWND) ?HWND;
-pub extern fn GetFocus() ?HWND;
-pub extern fn SetCapture(wnd: HWND) ?HWND;
-pub extern fn ReleaseCapture() BOOL;
-pub extern fn GetCapture() ?HWND;
-pub extern fn GetParent(wnd: HWND) ?HWND;
-pub extern fn EnableWindow(wnd: HWND, enable: BOOL) BOOL;
-pub extern fn IsWindowEnabled(wnd: HWND) BOOL;
-pub extern fn CheckDlgButton(dlg: HWND, id: c_int, check: UINT) BOOL;
-pub extern fn IsDlgButtonChecked(dlg: HWND, id: c_int) UINT;
-pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_int) BOOL;
-pub extern fn GetSystemMetrics(index: c_int) c_int;
-pub extern fn GetCommandLineA() LPSTR;
+pub extern fn DestroyWindow(wnd: HWND) callconv(.c) BOOL;
+pub extern fn ShowWindow(wnd: HWND, cmd: c_int) callconv(.c) BOOL;
+pub extern fn SetWindowTextA(wnd: HWND, text: LPCSTR) callconv(.c) BOOL;
+pub extern fn GetWindowTextA(wnd: HWND, out: LPSTR, max: c_int) callconv(.c) c_int;
+pub extern fn GetClientRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn GetWindowRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn AdjustWindowRect(rect: *RECT, style: DWORD, menu: BOOL) callconv(.c) BOOL;
+pub extern fn AdjustWindowRectEx(rect: *RECT, style: DWORD, menu: BOOL, ex_style: DWORD) callconv(.c) BOOL;
+pub extern fn GetDpiForSystem() callconv(.c) UINT;
+pub extern fn MoveWindow(wnd: HWND, x: c_int, y: c_int, w: c_int, h: c_int, repaint: BOOL) callconv(.c) BOOL;
+pub extern fn InvalidateRect(wnd: HWND, rect: ?*const RECT, erase: BOOL) callconv(.c) BOOL;
+pub extern fn UpdateWindow(wnd: HWND) callconv(.c) BOOL;
+pub extern fn GetDlgItem(dlg: HWND, id: c_int) callconv(.c) ?HWND;
+pub extern fn GetDlgCtrlID(wnd: HWND) callconv(.c) c_int;
+pub extern fn GetDlgItemTextA(dlg: HWND, id: c_int, out: LPSTR, max: c_int) callconv(.c) UINT;
+pub extern fn SetDlgItemTextA(dlg: HWND, id: c_int, text: LPCSTR) callconv(.c) BOOL;
+pub extern fn SetFocus(wnd: ?HWND) callconv(.c) ?HWND;
+pub extern fn GetFocus() callconv(.c) ?HWND;
+pub extern fn SetCapture(wnd: HWND) callconv(.c) ?HWND;
+pub extern fn ReleaseCapture() callconv(.c) BOOL;
+pub extern fn GetCapture() callconv(.c) ?HWND;
+pub extern fn GetParent(wnd: HWND) callconv(.c) ?HWND;
+pub extern fn EnableWindow(wnd: HWND, enable: BOOL) callconv(.c) BOOL;
+pub extern fn IsWindowEnabled(wnd: HWND) callconv(.c) BOOL;
+pub extern fn CheckDlgButton(dlg: HWND, id: c_int, check: UINT) callconv(.c) BOOL;
+pub extern fn IsDlgButtonChecked(dlg: HWND, id: c_int) callconv(.c) UINT;
+pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_int) callconv(.c) BOOL;
+pub extern fn GetSystemMetrics(index: c_int) callconv(.c) c_int;
+pub extern fn GetCommandLineA() callconv(.c) LPSTR;
 
 pub const MEMORYSTATUS = extern struct {
     dwLength: DWORD = @sizeOf(MEMORYSTATUS),
@@ -327,80 +328,106 @@ pub const MEMORYSTATUS = extern struct {
     dwTotalVirtual: DWORD = 0,
     dwAvailVirtual: DWORD = 0,
 };
-pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) void;
-pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) BOOL;
-pub extern fn ScreenToClient(wnd: HWND, pt: *POINT) BOOL;
-pub extern fn GetWindowLongA(wnd: HWND, index: c_int) LONG;
-pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) LONG;
-pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) BOOL;
-pub extern fn GetKeyState(vk: c_int) SHORT;
-pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) UINT_PTR;
-pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) BOOL;
-pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) HCURSOR;
-pub extern fn SetCursor(cursor: HCURSOR) HCURSOR;
-pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) HCURSOR;
-pub extern fn DestroyCursor(cursor: HCURSOR) BOOL;
-pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) HANDLE;
-pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) c_int;
+pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) callconv(.c) void;
+pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) callconv(.c) BOOL;
+pub extern fn ScreenToClient(wnd: HWND, pt: *POINT) callconv(.c) BOOL;
+pub extern fn GetCursorPos(pt: *POINT) callconv(.c) BOOL;
 
-pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) BOOL;
-pub extern fn TranslateMessage(msg: *const MSG) BOOL;
-pub extern fn DispatchMessageA(msg: *const MSG) LRESULT;
-pub extern fn PostQuitMessage(code: c_int) void;
-pub extern fn SendMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) LRESULT;
-pub extern fn PostMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) BOOL;
-pub extern fn DefWindowProcA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) LRESULT;
+// ---- files ----------------------------------------------------------------
+// What a win32 program reads and writes a file with. Going through these
+// rather than the C library's is also what lets the Windows build carry no C
+// runtime: the one a modern toolchain links is the UCRT, which a machine of
+// this vintage cannot even start a program that asks for.
+pub const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(std.math.maxInt(usize));
+pub const GENERIC_READ: u32 = 0x80000000;
+pub const GENERIC_WRITE: u32 = 0x40000000;
+pub const FILE_SHARE_READ: u32 = 1;
+pub const FILE_SHARE_WRITE: u32 = 2;
+pub const CREATE_ALWAYS: u32 = 2;
+pub const OPEN_EXISTING: u32 = 3;
+pub const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+pub const FILE_BEGIN: u32 = 0;
+pub const FILE_CURRENT: u32 = 1;
+pub const FILE_END: u32 = 2;
+pub const INVALID_SET_FILE_POINTER: u32 = 0xFFFFFFFF;
+pub const INVALID_FILE_SIZE: u32 = 0xFFFFFFFF;
+pub extern fn CreateFileA(name: [*:0]const u8, access: u32, share: u32, security: ?*anyopaque, disposition: u32, flags: u32, template: HANDLE) callconv(.c) HANDLE;
+pub extern fn ReadFile(file: HANDLE, buf: [*]u8, to_read: u32, read: *u32, ovl: ?*anyopaque) callconv(.c) BOOL;
+pub extern fn WriteFile(file: HANDLE, buf: [*]const u8, to_write: u32, written: *u32, ovl: ?*anyopaque) callconv(.c) BOOL;
+pub extern fn SetFilePointer(file: HANDLE, distance: i32, high: ?*i32, method: u32) callconv(.c) u32;
+pub extern fn GetFileSize(file: HANDLE, high: ?*u32) callconv(.c) u32;
+pub extern fn CloseHandle(h: HANDLE) callconv(.c) BOOL;
+pub extern fn GetWindowLongA(wnd: HWND, index: c_int) callconv(.c) LONG;
+pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) callconv(.c) LONG;
+pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) callconv(.c) BOOL;
+pub extern fn GetKeyState(vk: c_int) callconv(.c) SHORT;
+pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) callconv(.c) UINT_PTR;
+pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) callconv(.c) BOOL;
+pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) callconv(.c) HCURSOR;
+pub extern fn SetCursor(cursor: HCURSOR) callconv(.c) HCURSOR;
+pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) callconv(.c) HCURSOR;
+pub extern fn DestroyCursor(cursor: HCURSOR) callconv(.c) BOOL;
+pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) callconv(.c) HANDLE;
+pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) callconv(.c) c_int;
+
+pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) callconv(.c) BOOL;
+pub extern fn TranslateMessage(msg: *const MSG) callconv(.c) BOOL;
+pub extern fn DispatchMessageA(msg: *const MSG) callconv(.c) LRESULT;
+pub extern fn PostQuitMessage(code: c_int) callconv(.c) void;
+pub extern fn SendMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
+pub extern fn PostMessageA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) BOOL;
+pub extern fn DefWindowProcA(wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
 
 // ---- USER32: menus -------------------------------------------------------
 
-pub extern fn CreateMenu() HMENU;
-pub extern fn CreatePopupMenu() HMENU;
-pub extern fn DestroyMenu(menu: HMENU) BOOL;
-pub extern fn AppendMenuA(menu: HMENU, flags: UINT, id: UINT_PTR, text: ?LPCSTR) BOOL;
-pub extern fn SetMenu(wnd: HWND, menu: HMENU) BOOL;
-pub extern fn GetMenu(wnd: HWND) HMENU;
-pub extern fn GetSubMenu(menu: HMENU, pos: c_int) HMENU;
-pub extern fn GetMenuItemCount(menu: HMENU) c_int;
-pub extern fn InsertMenuA(menu: HMENU, before: UINT, flags: UINT, id: usize, text: ?LPCSTR) BOOL;
-pub extern fn DeleteMenu(menu: HMENU, item: UINT, flags: UINT) BOOL;
-pub extern fn CheckMenuItem(menu: HMENU, id: UINT, check: UINT) DWORD;
-pub extern fn CheckMenuRadioItem(menu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) BOOL;
-pub extern fn EnableMenuItem(menu: HMENU, id: UINT, enable: UINT) BOOL;
-pub extern fn ModifyMenuA(menu: HMENU, item: UINT, flags: UINT, id: UINT_PTR, text: ?LPCSTR) BOOL;
-pub extern fn TrackPopupMenu(menu: HMENU, flags: UINT, x: c_int, y: c_int, reserved: c_int, owner: HWND, rect: ?*const RECT) BOOL;
+pub extern fn CreateMenu() callconv(.c) HMENU;
+pub extern fn CreatePopupMenu() callconv(.c) HMENU;
+pub extern fn DestroyMenu(menu: HMENU) callconv(.c) BOOL;
+pub extern fn AppendMenuA(menu: HMENU, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn SetMenu(wnd: HWND, menu: HMENU) callconv(.c) BOOL;
+pub extern fn GetMenu(wnd: HWND) callconv(.c) HMENU;
+pub extern fn GetSubMenu(menu: HMENU, pos: c_int) callconv(.c) HMENU;
+pub extern fn GetMenuItemCount(menu: HMENU) callconv(.c) c_int;
+pub extern fn InsertMenuA(menu: HMENU, before: UINT, flags: UINT, id: usize, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn DeleteMenu(menu: HMENU, item: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn CheckMenuItem(menu: HMENU, id: UINT, check: UINT) callconv(.c) DWORD;
+pub extern fn CheckMenuRadioItem(menu: HMENU, first: UINT, last: UINT, check: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn EnableMenuItem(menu: HMENU, id: UINT, enable: UINT) callconv(.c) BOOL;
+pub extern fn ModifyMenuA(menu: HMENU, item: UINT, flags: UINT, id: UINT_PTR, text: ?LPCSTR) callconv(.c) BOOL;
+pub extern fn TrackPopupMenu(menu: HMENU, flags: UINT, x: c_int, y: c_int, reserved: c_int, owner: HWND, rect: ?*const RECT) callconv(.c) BOOL;
 
 // ---- USER32: accelerators, clipboard, dialogs ----------------------------
 
-pub extern fn CreateAcceleratorTableA(accels: [*]const ACCEL, count: c_int) HACCEL;
-pub extern fn DestroyAcceleratorTable(table: HACCEL) BOOL;
-pub extern fn TranslateAcceleratorA(wnd: HWND, table: HACCEL, msg: *MSG) c_int;
+pub extern fn CreateAcceleratorTableA(accels: [*]const ACCEL, count: c_int) callconv(.c) HACCEL;
+pub extern fn DestroyAcceleratorTable(table: HACCEL) callconv(.c) BOOL;
+pub extern fn TranslateAcceleratorA(wnd: HWND, table: HACCEL, msg: *MSG) callconv(.c) c_int;
 
-pub extern fn OpenClipboard(owner: ?HWND) BOOL;
-pub extern fn CloseClipboard() BOOL;
-pub extern fn EmptyClipboard() BOOL;
-pub extern fn SetClipboardData(format: UINT, data: HANDLE) HANDLE;
-pub extern fn GetClipboardData(format: UINT) HANDLE;
-pub extern fn IsClipboardFormatAvailable(format: UINT) BOOL;
+pub extern fn OpenClipboard(owner: ?HWND) callconv(.c) BOOL;
+pub extern fn CloseClipboard() callconv(.c) BOOL;
+pub extern fn EmptyClipboard() callconv(.c) BOOL;
+pub extern fn SetClipboardData(format: UINT, data: HANDLE) callconv(.c) HANDLE;
+pub extern fn GetClipboardData(format: UINT) callconv(.c) HANDLE;
+pub extern fn IsClipboardFormatAvailable(format: UINT) callconv(.c) BOOL;
 
-pub extern fn GetDialogBaseUnits() LONG;
-pub extern fn MapDialogRect(dlg: ?HWND, rect: *RECT) BOOL;
-pub extern fn MulDiv(number: c_int, numerator: c_int, denominator: c_int) c_int;
-pub extern fn IsDialogMessageA(dlg: HWND, msg: *MSG) BOOL;
-pub extern fn DefDlgProcA(dlg: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) LRESULT;
-pub extern fn EndDialog(dlg: HWND, result: INT_PTR) BOOL;
-pub extern fn CreateDialogIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, parent: ?HWND, proc: DLGPROC, param: LPARAM) ?HWND;
-pub extern fn DialogBoxIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, owner: ?HWND, proc: DLGPROC, param: LPARAM) INT_PTR;
+pub extern fn GetDialogBaseUnits() callconv(.c) LONG;
+pub extern fn MapDialogRect(dlg: ?HWND, rect: *RECT) callconv(.c) BOOL;
+pub extern fn MulDiv(number: c_int, numerator: c_int, denominator: c_int) callconv(.c) c_int;
+pub extern fn IsDialogMessageA(dlg: HWND, msg: *MSG) callconv(.c) BOOL;
+pub extern fn DefDlgProcA(dlg: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
+pub extern fn EndDialog(dlg: HWND, result: INT_PTR) callconv(.c) BOOL;
+pub extern fn CreateDialogIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, parent: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) ?HWND;
+pub extern fn DialogBoxIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, owner: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) INT_PTR;
 
 // ---- USER32: a window's own scroll bars ---------------------------------
 
-pub extern fn SetScrollInfo(wnd: HWND, bar: c_int, info: *const SCROLLINFO, redraw: BOOL) c_int;
-pub extern fn GetScrollInfo(wnd: HWND, bar: c_int, info: *SCROLLINFO) BOOL;
-pub extern fn SetScrollPos(wnd: HWND, bar: c_int, pos: c_int, redraw: BOOL) c_int;
-pub extern fn GetScrollPos(wnd: HWND, bar: c_int) c_int;
-pub extern fn SetScrollRange(wnd: HWND, bar: c_int, min: c_int, max: c_int, redraw: BOOL) BOOL;
-pub extern fn GetScrollRange(wnd: HWND, bar: c_int, min: *c_int, max: *c_int) BOOL;
-pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) BOOL;
-pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) BOOL;
+pub extern fn SetScrollInfo(wnd: HWND, bar: c_int, info: *const SCROLLINFO, redraw: BOOL) callconv(.c) c_int;
+pub extern fn GetScrollInfo(wnd: HWND, bar: c_int, info: *SCROLLINFO) callconv(.c) BOOL;
+pub extern fn SetScrollPos(wnd: HWND, bar: c_int, pos: c_int, redraw: BOOL) callconv(.c) c_int;
+pub extern fn GetScrollPos(wnd: HWND, bar: c_int) callconv(.c) c_int;
+pub extern fn SetScrollRange(wnd: HWND, bar: c_int, min: c_int, max: c_int, redraw: BOOL) callconv(.c) BOOL;
+pub extern fn GetScrollRange(wnd: HWND, bar: c_int, min: *c_int, max: *c_int) callconv(.c) BOOL;
+pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) callconv(.c) BOOL;
+pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) callconv(.c) BOOL;
 
 // ---- COMDLG32 ------------------------------------------------------------
 
@@ -445,79 +472,80 @@ pub const CHOOSECOLORA = extern struct {
     lpTemplateName: ?LPCSTR = null,
 };
 
-pub extern fn GetOpenFileNameA(ofn: *OPENFILENAMEA) BOOL;
-pub extern fn GetSaveFileNameA(ofn: *OPENFILENAMEA) BOOL;
-pub extern fn ChooseColorA(cc: *CHOOSECOLORA) BOOL;
+pub extern fn GetOpenFileNameA(ofn: *OPENFILENAMEA) callconv(.c) BOOL;
+pub extern fn GetSaveFileNameA(ofn: *OPENFILENAMEA) callconv(.c) BOOL;
+pub extern fn ChooseColorA(cc: *CHOOSECOLORA) callconv(.c) BOOL;
 
 // ---- COMCTL32 ------------------------------------------------------------
 
-pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) BOOL;
-pub extern fn InitCommonControls() void;
-pub extern fn ImageList_Create(cx: c_int, cy: c_int, flags: UINT, initial: c_int, grow: c_int) HIMAGELIST;
-pub extern fn ImageList_Destroy(il: HIMAGELIST) BOOL;
-pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) c_int;
-pub extern fn ImageList_AddMasked(il: HIMAGELIST, image: HBITMAP, transparent: COLORREF) c_int;
-pub extern fn ImageList_Draw(il: HIMAGELIST, index: c_int, dc: HDC, x: c_int, y: c_int, style: UINT) BOOL;
+pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) callconv(.c) BOOL;
+pub extern fn InitCommonControls() callconv(.c) void;
+pub extern fn ImageList_Create(cx: c_int, cy: c_int, flags: UINT, initial: c_int, grow: c_int) callconv(.c) HIMAGELIST;
+pub extern fn ImageList_Destroy(il: HIMAGELIST) callconv(.c) BOOL;
+pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) callconv(.c) c_int;
+pub extern fn ImageList_AddMasked(il: HIMAGELIST, image: HBITMAP, transparent: COLORREF) callconv(.c) c_int;
+pub extern fn ImageList_Draw(il: HIMAGELIST, index: c_int, dc: HDC, x: c_int, y: c_int, style: UINT) callconv(.c) BOOL;
 
 // ---- GDI: contexts, objects and text ------------------------------------
 
-pub extern fn BeginPaint(wnd: HWND, ps: *PAINTSTRUCT) ?HDC;
-pub extern fn EndPaint(wnd: HWND, ps: *const PAINTSTRUCT) BOOL;
-pub extern fn GetDC(wnd: ?HWND) ?HDC;
-pub extern fn ReleaseDC(wnd: ?HWND, dc: HDC) c_int;
-pub extern fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) BOOL;
-pub extern fn FrameRect(dc: HDC, rect: *const RECT, brush: HBRUSH) c_int;
-pub extern fn DrawEdge(dc: HDC, rect: *RECT, edge: UINT, flags: UINT) BOOL;
-pub extern fn DrawFrameControl(dc: HDC, rect: *RECT, kind: UINT, state: UINT) BOOL;
-pub extern fn TextOutA(dc: HDC, x: c_int, y: c_int, text: [*]const u8, len: c_int) BOOL;
-pub extern fn DrawTextA(dc: HDC, text: [*]const u8, len: c_int, rect: *RECT, format: UINT) c_int;
-pub extern fn GetTextExtentPoint32A(dc: HDC, text: [*]const u8, len: c_int, size: *SIZE) BOOL;
-pub extern fn SetTextColor(dc: HDC, color: COLORREF) COLORREF;
-pub extern fn SetBkMode(dc: HDC, mode: c_int) c_int;
-pub extern fn SetBkColor(dc: HDC, color: COLORREF) COLORREF;
-pub extern fn GetBkColor(dc: HDC) COLORREF;
-pub extern fn GetSysColor(index: c_int) DWORD;
-pub extern fn GetSysColorBrush(index: c_int) ?HBRUSH;
-pub extern fn CreateSolidBrush(color: COLORREF) ?HBRUSH;
-pub extern fn CreateFontA(height: c_int, width: c_int, escapement: c_int, orientation: c_int, weight: c_int, italic: DWORD, underline: DWORD, strike_out: DWORD, charset: DWORD, out_precision: DWORD, clip_precision: DWORD, quality: DWORD, pitch_and_family: DWORD, face_name: LPCSTR) ?HFONT;
-pub extern fn DeleteObject(obj: HGDIOBJ) BOOL;
-pub extern fn GetStockObject(what: c_int) ?HGDIOBJ;
-pub extern fn SelectObject(dc: HDC, obj: HGDIOBJ) ?HGDIOBJ;
-pub extern fn CreateBitmap(w: c_int, h: c_int, planes: UINT, bpp: UINT, bits: ?*const anyopaque) ?HBITMAP;
-pub extern fn CreateIcon(inst: HINSTANCE, w_: c_int, h_: c_int, planes: BYTE, bpp: BYTE, and_bits: [*]const BYTE, xor_bits: [*]const BYTE) HICON;
-pub extern fn DestroyIcon(icon: HICON) void;
-pub extern fn DrawIconEx(dc: HDC, x: c_int, y: c_int, icon: HICON, cx: c_int, cy: c_int, frame: UINT, flicker: ?HBRUSH, flags: UINT) BOOL;
+pub extern fn BeginPaint(wnd: HWND, ps: *PAINTSTRUCT) callconv(.c) ?HDC;
+pub extern fn EndPaint(wnd: HWND, ps: *const PAINTSTRUCT) callconv(.c) BOOL;
+pub extern fn GetDC(wnd: ?HWND) callconv(.c) ?HDC;
+pub extern fn ReleaseDC(wnd: ?HWND, dc: HDC) callconv(.c) c_int;
+pub extern fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) BOOL;
+pub extern fn FrameRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) c_int;
+pub extern fn DrawEdge(dc: HDC, rect: *RECT, edge: UINT, flags: UINT) callconv(.c) BOOL;
+pub extern fn DrawFrameControl(dc: HDC, rect: *RECT, kind: UINT, state: UINT) callconv(.c) BOOL;
+pub extern fn TextOutA(dc: HDC, x: c_int, y: c_int, text: [*]const u8, len: c_int) callconv(.c) BOOL;
+pub extern fn DrawTextA(dc: HDC, text: [*]const u8, len: c_int, rect: *RECT, format: UINT) callconv(.c) c_int;
+pub extern fn GetTextExtentPoint32A(dc: HDC, text: [*]const u8, len: c_int, size: *SIZE) callconv(.c) BOOL;
+pub extern fn SetTextColor(dc: HDC, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn SetBkMode(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn SetBkColor(dc: HDC, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn GetBkColor(dc: HDC) callconv(.c) COLORREF;
+pub extern fn GetSysColor(index: c_int) callconv(.c) DWORD;
+pub extern fn GetSysColorBrush(index: c_int) callconv(.c) ?HBRUSH;
+pub extern fn CreateSolidBrush(color: COLORREF) callconv(.c) ?HBRUSH;
+pub extern fn CreateFontA(height: c_int, width: c_int, escapement: c_int, orientation: c_int, weight: c_int, italic: DWORD, underline: DWORD, strike_out: DWORD, charset: DWORD, out_precision: DWORD, clip_precision: DWORD, quality: DWORD, pitch_and_family: DWORD, face_name: LPCSTR) callconv(.c) ?HFONT;
+pub extern fn DeleteObject(obj: HGDIOBJ) callconv(.c) BOOL;
+pub extern fn GetStockObject(what: c_int) callconv(.c) ?HGDIOBJ;
+pub extern fn SelectObject(dc: HDC, obj: HGDIOBJ) callconv(.c) ?HGDIOBJ;
+pub extern fn CreateBitmap(w: c_int, h: c_int, planes: UINT, bpp: UINT, bits: ?*const anyopaque) callconv(.c) ?HBITMAP;
+pub extern fn CreateIcon(inst: HINSTANCE, w_: c_int, h_: c_int, planes: BYTE, bpp: BYTE, and_bits: [*]const BYTE, xor_bits: [*]const BYTE) callconv(.c) HICON;
+pub extern fn DestroyIcon(icon: HICON) callconv(.c) void;
+pub extern fn DrawIconEx(dc: HDC, x: c_int, y: c_int, icon: HICON, cx: c_int, cy: c_int, frame: UINT, flicker: ?HBRUSH, flags: UINT) callconv(.c) BOOL;
 
 // ---- GDI: the drawing half ----------------------------------------------
 
-pub extern fn CreateCompatibleDC(dc: ?HDC) ?HDC;
-pub extern fn DeleteDC(dc: HDC) BOOL;
-pub extern fn CreateCompatibleBitmap(dc: HDC, w: c_int, h: c_int) ?HBITMAP;
-pub extern fn GetObjectA(obj: HGDIOBJ, size: c_int, out: ?*anyopaque) c_int;
-pub extern fn CreatePen(style: c_int, width: c_int, color: COLORREF) ?HPEN;
-pub extern fn SetROP2(dc: HDC, mode: c_int) c_int;
-pub extern fn GetROP2(dc: HDC) c_int;
-pub extern fn SetStretchBltMode(dc: HDC, mode: c_int) c_int;
-pub extern fn SetViewportOrgEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) BOOL;
-pub extern fn GetViewportOrgEx(dc: HDC, pt: *POINT) BOOL;
-pub extern fn MoveToEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) BOOL;
-pub extern fn LineTo(dc: HDC, x: c_int, y: c_int) BOOL;
-pub extern fn Polyline(dc: HDC, pts: [*]const POINT, count: c_int) BOOL;
-pub extern fn PolyBezier(dc: HDC, pts: [*]const POINT, count: DWORD) BOOL;
-pub extern fn Polygon(dc: HDC, pts: [*]const POINT, count: c_int) BOOL;
-pub extern fn Rectangle(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) BOOL;
-pub extern fn Ellipse(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) BOOL;
-pub extern fn RoundRect(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int, ew: c_int, eh: c_int) BOOL;
-pub extern fn SetPixel(dc: HDC, x: c_int, y: c_int, color: COLORREF) COLORREF;
-pub extern fn GetPixel(dc: HDC, x: c_int, y: c_int) COLORREF;
-pub extern fn ExtFloodFill(dc: HDC, x: c_int, y: c_int, color: COLORREF, kind: UINT) BOOL;
-pub extern fn BitBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, rop: DWORD) BOOL;
-pub extern fn StretchBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, sw: c_int, sh: c_int, rop: DWORD) BOOL;
-pub extern fn PatBlt(dc: HDC, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) BOOL;
-pub extern fn InvertRect(dc: HDC, rect: *const RECT) BOOL;
-pub extern fn DrawFocusRect(dc: HDC, rect: *const RECT) BOOL;
-pub extern fn GetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: ?*anyopaque, info: *BITMAPINFO, usage: UINT) c_int;
-pub extern fn SetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: *const anyopaque, info: *const BITMAPINFO, usage: UINT) c_int;
+pub extern fn CreateCompatibleDC(dc: ?HDC) callconv(.c) ?HDC;
+pub extern fn DeleteDC(dc: HDC) callconv(.c) BOOL;
+pub extern fn CreateCompatibleBitmap(dc: HDC, w: c_int, h: c_int) callconv(.c) ?HBITMAP;
+pub extern fn GetObjectA(obj: HGDIOBJ, size: c_int, out: ?*anyopaque) callconv(.c) c_int;
+pub extern fn CreatePen(style: c_int, width: c_int, color: COLORREF) callconv(.c) ?HPEN;
+pub extern fn SetROP2(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn GetROP2(dc: HDC) callconv(.c) c_int;
+pub extern fn SetStretchBltMode(dc: HDC, mode: c_int) callconv(.c) c_int;
+pub extern fn SetViewportOrgEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(.c) BOOL;
+pub extern fn GetViewportOrgEx(dc: HDC, pt: *POINT) callconv(.c) BOOL;
+pub extern fn MoveToEx(dc: HDC, x: c_int, y: c_int, prev: ?*POINT) callconv(.c) BOOL;
+pub extern fn LineTo(dc: HDC, x: c_int, y: c_int) callconv(.c) BOOL;
+pub extern fn Polyline(dc: HDC, pts: [*]const POINT, count: c_int) callconv(.c) BOOL;
+pub extern fn PolyBezier(dc: HDC, pts: [*]const POINT, count: DWORD) callconv(.c) BOOL;
+pub extern fn Polygon(dc: HDC, pts: [*]const POINT, count: c_int) callconv(.c) BOOL;
+pub extern fn Rectangle(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(.c) BOOL;
+pub extern fn Ellipse(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int) callconv(.c) BOOL;
+pub extern fn RoundRect(dc: HDC, left: c_int, top: c_int, right: c_int, bottom: c_int, ew: c_int, eh: c_int) callconv(.c) BOOL;
+pub extern fn SetPixel(dc: HDC, x: c_int, y: c_int, color: COLORREF) callconv(.c) COLORREF;
+pub extern fn GetPixel(dc: HDC, x: c_int, y: c_int) callconv(.c) COLORREF;
+pub extern fn ExtFloodFill(dc: HDC, x: c_int, y: c_int, color: COLORREF, kind: UINT) callconv(.c) BOOL;
+pub extern fn BitBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn StretchBlt(dst: HDC, x: c_int, y: c_int, w: c_int, h: c_int, src: ?HDC, sx: c_int, sy: c_int, sw: c_int, sh: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn PatBlt(dc: HDC, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) callconv(.c) BOOL;
+pub extern fn InvertRect(dc: HDC, rect: *const RECT) callconv(.c) BOOL;
+pub extern fn DrawFocusRect(dc: HDC, rect: *const RECT) callconv(.c) BOOL;
+pub extern fn IntersectClipRect(dc: HDC, left: i32, top: i32, right: i32, bottom: i32) callconv(.c) i32;
+pub extern fn GetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: ?*anyopaque, info: *BITMAPINFO, usage: UINT) callconv(.c) c_int;
+pub extern fn SetDIBits(dc: ?HDC, bmp: HBITMAP, start: UINT, lines: UINT, bits: *const anyopaque, info: *const BITMAPINFO, usage: UINT) callconv(.c) c_int;
 
 // ---- constants (generated: see the note at the top) ----------------------
 // >>> genconsts

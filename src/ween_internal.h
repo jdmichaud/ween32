@@ -59,7 +59,44 @@ void ween_surface_hline(ween_surface *s, int x, int y, int w, ween_color c);
 void ween_surface_vline(ween_surface *s, int x, int y, int h, ween_color c);
 void ween_surface_rect(ween_surface *s, int x, int y, int w, int h, ween_color c);
 /* DrawFocusRect's dotted, inverting rectangle. */
-void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h);
+void ween_surface_focus_rect(ween_surface *s, int x, int y, int w, int h,
+                             int phase);
+/* Where a DC may draw, in surface coordinates: its window, narrowed by
+ * whatever IntersectClipRect has been given. */
+void ween_dc_clip_box(HDC dc, RECT *out);
+
+/* A picture the file dialog draws, cut out of a capture of the machine's own
+ * dialog by tools/refcapture/shellart.py. Opaque, background and all: the
+ * background it was cut from is the one it is drawn on, which is what makes
+ * it exact without anything having to be interpreted. */
+typedef struct {
+    int w, h;
+    const ween_color *px;
+} ween_shell_art;
+
+enum {
+    WEEN_ART_HISTORY,
+    WEEN_ART_DESKTOP,
+    WEEN_ART_DOCUMENTS,
+    WEEN_ART_COMPUTER,
+    WEEN_ART_NETWORK,
+    WEEN_ART_TOOLBAR,
+    WEEN_ART_LOOKIN,
+    WEEN_ART_DOCUMENT16,
+    /* the same places at sixteen pixels, out of the dropped "Look in" list,
+     * with the plain folder and the drive the tree draws beside a path */
+    WEEN_ART_HISTORY16,
+    WEEN_ART_DESKTOP16,
+    WEEN_ART_DOCUMENTS16,
+    WEEN_ART_COMPUTER16,
+    WEEN_ART_DRIVE16,
+    WEEN_ART_FOLDER16,
+    WEEN_ART_PICTURES16,
+    WEEN_ART_NETDRIVE16,
+    WEEN_ART_NETWORK16
+};
+
+const ween_shell_art *ween_shell_picture(int which);
 /* The same dots drawn in one colour instead of inverting what is under them:
  * what a button's rectangle is, where a view's caret inverts. */
 void ween_surface_focus_rect_in(ween_surface *s, int x, int y, int w, int h,
@@ -197,6 +234,11 @@ struct ween_dc {
     ween_surface *s;
     int org_x, org_y;   /* window origin within the surface */
     int clip_w, clip_h; /* drawing area (window size) */
+    /* IntersectClipRect: what the caller has narrowed this DC to, in the
+     * window's own coordinates. Not set on a fresh DC, which is what the ones
+     * the library builds on the stack rely on. */
+    int clip_rect_set;
+    int clip_l, clip_t, clip_r, clip_b;
     ween_color text_color;
     int bk_mode;
     const ween_strike *font;    /* the strike drawing uses, from font_obj */
@@ -269,6 +311,7 @@ ween_color ween_cr_to_px(COLORREF c);
  * hidden until the keyboard has been used to reach a menu, and shows them from
  * then on; a menu opened and worked with the mouse never grows them. */
 extern int ween_menu_cues;
+extern int ween_kbd_used;
 
 /* And the dotted rectangle round the thing the keyboard would act on. This
  * one starts shown — a folder opens with it on the first item — and a click
@@ -360,6 +403,10 @@ struct ween_wnd {
                    * after — which is how a control that hosts another one
                    * takes the keys it needs off it */
     struct ween_wnd *parent;
+    /* For a window of its own: the one it was created against. win32 calls
+     * that its owner -- a dialog's is the window that put it up -- and passes
+     * it in the same argument a child's parent goes in. */
+    struct ween_wnd *owner;
     struct ween_wnd *first_child;
     struct ween_wnd *next_sibling;
     DWORD style;
@@ -619,6 +666,11 @@ typedef struct {
      * picture of its own when `custom` is not null -- in which case `shape`
      * is what to fall back to. */
     void (*set_cursor)(void *win, int shape, const ween_cursor *custom);
+    /* Whose window this one belongs to, and whether it is a dialog. A
+     * window manager that is told neither has no reason to treat a modal box
+     * differently from an application's main window: a tiling one gives it a
+     * tile of the screen, which is how a dialog comes up full screen. */
+    void (*set_owner)(void *win, void *owner, int dialog);
     /* How big the screen is, in the pixels a window is measured in. A
      * backend without one leaves the numbers alone, and the classic default
      * stands — which is what keeps a headless render the same everywhere. */

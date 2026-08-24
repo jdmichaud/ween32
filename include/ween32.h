@@ -152,6 +152,18 @@ typedef struct tagPAINTSTRUCT {
     BYTE rgbReserved[32];
 } PAINTSTRUCT;
 
+/* What an owner-drawn control asks its parent before it lays anything out.
+ * The shell's file dialog answers it for the "Look in" box, which is why that
+ * box is a pixel taller than the plain one below it. */
+typedef struct tagMEASUREITEMSTRUCT {
+    UINT CtlType;
+    UINT CtlID;
+    UINT itemID;
+    UINT itemWidth;
+    UINT itemHeight;
+    UINT_PTR itemData;
+} MEASUREITEMSTRUCT, *LPMEASUREITEMSTRUCT;
+
 typedef struct tagDRAWITEMSTRUCT {
     UINT CtlType;
     UINT CtlID;
@@ -216,6 +228,22 @@ typedef struct tagCREATESTRUCTA {
 #define WM_CLOSE 0x0010
 #define WM_QUIT 0x0012
 #define WM_ENABLE 0x000A
+/* What a control says it wants from the dialog manager. Only the one bit is
+ * acted on so far: a control that keeps a selection has all of it selected
+ * when a dialog gives it the focus, so that typing replaces what is there. */
+#define WM_GETDLGCODE 0x0087
+#define DLGC_WANTARROWS 0x0001
+#define DLGC_WANTTAB 0x0002
+#define DLGC_WANTALLKEYS 0x0004
+#define DLGC_WANTMESSAGE 0x0004
+#define DLGC_HASSETSEL 0x0008
+#define DLGC_DEFPUSHBUTTON 0x0010
+#define DLGC_UNDEFPUSHBUTTON 0x0020
+#define DLGC_RADIOBUTTON 0x0040
+#define DLGC_WANTCHARS 0x0080
+#define DLGC_STATIC 0x0100
+#define DLGC_BUTTON 0x2000
+
 #define WM_SETFONT 0x0030
 #define WM_GETFONT 0x0031
 #define WM_SETICON 0x0080
@@ -228,6 +256,7 @@ typedef struct tagCREATESTRUCTA {
 #define WM_NCLBUTTONDOWN 0x00A1
 #define WM_NCLBUTTONUP 0x00A2
 #define WM_DRAWITEM 0x002B
+#define WM_MEASUREITEM 0x002C
 #define WM_INITDIALOG 0x0110
 #define WM_USER 0x0400
 #define DM_GETDEFID (WM_USER + 0)
@@ -422,11 +451,14 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define CBS_SIMPLE 0x0001L
 #define CBS_DROPDOWN 0x0002L
 #define CBS_DROPDOWNLIST 0x0003L
+#define CBS_OWNERDRAWFIXED 0x0010L
+#define CB_ERR (-1)
 #define CB_ADDSTRING 0x0143
 #define CB_DELETESTRING 0x0144
 #define CB_GETCOUNT 0x0146
 #define CB_GETCURSEL 0x0147
 #define CB_GETLBTEXT 0x0148
+#define CB_GETLBTEXTLEN 0x0149
 #define CB_INSERTSTRING 0x014A
 #define CB_RESETCONTENT 0x014B
 
@@ -627,6 +659,7 @@ typedef struct tagTVHITTESTINFO {
 #define LVS_TYPEMASK 0x0003L
 #define LVS_SINGLESEL 0x0004L
 #define LVS_SHOWSELALWAYS 0x0008L
+#define LVS_SHAREIMAGELISTS 0x0040L
 /* A row's label can be typed over in place — which is what Rename is, and
  * what a folder just made is left in. */
 #define LVS_EDITLABELS 0x0200L
@@ -711,6 +744,7 @@ typedef struct {
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
+#define LVM_GETITEMA (LVM_FIRST + 5)
 #define LVM_INSERTITEMA (LVM_FIRST + 7)
 #define LVM_SETIMAGELIST (LVM_FIRST + 3)
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
@@ -757,6 +791,7 @@ typedef struct tagLVHITTESTINFO {
     int iItem;
     int iSubItem;
 } LVHITTESTINFO;
+#define LVM_GETITEMTEXTA (LVM_FIRST + 45)
 #define LVM_SETITEMTEXTA (LVM_FIRST + 46)
 #define LVM_SETITEMSTATE (LVM_FIRST + 43)
 #define LVM_GETITEMSTATE (LVM_FIRST + 44)
@@ -1123,10 +1158,18 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define BST_PUSHED 0x0004
 
 /* owner draw */
+#define ODT_MENU 1
+#define ODT_LISTBOX 2
+#define ODT_COMBOBOX 3
 #define ODT_BUTTON 4
+#define ODT_STATIC 5
 #define ODA_DRAWENTIRE 0x0001
 #define ODA_SELECT 0x0002
+#define ODA_FOCUS 0x0004
 #define ODS_SELECTED 0x0001
+#define ODS_DISABLED 0x0004
+#define ODS_FOCUS 0x0010
+#define ODS_COMBOBOXEDIT 0x1000
 
 /* ---- hit-test results --------------------------------------------------- */
 
@@ -1276,6 +1319,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DT_CALCRECT 0x00000400
 #define DT_NOCLIP 0x00000100
 #define DT_NOPREFIX 0x00000800
+#define DT_END_ELLIPSIS 0x00008000
 /* Draw the label without the '&' and without the underline under the letter
  * after it. Windows hides those until the keyboard has been used, and asks
  * for them this way when they are hidden. */
@@ -1491,6 +1535,12 @@ BOOL StretchBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy,
 BOOL PatBlt(HDC dc, int x, int y, int w, int h, DWORD rop);
 BOOL InvertRect(HDC dc, const RECT *rect);
 BOOL DrawFocusRect(HDC dc, const RECT *rect);
+/* What a clipping call made of the region it was given. */
+#define ERROR 0
+#define NULLREGION 1
+#define SIMPLEREGION 2
+#define COMPLEXREGION 3
+int IntersectClipRect(HDC dc, int left, int top, int right, int bottom);
 
 /* The pixels of a bitmap, as a device-independent bitmap: how a program that
  * has to write a .bmp file, or work on the picture a pixel at a time, gets
@@ -2011,6 +2061,7 @@ BOOL GetCursorPos(POINT *pt);
  * own is measured against, and the one a dialog is put up over. */
 HWND GetActiveWindow(void);
 BOOL ScreenToClient(HWND wnd, POINT *pt);
+BOOL GetCursorPos(POINT *pt);
 
 /* ---- the clipboard -------------------------------------------------------
  *
@@ -2021,6 +2072,33 @@ BOOL ScreenToClient(HWND wnd, POINT *pt);
  * WM_CUT/WM_COPY/WM_PASTE are what a control acts on; an EDIT also takes
  * Ctrl+X, Ctrl+C, Ctrl+V and Ctrl+A directly. */
 typedef void *HANDLE;
+
+/* ---- files -------------------------------------------------------------
+ * The KERNEL32 calls a win32 program reads and writes a file with. A program
+ * that uses these rather than the C library's needs no C runtime on Windows,
+ * which is the difference between running on a machine of that age and not
+ * starting at all. */
+#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+#define GENERIC_READ 0x80000000u
+#define GENERIC_WRITE 0x40000000u
+#define FILE_SHARE_READ 0x00000001u
+#define FILE_SHARE_WRITE 0x00000002u
+#define CREATE_ALWAYS 2
+#define OPEN_EXISTING 3
+#define FILE_ATTRIBUTE_NORMAL 0x00000080u
+#define FILE_BEGIN 0
+#define FILE_CURRENT 1
+#define FILE_END 2
+#define INVALID_SET_FILE_POINTER ((DWORD)-1)
+#define INVALID_FILE_SIZE ((DWORD)0xFFFFFFFF)
+HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, void *security,
+                   DWORD disposition, DWORD flags, HANDLE template_file);
+BOOL ReadFile(HANDLE file, void *buf, DWORD to_read, DWORD *read, void *ovl);
+BOOL WriteFile(HANDLE file, const void *buf, DWORD to_write, DWORD *written,
+               void *ovl);
+DWORD SetFilePointer(HANDLE file, LONG distance, LONG *high, DWORD method);
+DWORD GetFileSize(HANDLE file, DWORD *high);
+BOOL CloseHandle(HANDLE h);
 #define CF_TEXT 1
 #define CF_BITMAP 2
 #define WM_CUT 0x0300
