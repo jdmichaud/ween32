@@ -19,14 +19,29 @@ pub fn build(b: *std.Build) void {
     // unoptimised, which is the difference between a pencil that follows the
     // pointer and one that lags a tenth of a second behind it.
     // `-Doptimize=Debug` still asks for the other thing.
-    // The mode's own spelling changed between Zig versions — `ReleaseFast`
-    // became `release_fast` — so the default is looked up by whichever name
-    // this compiler's enum carries rather than written as a literal.
-    const fast: std.builtin.OptimizeMode = @field(std.builtin.OptimizeMode,
-        if (@hasField(std.builtin.OptimizeMode, "ReleaseFast"))
-            "ReleaseFast"
-        else
-            "release_fast");
+    // Which member of the optimize enum means "as fast as it goes" is spelled
+    // differently in different Zig versions — `ReleaseFast` in one,
+    // `release_fast` in the next — and the type info the enum answers with has
+    // changed shape too. So the name is looked for rather than written down:
+    // whichever member says "fast" is the one.
+    const fast: std.builtin.OptimizeMode = comptime blk: {
+        const info = @typeInfo(std.builtin.OptimizeMode).@"enum";
+        const names: []const [:0]const u8 =
+            if (@hasField(@TypeOf(info), "field_names")) info.field_names else nb: {
+                var out: [info.fields.len][:0]const u8 = undefined;
+                for (info.fields, 0..) |f, i| out[i] = f.name;
+                const frozen = out;
+                break :nb &frozen;
+            };
+        for (names) |name| {
+            var lower: [name.len]u8 = undefined;
+            for (name, 0..) |c, i| lower[i] = std.ascii.toLower(c);
+            if (std.mem.indexOf(u8, &lower, "fast") != null)
+                break :blk std.meta.stringToEnum(std.builtin.OptimizeMode, name).?;
+        }
+        break :blk @enumFromInt(0); // Debug, if nothing says fast
+    };
+
     const optimize = b.option(std.builtin.OptimizeMode, "optimize",
         "Prioritize performance, safety, or binary size") orelse fast;
 
@@ -112,7 +127,7 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
     // A program with windows, not a console one: without this the loader
     // opens a console beside it.
     if (target.result.os.tag == .windows)
-        paint.subsystem = .Windows;
+        paint.subsystem = .windows;
     b.installArtifact(paint);
     const step = b.step("paint", "Build Paint");
     step.dependOn(&b.addInstallArtifact(paint, .{}).step);
