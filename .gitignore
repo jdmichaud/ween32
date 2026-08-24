@@ -31,8 +31,5 @@ tools/refcapture/xclick
 /*.png
 /*.gif
 
-# Paint reference captures (tools/vm), taken from a Windows 2000 machine
-tools/refcapture/paint/
-
 # what a FUSE mount leaves behind when a running binary is rebuilt
 .fuse_hidden*
