@@ -25,6 +25,11 @@ tools/refcapture/xclick
 # headless screenshots and cross-compiled examples
 *.bmp
 *.exe
+# and screenshots dropped in the root while comparing something: the ones a
+# page shows live in docs/, the ones a comparison is counted against in
+# tools/refcapture/
+/*.png
+/*.gif
 
 # Paint reference captures (tools/vm), taken from a Windows 2000 machine
 tools/refcapture/paint/
