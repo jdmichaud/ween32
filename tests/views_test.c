@@ -1139,6 +1139,18 @@ int main(void)
               "clicking the box ticks it, and clicking it again");
         SendMessageA(ticks, WM_LBUTTONDOWN, 0, MAKELPARAM(9, 4));
         CHECK(!ListView_GetCheckState(ticks, 0), "unticks it");
+
+        /* The second press of a quick pair is a double click, and the box
+         * does nothing with one: it does not turn over again and the row is
+         * not picked. Clicking a box quickly turns it over once for every two
+         * presses — which is what the machine's own Column Settings does,
+         * counted on it. */
+        SendMessageA(ticks, WM_LBUTTONDBLCLK, 0, MAKELPARAM(9, 4));
+        CHECK(!ListView_GetCheckState(ticks, 0),
+              "a double click on the box leaves it as it was");
+        CHECK(SendMessageA(ticks, LVM_GETNEXTITEM, (WPARAM)-1,
+                           LVNI_SELECTED) == -1,
+              "and does not pick the row it is on");
         DestroyWindow(tw);
     }
 

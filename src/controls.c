@@ -5266,6 +5266,18 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if ((g.vbar && GET_X_LPARAM(lp) >= g.view_w) ||
             (g.hbar && my >= g.view_h))
             return 0; /* the bars are not items */
+        {   /* The box before a row answers a single press and nothing else:
+             * the second of a quick pair is a double click, and the machine's
+             * list does nothing at all with it — the box does not turn over
+             * again and the row is not picked. Clicking a box quickly there
+             * turns it over once for every two presses, which is what it does
+             * here. */
+            UINT where = 0;
+            int on = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, &where);
+            if (on >= 0 && (where & LVHT_ONITEMSTATEICON) &&
+                l->row[on].state_img)
+                return 0;
+        }
         i = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, NULL);
         if (i >= 0) {
             lv_select_one(l, i);
