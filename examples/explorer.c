@@ -3739,12 +3739,19 @@ static void show_directory(const char *path)
 
 /* ---- the folder tree ------------------------------------------------------ */
 
-static HTREEITEM add_node(HTREEITEM parent, const char *text, int image,
-                          int sel_image, int has_children)
+/* `after` is where it goes among its brothers and sisters: TVI_LAST keeps the
+ * order they are added in, which is what the fixture's namespace wants —
+ * Desktop, then My Documents, then My Computer — and TVI_SORT puts it where
+ * its name belongs, which is how a folder tree read off a disk comes out in
+ * order without this file sorting anything. */
+static HTREEITEM add_node_after(HTREEITEM parent, HTREEITEM after,
+                                const char *text, int image, int sel_image,
+                                int has_children)
 {
     TVINSERTSTRUCTA is;
     memset(&is, 0, sizeof(is));
     is.hParent = parent ? parent : TVI_ROOT;
+    is.hInsertAfter = after;
     /* cChildren claims children the item does not have yet, so the box to
      * open it with is there before anything has been read off the disk. What
      * is behind it is read when it is opened, and not before: walking every
@@ -3755,6 +3762,13 @@ static HTREEITEM add_node(HTREEITEM parent, const char *text, int image,
     is.item.iSelectedImage = sel_image;
     is.item.cChildren = has_children;
     return (HTREEITEM)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&is);
+}
+
+static HTREEITEM add_node(HTREEITEM parent, const char *text, int image,
+                          int sel_image, int has_children)
+{
+    return add_node_after(parent, TVI_LAST, text, image, sel_image,
+                          has_children);
 }
 
 static void fill_fixture_tree(void)
@@ -3898,8 +3912,10 @@ static void fill_children(HTREEITEM parent, const char *path)
             continue;
         snprintf(child, sizeof(child), "%s%s%s", path,
                  strcmp(path, "/") ? "/" : "", e.name);
-        add_node(parent, e.name, IMG_FOLDER, IMG_FOLDER_OPEN,
-                 has_subdir(child));
+        /* in the place its name belongs: a folder tree is in order, and
+         * what a directory hands back is in none */
+        add_node_after(parent, TVI_SORT, e.name, IMG_FOLDER, IMG_FOLDER_OPEN,
+                       has_subdir(child));
     }
     fs_close(&d);
 }

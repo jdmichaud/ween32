@@ -3313,8 +3313,26 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         } else {
             link = &t->root;
         }
-        while (*link)
-            link = &(*link)->next;
+        /* Where among its brothers and sisters it goes. TVI_SORT is the one a
+         * shell's folder tree is built with: each name lands where it belongs
+         * and the tree is in order without anything sorting it afterwards. */
+        if (is->hInsertAfter == TVI_FIRST) {
+            /* the head: nothing to walk past */
+        } else if (is->hInsertAfter == TVI_SORT) {
+            while (*link && lstrcmpiA((*link)->text ? (*link)->text : "",
+                                      item->text ? item->text : "") <= 0)
+                link = &(*link)->next;
+        } else if (is->hInsertAfter && is->hInsertAfter != TVI_LAST &&
+                   is->hInsertAfter != TVI_ROOT) {
+            while (*link && *link != is->hInsertAfter)
+                link = &(*link)->next;
+            if (*link)
+                link = &(*link)->next; /* after it, not before */
+        } else {
+            while (*link)
+                link = &(*link)->next;
+        }
+        item->next = *link;
         *link = item;
         InvalidateRect(wnd, NULL, FALSE);
         return (LRESULT)(UINT_PTR)item;
@@ -4926,10 +4944,17 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (!single && ctrl) { /* add this one, keep the rest */
                 l->row[i].selected = !l->row[i].selected;
                 l->sel = i + 1;
-            } else if (!single && shift && l->sel) {
-                lv_select_range(l, l->sel - 1, i); /* the run from the anchor */
+                l->anchor = i + 1;
+            } else if (!single && shift && (l->anchor || l->sel)) {
+                /* the run from the end it started at, which a second Shift
+                 * press measures from as well */
+                if (!l->anchor)
+                    l->anchor = l->sel;
+                lv_select_range(l, l->anchor - 1, i);
+                l->sel = i + 1;
             } else {
                 lv_select_one(l, i);
+                l->anchor = i + 1;
             }
             l->focus = i + 1;
             InvalidateRect(wnd, NULL, FALSE);

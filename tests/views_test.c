@@ -49,6 +49,17 @@ static LRESULT CALLBACK splitter_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(w, msg, wp, lp);
 }
 
+static HTREEITEM add_node_sorted(HTREEITEM parent, const char *text)
+{
+    TVINSERTSTRUCTA is;
+    memset(&is, 0, sizeof(is));
+    is.hParent = parent ? parent : TVI_ROOT;
+    is.hInsertAfter = TVI_SORT;
+    is.item.mask = TVIF_TEXT;
+    is.item.pszText = (char *)text;
+    return (HTREEITEM)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&is);
+}
+
 static HTREEITEM add_node(HTREEITEM parent, const char *text);
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -344,6 +355,38 @@ int main(void)
         CHECK(g_expandings == 1, "opening what is already open asks nothing");
         SendMessageA(g_tree, TVM_EXPAND, TVE_COLLAPSE, (LPARAM)lazy);
         CHECK(g_expandings == 2, "and closing it is a change worth telling");
+
+        /* Where an item goes among its brothers and sisters. TVI_SORT is
+         * what a folder tree is built with: a directory hands its names back
+         * in no order at all, and the tree comes out in one anyway. */
+        {
+            static const char *out_of_order[] = { "zebra", "Mango", "alpha",
+                                                  "beta" };
+            static const char *in_order[] = { "alpha", "beta", "Mango",
+                                              "zebra" };
+            HTREEITEM it;
+            int i = 0;
+            SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
+            for (i = 0; i < 4; i++)
+                add_node_sorted(NULL, out_of_order[i]);
+            it = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+            for (i = 0; i < 4 && it; i++) {
+                char label[64];
+                TVITEMA q;
+                memset(&q, 0, sizeof(q));
+                q.mask = TVIF_TEXT;
+                q.hItem = it;
+                q.pszText = label;
+                q.cchTextMax = (int)sizeof(label);
+                SendMessageA(g_tree, TVM_GETITEMA, 0, (LPARAM)&q);
+                if (strcmp(label, in_order[i]))
+                    break;
+                it = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_NEXT,
+                                             (LPARAM)it);
+            }
+            CHECK(i == 4, "TVI_SORT puts each name where it belongs, whatever "
+                          "its case");
+        }
 
         SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
     }

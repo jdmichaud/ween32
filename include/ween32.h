@@ -603,9 +603,14 @@ typedef struct {
 #define TVSIL_STATE 2
 #define TVIS_STATEIMAGEMASK 0xF000
 #define TVIF_STATE 0x0008
+/* Where an item goes among its brothers and sisters: at the front, at the
+ * back, or in the place its own text puts it — which is how a shell's folder
+ * tree comes out in alphabetical order without the application sorting
+ * anything. Anything else is the item to put it after. */
 #define TVI_ROOT ((HTREEITEM)(UINT_PTR)-0x10000)
 #define TVI_FIRST ((HTREEITEM)(UINT_PTR)-0x0FFFF)
 #define TVI_LAST ((HTREEITEM)(UINT_PTR)-0x0FFFE)
+#define TVI_SORT ((HTREEITEM)(UINT_PTR)-0x0FFFD)
 #define TVE_COLLAPSE 0x0001
 #define TVE_EXPAND 0x0002
 #define TV_FIRST 0x1100
