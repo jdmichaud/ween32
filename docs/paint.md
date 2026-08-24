@@ -133,6 +133,18 @@ under it, which is how the brush's dotted cross is drawn. The hot spot is
 measured first, by leaving a pencil dot at the same place: the ink lands on
 it.
 
+**The sizing arrows** are the library's rather than Paint's, and they are cut
+out of the machine as well (`tools/refcapture/cursorart.py`). X's cursor font
+has no double-headed diagonal at all -- its nearest offer is a corner bracket,
+which points one way rather than two -- so a picture sized by its corner
+showed the wrong thing entirely, and showed it mirrored as well, because the
+font numbers the bottom-left corner 12 and the bottom-right 14 and the two
+were the wrong way round. They were captured by filling the picture with
+magenta and hovering the three handles: against a background that is neither
+black nor white, every pixel of a cursor made of black and white can be told
+from what is behind it. The other diagonal is that one mirrored, which is
+what it is on the machine.
+
 The rubber's is the one exception. Its cursor is the size it rubs out, so it
 is drawn rather than read: a square outline with the pointer in the middle,
 which is what the captured one is at its smallest.

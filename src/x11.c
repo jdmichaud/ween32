@@ -527,10 +527,14 @@ static unsigned cursor_glyph(int shape)
         return 150; /* XC_watch */
     case WEEN_CURSOR_CROSS:
         return 34; /* XC_crosshair */
+    /* The two diagonals, and they are easy to swap: 12 is the bottom LEFT
+     * corner and 14 the bottom right. Swapped, the corner that sizes a
+     * picture from its bottom-right points the other way -- which is what a
+     * flipped cursor looks like. */
     case WEEN_CURSOR_SIZENWSE:
-        return 12; /* XC_bottom_right_corner... the diagonal pair X has */
+        return 14; /* XC_bottom_right_corner */
     case WEEN_CURSOR_SIZENESW:
-        return 14; /* XC_bottom_left_corner */
+        return 12; /* XC_bottom_left_corner */
     case WEEN_CURSOR_SIZEWE:
         return 108; /* XC_sb_h_double_arrow */
     case WEEN_CURSOR_SIZENS:
@@ -538,7 +542,7 @@ static unsigned cursor_glyph(int shape)
     case WEEN_CURSOR_SIZEALL:
         return 52; /* XC_fleur */
     case WEEN_CURSOR_HAND:
-        return 58; /* XC_hand2 */
+        return 60; /* XC_hand2, the pointing one; 58 is hand1, a fist */
     default:
         return 68; /* XC_left_ptr */
     }
@@ -610,6 +614,8 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
         }
         return;
     }
+    if (!custom)
+        custom = ween_stock_cursor(shape); /* the ones ween32 draws itself */
     if (custom) {
         unsigned long cur = x11_cursor_image(custom);
         if (cur) {

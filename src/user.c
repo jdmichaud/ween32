@@ -875,16 +875,15 @@ BOOL SetWindowTextA(HWND wnd, LPCSTR text)
     return TRUE;
 }
 
+/* A window's text is whatever it answers WM_GETTEXT with, not what is in its
+ * own field: a combo box's is its edit's, and asking the window rather than
+ * reading the structure is what lets it say so. */
 int GetWindowTextA(HWND wnd, LPSTR out, int max)
 {
     if (!wnd || !out || max <= 0)
         return 0;
-    int n = (int)strlen(wnd->text);
-    if (n >= max)
-        n = max - 1;
-    memcpy(out, wnd->text, (size_t)n);
-    out[n] = 0;
-    return n;
+    out[0] = 0;
+    return (int)SendMessageA(wnd, WM_GETTEXT, (WPARAM)max, (LPARAM)out);
 }
 
 BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
@@ -3188,6 +3187,24 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         DestroyWindow(wnd);
         return 0;
 
+    case WM_GETTEXT: {
+        /* the window's own copy, which is what every window that keeps one
+         * answers with; a control that keeps its text somewhere else -- a
+         * combo box in its field -- handles this itself */
+        char *out = (char *)lp;
+        int max = (int)wp;
+        int n;
+        if (!out || max <= 0)
+            return 0;
+        n = (int)strlen(wnd->text);
+        if (n >= max)
+            n = max - 1;
+        memcpy(out, wnd->text, (size_t)n);
+        out[n] = 0;
+        return n;
+    }
+    case WM_GETTEXTLENGTH:
+        return (LRESULT)strlen(wnd->text);
     case WM_GETFONT:
         return (LRESULT)GetStockObject(DEFAULT_GUI_FONT);
 
