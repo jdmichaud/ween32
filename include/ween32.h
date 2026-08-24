@@ -1693,6 +1693,9 @@ typedef struct {
 
 #define TB_ENABLEBUTTON (WM_USER + 1)
 #define TB_CHECKBUTTON (WM_USER + 2)
+/* Hold a button down, or let it up, without the pointer: what a button that
+ * has put a menu up under itself does until the menu is answered. */
+#define TB_PRESSBUTTON (WM_USER + 3)
 #define TB_ISBUTTONCHECKED (WM_USER + 10)
 #define TB_ISBUTTONENABLED (WM_USER + 9)
 #define TB_ADDBUTTONSA (WM_USER + 20)

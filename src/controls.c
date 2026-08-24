@@ -6596,7 +6596,11 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int aw = tb_drop_w(tb, b);
         int enabled = (b->state & TBSTATE_ENABLED) != 0;
         int checked = (b->state & TBSTATE_CHECKED) != 0;
-        int held = tb->pressed == i && tb->hot == i;
+        /* Held down: while the pointer is on it with the button down, or
+         * because the application said so — which is what a button that has
+         * put a menu up under itself does until the menu is answered. */
+        int held = (tb->pressed == i && tb->hot == i) ||
+                   (b->state & TBSTATE_PRESSED) != 0;
 
         if (b->style & TBSTYLE_SEP) {
             /* an etched line three pixels in, which is the middle of the
@@ -6999,8 +7003,11 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         tb = toolbar_of(wnd);
         return tb ? tb->count : 0;
     case TB_CHECKBUTTON:
+    case TB_PRESSBUTTON:
     case TB_ENABLEBUTTON: {
-        UINT bit = msg == TB_CHECKBUTTON ? TBSTATE_CHECKED : TBSTATE_ENABLED;
+        UINT bit = msg == TB_CHECKBUTTON    ? TBSTATE_CHECKED
+                   : msg == TB_PRESSBUTTON  ? TBSTATE_PRESSED
+                                            : TBSTATE_ENABLED;
         tb = toolbar_of(wnd);
         for (int i = 0; tb && i < tb->count; i++) {
             if (tb->btn[i].id != (int)wp)

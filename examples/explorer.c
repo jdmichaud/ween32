@@ -3600,6 +3600,58 @@ static void show_properties(HWND owner)
     PropertySheetA(&hdr);
 }
 
+/* What one of the toolbar's drop-downs offers, put up under its button.
+ * Views offers the five the View menu does; Back and Forward offer where they
+ * would go, which is the walk this window has made.
+ *
+ * Called for the arrow beside the button and for the button itself: the
+ * machine's Views drops its menu wherever it is pressed, which is what a
+ * button whose whole face is a drop-down does. */
+static void toolbar_drop(int id)
+{
+    RECT r;
+    POINT pt;
+    HMENU m;
+    SendMessageA(g_toolbar, TB_GETITEMRECT,
+                 (WPARAM)SendMessageA(g_toolbar, TB_COMMANDTOINDEX,
+                                      (WPARAM)id, 0),
+                 (LPARAM)&r);
+    pt.x = r.left;
+    pt.y = r.bottom;
+    ClientToScreen(g_toolbar, &pt);
+    m = CreatePopupMenu();
+    if (id == IDM_VIEWS) {
+        static const char *names[] = { "Lar&ge Icons", "S&mall Icons", "&List",
+                                       "&Details", "Thu&mbnails" };
+        for (int i = 0; i < 5; i++)
+            AppendMenuA(m, MF_STRING, (UINT)(IDM_VIEW_LARGE + i), names[i]);
+        CheckMenuRadioItem(m, 0, 4, (UINT)g_view, MF_BYPOSITION);
+    } else {
+        /* where Back and Forward would take you, most recent first */
+        int from = id == IDM_BACK ? g_hist_at - 1 : g_hist_at + 1;
+        int step = id == IDM_BACK ? -1 : 1;
+        for (int i = from, n = 0; i >= 0 && i < g_hist_n && n < 9;
+             i += step, n++) {
+            const char *leaf = strrchr(g_hist[i], FS_SEP);
+            AppendMenuA(m, MF_STRING, (UINT)(IDM_HIST_FIRST + i),
+                        leaf && leaf[1] ? leaf + 1 : g_hist[i]);
+        }
+        if (!GetMenuItemCount(m))
+            AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "(none)");
+    }
+    {
+        /* the button stays down while its menu is up, as the machine's does */
+        UINT cmd;
+        SendMessageA(g_toolbar, TB_PRESSBUTTON, (WPARAM)id, MAKELPARAM(1, 0));
+        cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_RETURNCMD, pt.x, pt.y, 0,
+                             g_main, NULL);
+        SendMessageA(g_toolbar, TB_PRESSBUTTON, (WPARAM)id, MAKELPARAM(0, 0));
+        DestroyMenu(m);
+        if (cmd)
+            SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+    }
+}
+
 /* Select All, and its opposite. */
 static void do_select_all(int invert)
 {
@@ -5490,51 +5542,7 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
              * by itself; all this has to do is put the menu under it. */
             menubar_drop(((const NMTOOLBAR *)lp)->iItem - IDM_MENU_FIRST);
         } else if (nm->code == TBN_DROPDOWN && nm->hwndFrom == g_toolbar) {
-            /* The arrows beside Back, Forward and Views. Views offers the
-             * five the View menu does; the other two offer where they would
-             * go, which is the walk this window has made. */
-            int id = ((const NMTOOLBAR *)lp)->iItem;
-            RECT r;
-            POINT pt;
-            HMENU m = NULL;
-            SendMessageA(g_toolbar, TB_GETITEMRECT,
-                         (WPARAM)SendMessageA(g_toolbar, TB_COMMANDTOINDEX,
-                                              (WPARAM)id, 0),
-                         (LPARAM)&r);
-            pt.x = r.left;
-            pt.y = r.bottom;
-            ClientToScreen(g_toolbar, &pt);
-            if (id == IDM_VIEWS) {
-                static const char *names[] = { "Lar&ge Icons", "S&mall Icons",
-                                               "&List", "&Details",
-                                               "Thu&mbnails" };
-                m = CreatePopupMenu();
-                for (int i = 0; i < 5; i++)
-                    AppendMenuA(m, MF_STRING, (UINT)(IDM_VIEW_LARGE + i),
-                                names[i]);
-                CheckMenuRadioItem(m, 0, 4, (UINT)g_view, MF_BYPOSITION);
-            } else {
-                /* where Back and Forward would take you, most recent first */
-                int from = id == IDM_BACK ? g_hist_at - 1 : g_hist_at + 1;
-                int step = id == IDM_BACK ? -1 : 1;
-                m = CreatePopupMenu();
-                for (int i = from, n = 0; i >= 0 && i < g_hist_n && n < 9;
-                     i += step, n++) {
-                    const char *leaf = strrchr(g_hist[i], FS_SEP);
-                    AppendMenuA(m, MF_STRING, (UINT)(IDM_HIST_FIRST + i),
-                                leaf && leaf[1] ? leaf + 1 : g_hist[i]);
-                }
-                if (!GetMenuItemCount(m))
-                    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "(none)");
-            }
-            {
-                UINT cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_RETURNCMD,
-                                          pt.x, pt.y, 0, g_main, NULL);
-                DestroyMenu(m);
-                if (cmd)
-                    SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0),
-                                 0);
-            }
+            toolbar_drop(((const NMTOOLBAR *)lp)->iItem);
         } else if (nm->code == CBEN_ENDEDITA) {
             /* A path typed into the address bar. Enter goes there; anything
              * else puts back what it was showing. */
@@ -5713,6 +5721,12 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         case IDM_CLOSE:
             DestroyWindow(w);
+            return 0;
+
+        case IDM_VIEWS:
+            /* pressed rather than dropped: the machine's Views button offers
+             * the same menu whichever half of it is clicked */
+            toolbar_drop(IDM_VIEWS);
             return 0;
 
         /* ---- Edit, and the toolbar buttons that do the same things ---- */
