@@ -448,6 +448,44 @@ int main(void)
             SendMessageA(g_list, WM_LBUTTONDOWN, 0, MAKELPARAM(30, 30));
             CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
                   "and a plain click drops the rest");
+
+            /* A rectangle dragged from a point on no row picks what it
+             * touches, and what it touches is a row's picture and name — the
+             * empty width of a column to the right of a name is no more part
+             * of the row here than it is to a click, which is what the
+             * machine's own does. The rows are asked where they are rather
+             * than assumed: a row is as tall as the pictures beside it. */
+            {
+                RECT r1, r2;
+                r1.left = LVIR_BOUNDS;
+                SendMessageA(g_list, LVM_GETITEMRECT, 1, (LPARAM)&r1);
+                r2.left = LVIR_BOUNDS;
+                SendMessageA(g_list, LVM_GETITEMRECT, 2, (LPARAM)&r2);
+
+                SendMessageA(g_list, WM_LBUTTONDOWN, 0,
+                             MAKELPARAM(200, r1.top + 1));
+                CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 0,
+                      "a press past every name drops the selection");
+                SendMessageA(g_list, WM_MOUSEMOVE, 0,
+                             MAKELPARAM(190, r2.bottom - 1));
+                CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 0,
+                      "and a drag that stays past them picks nothing");
+                SendMessageA(g_list, WM_MOUSEMOVE, 0,
+                             MAKELPARAM(20, r2.bottom - 1));
+                CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 2,
+                      "dragged back across the names it picks the rows it "
+                      "crosses");
+                SendMessageA(g_list, WM_MOUSEMOVE, 0,
+                             MAKELPARAM(20, r1.top + 1));
+                CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
+                      "and lets go of the ones it is taken back off");
+                SendMessageA(g_list, WM_LBUTTONUP, 0,
+                             MAKELPARAM(20, r1.top + 1));
+                CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
+                      "what it left picked stays picked when the button "
+                      "comes up");
+                CHECK(GetCapture() == NULL, "and the pointer is handed back");
+            }
         }
 
         /* a press away from any divider is a sort, as before */

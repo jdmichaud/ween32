@@ -3609,6 +3609,9 @@ typedef struct {
                    * first one until a heading is carried somewhere else, and
                    * then wherever that one went — the machine's icons travel
                    * with the Name column */
+    int band;     /* a rectangle being dragged over the view to pick with */
+    int band_x0, band_y0; /* where the press landed */
+    int band_x, band_y;   /* and where the pointer is now */
     int sizing;   /* the divider being dragged, -1 for none */
     int size_x0;  /* where the drag started, and the width it started at */
     int size_w0;
@@ -4131,6 +4134,66 @@ static void lv_shade_rect(ween_surface *s, int x, int y, int w, int h)
  * is why clicking a file's size clears the selection rather than picking the
  * file, and why a right click there brings up the folder's menu instead of the
  * file's. Returns -1 for a point on nothing. */
+/* What a row shows of itself, in the view's own coordinates: the picture and
+ * the name, which is what a rectangle dragged over the view has to touch to
+ * pick it — the empty width of a column to the right of a name is not part of
+ * the row any more than it is to a click. */
+static void lv_row_hot_rect(HWND wnd, const ween_list *l, int row, RECT *out)
+{
+    int icon_w = 0, icon_h = 0, indent;
+    lv_cell_rect(wnd, l, row, out);
+    if (lv_mode(wnd) != LVS_REPORT)
+        return;
+    if (l->images)
+        ImageList_GetIconSize(l->images, &icon_w, &icon_h);
+    indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
+    if (lv_check_w(l))
+        indent += lv_check_w(l) + (indent ? 0 : 2);
+    out->left = lv_icon_col_x(l) + 2 - l->scroll_x;
+    out->right = lv_icon_col_x(l) + lv_label_x(indent) +
+                 lv_label_w(wnd, l, row, indent) - l->scroll_x;
+    out->top -= l->top * lv_item_h(wnd, l);
+    out->bottom -= l->top * lv_item_h(wnd, l);
+}
+
+/* The rectangle being dragged, the right way round whichever way it was
+ * dragged. */
+static void lv_band_rect(const ween_list *l, RECT *out)
+{
+    out->left = l->band_x0 < l->band_x ? l->band_x0 : l->band_x;
+    out->right = l->band_x0 < l->band_x ? l->band_x : l->band_x0;
+    out->top = l->band_y0 < l->band_y ? l->band_y0 : l->band_y;
+    out->bottom = l->band_y0 < l->band_y ? l->band_y : l->band_y0;
+}
+
+/* Pick everything the rectangle touches. What was picked before it started is
+ * kept when Control is held, which is how a second sweep adds to the first. */
+static void lv_band_select(HWND wnd, ween_list *l, int add)
+{
+    RECT band;
+    int changed = 0;
+    lv_band_rect(l, &band);
+    for (int i = 0; i < l->nrow; i++) {
+        RECT r;
+        int in;
+        lv_row_hot_rect(wnd, l, i, &r);
+        in = r.left < band.right && r.right > band.left && r.top < band.bottom &&
+             r.bottom > band.top;
+        if (add && !in)
+            continue; /* a sweep with Control held only ever adds */
+        if (l->row[i].selected != in) {
+            l->row[i].selected = in;
+            changed = 1;
+        }
+        if (in) {
+            l->sel = i + 1;
+            l->focus = i + 1;
+        }
+    }
+    if (changed)
+        notify_parent(wnd, LVN_ITEMCHANGED);
+}
+
 static int lv_item_hit(HWND wnd, ween_list *l, int x, int y, UINT *flags)
 {
     ween_lv_layout g;
@@ -4331,6 +4394,18 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
     (void)dc;
 }
 
+/* The rectangle being dragged: dotted, and inverting what is under it, which
+ * is what the shell drags over a folder. */
+static void lv_paint_band(const ween_list *l, ween_surface *s, int ox, int oy)
+{
+    RECT b;
+    if (!l || !l->band)
+        return;
+    lv_band_rect(l, &b);
+    ween_surface_focus_rect(s, ox + b.left, oy + b.top, b.right - b.left,
+                            b.bottom - b.top, (ox + oy) & 1);
+}
+
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_list *l = list_of(wnd);
@@ -4348,6 +4423,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         return;
     if (lv_mode(wnd) != LVS_REPORT) { /* one of the three that flow */
         lv_paint_flow(wnd, l, dc);
+        lv_paint_band(l, &top->surface, ox, oy);
         return; /* and none of them has a header: that band is Details' own */
     }
     ih = lv_item_h(wnd, l);
@@ -4510,6 +4586,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_surface_fill(&top->surface, ox + g.view_w, oy + g.view_h,
                           ween_scroll_metric(), ween_scroll_metric(),
                           WEEN_FACE);
+    lv_paint_band(l, &top->surface, ox, oy);
 }
 
 static char *dup_str(const char *src)
@@ -4832,13 +4909,22 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
             notify_parent(wnd, LVN_ITEMCHANGED);
             notify_parent(wnd, NM_CLICK);
-        } else if (lv_selected_count(l)) {
-            /* a press on a row's other cells, or under the last row, drops
-             * the selection and keeps the caret where it was */
-            lv_select_none(l);
-            l->sel = 0;
-            InvalidateRect(wnd, NULL, FALSE);
-            notify_parent(wnd, LVN_ITEMCHANGED);
+        } else {
+            /* A press that missed every row starts a rectangle: dragged over
+             * the view it picks what it touches, which is how a handful of
+             * files in the middle of a folder are taken. Held with Control it
+             * adds to what is picked; on its own it drops that first, as a
+             * press on nothing does. */
+            if (!(wp & MK_CONTROL) && lv_selected_count(l)) {
+                lv_select_none(l);
+                l->sel = 0;
+                InvalidateRect(wnd, NULL, FALSE);
+                notify_parent(wnd, LVN_ITEMCHANGED);
+            }
+            l->band = 1;
+            l->band_x0 = l->band_x = GET_X_LPARAM(lp);
+            l->band_y0 = l->band_y = my;
+            SetCapture(wnd);
         }
         return 0;
     }
@@ -4965,6 +5051,13 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_MOUSEMOVE:
         l = list_of(wnd);
+        if (l && l->band && GetCapture() == wnd) {
+            l->band_x = GET_X_LPARAM(lp);
+            l->band_y = GET_Y_LPARAM(lp);
+            lv_band_select(wnd, l, (wp & MK_CONTROL) != 0);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         if (l && l->sizing >= 0 && GetCapture() == wnd) {
             int w = l->size_w0 + GET_X_LPARAM(lp) + l->scroll_x - l->size_x0;
             if (w < WEEN_LV_DIVIDER * 2) /* never smaller than its divider */
@@ -5016,6 +5109,12 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_LBUTTONUP:
         l = list_of(wnd);
+        if (l && l->band) {
+            l->band = 0;
+            ReleaseCapture();
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         if (l && l->sizing >= 0) {
             l->sizing = -1;
             ReleaseCapture();
