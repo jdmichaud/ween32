@@ -4238,15 +4238,17 @@ static int lv_label_w(HWND wnd, const ween_list *l, int row, int indent)
     int tw;
     if (!f || !l->row[row].text[l->icon_col])
         return 0;
-    tw = ween_strike_text_extent(f, l->row[row].text[l->icon_col],
-                                 (int)strlen(l->row[row].text[l->icon_col]));
+    /* What the name puts on the screen, not what the extent rounds it up to:
+     * the two differ by six across "CONFIG.SYS" and the box follows the
+     * pixels. */
+    tw = ween_strike_text_width(f, l->row[row].text[l->icon_col],
+                                (int)strlen(l->row[row].text[l->icon_col]));
     if (tw > l->width[l->icon_col] - indent - 8)
         tw = l->width[l->icon_col] - indent - 8;
-    /* Two before the text and four after, which is the box the machine
-     * highlights: "WINNT" picked comes to forty-two pixels of blue. A list
-     * with no images has no icon column to start after and keeps the wider
-     * box, which is what wine's classic list draws. */
-    return tw + (indent ? 6 : 10);
+    /* Two before it and six after, which is the box the machine highlights.
+     * Six names off its C: window come to 30, 42, 61, 69, 72 and 102 pixels
+     * of blue, and each is what that name draws plus eight. */
+    return tw + (indent ? 8 : 12);
 }
 
 /* Where a row's label box starts: at the icon's right edge when there is one,
@@ -4978,11 +4980,18 @@ static HWND lv_begin_edit(HWND wnd, ween_list *l, int row)
     if (l->images)
         ImageList_GetIconSize(l->images, &icon_w, &icon_h);
     indent = (l->images && l->row[row].image >= 0) ? icon_w + 2 : 0;
+    /* Where the machine puts the box: over the row's own, two pixels further
+     * left and twelve wider, and exactly as tall as the row. Measured on its
+     * C: window renaming CONFIG.SYS — the name's blue box is 69 wide at 399
+     * and the white one 81 at 397, both seventeen tall on a seventeen-pixel
+     * row, and "Program Files" gives 72 and 84 the same way. The name inside
+     * lands one pixel right of where the row drew it, which is the margin the
+     * edit control keeps anyway. */
     r.left = lv_label_x(indent) - l->scroll_x - 2;
     r.top = lv_header_h(wnd) + WEEN_LV_ROW_TOP +
-            (row - l->top) * lv_item_h(wnd, l) - 1;
-    r.right = r.left + lv_label_w(wnd, l, row, indent) + 24;
-    r.bottom = r.top + lv_item_h(wnd, l) + 2;
+            (row - l->top) * lv_item_h(wnd, l);
+    r.right = r.left + lv_label_w(wnd, l, row, indent) + 12;
+    r.bottom = r.top + lv_item_h(wnd, l);
     l->edit = CreateWindowExA(0, "EDIT", l->row[row].text[0] ? l->row[row].text[0] : "",
                               WS_CHILD | WS_VISIBLE | WS_BORDER, r.left, r.top,
                               r.right - r.left, r.bottom - r.top, wnd, NULL,

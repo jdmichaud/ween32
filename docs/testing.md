@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **516 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **521 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -345,7 +345,7 @@ The one-name box settled two more:
 Every rectangle in both is measured off those, so a change that moves one
 shows up beside them:
 
-**Column Settings** differs by **1147 of 103290**, 1.1%. Its scroll bar is
+**Column Settings** differs by **1106 of 103290**, 1.1%. Its scroll bar is
 718 of that and is content, not drawing: the machine's shell offers some
 fifty columns where this example has eight, so its thumb is a fifteenth of
 the trough and ours five sixths of it. Another 252 is the caption's bold
@@ -353,11 +353,7 @@ title. What is left is 58 pixels where wine's MS Sans Serif draws a `k` or a
 `v` a pixel off the machine's, and 77 where a bordered edit box starts its
 text: the machine's begins two further in with that font, and the rule that
 gives both that and Tahoma's three — wine's, half the average character
-width — has not been found. The last 41 are where the picked row's blue box
-ends: its letters land on the machine's to the pixel, and then it runs two
-further before it stops. Either the machine's advance for that word is two
-wider than wine's, or a list with a box before each row leaves two more after
-the name; one picked row is not enough to tell which.
+width — has not been found.
 
 One behaviour in that dialog is deliberately not the machine's. Click a check
 box there twice quickly and the machine turns it over **once**: the second
@@ -463,7 +459,11 @@ about this dialog at all:
   Tahoma is measured off its outline and comes out wider — three pixels wider
   across "Cancel". The machine centres that label by the drawn width, and
   sizes a tab and a focus rectangle by it too: "General" in a Properties
-  sheet's tab is 49 wide, its drawn width and the twelve either side.
+  sheet's tab is 49 wide, its drawn width and the twelve either side. A list
+  row's name box is the same rule with MS Sans Serif, where the extent runs
+  wider still — six pixels across "CONFIG.SYS": the six names in the
+  machine's C: window come to 30, 42, 61, 69, 72 and 102 pixels of blue, and
+  each is the drawn width and eight, two before the name and six after.
 - **A focus rectangle's dots start at the control's corner** — for a button.
   win32 hangs the pattern on the brush origin, and a tick box's is its own:
   two at different places dot theirs the same way, and hanging them off the

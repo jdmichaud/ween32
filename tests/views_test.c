@@ -1154,6 +1154,72 @@ int main(void)
         DestroyWindow(tw);
     }
 
+    /* Renaming in place: the box the shell opens over a name. Measured on the
+     * machine's C: window — a picked name's blue box is 69 wide and seventeen
+     * tall for CONFIG.SYS, and the white box F2 opens is 81 wide starting two
+     * pixels further left, standing on the same seventeen rows. The name
+     * inside is drawn one pixel right of where the row drew it, which is the
+     * margin the edit control keeps anyway. */
+    {
+        HWND rw = CreateWindowExA(0, "weenviews", "rename",
+                                  WS_POPUP | WS_VISIBLE, 0, 0, 260, 140, NULL,
+                                  NULL, NULL, NULL);
+        HWND names = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
+                                     WS_CHILD | WS_VISIBLE | LVS_REPORT |
+                                         LVS_EDITLABELS | LVS_NOCOLUMNHEADER,
+                                     10, 10, 220, 80, rw, (HMENU)(UINT_PTR)10,
+                                     NULL, NULL);
+        HIMAGELIST img = ImageList_Create(16, 16, ILC_COLOR, 2, 0);
+        const ween_strike *f = ween_gui_font();
+        int drawn = ween_strike_text_width(f, "WINNT", 5);
+        LVCOLUMNA col;
+        LVITEMA it;
+        RECT label, bounds, box;
+        POINT origin;
+        HWND ed;
+
+        memset(&col, 0, sizeof(col));
+        col.mask = LVCF_WIDTH | LVCF_TEXT;
+        col.cx = 180;
+        col.pszText = (char *)"Name";
+        SendMessageA(names, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
+        SendMessageA(names, LVM_SETIMAGELIST, LVSIL_SMALL, (LPARAM)img);
+        memset(&it, 0, sizeof(it));
+        it.mask = LVIF_TEXT | LVIF_IMAGE;
+        it.iItem = 0;
+        it.pszText = (char *)"WINNT";
+        it.iImage = 0;
+        SendMessageA(names, LVM_INSERTITEMA, 0, (LPARAM)&it);
+
+        label.left = LVIR_LABEL;
+        SendMessageA(names, LVM_GETITEMRECT, 0, (LPARAM)&label);
+        CHECK(label.right - label.left == drawn + 8,
+              "a name's box is what it draws and eight — 42 for \"WINNT\" "
+              "on the machine");
+        bounds.left = LVIR_BOUNDS;
+        SendMessageA(names, LVM_GETITEMRECT, 0, (LPARAM)&bounds);
+
+        ed = (HWND)(INT_PTR)SendMessageA(names, LVM_EDITLABELA, 0, 0);
+        CHECK(ed && ed == (HWND)(INT_PTR)SendMessageA(names,
+                                                      LVM_GETEDITCONTROL, 0, 0),
+              "renaming opens a box the view hands back");
+        if (ed) {
+            origin.x = 0;
+            origin.y = 0;
+            ClientToScreen(names, &origin);
+            GetWindowRect(ed, &box);
+            CHECK(box.left - origin.x == label.left - 2,
+                  "it starts two pixels left of the name's own box");
+            CHECK(box.right - box.left == label.right - label.left + 12,
+                  "and is twelve wider than it");
+            CHECK(box.top - origin.y == bounds.top &&
+                      box.bottom - box.top == bounds.bottom - bounds.top,
+                  "and stands on the row, as tall as the row");
+        }
+        SendMessageA(names, WM_KEYDOWN, VK_ESCAPE, 0);
+        DestroyWindow(rw);
+    }
+
     /* A combo box's drop-down. It can be emptied — an address bar refills
      * itself on every folder, and without CB_RESETCONTENT it only ever grew,
      * going on showing the first path it was ever given. And once open it
