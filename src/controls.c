@@ -1361,6 +1361,7 @@ static void items_free(void *p); /* defined with ween_controls_free */
 typedef struct {
     char **item;
     int *edge; /* status-bar part right edges, in client coordinates */
+    int nedge; /* how many of them there are: a part past them is the rest */
     HICON icon[8]; /* status bar: an icon before a part's text, or NULL */
     int *image;  /* ComboBoxEx: the image each item names, -1 for none */
     int *indent; /* ComboBoxEx: how many steps in it is drawn */
@@ -6646,7 +6647,10 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         /* A bar whose parts were never set has one, the width of the window:
          * SB_SETTEXTA alone is enough to make a status bar, and win32 gives
          * that text the whole strip. */
-        int right = it->edge ? it->edge[i] : -1;
+        /* A part the app never gave an edge for -- SB_SETTEXTA past the end
+         * makes one -- runs to the end of the bar, as the only part of a bar
+         * with no parts set does. */
+        int right = i < it->nedge ? it->edge[i] : -1;
         RECT part;
         if (right < 0 || right > r.right)
             right = r.right;
@@ -6756,6 +6760,7 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return FALSE;
         free(it->edge);
         it->edge = calloc((size_t)n, sizeof(int));
+        it->nedge = it->edge ? n : 0;
         for (int i = 0; i < n; i++) {
             if (it->edge)
                 it->edge[i] = edges[i];
