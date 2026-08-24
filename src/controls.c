@@ -5264,17 +5264,23 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if ((g.vbar && GET_X_LPARAM(lp) >= g.view_w) ||
             (g.hbar && my >= g.view_h))
             return 0; /* the bars are not items */
-        {   /* The box before a row answers a single press and nothing else:
-             * the second of a quick pair is a double click, and the machine's
-             * list does nothing at all with it — the box does not turn over
-             * again and the row is not picked. Clicking a box quickly there
-             * turns it over once for every two presses, which is what it does
-             * here. */
+        {   /* The box before a row takes the second press of a quick pair as
+             * it took the first: it turns over again, so a box clicked fast
+             * flips every time and two clicks leave it as it started. This is
+             * a departure, written down in docs/testing.md: the machine's
+             * list drops that press and turns the box over once for every two
+             * — Column Settings was watched doing it — and a click somebody
+             * made counting is worth more here than matching that. The row is
+             * still not picked, which is what the machine does. */
             UINT where = 0;
             int on = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, &where);
             if (on >= 0 && (where & LVHT_ONITEMSTATEICON) &&
-                l->row[on].state_img)
+                l->row[on].state_img) {
+                l->row[on].state_img = l->row[on].state_img == 2 ? 1 : 2;
+                InvalidateRect(wnd, NULL, FALSE);
+                notify_parent(wnd, LVN_ITEMCHANGED);
                 return 0;
+            }
         }
         i = lv_item_hit(wnd, l, GET_X_LPARAM(lp), my, NULL);
         if (i >= 0) {

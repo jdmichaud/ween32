@@ -359,6 +359,14 @@ further before it stops. Either the machine's advance for that word is two
 wider than wine's, or a list with a box before each row leaves two more after
 the name; one picked row is not enough to tell which.
 
+One behaviour in that dialog is deliberately not the machine's. Click a check
+box there twice quickly and the machine turns it over **once**: the second
+press of a pair arrives as a double click, and its list drops it — watched on
+the machine twice, on "Attributes" and on "Size", each going from clear to
+ticked and staying there. ween32 turns the box over on that press too, so a
+box clicked fast flips every time and two clicks leave it as it started. The
+row is not picked either way, which the machine agrees with.
+
 Each of Folder Options' four pages is counted against its own capture. The
 tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
