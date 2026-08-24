@@ -614,6 +614,8 @@ static void x11_set_cursor(void *win, int shape, const ween_cursor *custom)
         }
         return;
     }
+    if (!custom)
+        custom = ween_stock_cursor(shape); /* the ones ween32 draws itself */
     if (custom) {
         unsigned long cur = x11_cursor_image(custom);
         if (cur) {

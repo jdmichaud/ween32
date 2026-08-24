@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) void {
             "src/controls.c",
             "src/file.c",
             "src/shellart.c",
+            "src/cursorart.c",
             "src/headless.c",
             "src/x11.c",
         },

@@ -380,6 +380,11 @@ typedef struct ween_cursor {
 /* Whether a handle is one of those rather than a stock shape number. */
 const ween_cursor *ween_cursor_of(void *handle);
 
+/* The picture USER32 draws for one of the stock shapes, where ween32 has it:
+ * the sizing arrows, which no window system's own cursor font has. Null for
+ * the rest, and the backend falls back to whatever it has. */
+const ween_cursor *ween_stock_cursor(int shape);
+
 typedef struct ween_class {
     UINT style;  /* CS_*: only CS_DBLCLKS is acted on */
     int cursor;  /* WEEN_CURSOR_*: the shape over a window of this class */
