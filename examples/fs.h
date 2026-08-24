@@ -212,6 +212,17 @@ static int fs_is_dir(const char *path)
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+/* An empty file, and only where there is none: what New makes. */
+static int fs_create(const char *path)
+{
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    CloseHandle(h);
+    return 1;
+}
+
 /* The three attributes a Properties page offers, set to what it says. The
  * ones it does not show — system, and the rest — are left as they were. */
 static int fs_set_attributes(const char *path, int readonly, int hidden,
@@ -388,6 +399,19 @@ static int fs_is_dir(const char *path)
 {
     struct stat st;
     return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/* An empty file, and only where there is none: what New makes. */
+static int fs_create(const char *path)
+{
+    FILE *f;
+    if (fs_exists(path))
+        return 0;
+    f = fopen(path, "wb");
+    if (!f)
+        return 0;
+    fclose(f);
+    return 1;
 }
 
 /* The attributes a Properties page offers. This side has one of the three:

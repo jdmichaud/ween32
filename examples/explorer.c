@@ -109,6 +109,8 @@ enum {
     /* Help */
     IDM_HELP_TOPICS,
 
+    /* one per kind the New menu offers besides a folder and a shortcut */
+    IDM_NEW_KIND_FIRST = 300,
     /* one per title of the menu bar, since a toolbar's buttons are known by
      * their command and these are the buttons the bar is made of */
     IDM_MENU_FIRST = 400,
@@ -1425,6 +1427,33 @@ static void do_paste(void)
         g_clip_n = 0; /* a cut is spent once it has been pasted */
     refresh_view();
 }
+
+/* What New makes: a folder, or an empty file with the extension the kind
+ * carries. "New Folder", then "New Folder (2)" when that is taken — and the
+ * name is left there to be typed over, which is what the shell leaves you
+ * with. */
+static void begin_rename_of(const char *name);
+
+static void make_new_item(const char *base, const char *ext)
+{
+    char name[128], full[PATH_MAX_LEN];
+    for (int n = 1; n < 100; n++) {
+        if (n == 1)
+            snprintf(name, sizeof(name), "%s%s", base, ext ? ext : "");
+        else
+            snprintf(name, sizeof(name), "%s (%d)%s", base, n, ext ? ext : "");
+        snprintf(full, sizeof(full), "%s%c%s", g_path, FS_SEP, name);
+        if (!fs_exists(full))
+            break;
+    }
+    if (!(ext ? fs_create(full) : fs_mkdir(full)))
+        return;
+    undo_clear();
+    undo_add("New", full, full);
+    refresh_view();
+    begin_rename_of(name);
+}
+
 
 /* Delete: the shell asks first, and says what it is about to do. */
 static void do_delete(void)
@@ -4103,6 +4132,38 @@ static HMENU build_send_to(void)
     return m;
 }
 
+/* What New offers besides a folder and a shortcut, in the machine's order:
+ * what the menu calls it, and the name and extension it makes. The shell
+ * copies a template out of the registry for each of these; the one for a text
+ * document is an empty file, and this makes an empty file for all of them —
+ * there are no templates to copy here. A briefcase is a folder on the
+ * machine too. */
+static const struct {
+    const char *label;
+    const char *name;
+    const char *ext; /* NULL for the one that is a folder */
+} g_new_kinds[] = {
+    { "Briefcase", "New Briefcase", NULL },
+    { "Bitmap Image", "New Bitmap Image", ".bmp" },
+    { "WordPad Document", "New WordPad Document", ".doc" },
+    { "Rich Text Document", "New Rich Text Document", ".rtf" },
+    { "Text Document", "New Text Document", ".txt" },
+    { "Wave Sound", "New Wave Sound", ".wav" },
+};
+
+/* The New menu, which the File menu and the folder's own both put up. */
+static HMENU build_new_menu(void)
+{
+    HMENU m = CreatePopupMenu();
+    AppendMenuA(m, MF_STRING, IDM_NEW_FOLDER, "&Folder");
+    AppendMenuA(m, MF_STRING, IDM_NEW_SHORTCUT, "&Shortcut");
+    AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+    for (int i = 0; i < (int)(sizeof(g_new_kinds) / sizeof(*g_new_kinds)); i++)
+        AppendMenuA(m, MF_STRING, (UINT)(IDM_NEW_KIND_FIRST + i),
+                    g_new_kinds[i].label);
+    return m;
+}
+
 /* The menu the machine puts on the background of a folder view: nothing is
  * selected, so it is about the folder rather than about a file. Measured at
  * 160 x 204 with these thirteen entries. */
@@ -4111,7 +4172,7 @@ static HMENU build_background_menu(void)
     HMENU m = CreatePopupMenu();
     HMENU view = CreatePopupMenu();
     HMENU arrange = CreatePopupMenu();
-    HMENU new_menu = CreatePopupMenu();
+    HMENU new_menu = build_new_menu();
 
     AppendMenuA(view, MF_STRING, IDM_VIEW_LARGE, "Lar&ge Icons");
     AppendMenuA(view, MF_STRING, IDM_VIEW_SMALL, "S&mall Icons");
@@ -4129,16 +4190,6 @@ static HMENU build_background_menu(void)
     AppendMenuA(arrange, MF_SEPARATOR, 0, NULL);
     AppendMenuA(arrange, MF_STRING | MF_GRAYED, IDM_AUTO_ARRANGE,
                 "&Auto Arrange");
-
-    AppendMenuA(new_menu, MF_STRING, IDM_NEW_FOLDER, "&Folder");
-    AppendMenuA(new_menu, MF_STRING, IDM_NEW_SHORTCUT, "&Shortcut");
-    AppendMenuA(new_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(new_menu, MF_STRING, 0, "Briefcase");
-    AppendMenuA(new_menu, MF_STRING, 0, "Bitmap Image");
-    AppendMenuA(new_menu, MF_STRING, 0, "WordPad Document");
-    AppendMenuA(new_menu, MF_STRING, 0, "Rich Text Document");
-    AppendMenuA(new_menu, MF_STRING, 0, "Text Document");
-    AppendMenuA(new_menu, MF_STRING, 0, "Wave Sound");
 
     AppendMenuA(m, MF_POPUP, (UINT_PTR)view, "&View");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
@@ -4493,13 +4544,11 @@ static void build_menu(HWND w)
 
     /* The six the machine has, item for item. What this explorer does not
      * do is greyed or inert; the point is the menus a shell puts up. */
-    HMENU newmenu = CreatePopupMenu(), bars = CreatePopupMenu();
+    HMENU newmenu = build_new_menu(), bars = CreatePopupMenu();
     HMENU toolbars = CreatePopupMenu(), goto_menu = CreatePopupMenu();
     HMENU arrange = CreatePopupMenu(), links = CreatePopupMenu();
     HMENU media = CreatePopupMenu();
 
-    AppendMenuA(newmenu, MF_STRING, IDM_NEW_FOLDER, "&Folder");
-    AppendMenuA(newmenu, MF_STRING, IDM_NEW_SHORTCUT, "&Shortcut");
     AppendMenuA(file, MF_POPUP, (UINT_PTR)newmenu, "Ne&w");
     AppendMenuA(file, MF_SEPARATOR, 0, NULL);
     AppendMenuA(file, MF_STRING, IDM_CREATE_SHORTCUT, "Create &Shortcut");
@@ -5680,25 +5729,9 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
 
         /* ---- File ---- */
-        case IDM_NEW_FOLDER: {
-            /* "New Folder", or "New Folder (2)" when that is taken, and then
-             * its name is there to be typed over — which is what the shell
-             * leaves you with. */
-            char name[64] = "New Folder", full[PATH_MAX_LEN];
-            for (int n = 2; n < 100; n++) {
-                snprintf(full, sizeof(full), "%s%c%s", g_path, FS_SEP, name);
-                if (!fs_exists(full))
-                    break;
-                snprintf(name, sizeof(name), "New Folder (%d)", n);
-            }
-            if (fs_mkdir(full)) {
-                undo_clear();
-                undo_add("New", full, full);
-                refresh_view();
-                begin_rename_of(name);
-            }
+        case IDM_NEW_FOLDER:
+            make_new_item("New Folder", NULL);
             return 0;
-        }
         case IDM_RENAME:
             begin_rename_of(NULL);
             return 0;
@@ -5896,6 +5929,15 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case IDM_ABOUT:
             MessageBoxA(w, "ween32 — a win32 for the rest of us.",
                         "About Windows", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        }
+        /* one of the kinds New offers: the same thing New Folder does, with
+         * the name and extension that kind carries */
+        if (LOWORD(wp) >= IDM_NEW_KIND_FIRST &&
+            LOWORD(wp) < IDM_NEW_KIND_FIRST +
+                             (int)(sizeof(g_new_kinds) / sizeof(*g_new_kinds))) {
+            int k = (int)LOWORD(wp) - IDM_NEW_KIND_FIRST;
+            make_new_item(g_new_kinds[k].name, g_new_kinds[k].ext);
             return 0;
         }
         /* a step of the walk, picked from Back's or Forward's own list */
