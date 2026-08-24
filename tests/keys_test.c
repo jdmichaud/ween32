@@ -237,6 +237,28 @@ int main(void)
         CHECK(drawn > 0, "and DrawTextA draws it, minus the marker");
     }
 
+    /* The X server's keys have to arrive as virtual keys, and a key nobody
+     * types a character with is only ever seen through this table: F2 renames
+     * a file and F5 refreshes the view, and both did nothing at all in a real
+     * window until the function keys were in it — the headless script injects
+     * virtual keys straight and so never showed it. */
+    {
+        CHECK(ween_x11_keysym_to_vk(0xffbf) == VK_F2 &&
+                  ween_x11_keysym_to_vk(0xffc2) == VK_F5,
+              "F2 and F5 come through as their virtual keys");
+        CHECK(ween_x11_keysym_to_vk(0xffbe) == VK_F1 &&
+                  ween_x11_keysym_to_vk(0xffc7) == VK_F10 &&
+                  ween_x11_keysym_to_vk(0xffc9) == VK_F12,
+              "and the twelve of them run in order");
+        CHECK(ween_x11_keysym_to_vk(0xff55) == VK_PRIOR &&
+                  ween_x11_keysym_to_vk(0xff56) == VK_NEXT,
+              "Page Up and Page Down as well");
+        CHECK(ween_x11_keysym_to_vk(0xff0d) == VK_RETURN &&
+                  ween_x11_keysym_to_vk(0xff1b) == VK_ESCAPE &&
+                  ween_x11_keysym_to_vk('a') == 'A',
+              "beside the keys that were already there");
+    }
+
     DestroyWindow(g_host);
 
     if (g_failures) {

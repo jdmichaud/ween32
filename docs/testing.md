@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **525 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **529 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -77,6 +77,16 @@ began at, exactly. And a window manager that hands back a size of its own was
 answered by our resizing to what we asked for and then to what it gave, twice
 per mouse report: the window flickered between the two for as long as the drag
 lasted. Asking, and letting the answer do the resizing, is the whole fix.
+
+A fourth kind of fault the script cannot see at all: the keys the X server
+sends. `WEEN32_SCRIPT` injects virtual keys straight, so it exercises every
+window in the program without ever going through the table that turns a
+keysym into one. That table had no function keys in it, and F2 — rename — and
+F5 — refresh — did nothing whatever in a real window while every headless
+render of the same thing worked. The table is `ween_x11_keysym_to_vk`, kept
+outside the backend's own gate and named rather than static so that
+`keys_test` can read it; anything reachable only by a key nobody types a
+character with belongs in that test.
 
 Driving that needs XTEST — `XTestFakeMotionEvent` and `XTestFakeButtonEvent`,
 so that the press is a real press with X's implicit grab behind it; synthetic

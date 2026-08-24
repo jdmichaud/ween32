@@ -721,6 +721,7 @@ int ween_menu_armed_key(HWND top, unsigned vk);
 
 extern const ween_backend *ween_active_backend; /* set before CreateWindowExA */
 const ween_backend *ween_backend_x11(void);      /* NULL if not compiled in */
+unsigned ween_x11_keysym_to_vk(unsigned long keysym); /* the key table */
 const ween_backend *ween_backend_headless(void);
 
 /* headless test hooks */

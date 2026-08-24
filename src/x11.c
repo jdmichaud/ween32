@@ -18,6 +18,60 @@
 
 #include "ween_internal.h"
 
+/* X keysym -> win32 virtual key. Outside the backend's own gate, and named
+ * rather than static, because it is a table with nothing of Xlib in it and a
+ * key missing from it is invisible from the outside: F2 renames a file and
+ * F5 refreshes, and neither did anything at all until the function keys were
+ * in here. The tests read it directly for that reason. */
+unsigned ween_x11_keysym_to_vk(unsigned long ks)
+{
+    switch (ks) {
+    case 0xff1b:
+        return VK_ESCAPE;
+    case 0xff0d: /* Return */
+    case 0xff8d: /* KP_Enter */
+        return VK_RETURN;
+    case 0xff09:
+        return VK_TAB;
+    case 0xff08:
+        return VK_BACK;
+    case 0xffff:
+        return VK_DELETE;
+    case 0xff50:
+        return VK_HOME;
+    case 0xff57:
+        return VK_END;
+    case 0xff51:
+        return VK_LEFT;
+    case 0xff52:
+        return VK_UP;
+    case 0xff53:
+        return VK_RIGHT;
+    case 0xff54:
+        return VK_DOWN;
+    case 0xffe9: /* Alt_L */
+    case 0xffea: /* Alt_R */
+        return 0x12; /* VK_MENU */
+    case 0xff55:
+        return VK_PRIOR;
+    case 0xff56:
+        return VK_NEXT;
+    default:
+        /* The function keys: X runs F1..F12 from 0xffbe and win32 runs
+         * VK_F1..VK_F12 from 0x70, both without a gap. Without them F2 never
+         * reaches an accelerator table and a file cannot be renamed with the
+         * keyboard, which is what happened until this was here. */
+        if (ks >= 0xffbe && ks <= 0xffbe + 11)
+            return (unsigned)(VK_F1 + (ks - 0xffbe));
+        if (ks >= 'a' && ks <= 'z')
+            return (unsigned)(ks - 32); /* VK codes are uppercase ASCII */
+        if (ks < 128)
+            return (unsigned)ks;
+        return 0;
+    }
+}
+
+
 #ifndef WEEN_BACKEND_X11
 
 const ween_backend *ween_backend_x11(void)
@@ -703,47 +757,6 @@ static void x11_move_by(void *win, int dx, int dy)
     XMoveWindow(xw->dpy, xw->win, xw->pos_x, xw->pos_y);
 }
 
-/* X keysym -> win32 virtual key (v1: the keys the dialog subset uses). */
-static unsigned keysym_to_vk(unsigned long ks)
-{
-    switch (ks) {
-    case 0xff1b:
-        return VK_ESCAPE;
-    case 0xff0d: /* Return */
-    case 0xff8d: /* KP_Enter */
-        return VK_RETURN;
-    case 0xff09:
-        return VK_TAB;
-    case 0xff08:
-        return VK_BACK;
-    case 0xffff:
-        return VK_DELETE;
-    case 0xff50:
-        return VK_HOME;
-    case 0xff57:
-        return VK_END;
-    case 0xff51:
-        return VK_LEFT;
-    case 0xff52:
-        return VK_UP;
-    case 0xff53:
-        return VK_RIGHT;
-    case 0xff54:
-        return VK_DOWN;
-    case 0xffe9: /* Alt_L */
-    case 0xffea: /* Alt_R */
-        return 0x12; /* VK_MENU */
-    case 0xffc7:
-        return 0x79; /* VK_F10 */
-    default:
-        if (ks >= 'a' && ks <= 'z')
-            return (unsigned)(ks - 32); /* VK codes are uppercase ASCII */
-        if (ks < 128)
-            return (unsigned)ks;
-        return 0;
-    }
-}
-
 /* The argument is only a hint about which connection to wait on: the event
  * that comes back names its own window, and every window shares the queue. */
 static ween_event x11_next_event(void *win, int timeout_ms)
@@ -863,7 +876,7 @@ static ween_event x11_next_event(void *win, int timeout_ms)
              * the character (but not the virtual key) depends on */
             int shift = (b->state & 1) != 0;
             unsigned long sym = XLookupKeysym(b, shift);
-            unsigned vk = keysym_to_vk(XLookupKeysym(b, 0));
+            unsigned vk = ween_x11_keysym_to_vk(XLookupKeysym(b, 0));
             if (!vk)
                 continue;
             out.kind = WEEN_EV_KEY;
