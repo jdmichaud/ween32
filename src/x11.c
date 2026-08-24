@@ -160,6 +160,12 @@ enum {
     X_ClientMessage = 33
 };
 
+/* The bits X puts the modifier keys in, which a button event carries as much
+ * as a key event does. */
+#define X_ShiftMask (1u << 0)
+#define X_ControlMask (1u << 2)
+#define X_Mod1Mask (1u << 3) /* Alt */
+
 #define X_ExposureMask (1L << 15)
 #define X_ButtonPressMask (1L << 2)
 #define X_ButtonReleaseMask (1L << 3)
@@ -813,6 +819,14 @@ static ween_event x11_next_event(void *win, int timeout_ms)
             }
             out.kind = ev.type == X_ButtonPress ? WEEN_EV_MOUSE_DOWN
                                                 : WEEN_EV_MOUSE_UP;
+            /* Which modifier keys were down when it happened. A press carries
+             * them as much as a key does — Shift and a click take the run of
+             * files between this one and the last, and Control and a click
+             * adds one to what is picked — and without them a control is told
+             * about a plain click and can do neither. */
+            out.shift = (b->state & X_ShiftMask) != 0;
+            out.ctrl = (b->state & X_ControlMask) != 0;
+            out.alt = (b->state & X_Mod1Mask) != 0;
             /* window px -> renderer px, past whatever letterbox is in front */
             out.x = b->x;
             out.y = b->y;
@@ -833,6 +847,10 @@ static ween_event x11_next_event(void *win, int timeout_ms)
                                           &newer))
                 ev = newer;
             out.kind = WEEN_EV_MOUSE_MOVE;
+            /* and while it is moving, so a drag with Control held stays one */
+            out.shift = (b->state & X_ShiftMask) != 0;
+            out.ctrl = (b->state & X_ControlMask) != 0;
+            out.alt = (b->state & X_Mod1Mask) != 0;
             out.x = b->x;
             out.y = b->y;
             ween_letterbox_to_surface(&xw->box, xw->zoom, &out.x, &out.y);

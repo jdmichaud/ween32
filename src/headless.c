@@ -38,12 +38,14 @@ const ween_surface *ween_headless_surface(void)
 /* WEEN32_SCRIPT: space-separated scripted input, e.g. "d:110,146 u:110,146
  * k:27" — d/u/m = mouse down/up/move at window coordinates, k = a virtual-key
  * press, K = the same with Shift held, c = with Control held, C = with both
- * (which is how an accelerator is reached) and a = with Alt, w = milliseconds
- * of timer time to let pass. Lets any example run and be screenshotted with no
+ * (which is how an accelerator is reached) and a = with Alt, h = hold a
+ * modifier over the presses that follow (h:s, h:c, h:sc, and h: for none),
+ * w = milliseconds of timer time to let pass. Lets any example run and be screenshotted with no
  * display. */
 static void inject_script(const char *script)
 {
     const char *p = script;
+    int hold_shift = 0, hold_ctrl = 0;
     while (*p) {
         while (*p == ' ')
             p++;
@@ -89,6 +91,18 @@ static void inject_script(const char *script)
             ev.kind = WEEN_EV_TIME; /* w:500 — let 500ms of timer time pass */
             ev.x = (int)strtol(p + 2, (char **)&p, 10);
             ween_headless_inject(ev);
+        } else if (kind == 'h' && p[1] == ':') {
+            /* h:s — Shift is held over the presses that follow, h:c Control,
+             * h:sc both, h: neither. A press carries the modifier keys the
+             * way a key press does, and Shift and a click on a second file is
+             * how the run between two of them is taken. */
+            hold_shift = hold_ctrl = 0;
+            for (p += 2; *p && *p != ' '; p++) {
+                if (*p == 's')
+                    hold_shift = 1;
+                else if (*p == 'c')
+                    hold_ctrl = 1;
+            }
         } else if ((kind == 'd' || kind == 'u' || kind == 'm' || kind == 'D' ||
                     kind == 'U') && p[1] == ':') {
             char *end;
@@ -102,6 +116,8 @@ static void inject_script(const char *script)
             /* the capitals are the right button, which is what asks for a
              * context menu */
             ev.button = (kind == 'D' || kind == 'U') ? 3 : 1;
+            ev.shift = hold_shift;
+            ev.ctrl = hold_ctrl;
             ween_headless_inject(ev);
         } else {
             break; /* malformed: stop rather than loop */
