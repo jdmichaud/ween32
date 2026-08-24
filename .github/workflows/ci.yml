@@ -76,5 +76,6 @@ jobs:
         run: |
           for ex in examples/*.c; do
             zig cc -target x86_64-windows-gnu -std=c99 -Iinclude \
-              "$ex" -luser32 -lgdi32 -lcomctl32 -o "$(basename "$ex" .c).exe"
+              "$ex" -luser32 -lgdi32 -lcomctl32 -lshell32 \
+              -o "$(basename "$ex" .c).exe"
           done
