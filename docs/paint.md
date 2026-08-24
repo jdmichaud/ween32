@@ -133,6 +133,20 @@ under it, which is how the brush's dotted cross is drawn. The hot spot is
 measured first, by leaving a pencil dot at the same place: the ink lands on
 it.
 
+**The text box**, as the machine draws and works it: a border of four navy
+pixels on and four off with the eight handles a selection has; the opaque
+setting filling it with the background colour before the letters go on, the
+transparent one leaving what is under it alone; what is typed wrapped at the
+box's right edge, word by word; a caret blinking after the last character
+twice a second; Escape throwing the lot away and a click outside putting it
+into the picture. All of that was measured on it -- the border's dash by
+counting pixels along it, the wrap by typing a sentence too long for the box,
+the opaque fill by giving the machine a background colour that is not white.
+
+One thing that stopped a space ever reaching the box: this program calls
+IsDialogMessage so that Alt reaches its menus, and dialog navigation presses
+a button with the space bar. It is not called while a text box is open.
+
 **The sizing arrows** are the library's rather than Paint's, and they are cut
 out of the machine as well (`tools/refcapture/cursorart.py`). X's cursor font
 has no double-headed diagonal at all -- its nearest offer is a corner bracket,

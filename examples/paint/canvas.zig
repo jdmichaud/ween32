@@ -164,6 +164,18 @@ fn invalidateBand(hwnd: w.HWND, r: w.RECT) void {
     }
 }
 
+/// Where an open text box is on the window, so the caret can blink without
+/// repainting the picture behind it.
+fn invalidateBox(hwnd: w.HWND) void {
+    const o = pageOrigin();
+    var r = textbox.box.rect;
+    r.left = o.x + r.left * app.zoom - 2;
+    r.top = o.y + r.top * app.zoom - 2;
+    r.right = o.x + r.right * app.zoom + 2;
+    r.bottom = o.y + r.bottom * app.zoom + 2;
+    _ = w.InvalidateRect(hwnd, &r, w.FALSE);
+}
+
 fn paint(hwnd: w.HWND) void {
     var ps: w.PAINTSTRUCT = undefined;
     const dc = w.BeginPaint(hwnd, &ps).?;
@@ -529,6 +541,10 @@ fn toolReach() i32 {
 }
 
 const spray_timer = 1;
+/// The caret in an open text box goes on and off twice a second, as the
+/// machine's does.
+const caret_timer = 2;
+const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
@@ -617,7 +633,10 @@ fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
                 .right = @max(d.start.x, d.cur.x),
                 .bottom = @max(d.start.y, d.cur.y),
             };
-            if (r.right - r.left > 4 and r.bottom - r.top > 4) textbox.start(r);
+            if (r.right - r.left > 4 and r.bottom - r.top > 4) {
+                textbox.start(r);
+                _ = w.SetTimer(hwnd, caret_timer, caret_ms, null);
+            }
             d.* = .{};
         },
         .magnifier => {
@@ -738,6 +757,15 @@ fn proc(hwnd: w.HWND, msg: w.UINT, wp: w.WPARAM, lp: w.LPARAM) callconv(.c) w.LR
             if (wp == spray_timer and tools.drag.active and tools.drag.tool == .airbrush) {
                 tools.stroke(app.pic.dc, tools.drag.cur, tools.drag.cur);
                 _ = w.InvalidateRect(hwnd, null, w.FALSE);
+                return 0;
+            }
+            if (wp == caret_timer) {
+                if (!textbox.active()) {
+                    _ = w.KillTimer(hwnd, caret_timer);
+                    return 0;
+                }
+                textbox.box.caret_on = !textbox.box.caret_on;
+                invalidateBox(hwnd);
                 return 0;
             }
             return w.DefWindowProcA(hwnd, msg, wp, lp);

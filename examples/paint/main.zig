@@ -19,6 +19,7 @@ const A = @import("app.zig");
 const toolbox = @import("toolbox.zig");
 const colorbox = @import("colorbox.zig");
 const canvas = @import("canvas.zig");
+const textbox = @import("textbox.zig");
 const artwork = @import("artwork.zig");
 const art_icon = @import("art_icon.zig");
 const dialogs = @import("dialogs.zig");
@@ -780,7 +781,11 @@ pub fn main() void {
         // Alt and the letters after it: the menu bar is reached from the
         // keyboard the same way a dialog's controls are, which is what the
         // framework does for the real one.
-        if (w.IsDialogMessageA(frame, &msg) != 0) continue;
+        //
+        // Not while there is a text box open, though: dialog navigation eats
+        // the space bar — it is how a dialog presses a button — and a space
+        // typed into a text box has to reach the box.
+        if (!textbox.active() and w.IsDialogMessageA(frame, &msg) != 0) continue;
         _ = w.TranslateMessage(&msg);
         _ = w.DispatchMessageA(&msg);
     }
