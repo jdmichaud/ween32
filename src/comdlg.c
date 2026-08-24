@@ -1116,6 +1116,11 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
             MoveWindow(dlg, x, y, cx, cy, FALSE);
         }
 
+        /* The corner comes first, because it is under everything else: its
+         * sixteen pixels reach into the Cancel button's corner, and on the
+         * machine it is the button that shows there -- the corner is the
+         * bottom of the dialog's stack, not the top of it. */
+        part(dlg, 0, "weenfilegrip", "", 0, 539, 304, 16, 16, IDC_FILE_GRIP);
         part(dlg, 0, "STATIC", "Look &in:", SS_RIGHT, 6, 11, 86, 13,
              IDC_FILE_LOOKIN_LABEL);
         /* The machine's "Look in" box is drawn by the shell rather than by
@@ -1151,7 +1156,6 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
              WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 474, 263, 75, 23, IDOK);
         part(dlg, 0, "BUTTON", "Cancel", WS_TABSTOP | BS_PUSHBUTTON, 474, 289,
              75, 23, IDCANCEL);
-        part(dlg, 0, "weenfilegrip", "", 0, 539, 304, 16, 16, IDC_FILE_GRIP);
 
         fill_list(dlg);
         if (g_fd.ofn->lpstrFile && g_fd.ofn->lpstrFile[0])
