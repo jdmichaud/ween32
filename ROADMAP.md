@@ -36,21 +36,27 @@ that no application has asked for:
   kind of reason: GDI sweeps the pen as a region rather than stamping it
   along a walk.
 
+- [ ] **A handful of calls no application here has asked for yet**:
+  `PeekMessageA` (so a message loop could run more than once in a process),
+  `DrawState`, `WM_ERASEBKGND`, `WM_CTLCOLORSTATIC`/`WM_CTLCOLOREDIT`, and
+  `WM_NCACTIVATE` — a window already draws the inactive caption when the
+  keyboard leaves it, but it does not tell the application.
+
 - [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
   is the arrangement a shell uses, but a shell also puts a fixed-width band
   beside one that stretches — `RBBIM_SIZE`, `RBBS_FIXEDSIZE`, `RBBS_BREAK` —
   and until that exists the explorer's brand box is a stray child of the rebar
   that the application places itself.
 
-### What a review of the explorer asked for
+### What the explorer still writes for itself
 
-[docs/review-explorer.md](docs/review-explorer.md) read `examples/explorer.c`
-against the question "would an application written to win32 have had to write
-this?". The largest of its findings — that the menu band made the application
-the host of ween32's menu engine rather than its user — is done: the band is a
-toolbar of drop-down buttons, `TBN_DROPDOWN` puts the menu up, `SC_KEYMENU`
-brings the keyboard to it, and `ween_menu_band_*` is gone. What is still open,
-in the order it suggested:
+`examples/explorer.c` was read once against the question "would an application
+written to win32 have had to write this?", and what it turned up is mostly
+built: the menu band is a toolbar of drop-down buttons rather than a private
+side channel into ween32's menu engine, the rebar passes its children's
+messages on, the sort arrow goes through `LVM_GETHEADER` and `HDM_SETITEM`,
+and the class cursors the app had switched off with a gate that named nothing
+are back. What is still open:
 
 - [ ] **The header draws its own band.** `LVM_GETHEADER` hands back a real
   header and `HDM_SETITEM`/`HDM_GETITEM` answer against the list's columns,
@@ -80,16 +86,10 @@ in the order it suggested:
   namespace provider — which is where "where do the entries come from" already
   lives.
 
-Two things are deliberately *not* on this list.
-
-Arbitrary font sizes and faces: `CreateFontA` honours `weight` and picks
-between the regular and bold Tahoma strikes, which is what classic dialogs
-actually used. Anything else needs a rasteriser, and no application here has
-asked for one.
-
-Marquee progress: `PBS_MARQUEE` arrived with comctl32 6.0, which is Windows
-XP. A Windows 2000 progress bar has no marquee mode, so building one would be
-a period mistake rather than a missing feature.
+One thing is deliberately *not* on this list. Marquee progress: `PBS_MARQUEE`
+arrived with comctl32 6.0, which is Windows XP. A Windows 2000 progress bar
+has no marquee mode, so building one would be a period mistake rather than a
+missing feature.
 
 ## Implemented
 
@@ -223,9 +223,10 @@ pixel doubling at 200%. `GetDpiForSystem`.
 
 ## Controls
 
-Every control on the 98.css list now draws, and `examples/controls.c` renders
-0.8% differently from the reference — see [Reference captures](#reference-captures)
-for how that is measured, and the table there for where the difference is.
+Every control on the 98.css list now draws. `examples/controls.c` renders
+5.2% differently from the wine reference, most of it deliberate — see
+[Reference captures](#reference-captures) for how that is measured and
+[docs/testing.md](docs/testing.md) for what every pixel of it is.
 
 `examples/controls.c` is the acceptance test for this list. It is one sampler
 holding every control, compiled two ways: against real `<windows.h>` it renders
@@ -280,53 +281,15 @@ message its win32 counterpart uses:
   select it; `TVN_SELCHANGED` and `TVN_ITEMEXPANDED`. Both scroll bars work,
   and appear only when there is something to scroll — taking one strip can
   bring the other on, as in win32.
-- **ListView** — click a row to select it, `LVN_ITEMCHANGED`. The selection is
-  the label rect inflated five pixels with a dotted focus rectangle over it,
-  which is pixel-identical to Wine's.
+- **ListView** — click a row to select it, `LVN_ITEMCHANGED`; a run with
+  Shift, one more with Control, a rectangle dragged over the view, Enter to
+  open what is picked and F2 to rename it in place. The blue box a name wears
+  is what the name draws and eight, measured on the machine.
 - **The wheel** goes to the focused window, as win32 sends it — a view scrolls
   once it has been clicked, and never selects.
 
 `tests/input_test.c` drives all of this through the headless backend and
 asserts where each control ends up, so CI covers it.
-
-### What they still do not do
-
-- [ ] **Horizontal scrolling in an edit** — when the text outruns the field it
-      is clipped rather than scrolled.
-- [ ] **Scrolling the list view** — its rows do not scroll yet; the list box
-      and tree view do.
-- [ ] **Auto-repeat** on a held scroll-bar arrow, and hot-tracking states.
-- [ ] **A focus rectangle on the tree view's focused item** — buttons and the
-      list view draw one; the tree view does not, and `DrawFocusRect` is still
-      not a public call.
-- [ ] **Multi-row tabs** (`TCS_MULTILINE`), tab images, and column resizing in
-      the list view. The tree and list views take item images now; the tab
-      control does not.
-
-## Core machinery these need
-
-- **Timers** are done — `SetTimer`/`KillTimer`/`WM_TIMER`, with the caret
-  blinking on one. Scroll-bar auto-repeat and marquee progress still want
-  writing, but the machinery under them exists.
-- **More than one top-level window** is done, each with its own surface and
-  backend window. The combo box still paints its list over the parent; a list
-  taller than the window is now fixable rather than blocked.
-- **Ctrl shortcuts and shift-click selection.** Shift and Alt reach the app
-  (Shift+Tab and mnemonics use them); Ctrl does not yet.
-- **Mouse routing into nested children**, plus hover tracking
-  (`WM_MOUSELEAVE`) for the states 98.css shows on interactive rows. Today
-  only direct children of the top-level window are hit-tested
-  (`src/user.c:644`).
-- **Drawing primitives still missing** — `DrawFocusRect` and `DrawState` as
-  public calls (a focused button draws its own rectangle, but the API is not
-  exposed), `WM_ERASEBKGND`, `WM_CTLCOLORSTATIC`/`WM_CTLCOLOREDIT`, and the
-  inactive-caption colours (`COLOR_INACTIVECAPTION(TEXT)`,
-  `COLOR_GRADIENTINACTIVECAPTION`) with `WM_NCACTIVATE` behind them.
-- **Image lists and icons** — `ImageList_Create`/`Add`/`Draw`, `LoadImage`,
-  `DrawIconEx` for tree and list-view items.
-- **Keyboard conventions** — mnemonics, Tab/Shift+Tab, Space and the arrows
-  inside a group are done, through `IsDialogMessageA`. Accelerator tables,
-  `WM_NEXTDLGCTL` and arrow navigation inside a list are not.
 
 ## Beyond the 98.css list
 
@@ -344,8 +307,6 @@ manager so, which is why one could not be resized before.
 
 Shortcuts the current code takes deliberately; each is a candidate task.
 
-- **`CreateFontA` honours only `weight`**; `height` and `face_name` are
-  accepted and ignored.
 - **`SetBkMode(OPAQUE)` is accepted but unimplemented** (`src/gdi.c:322`):
   text is always drawn transparent.
 - **No `PeekMessageA`**, so a message loop can only be run once per process:
@@ -440,15 +401,11 @@ PXDIFF_REF=tools/refcapture/menu-reference.png \
 PXDIFF_OUR=/tmp/menu_ween.png tools/refcapture/pxdiff.py   # the menu sampler
 ```
 
-As of the last pass, 2435 of 296370 pixels differ — 0.8% — and every one of
-them is in one of four places:
-
-| Where | Pixels | Why |
-| --- | --- | --- |
-| `EDIT` text | ~900 | deliberate: Wine spaces an edit's characters out to the width GDI *reports*, which is wider and reads as uneven, and shifts the text as you type. We lay it out on the strike's advances, like every other control, which is what Windows looked like |
-| one tab | 651 | Wine measures one of the four tab strings three pixels narrower than we do, and the tabs after it shift |
-| the close box | 509 | Wine antialiases the Marlett glyph; classic Windows drew it aliased, and so do we |
-| a disabled label | ~400 | the same measuring difference, on a centred push-button label |
+The two samplers differ from their wine renders by 15649 of 298596 pixels and
+4397 of 39200, and most of both is *deliberate*: where wine and a Windows 2000
+disagree, ween32 follows the machine. [docs/testing.md](docs/testing.md) keeps
+the current numbers and what every band of them is; the section below is why
+the deliberate ones are there.
 
 ### Where wine is not the reference
 
@@ -527,8 +484,8 @@ three buttons, whose gradient reaches its end at x=596 of 654, and then on the
 machine's Column Settings, which has only a close box and ends its ramp two
 pixels before it just the same. Wine ends it one pixel before, so both
 sampler windows — each with a single close box — now differ from their
-reference render across the whole caption strip: about 6620 pixels of
-`reference.png` and 3170 of `menu-reference.png`, and not a regression.
+reference render across the whole caption strip, which is most of what each
+of them counts, and not a regression.
 
 The ramp is stepped in 16.16 from a step rounded down once, rather than
 divided per pixel. The two agree except where a channel would land exactly on
@@ -548,12 +505,12 @@ reimplementation too, and where it has guessed, following it means inheriting
 the guess. A photograph of the real thing settles it.
 
 `examples/menu.c` is the second sampler, and its reference is a window with a
-menu bar. 532 of its 39200 pixels differ — 1.4% — and nearly all of that is the
-caption's bold title, which is set in wine's redistributable Tahoma Bold: its
-eleven-pixel strike is not the machine's, and draws a letter a pixel wider. That difference is not new; it
-shows up here because this window's title has different letters in it. The menu
-bar's own geometry lands on Wine's pixels, and where it did not, the reference
-said so by a pixel and was followed.
+menu bar. What differs there is the caption — its gradient, and its bold title,
+which is set in wine's redistributable Tahoma Bold whose eleven-pixel strike is
+not the machine's and draws a letter a pixel wider — and the menu bar's own
+padding, which is the machine's twelve rather than wine's. The bar's geometry
+otherwise lands on wine's pixels, and where it did not, the reference said so
+by a pixel and was followed.
 
 The rest — check boxes, option buttons, group box, list box, combo box, both
 progress bars, the scroll bar, the tree view, the list view, the status bar and
@@ -662,12 +619,6 @@ bar and the menu bar as a rebar band were all on this list and are all here
 now — the arrow through `LVM_GETHEADER` and `HDM_SETITEM`, as in win32. What
 is left:
 
-- **Move To** and **Copy To** use the icon set's folders. The real ones come
-  from the same toolbar strip as the arrows and are a different drawing of the
-  same idea.
-- A **disabled toolbar button** draws its image unchanged; win32 greys it. The
-  shot does not show this because the strip carried its own greyed images,
-  which is what the example hands over.
 - The tree lists the **file system** rather than the shell namespace, so it
   starts at a directory instead of at Desktop, My Documents and My Computer.
 
@@ -681,9 +632,10 @@ same flag, so a menu opened and picked from with the mouse has none.
 ## Testing
 
 `make test` covers the engine pixels, the API path, the dialog manager, input
-and resizing, two windows at once, timers, the keyboard conventions, menus and
-modal dialogs — 130 assertions, all headless, so CI runs the lot. Gaps worth
-closing:
+and resizing, two windows at once, timers, the keyboard conventions, menus,
+modal dialogs, the views and the shell's own controls — 546 assertions, all
+headless, so CI runs the lot. [docs/testing.md](docs/testing.md) is how each
+part of it is run and what it is counted against. Gaps worth closing:
 
 - the tests pin `WEEN32_DPI=96`; only the `Xft.dpi` *parser* is covered, so
   the 120/144 strike snapping and the 192 pixel-doubling have no assertions;
