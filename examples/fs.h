@@ -206,6 +206,12 @@ static int fs_copy(const char *from, const char *to)
     return CopyFileA(from, to, TRUE) != 0;
 }
 
+static int fs_is_dir(const char *path)
+{
+    DWORD a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 /* The three attributes a Properties page offers, set to what it says. The
  * ones it does not show — system, and the rest — are left as they were. */
 static int fs_set_attributes(const char *path, int readonly, int hidden,
@@ -378,6 +384,12 @@ static int fs_copy(const char *from, const char *to)
     return ok;
 }
 
+static int fs_is_dir(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
 /* The attributes a Properties page offers. This side has one of the three:
  * read-only is the write bit, and hidden is what a name beginning with a dot
  * means, which is not something to rename a file over. Archive it has no
@@ -400,5 +412,35 @@ static int fs_set_attributes(const char *path, int readonly, int hidden,
 }
 
 #endif
+
+/* Copy a whole folder, or one file — what a shell's paste does with either.
+ * A folder is made and everything in it copied name by name, since no file
+ * system has a call that copies a tree; a name that cannot be copied is
+ * stepped over rather than stopping the rest, which is what the shell does
+ * when one file in a folder is locked. Nothing is written over: a name that
+ * is taken is the caller's to settle before it asks. */
+static int fs_copy_tree(const char *from, const char *to)
+{
+    fs_dir d;
+    fs_entry e;
+    int ok = 1;
+    if (!fs_is_dir(from))
+        return fs_copy(from, to);
+    if (fs_exists(to) || !fs_mkdir(to))
+        return 0;
+    if (!fs_open(&d, from))
+        return 0;
+    while (fs_next(&d, &e)) {
+        char a[800], b[800];
+        if (!strcmp(e.name, ".") || !strcmp(e.name, ".."))
+            continue;
+        snprintf(a, sizeof(a), "%s%c%s", from, FS_SEP, e.name);
+        snprintf(b, sizeof(b), "%s%c%s", to, FS_SEP, e.name);
+        if (!fs_copy_tree(a, b))
+            ok = 0;
+    }
+    fs_close(&d);
+    return ok;
+}
 
 #endif /* WEEN32_EXAMPLE_FS_H */

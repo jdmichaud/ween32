@@ -1353,6 +1353,26 @@ static void do_clip(int cut)
     }
 }
 
+/* The name a copy takes when the one it came with is taken: "Copy of boot.ini"
+ * and then "Copy (2) of boot.ini", which is what the shell names them — a file
+ * copied into the folder it is already in is the whole reason the form exists.
+ */
+static void copy_of_name(const char *folder, const char *leaf, char *out,
+                         size_t max)
+{
+    char path[PATH_MAX_LEN * 2];
+    for (int n = 1; n < 1000; n++) {
+        if (n == 1)
+            snprintf(out, max, "Copy of %s", leaf);
+        else
+            snprintf(out, max, "Copy (%d) of %s", n, leaf);
+        snprintf(path, sizeof(path), "%s%c%s", folder, FS_SEP, out);
+        if (!fs_exists(path))
+            return;
+    }
+    snprintf(out, max, "%s", leaf); /* a thousand of them is somebody's joke */
+}
+
 /* Paste: copy what is on the clipboard into this folder, and take the
  * originals away if they were cut. */
 static void do_paste(void)
@@ -1364,26 +1384,39 @@ static void do_paste(void)
     for (int i = 0; i < g_clip_n; i++) {
         const char *from = g_clip[i];
         const char *leaf = strrchr(from, FS_SEP);
-        char to[PATH_MAX_LEN];
-        size_t n, len;
+        char to[PATH_MAX_LEN * 2], name[PATH_MAX_LEN];
+        size_t flen;
         leaf = leaf ? leaf + 1 : from;
-        /* the folder, a separator and the name, as far as the buffer goes */
-        n = (size_t)snprintf(to, sizeof(to), "%s%c", g_path, FS_SEP);
-        len = strlen(leaf);
-        if (n < sizeof(to) - 1) {
-            if (len > sizeof(to) - n - 1)
-                len = sizeof(to) - n - 1;
-            memcpy(to + n, leaf, len);
-            to[n + len] = 0;
+        {   /* the name on its own, as much of it as there is room for */
+            size_t len = strlen(leaf);
+            if (len >= sizeof(name))
+                len = sizeof(name) - 1;
+            memcpy(name, leaf, len);
+            name[len] = 0;
         }
-        if (!strcmp(to, from))
-            continue; /* into the folder it is already in */
+        snprintf(to, sizeof(to), "%s%c%s", g_path, FS_SEP, name);
+        /* A folder cannot be pasted inside itself: the copy would be copied
+         * as it was being made. */
+        flen = strlen(from);
+        if (!strncmp(g_path, from, flen) &&
+            (g_path[flen] == 0 || g_path[flen] == FS_SEP))
+            continue;
         if (g_clip_cut) {
+            if (!strcmp(to, from))
+                continue; /* moved into the folder it is already in */
             if (fs_rename(from, to)) {
                 undo_add("Move", from, to);
                 moved++;
             }
-        } else if (fs_copy(from, to)) {
+            continue;
+        }
+        /* A copy whose name is taken — which is every copy into the folder it
+         * came from — is named the way the shell names one. */
+        if (fs_exists(to)) {
+            copy_of_name(g_path, leaf, name, sizeof(name));
+            snprintf(to, sizeof(to), "%s%c%s", g_path, FS_SEP, name);
+        }
+        if (fs_copy_tree(from, to)) {
             undo_add("Copy", from, to);
             moved++;
         }
