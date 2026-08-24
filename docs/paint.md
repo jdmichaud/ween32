@@ -485,9 +485,10 @@ arguments from the wrong registers.
 
 ## What is not there
 
-- **The text toolbar.** It would offer a choice of faces and sizes that
-  ween32 has no rasteriser to honour, so the menu item stays greyed, as it
-  is in the real one until the text tool is picked.
+- **Faces the library does not carry.** The Fonts bar is the machine's, but
+  the strikes behind it are Tahoma, its bold cut and MS Sans Serif: ask for
+  any other face and Tahoma is what is drawn, since there is no rasteriser
+  behind the box.
 - **Printing**, print preview and page setup: there is no print spooler
   behind them.
 - **Set As Wallpaper**, which writes a registry key on a machine that has
