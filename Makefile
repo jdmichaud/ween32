@@ -136,7 +136,7 @@ win32:
 	@command -v $(ZIG) >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
 	@for src in $(EXAMPLES:%=%.c); do \
 	   echo "  win32 $$src"; \
-	   $(ZIGWIN) $$src -luser32 -lgdi32 -lcomctl32 -o /tmp/ween32-win32.exe || exit 1; \
+	   $(ZIGWIN) $$src -luser32 -lgdi32 -lcomctl32 -lshell32 -o /tmp/ween32-win32.exe || exit 1; \
 	 done
 	@python3 tools/win32check/genconsts.py > /tmp/ween32-consts.c
 	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \

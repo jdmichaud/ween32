@@ -88,6 +88,8 @@ static void fs_stamp_date(char *out, size_t max, int wd, int mo, int dy, int yr)
 
 #ifdef _WIN32
 
+#include <shellapi.h>
+
 typedef struct {
     HANDLE h;
     WIN32_FIND_DATAA fd;
@@ -247,12 +249,21 @@ static int fs_exists(const char *path)
     return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 }
 
+/* Open a file the way a double click on it does: hand it to whatever is
+ * registered for its kind, and say whether anything took it. */
+static int fs_launch(const char *path)
+{
+    return (INT_PTR)ShellExecuteA(NULL, "open", path, NULL, NULL,
+                                  SW_SHOWNORMAL) > 32;
+}
+
 #else /* POSIX */
 
 #include <dirent.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -433,6 +444,26 @@ static int fs_set_attributes(const char *path, int readonly, int hidden,
     else
         mode |= S_IWUSR;
     return chmod(path, mode) == 0;
+}
+
+/* Open a file the way a double click on it does. Windows asks the registry
+ * what opens that kind; here the desktop's own opener is the same question,
+ * and it is started detached — through a second fork, so nothing is left for
+ * this program to wait on and the file browser is not the file's parent. */
+static int fs_launch(const char *path)
+{
+    pid_t pid = fork();
+    if (pid < 0)
+        return 0;
+    if (pid == 0) {
+        if (fork() == 0) {
+            execlp("xdg-open", "xdg-open", path, (char *)NULL);
+            _exit(127); /* no opener on this desktop */
+        }
+        _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+    return 1;
 }
 
 #endif

@@ -1456,16 +1456,27 @@ static void make_new_item(const char *base, const char *ext)
 
 /* Open what the list has picked: a folder is walked into, and anything else
  * is left alone — this shell has nothing to open a file with. */
+/* What a double click does, and what Enter does: a folder is gone into, and
+ * a file is handed to whatever opens its kind. The fixture's listing is a
+ * picture of another machine's disk rather than files that are here, so
+ * nothing is started from it. */
 static void open_picked_row(void)
 {
     int sel = (int)SendMessageA(g_list, LVM_GETNEXTITEM, (WPARAM)-1,
                                 LVNI_SELECTED);
     char path[PATH_MAX_LEN];
-    if (sel < 0 || sel >= g_entries || !g_entry[sel].is_dir)
+    if (sel < 0 || sel >= g_entries)
         return;
-    snprintf(path, sizeof(path), "%s%s%s", g_path,
-             strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
-    show_directory(path);
+    if (g_entry[sel].is_dir) {
+        snprintf(path, sizeof(path), "%s%s%s", g_path,
+                 strcmp(g_path, "/") ? "/" : "", g_entry[sel].name);
+        show_directory(path);
+        return;
+    }
+    if (g_fixture)
+        return;
+    path_of_row(sel, path, sizeof(path));
+    fs_launch(path);
 }
 
 /* Delete: the shell asks first, and says what it is about to do. */
