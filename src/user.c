@@ -114,6 +114,7 @@ static int g_nclasses, g_classes_cap;
  * fallback. */
 static struct ween_wnd *g_tops = NULL;
 static struct ween_wnd *g_active = NULL;
+static void ween_set_active(struct ween_wnd *w);
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
 static HWND g_hot = NULL; /* what the pointer was last over, for hover */
@@ -882,7 +883,7 @@ BOOL ShowWindow(HWND wnd, int cmd)
      * worked in without taking the caret out of it. */
     if (!wnd->parent && wnd->visible && cmd != SW_SHOWNA &&
         cmd != SW_SHOWNOACTIVATE && !(wnd->ex_style & WS_EX_NOACTIVATE)) {
-        g_active = wnd;
+        ween_set_active(wnd);
         /* The keyboard goes to it unless it is already inside it: a dialog
          * that put the caret in one of its fields while it was still hidden
          * keeps it there when it comes up. */
@@ -1356,6 +1357,21 @@ LONG SetWindowLongA(HWND wnd, int index, LONG value)
         break;
     }
     return was;
+}
+
+/* Make a window the active one, and repaint the captions that say so: the
+ * one losing it goes grey and the one taking it goes blue, and neither
+ * happens unless both are told to draw themselves again. */
+static void ween_set_active(struct ween_wnd *w)
+{
+    struct ween_wnd *was = g_active;
+    if (was == w)
+        return;
+    g_active = w;
+    if (was)
+        ween_damage_all(was);
+    if (w)
+        ween_damage_all(w);
 }
 
 /* The window the keyboard belongs to at the top level: what a menu, a dialog
@@ -2879,7 +2895,18 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
                     target = t;
             if (!target)
                 continue;
-            g_active = target;
+            /* What a window is sent is not what makes it the active one. A
+             * repaint or the pointer crossing it changes nothing; a press or
+             * a key is a person turning to it, and that does. Without the
+             * distinction a palette floated over a picture came up active
+             * the moment it was first painted, and wore the blue caption
+             * while the picture under it was being typed into. */
+            if ((ev.kind == WEEN_EV_MOUSE_DOWN || ev.kind == WEEN_EV_KEY) &&
+                !(target->ex_style & WS_EX_NOACTIVATE)) {
+                ween_set_active(target);
+                if (!g_focus || ween_top_level(g_focus) != target)
+                    g_focus = target;
+            }
         } else {
             /* A backend that does not say which window an event was in —
              * the headless one — leaves it to be worked out from where the
