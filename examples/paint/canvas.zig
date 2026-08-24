@@ -98,8 +98,11 @@ fn drawHandles(dc: w.HDC) void {
 /// the machine shows.
 var page_sizing: ?u8 = null;
 /// A drag through the letters of an open text box, which picks out the run
-/// it passes over.
+/// it passes over; or the box being carried by its border or stretched by
+/// one of its handles, which is how the machine's is moved and resized.
 var box_pick = false;
+var box_handle: ?usize = null;
+var box_carry: ?w.POINT = null;
 var page_size: w.POINT = .{ .x = 0, .y = 0 };
 
 const page_handle = struct {
@@ -310,6 +313,41 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
             return;
         }
     }
+    // An open text box has the press before any tool does, and none of what
+    // follows belongs to it: a handle stretches the box, the border between
+    // them carries it, and a press in the letters puts the caret there and
+    // starts picking them out. Further out the box is finished and the tool
+    // has the drag. Set the tool's drag up first and these gestures leave it
+    // half-begun, which swallowed the press after each of them.
+    if (!right and textbox.active()) {
+        if (textbox.handleAt(p)) |h| {
+            box_handle = h;
+            _ = w.SetCapture(hwnd);
+            _ = w.SetFocus(hwnd);
+            return;
+        }
+        if (textbox.onBorder(p)) {
+            box_carry = p;
+            _ = w.SetCapture(hwnd);
+            _ = w.SetFocus(hwnd);
+            return;
+        }
+        if (textbox.holds(p)) {
+            // Shift keeps the far end where it is, so a press picks out
+            // everything between there and here -- as it does in a field.
+            const dc = w.GetDC(hwnd).?;
+            textbox.place(p, dc, (wp & w.MK_SHIFT) != 0);
+            _ = w.ReleaseDC(hwnd, dc);
+            box_pick = true;
+            _ = w.SetCapture(hwnd);
+            _ = w.SetFocus(hwnd);
+            invalidateBox(hwnd);
+            return;
+        }
+        textbox.commit();
+        _ = w.InvalidateRect(hwnd, null, w.FALSE);
+    }
+
     // The curve and the polygon are still going from the press before this
     // one; everything else starts afresh.
     const continuing = (app.tool == .curve or app.tool == .polygon) and
@@ -328,26 +366,6 @@ fn buttonDown(hwnd: w.HWND, right: bool, wp: w.WPARAM, lp: w.LPARAM) void {
     d.shift = (wp & w.MK_SHIFT) != 0;
     _ = w.SetCapture(hwnd);
     _ = w.SetFocus(hwnd); // the view takes the keyboard: the text tool needs it
-
-    // A press inside an open box puts the caret where it landed and starts
-    // picking out letters. Everywhere else -- the border and the handles
-    // included, which the machine draws but does nothing with -- a press
-    // ends the box and lets the tool have the drag.
-    if (!right and textbox.active() and textbox.holds(p)) {
-        // Shift keeps the far end where it is, so a press picks out
-        // everything between there and here -- as it does in a field.
-        const dc = w.GetDC(hwnd).?;
-        textbox.place(p, dc, (wp & w.MK_SHIFT) != 0);
-        _ = w.ReleaseDC(hwnd, dc);
-        box_pick = true;
-        _ = w.SetCapture(hwnd);
-        invalidateBox(hwnd);
-        return;
-    }
-    if (textbox.active()) {
-        textbox.commit();
-        _ = w.InvalidateRect(hwnd, null, w.FALSE);
-    }
 
     // A press inside a selection picks it up and moves it; one outside puts
     // it down where it lies and starts a new one.
@@ -416,6 +434,19 @@ var size_rect: w.RECT = .{ .left = 0, .top = 0, .right = 0, .bottom = 0 };
 fn mouseMove(hwnd: w.HWND, wp: w.WPARAM, lp: w.LPARAM) void {
     const d = &tools.drag;
     const p = toImage(lp);
+    if (box_handle) |h| {
+        invalidateBox(hwnd); // where the box was
+        textbox.dragHandle(h, p);
+        invalidateBox(hwnd); // and where it is now
+        return;
+    }
+    if (box_carry) |from| {
+        invalidateBox(hwnd);
+        textbox.moveBy(p.x - from.x, p.y - from.y);
+        box_carry = p;
+        invalidateBox(hwnd);
+        return;
+    }
     if (box_pick) {
         const dc = w.GetDC(hwnd).?;
         textbox.place(p, dc, true);
@@ -577,8 +608,10 @@ const caret_ms = 500;
 
 fn buttonUp(hwnd: w.HWND, lp: w.LPARAM) void {
     const d = &tools.drag;
-    if (box_pick) {
+    if (box_pick or box_handle != null or box_carry != null) {
         box_pick = false;
+        box_handle = null;
+        box_carry = null;
         _ = w.ReleaseCapture();
         invalidateBox(hwnd);
         return;
@@ -698,6 +731,17 @@ fn commit() void {
 /// read off the machine. Over one of the three handles that size the picture
 /// — or through a drag of one — it is the arrows that edge is dragged with,
 /// which is the machine's answer there too.
+/// Which pair of arrows a handle wears: the edges it owns say which way it
+/// stretches, the same as a selection's do.
+fn sizeCursor(i: usize) [*:0]const u8 {
+    return switch (i) {
+        0, 8 => w.IDC_SIZENWSE,
+        2, 6 => w.IDC_SIZENESW,
+        1, 7 => w.IDC_SIZENS,
+        else => w.IDC_SIZEWE,
+    };
+}
+
 fn setCursor(hwnd: w.HWND) void {
     var h = page_sizing;
     if (h == null) {
@@ -705,9 +749,10 @@ fn setCursor(hwnd: w.HWND) void {
         if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0)
             h = liveHandleAt(pt);
     }
-    // Inside an open text box the pointer is the one for choosing letters;
-    // on its border, on its handles and anywhere else it is the tool's own,
-    // since a press there starts another box.
+    // Over an open text box: the letters are chosen with the one for
+    // choosing letters, a handle stretches the box and says so with the
+    // arrows of the edge it owns, and the border carries it. Further out it
+    // is the tool's own, since a press there starts another box.
     if (textbox.active()) {
         var pt: w.POINT = undefined;
         if (w.GetCursorPos(&pt) != 0 and w.ScreenToClient(hwnd, &pt) != 0) {
@@ -716,6 +761,14 @@ fn setCursor(hwnd: w.HWND) void {
                 .x = @divFloor(pt.x - o.x, app.zoom),
                 .y = @divFloor(pt.y - o.y, app.zoom),
             };
+            if (textbox.handleAt(ip)) |i| {
+                _ = w.SetCursor(w.LoadCursorA(null, sizeCursor(i)));
+                return;
+            }
+            if (textbox.onBorder(ip)) {
+                _ = w.SetCursor(w.LoadCursorA(null, w.IDC_ARROW));
+                return;
+            }
             if (textbox.holds(ip)) {
                 _ = w.SetCursor(w.LoadCursorA(null, w.IDC_IBEAM));
                 return;

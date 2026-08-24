@@ -10,13 +10,15 @@
 //! letter will go. Escape throws the lot away, and so does anything that
 //! ends the box without there being anything in it.
 //!
-//! Two things the machine does that are worth saying because they look like
-//! oversights and are not. The eight handles do nothing at all: the box
-//! cannot be moved or made bigger, and a press on one is a press outside the
-//! box, which puts the letters into the picture and starts another box where
-//! the drag goes. And a face, a size or a weight picked from the Fonts bar
-//! is the whole box's, not the picked-out run's — the machine changes every
-//! letter in the box however little of it was selected.
+//! The box is carried by its border and stretched by its eight handles,
+//! both while it is being typed into, and the letters wrap again to whatever
+//! room they are left with. A press anywhere further out puts them into the
+//! picture and starts another box where the drag goes.
+//!
+//! One thing worth saying because it looks like an oversight and is not: a
+//! face, a size or a weight picked from the Fonts bar is the whole box's,
+//! not the picked-out run's — the machine changes every letter in the box
+//! however little of it was selected.
 
 const w = @import("ween32");
 const A = @import("app.zig");
@@ -484,15 +486,61 @@ pub fn handleRect(i: usize) w.RECT {
 }
 
 /// Whether a point is in the box's own room: the letters, the caret and the
-/// picking-out happen there, and everywhere else -- the border and the eight
-/// handles along with it -- belongs to the tool. The machine draws those
-/// handles and does nothing at all with them: a press on one puts the text
-/// into the picture and starts another box, the same as a press out in the
-/// open does.
+/// picking-out happen there. The border and the eight handles are not in it
+/// — they carry the box and stretch it — and everything further out belongs
+/// to the tool, where a press puts the letters into the picture and starts
+/// another box.
 pub fn holds(p: w.POINT) bool {
     if (!box.open) return false;
     const r = box.rect;
-    return p.x > r.left and p.x < r.right and p.y > r.top and p.y < r.bottom;
+    return p.x > r.left and p.x < r.right and p.y > r.top and p.y < r.bottom and
+        handleAt(p) == null and !onBorder(p);
+}
+
+/// Which handle is under a point, if any: 0..8 across and down, with the
+/// middle of the nine skipped.
+pub fn handleAt(p: w.POINT) ?usize {
+    if (!box.open) return null;
+    for (0..9) |i| {
+        if (i == 4) continue;
+        const h = handleRect(i);
+        if (p.x >= h.left and p.x < h.right and p.y >= h.top and p.y < h.bottom)
+            return i;
+    }
+    return null;
+}
+
+/// Whether a point is on the border itself, which is what the box is carried
+/// by: within two pixels of the dashed line, inside or out.
+pub fn onBorder(p: w.POINT) bool {
+    if (!box.open) return false;
+    const r = box.rect;
+    if (p.x < r.left - 2 or p.x > r.right + 2 or p.y < r.top - 2 or p.y > r.bottom + 2)
+        return false;
+    return p.x <= r.left + 2 or p.x >= r.right - 2 or p.y <= r.top + 2 or
+        p.y >= r.bottom - 2;
+}
+
+/// Drag a handle: the edges it owns follow the pointer, and the box never
+/// closes past the room one line of letters needs.
+pub fn dragHandle(i: usize, p: w.POINT) void {
+    if (!box.open) return;
+    const least = 8;
+    var r = box.rect;
+    if (i % 3 == 0) r.left = @min(p.x, r.right - least);
+    if (i % 3 == 2) r.right = @max(p.x, r.left + least);
+    if (i / 3 == 0) r.top = @min(p.y, r.bottom - least);
+    if (i / 3 == 2) r.bottom = @max(p.y, r.top + least);
+    box.rect = r;
+}
+
+/// Carry the whole box, border and letters together.
+pub fn moveBy(dx: i32, dy: i32) void {
+    if (!box.open) return;
+    box.rect.left += dx;
+    box.rect.right += dx;
+    box.rect.top += dy;
+    box.rect.bottom += dy;
 }
 
 /// The dashed border and its eight handles.
