@@ -372,6 +372,11 @@ struct ween_wnd {
                              * "no" and saying nothing are different answers */
     LONG_PTR dlg_user;      /* DWLP_USER: a dialog's own slot, which win32
                              * keeps apart from GWLP_USERDATA */
+    struct ween_wnd *dlg_placed_focus; /* what its WM_INITDIALOG put the
+                                        * keyboard on itself, having answered
+                                        * FALSE — which is a page of a
+                                        * property sheet's way of saying where
+                                        * it wants to be shown */
     int x, y, w, h; /* window rect; children: in parent CLIENT coordinates */
     char *text;    /* never NULL; grows to fit, see ween_wnd_set_text */
     int text_cap;  /* bytes allocated, including the terminator */

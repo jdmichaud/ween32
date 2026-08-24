@@ -339,8 +339,20 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     /* WM_INITDIALOG (after the controls exist). TRUE => set default focus. */
     HWND first = ween_tab_next(dlg, NULL, 1);
     INT_PTR r = SendMessageA(dlg, WM_INITDIALOG, (WPARAM)first, init_param);
-    if (r && first)
+    if (r && first) {
         SetFocus(first);
+    } else if (!r) {
+        /* It placed the keyboard itself, which is the whole of what answering
+         * FALSE means. Remembered because a dialog that is a page of a
+         * property sheet is made long before it is shown, and the sheet has
+         * to be able to put the keyboard back where the page wanted it. */
+        HWND f = GetFocus();
+        for (HWND w = f; w; w = GetParent(w))
+            if (w == dlg) {
+                dlg->dlg_placed_focus = f;
+                break;
+            }
+    }
 #undef MX
 #undef MY
     return dlg;

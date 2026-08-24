@@ -426,6 +426,10 @@ PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
 | CONFIG.SYS | 640 | 453 the caption's bold title, 145 the icon quantised, 42 two glyphs |
 | boot | 294 | 236 the two icons quantised, 48 the same two glyphs and the title |
 
+Both were counted on the day the captures were taken. The Accessed row is
+today's date on either side, so on any other day it differs too — 22 pixels
+where the day of the month is.
+
 Nothing else in either differs. The icons are the machine's own quantisation
 — it draws them through a sixteen bit image list, so its pixel is ours with
 the low three bits of each channel dropped — and the two glyphs are `J` and

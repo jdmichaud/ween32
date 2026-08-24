@@ -527,15 +527,13 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
                                                 (LPARAM)&ps.desc[i]);
         if (!ps.page[i])
             continue;
-        /* Whether it placed the keyboard itself, asked while it is the page
-         * that has just been made: the pages are all made up front, so which
-         * one has the keyboard at the end of that says nothing, and what each
-         * had at its own creation says everything. */
-        for (HWND w = GetFocus(); w; w = GetParent(w))
-            if (w == ps.page[i]) {
-                ps.placed[i] = GetFocus();
-                break;
-            }
+        /* Where it put the keyboard itself, if it did: a page that answered
+         * FALSE to WM_INITDIALOG having called SetFocus is shown with the
+         * keyboard where it put it, and one that let the dialog manager place
+         * it is shown with the keyboard on whatever its first tab stop is by
+         * then — which for a group of option buttons is the one that is set,
+         * and is not known until the page has been told what to set. */
+        ps.placed[i] = ps.page[i]->dlg_placed_focus;
         /* what is in it is reachable from the sheet's tab ring */
         SetWindowLongA(ps.page[i], GWL_EXSTYLE,
                        GetWindowLongA(ps.page[i], GWL_EXSTYLE) |
