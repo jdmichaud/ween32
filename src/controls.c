@@ -3267,7 +3267,7 @@ static void treeview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
               : (wnd->style & TVS_SHOWSELALWAYS) ? 1
                                                  : 0,
               t->images, t->state_images,
-              (wnd->style & TVS_HASBUTTONS) != 0, (ox + oy) & 1);
+              (wnd->style & TVS_HASBUTTONS) != 0, 0);
     ween_surface_clip(&top->surface, clip.left, clip.top,
                       clip.right - clip.left, clip.bottom - clip.top);
 
@@ -4676,13 +4676,13 @@ static void lv_paint_flow(HWND wnd, ween_list *l, HDC dc)
             if (icons)
                 ween_surface_focus_rect(&top->surface, ox + c.left,
                                         oy + c.top, WEEN_LV_ICON_W,
-                                        c.bottom - c.top, (ox + oy) & 1);
+                                        c.bottom - c.top, 0);
             else
                 ween_surface_focus_rect(&top->surface,
                                         ox + c.left + icon_w + 1,
                                         oy + c.top +
                                             (WEEN_LV_FLOW_H - th) / 2,
-                                        tw + 3, th, (ox + oy) & 1);
+                                        tw + 3, th, 0);
         }
     }
     (void)dc;
@@ -4697,7 +4697,7 @@ static void lv_paint_band(const ween_list *l, ween_surface *s, int ox, int oy)
         return;
     lv_band_rect(l, &b);
     ween_surface_focus_rect(s, ox + b.left, oy + b.top, b.right - b.left,
-                            b.bottom - b.top, (ox + oy) & 1);
+                            b.bottom - b.top, 0);
 }
 
 static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
@@ -4810,8 +4810,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, ox - sx, y, rw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih,
-                                        (ox + oy) & 1);
+                ween_surface_focus_rect(&top->surface, ox - sx, y, rw, ih, 0);
         } else if ((selected || caret) && f && l->row[i].text[l->icon_col]) {
             /* the label box: the text inflated five pixels each side */
             int lw = lv_label_w(wnd, l, i, indent);
@@ -4820,8 +4819,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                 ween_surface_fill(&top->surface, lx, y, lw, ih,
                                   sel_state == 2 ? WEEN_CAP_LEFT : WEEN_FACE);
             if (caret)
-                ween_surface_focus_rect(&top->surface, lx, y, lw, ih,
-                                        (ox + oy) & 1);
+                ween_surface_focus_rect(&top->surface, lx, y, lw, ih, 0);
         }
         if (has_image) {
             /* A picked row's picture is drawn as it is — the machine washes

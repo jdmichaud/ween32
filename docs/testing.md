@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **514 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **516 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -345,7 +345,7 @@ The one-name box settled two more:
 Every rectangle in both is measured off those, so a change that moves one
 shows up beside them:
 
-**Column Settings** differs by **1148 of 103290**, 1.1%. Its scroll bar is
+**Column Settings** differs by **1147 of 103290**, 1.1%. Its scroll bar is
 718 of that and is content, not drawing: the machine's shell offers some
 fifty columns where this example has eight, so its thumb is a fifteenth of
 the trough and ours five sixths of it. Another 252 is the caption's bold
@@ -353,7 +353,11 @@ title. What is left is 58 pixels where wine's MS Sans Serif draws a `k` or a
 `v` a pixel off the machine's, and 77 where a bordered edit box starts its
 text: the machine's begins two further in with that font, and the rule that
 gives both that and Tahoma's three — wine's, half the average character
-width — has not been found.
+width — has not been found. The last 41 are where the picked row's blue box
+ends: its letters land on the machine's to the pixel, and then it runs two
+further before it stops. Either the machine's advance for that word is two
+wider than wine's, or a list with a box before each row leaves two more after
+the name; one picked row is not enough to tell which.
 
 Each of Folder Options' four pages is counted against its own capture. The
 tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
@@ -452,10 +456,15 @@ about this dialog at all:
   across "Cancel". The machine centres that label by the drawn width, and
   sizes a tab and a focus rectangle by it too: "General" in a Properties
   sheet's tab is 49 wide, its drawn width and the twelve either side.
-- **A focus rectangle's dots start at the control's corner**, not the
-  screen's: win32 hangs the pattern on the brush origin. Two tick boxes at
-  different places dot theirs the same way; off the screen's corner one of
-  them comes out inverted, which is what the machine showed against ours.
+- **A focus rectangle's dots start at the control's corner** — for a button.
+  win32 hangs the pattern on the brush origin, and a tick box's is its own:
+  two at different places dot theirs the same way, and hanging them off the
+  window's corner instead inverts one of the two, which is what the machine
+  showed against ours (Folder Options goes 1224 / 1407 / 1037 to 1250 / 1645
+  / 1249 that way). A view's do not. A list's and a tree's keep the chequer
+  the whole window shares, which Column Settings settles: the picked "Name"
+  row's dots invert when they are hung on the list's corner, 1147 to 1229.
+  Two rules, both measured, and nothing here says which a control follows.
 - **An etched line is a frame two pixels thick**, which is what puts the
   highlight round its far end.
 - **A tab control draws its own frame**, and lays the sides down in an order
