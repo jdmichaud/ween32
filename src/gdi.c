@@ -103,16 +103,16 @@ HBRUSH CreateSolidBrush(COLORREF color)
     return b;
 }
 
-/* v1 font realisation: the engine carries Tahoma's 11px embedded bitmap
- * strikes (regular and bold) — the classic GUI face. Weight selects between
- * them (GDI's threshold: above FW_MEDIUM is bold); the height and face name
- * are accepted but the 11px strike is what every classic dialog used. */
+/* Font realisation: the engine carries the strikes each face was shipped with
+ * — Tahoma, its bold cut, MS Sans Serif and Marlett — and a request picks the
+ * face by name and the nearest size it carries, with the weight choosing the
+ * bold cut (GDI's threshold: above FW_MEDIUM is bold). Slant and underline
+ * are not in any strike, so they are put on when the text is drawn. */
 HFONT CreateFontA(int height, int width, int escapement, int orientation,
                   int weight, DWORD italic, DWORD underline, DWORD strike_out,
                   DWORD charset, DWORD out_precision, DWORD clip_precision,
                   DWORD quality, DWORD pitch_and_family, LPCSTR face_name)
 {
-    (void)height;
     (void)width;
     (void)escapement;
     (void)orientation;

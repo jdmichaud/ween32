@@ -4,8 +4,9 @@
  *
  * Model: a top-level window owns one backend (native) window and one software
  * surface; child windows are rectangles painted into the parent's surface and
- * receive their input via hit-testing, exactly the USER32 shape. v1 scope:
- * non-overlapping children, no subclassing.
+ * receive their input via hit-testing, exactly the USER32 shape. Children do
+ * not overlap; a window procedure can be replaced, which is how an
+ * application gets between a control and its messages.
  */
 
 #define _POSIX_C_SOURCE 200112L /* clock_gettime */

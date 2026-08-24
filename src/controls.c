@@ -792,9 +792,9 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 /* ---- the EDIT class ------------------------------------------------------
  *
- * v1 draws the control: the field border, the text with its margins, and the
- * scroll bars its styles ask for. Typing needs WM_CHAR and a caret, which the
- * core does not have yet — see ROADMAP.md. */
+ * The field border, the text with its margins, the scroll bars its styles ask
+ * for, typing, a selection and a caret that blinks on a timer. Text that
+ * outruns the field is still clipped rather than scrolled. */
 
 /* The EDIT's own state: the caret, the anchor a selection runs from (the two
  * are equal when nothing is selected), and whether the caret is showing this
@@ -1778,9 +1778,9 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 
 /* ---- the COMBOBOX class ---------------------------------------------------
  *
- * The closed control only: a field with the current item and a drop-down
- * button. Opening the list needs a popup window, which the core cannot do
- * yet — see ROADMAP.md. */
+ * A field with the current item and a drop-down button, and a list that opens
+ * in a window of its own — so it can hang below the window it belongs to, as
+ * a real one does. */
 
 static int combo_text_is_sel(ween_items *it);
 
