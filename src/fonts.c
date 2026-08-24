@@ -62,6 +62,75 @@ const ween_strike *ween_dialog_font(void)
     return ready ? &f : NULL;
 }
 
+/* A face at the size and weight CreateFont was handed.
+ *
+ * There is no rasteriser here: a face carries a handful of bitmap strikes and
+ * a request lands on the nearest of them. Tahoma has eight through sixteen
+ * pixels, MS Sans Serif thirteen, sixteen and twenty, so a program asking for
+ * a size in between gets the closest the font really has and one asking for
+ * something enormous gets the largest. Height is read the way GDI reads
+ * lfHeight: negative is the character height, positive the cell, and the
+ * magnitude is what the strike is chosen by.
+ *
+ * The strikes are kept: a program that makes a font, draws with it and
+ * deletes it — which is every program, every repaint — parses each size once.
+ */
+const ween_strike *ween_font_create(const char *face, int height, int weight)
+{
+    /* Eight sizes across three faces is more than any of the programs
+     * written against this ask for; past that the nearest already-made one
+     * is handed back rather than a wrong face. */
+    enum { KEPT = 12 };
+    static struct {
+        const unsigned char *ttf;
+        int ppem, bold;
+        ween_strike f;
+    } kept[KEPT];
+    static int count;
+    const unsigned char *ttf;
+    size_t len;
+    int bold = weight > 500;
+    int dialog = face && (!strcmp(face, "MS Shell Dlg") ||
+                          !strcmp(face, "MS Sans Serif"));
+    int ppem = height < 0 ? -height : height;
+
+    if (ppem <= 0)
+        ppem = ween_ncm(11);
+    if (dialog) {
+        ttf = ween_mssans_ttf;
+        len = ween_mssans_ttf_len;
+        bold = 0; /* the face has no bold cut here */
+    } else if (bold) {
+        ttf = ween_tahomabd_ttf;
+        len = ween_tahomabd_ttf_len;
+    } else {
+        ttf = ween_tahoma_ttf;
+        len = ween_tahoma_ttf_len;
+    }
+    for (int i = 0; i < count; i++)
+        if (kept[i].ttf == ttf && kept[i].ppem == ppem)
+            return &kept[i].f;
+    if (count == KEPT) {
+        for (int i = 0; i < count; i++)
+            if (kept[i].ttf == ttf)
+                return &kept[i].f;
+        return bold ? ween_gui_font_bold() : ween_gui_font();
+    }
+    if (!ween_strike_init(&kept[count].f, ttf, len, ppem))
+        return bold ? ween_gui_font_bold() : ween_gui_font();
+    kept[count].ttf = ttf;
+    kept[count].ppem = ppem;
+    kept[count].bold = bold;
+    /* Wine's bold Tahoma has regular-weight stems at the larger strikes, and
+     * MS Sans Serif measures from its glyphs rather than an outline — the
+     * same two things ween_gui_font_bold and ween_dialog_font work around. */
+    if (bold && kept[count].f.ppem >= 13)
+        kept[count].f.embolden = 1;
+    if (dialog)
+        kept[count].f.bitmap_only = 1;
+    return &kept[count++].f;
+}
+
 /* The strike a face name asks for. A dialog template names one; "MS Shell
  * Dlg" is not a face at all but a stand-in the system resolves, and on this
  * Windows it resolves to MS Sans Serif. */

@@ -2165,7 +2165,10 @@ static HWND combo_edit(HWND wnd)
                                    cr.right - btn - 3, cr.bottom - 2, wnd,
                                    NULL, NULL, NULL);
         if (it->edit) {
-            SendMessageA(it->edit, WM_SETFONT, (WPARAM)0, FALSE);
+            /* the field starts in the box's own face, not the system one:
+             * the box may have been given a font before it was asked for a
+             * field to put it in */
+            it->edit->font = wnd->font;
             /* no margin of its own: where the field is put is where the text
              * starts, which is what lines it up with the picture beside it */
             SendMessageA(it->edit, EM_SETMARGINS,
@@ -2624,6 +2627,14 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case CB_GETCOUNT:
         it = items_of(wnd);
         return it ? it->count : 0;
+    case WM_SETFONT:
+        /* The face a box is given is the face its field is lettered in too:
+         * the two are one control as far as the program handing out a font
+         * is concerned. */
+        it = items_of(wnd);
+        if (it && it->edit)
+            SendMessageA(it->edit, msg, wp, lp);
+        return DefWindowProcA(wnd, msg, wp, lp);
     case WM_SETTEXT:
         /* the field is where a combo box's text lives, so setting one sets
          * the other; a box with no field keeps it as any window does */
@@ -6821,6 +6832,7 @@ typedef struct {
     int pad_x;   /* what surrounds a label, when the app has said, else 0 */
     int indent;  /* how far in the first button starts */
     int btn_h;   /* how tall a button is, when the app has said, else 0 */
+    int btn_w;   /* and how wide, as a least width, else 0 */
     int keyed;   /* the hot item was put there by the keyboard, not the mouse */
     HWND unfocus; /* what had the focus when the keyboard reached this bar */
     HWND tip;    /* the window its tips are shown in, made when first needed */
@@ -6931,6 +6943,10 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
                 b->w = ween_ncm(WEEN_TB_ICON_X) + 16 + ween_ncm(2);
             }
             b->w += drop;
+            /* A size the app set is the size a button takes; only a label
+             * too long for it makes one wider. */
+            if (tb->btn_w && (!b->text || b->w < ween_ncm(tb->btn_w)))
+                b->w = ween_ncm(tb->btn_w);
         }
         x += b->w;
     }
@@ -6965,6 +6981,7 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     int th = f ? (f->cell_h ? f->cell_h : f->ascent - f->descent) : 12;
     int h = tb_button_h(wnd, toolbar_of(wnd));
     int row = tb_button_y(wnd, toolbar_of(wnd));
+    int flat = (wnd->style & TBSTYLE_FLAT) != 0;
     UINT ui = (UINT)SendMessageA(wnd, WM_QUERYUISTATE, 0, 0);
     RECT r = ps->rcPaint;
     int ox, oy;
@@ -6996,7 +7013,19 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             continue;
         }
 
-        if (checked || held) {
+        if (!flat) {
+            /* A bar that was not asked to be flat wears the push button's
+             * own edge on every button, always: raised, and turned over when
+             * the button is held or on. Each button draws its whole
+             * rectangle — they sit side by side rather than overlapping, as
+             * the flat ones do. */
+            if (checked && !held)
+                ween_classic_check_dither(&top->surface, bx + 2, by + 2,
+                                          b->w - 4, h - 4);
+            ween_classic_edge(&top->surface, bx, by, b->w, h,
+                              (checked || held) ? EDGE_SUNKEN : EDGE_RAISED,
+                              BF_RECT | BF_SOFT, NULL);
+        } else if (checked || held) {
             /* the dither is what says "on"; the edge says which way. Like the
              * hot edge it starts a pixel in, so two buttons side by side
              * share the boundary rather than doubling it. */
@@ -7046,6 +7075,14 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             int ix = bx + ween_ncm(WEEN_TB_ICON_X) + (b->text ? 0 : -1) +
                      shift;
             int iy = by + (h - 16) / 2 + shift;
+            if (!flat && !b->text) {
+                /* On a raised button the picture is centred in what the edge
+                 * leaves: a pixel in on the top and left, and the middle of
+                 * the rest. Sixteen in twenty-three by twenty-two comes out
+                 * at four and three, which is where the machine's are. */
+                ix = bx + 1 + (b->w - 1 - 16) / 2 + shift;
+                iy = by + 1 + (h - 1 - 16) / 2 + shift;
+            }
             if (from && b->image >= 0) {
                 if (enabled) {
                     ween_imagelist_draw(from, b->image, &top->surface, ix, iy);
@@ -7376,6 +7413,9 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         tb = toolbar_of(wnd);
         if (!tb)
             return FALSE;
+        /* The size a button is to be: the height it takes, and a width no
+         * button goes under — one with a long label still grows past it. */
+        tb->btn_w = (int)(short)LOWORD(lp);
         tb->btn_h = (int)(short)HIWORD(lp);
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;

@@ -36,6 +36,12 @@ static ween_color sys_color_px(int index)
         return WEEN_CAP_RIGHT;
     case COLOR_CAPTIONTEXT:
         return WEEN_CAP_TEXT;
+    case COLOR_INACTIVECAPTION:
+        return WEEN_CAP_INACT_LEFT;
+    case COLOR_GRADIENTINACTIVECAPTION:
+        return WEEN_CAP_INACT_RIGHT;
+    case COLOR_INACTIVECAPTIONTEXT:
+        return WEEN_CAP_INACT_TEXT;
     case COLOR_WINDOW:
         return WEEN_WINDOWBG;
     case COLOR_WINDOWTEXT:
@@ -110,20 +116,22 @@ HFONT CreateFontA(int height, int width, int escapement, int orientation,
     (void)width;
     (void)escapement;
     (void)orientation;
-    (void)italic;
-    (void)underline;
     (void)strike_out;
     (void)charset;
     (void)out_precision;
     (void)clip_precision;
     (void)quality;
     (void)pitch_and_family;
-    (void)face_name;
     ween_gdiobj *f = calloc(1, sizeof(*f));
     if (!f)
         return NULL;
     f->kind = WEEN_OBJ_FONT;
-    f->font = weight > 500 ? ween_gui_font_bold() : ween_gui_font();
+    /* The face and the size are asked for by name and by height; the slant
+     * and the rule are put on when the text is drawn, since no strike here
+     * carries either. */
+    f->font = ween_font_create(face_name, height, weight);
+    f->font_italic = italic != 0;
+    f->font_underline = underline != 0;
     return f;
 }
 
@@ -407,6 +415,10 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
                                                0x1ff };
         static const unsigned short cross[] = { 0xc3, 0x66, 0x3c, 0x18,
                                                 0x3c, 0x66, 0xc3 };
+        /* The cross a tool window's smaller box wears: five by five, a
+         * single pixel thick, two in and two down. Measured on one. */
+        static const unsigned short small_cross[] = { 0x11, 0x0a, 0x04, 0x0a,
+                                                      0x11 };
         /* The question mark a property sheet wears, read off the machine's:
          * six wide and nine tall, five in and two down in the button. */
         static const unsigned short help[] = { 0x1e, 0x33, 0x33, 0x18, 0x0c,
@@ -421,7 +433,11 @@ BOOL DrawFrameControl(HDC dc, LPRECT rect, UINT type, UINT state)
             art = maxi; aw = 9; ah = 9; ax = 3; ay = 2;
             break;
         case DFCS_CAPTIONCLOSE:
-            art = cross; aw = 8; ah = 7; ax = 4; ay = 3;
+            if (w < 16) {
+                art = small_cross; aw = 5; ah = 5; ax = 2; ay = 2;
+            } else {
+                art = cross; aw = 8; ah = 7; ax = 4; ay = 3;
+            }
             break;
         case DFCS_CAPTIONHELP:
             art = help; aw = 6; ah = 9; ax = 5; ay = 2;
@@ -461,8 +477,11 @@ BOOL TextOutA(HDC dc, int x, int y, LPCSTR text, int len)
         return FALSE;
     if (len < 0)
         len = (int)strlen(text);
-    ween_strike_draw(f, dc->s, dc->org_x + dc->vp_x + x, dc->org_y + dc->vp_y + y,
-                     text, len, cr_to_px(dc->text_color));
+    ween_strike_draw_styled(f, dc->s, dc->org_x + dc->vp_x + x,
+                            dc->org_y + dc->vp_y + y, text, len,
+                            cr_to_px(dc->text_color),
+                            dc->font_obj ? dc->font_obj->font_italic : 0,
+                            dc->font_obj ? dc->font_obj->font_underline : 0);
     return TRUE;
 }
 

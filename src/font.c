@@ -238,7 +238,8 @@ int ween_strike_text_width(const ween_strike *f, const char *s, int len)
 }
 
 static int draw_char(const ween_strike *f, ween_surface *s, int pen_x,
-                     int baseline, unsigned char c, ween_color color)
+                     int baseline, unsigned char c, ween_color color,
+                     int italic)
 {
     ween_glyph g;
     if (!glyph_bitmap(f, glyph_index(f, c), &g))
@@ -246,16 +247,39 @@ static int draw_char(const ween_strike *f, ween_surface *s, int pen_x,
     int top = baseline - g.by;
     int left = pen_x + g.bx;
     for (int row = 0; row < g.h; row++) {
+        /* Synthetic italic: a row is pushed right by a quarter of its height
+         * above the baseline, which is the slant GDI shears a face by when
+         * the font has no italic cut of its own. */
+        int lean = italic ? (baseline - (top + row) + 2) / 4 : 0;
         for (int col = 0; col < g.w; col++) {
             size_t bi = (size_t)(row * g.w + col);
             if ((f->ttf[g.data + bi / 8] >> (7 - bi % 8)) & 1) {
-                ween_surface_pixel(s, left + col, top + row, color);
+                ween_surface_pixel(s, left + col + lean, top + row, color);
                 if (f->embolden) /* synthetic bold: 1px overstrike */
-                    ween_surface_pixel(s, left + col + 1, top + row, color);
+                    ween_surface_pixel(s, left + col + lean + 1, top + row,
+                                       color);
             }
         }
     }
     return g.adv + f->embolden;
+}
+
+void ween_strike_draw_styled(const ween_strike *f, ween_surface *s, int x,
+                             int y, const char *text, int len,
+                             ween_color color, int italic, int underline)
+{
+    int baseline = y + f->ascent;
+    int pen = x;
+    if (y + f->cell_h + f->ascent <= s->clip_y || y >= s->clip_b ||
+        x >= s->clip_r)
+        return;
+    for (int i = 0; i < len; i++)
+        pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color,
+                         italic);
+    /* The rule runs the width of the text, on the row below the baseline —
+     * the same row a mnemonic's does. */
+    if (underline && pen > x)
+        ween_surface_hline(s, x, baseline + 1, pen - x, color);
 }
 
 void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
@@ -272,7 +296,7 @@ void ween_strike_draw(const ween_strike *f, ween_surface *s, int x, int y,
         x >= s->clip_r)
         return;
     for (int i = 0; i < len; i++)
-        pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color);
+        pen += draw_char(f, s, pen, baseline, (unsigned char)text[i], color, 0);
 }
 
 /* Where the caret sits before character `index`.

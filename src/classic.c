@@ -175,12 +175,16 @@ void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken)
  * window has no system menu); `buttons_w` the strip on the right held at the
  * end colour. */
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
-                          int icon_w, int buttons_w)
+                          int icon_w, int buttons_w, int active)
 {
-    int ar = (WEEN_CAP_LEFT >> 16) & 0xff, ag = (WEEN_CAP_LEFT >> 8) & 0xff;
-    int ab = WEEN_CAP_LEFT & 0xff;
-    int br = (WEEN_CAP_RIGHT >> 16) & 0xff, bg = (WEEN_CAP_RIGHT >> 8) & 0xff;
-    int bb = WEEN_CAP_RIGHT & 0xff;
+    /* The same ramp either way; a window that is not the active one runs it
+     * between the two greys instead of the two blues. */
+    ween_color left = active ? WEEN_CAP_LEFT : WEEN_CAP_INACT_LEFT;
+    ween_color right = active ? WEEN_CAP_RIGHT : WEEN_CAP_INACT_RIGHT;
+    int ar = (left >> 16) & 0xff, ag = (left >> 8) & 0xff;
+    int ab = left & 0xff;
+    int br = (right >> 16) & 0xff, bg = (right >> 8) & 0xff;
+    int bb = right & 0xff;
     int x1 = x + (icon_w < w ? icon_w : w);
     int x2 = x + w - buttons_w;
     int span;
@@ -195,9 +199,9 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
     for (int i = x; i < x + w; i++) {
         ween_color c;
         if (i < x1 || span <= 0)
-            c = WEEN_CAP_LEFT;
+            c = left;
         else if (i >= x2)
-            c = WEEN_CAP_RIGHT;
+            c = right;
         else {
             /* Stepped in 16.16, the step itself rounded down first — which is
              * how the machine's ramp lands. It matters only where a channel

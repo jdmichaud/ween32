@@ -258,6 +258,110 @@ int main(void)
         remove(fpath);
     }
 
+    {
+        /* A tool window: the palette a drawing program floats over its
+         * picture. Its caption is shorter than an ordinary window's, it has
+         * the close box and neither of the others, and the client area it
+         * leaves is what the difference says it should be. */
+        HWND tool = CreateWindowExA(WS_EX_TOOLWINDOW, "weentest", "Fonts",
+                                    WS_POPUP | WS_CAPTION | WS_SYSMENU, 20, 20,
+                                    200, 60, NULL, NULL, NULL, NULL);
+        HWND plain = CreateWindowExA(0, "weentest", "Ordinary",
+                                     WS_POPUP | WS_CAPTION | WS_SYSMENU |
+                                         WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+                                     20, 20, 200, 60, NULL, NULL, NULL, NULL);
+        RECT tc, pc;
+        CHECK(tool && plain, "a tool window and an ordinary one were made");
+        GetClientRect(tool, &tc);
+        GetClientRect(plain, &pc);
+        CHECK(tc.bottom > pc.bottom,
+              "the tool window's shorter caption leaves it more client area");
+        CHECK(tc.bottom - pc.bottom == 3,
+              "three pixels more, which is nineteen against sixteen");
+        DestroyWindow(tool);
+        DestroyWindow(plain);
+    }
+
+    {
+        /* A palette is shown without being activated: the window that had
+         * the keyboard keeps it, which is what lets a text box go on taking
+         * what is typed while the bar floats over it. */
+        HWND owner = GetActiveWindow();
+        HWND palette = CreateWindowExA(WS_EX_TOOLWINDOW, "weentest", "Fonts",
+                                       WS_POPUP | WS_CAPTION | WS_SYSMENU, 20,
+                                       20, 200, 60, NULL, NULL, NULL, NULL);
+        CHECK(GetActiveWindow() == owner,
+              "a window made out of sight does not take the keyboard");
+        ShowWindow(palette, SW_SHOWNA);
+        CHECK(GetActiveWindow() == owner,
+              "and showing it without activating leaves it where it was");
+        ShowWindow(palette, SW_SHOW);
+        CHECK(GetActiveWindow() == palette,
+              "showing it the ordinary way does make it the active one");
+        DestroyWindow(palette);
+    }
+
+    {
+        /* The caption of a window that is not the active one is the grey ramp
+         * rather than the blue: which window has the keyboard is what a
+         * person reads off the screen, and a palette floated over a picture
+         * is grey while the picture is being typed into. */
+        HWND back = CreateWindowExA(0, "weentest", "behind",
+                                    WS_POPUP | WS_CAPTION, 0, 0, 200, 60, NULL,
+                                    NULL, NULL, NULL);
+        HWND front = CreateWindowExA(0, "weentest", "in front",
+                                     WS_POPUP | WS_CAPTION, 0, 0, 200, 60,
+                                     NULL, NULL, NULL, NULL);
+        const ween_surface *s;
+        ShowWindow(back, SW_SHOW);
+        ShowWindow(front, SW_SHOW); /* which makes the front one active */
+        InvalidateRect(back, NULL, TRUE);
+        UpdateWindow(back);
+        s = ween_headless_surface();
+        CHECK(s && s->px[4 * (long)s->w + 3] == WEEN_CAP_INACT_LEFT,
+              "the window behind wears the grey caption");
+        ShowWindow(back, SW_SHOW); /* and now the other way round */
+        InvalidateRect(back, NULL, TRUE);
+        UpdateWindow(back);
+        s = ween_headless_surface();
+        CHECK(s && s->px[4 * (long)s->w + 3] == WEEN_CAP_LEFT,
+              "and takes the blue one back when it is active again");
+        DestroyWindow(front);
+        DestroyWindow(back);
+    }
+
+    {
+        /* CreateFont is asked for a face, a size and a weight, and all three
+         * are answered: MS Sans Serif is a different set of glyphs from
+         * Tahoma and measures wider, and bold is wider still. */
+        HWND paper = CreateWindowExA(0, "weentest", "paper",
+                                     WS_OVERLAPPEDWINDOW, 0, 0, 300, 200, NULL,
+                                     NULL, NULL, NULL);
+        HDC dc = GetDC(paper);
+        HFONT tahoma = CreateFontA(-11, 0, 0, 0, FW_NORMAL, 0, 0, 0, 0, 0, 0,
+                                   0, 0, "Tahoma");
+        HFONT sans = CreateFontA(-11, 0, 0, 0, FW_NORMAL, 0, 0, 0, 0, 0, 0, 0,
+                                 0, "MS Sans Serif");
+        HFONT bold = CreateFontA(-11, 0, 0, 0, FW_BOLD, 0, 0, 0, 0, 0, 0, 0, 0,
+                                 "Tahoma");
+        SIZE a, b, c;
+        HGDIOBJ was = SelectObject(dc, tahoma);
+        GetTextExtentPoint32A(dc, "Western", 7, &a);
+        SelectObject(dc, sans);
+        GetTextExtentPoint32A(dc, "Western", 7, &b);
+        SelectObject(dc, bold);
+        GetTextExtentPoint32A(dc, "Western", 7, &c);
+        SelectObject(dc, was);
+        CHECK(a.cx > 0 && b.cx > 0, "both faces measured something");
+        CHECK(a.cx != b.cx, "a face asked for by name is not the other one");
+        CHECK(c.cx > a.cx, "and the bold cut of one is wider than the plain");
+        DeleteObject(tahoma);
+        DeleteObject(sans);
+        DeleteObject(bold);
+        ReleaseDC(paper, dc);
+        DestroyWindow(paper);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

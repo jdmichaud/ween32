@@ -290,6 +290,15 @@ int ween_frame_width(const struct ween_wnd *w)
                                                : WEEN_NC_FRAME);
 }
 
+/* How tall this window's caption is. A tool window -- a palette floating over
+ * the window it belongs to -- wears a shorter one with a smaller close box in
+ * it and nothing else, which is what the machine's Fonts bar is. */
+int ween_caption_height(const struct ween_wnd *w)
+{
+    return ween_ncm((w->ex_style & WS_EX_TOOLWINDOW) ? WEEN_NC_SMCAPTION
+                                                     : WEEN_NC_CAPTION);
+}
+
 /* The strip the menu bar occupies, 0 when the window has no menu. A window
  * whose menu goes in a band of its own — a shell's is inside the rebar —
  * hangs none off the frame, so there is nothing to except here. */
@@ -303,7 +312,7 @@ static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
 {
     if (ween_has_caption(w)) {
         *ox = ween_frame_width(w);
-        *oy = ween_frame_width(w) + ween_ncm(WEEN_NC_CAPTION) +
+        *oy = ween_frame_width(w) + ween_caption_height(w) +
               ween_menu_bar_height(w);
     } else {
         *ox = ween_border_width(w);
@@ -528,7 +537,9 @@ BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD ex_style)
                                                      : WEEN_NC_FRAME);
         rect->left -= frame;
         rect->right += frame;
-        rect->top -= frame + ween_ncm(WEEN_NC_CAPTION) +
+        rect->top -= frame +
+                     ween_ncm((ex_style & WS_EX_TOOLWINDOW) ? WEEN_NC_SMCAPTION
+                                                            : WEEN_NC_CAPTION) +
                      (menu ? ween_ncm(WEEN_NC_MENU) : 0);
         rect->bottom += frame;
     }
@@ -598,10 +609,11 @@ HWND ween_top_level(HWND wnd)
 static RECT nc_button_rect(const struct ween_wnd *w, int which)
 {
     RECT r;
+    int tool = (w->ex_style & WS_EX_TOOLWINDOW) != 0;
     int frame = ween_frame_width(w);
-    int cap = ween_ncm(WEEN_NC_CAPTION);
-    int bw = ween_ncm(WEEN_NC_BTN_W);
-    int bh = ween_ncm(WEEN_NC_BTN_H);
+    int cap = ween_caption_height(w);
+    int bw = ween_ncm(tool ? WEEN_NC_SMBTN_W : WEEN_NC_BTN_W);
+    int bh = ween_ncm(tool ? WEEN_NC_SMBTN_H : WEEN_NC_BTN_H);
     r.left = w->w - frame - ween_ncm(2) - bw;
     if (which >= 1) /* the gap sits between close and the other two */
         r.left -= ween_ncm(2) + bw * which;
@@ -619,12 +631,13 @@ static RECT nc_close_rect(const struct ween_wnd *w)
 /* Which caption buttons a window has, by its style. */
 static int nc_has_min(const struct ween_wnd *w)
 {
-    return (w->style & WS_MINIMIZEBOX) != 0;
+    /* a tool window's caption holds the close box and nothing else */
+    return !(w->ex_style & WS_EX_TOOLWINDOW) && (w->style & WS_MINIMIZEBOX);
 }
 
 static int nc_has_max(const struct ween_wnd *w)
 {
-    return (w->style & WS_MAXIMIZEBOX) != 0;
+    return !(w->ex_style & WS_EX_TOOLWINDOW) && (w->style & WS_MAXIMIZEBOX);
 }
 
 /* A question mark before the close box, which a window asks for with
@@ -753,8 +766,11 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         wnd->next_top = g_tops;
         g_tops = wnd;
         /* A menu does not take the keyboard: the window under it keeps its
-         * focus, so its caret is still there when the menu goes away. */
-        if (!(ex_style & WS_EX_NOACTIVATE)) {
+         * focus, so its caret is still there when the menu goes away. And a
+         * window made without being shown takes nothing either — what is
+         * active is what is on the screen, so a palette built ahead of time
+         * and shown later leaves the caret where it was. */
+        if (!(ex_style & WS_EX_NOACTIVATE) && (style & WS_VISIBLE)) {
             g_active = wnd;
             g_focus = wnd;
         }
@@ -860,6 +876,19 @@ BOOL ShowWindow(HWND wnd, int cmd)
     if (!wnd->parent && wnd->backend_win && ween_active_backend &&
         ween_active_backend->show)
         ween_active_backend->show(wnd->backend_win, wnd->visible);
+    /* Showing a window of its own is what makes it the active one — that is
+     * where a dialog gets the keyboard from. The two commands that say "and
+     * do not activate it" are how a palette is floated over the window being
+     * worked in without taking the caret out of it. */
+    if (!wnd->parent && wnd->visible && cmd != SW_SHOWNA &&
+        cmd != SW_SHOWNOACTIVATE && !(wnd->ex_style & WS_EX_NOACTIVATE)) {
+        g_active = wnd;
+        /* The keyboard goes to it unless it is already inside it: a dialog
+         * that put the caret in one of its fields while it was still hidden
+         * keeps it there when it comes up. */
+        if (!g_focus || ween_top_level(g_focus) != wnd)
+            g_focus = wnd;
+    }
     ween_damage_all(wnd);
     return was;
 }
@@ -2430,7 +2459,7 @@ static void nc_track_close(struct ween_wnd *top)
 static void nc_track_menu(struct ween_wnd *top, const ween_event *ev)
 {
     int frame = ween_frame_width(top);
-    int bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    int bar_y = frame + ween_caption_height(top);
     int index;
 
     ween_menu_layout_bar(top->menu, ween_gui_font(), top->w - 2 * frame);
@@ -2997,11 +3026,11 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 return HTBOTTOM;
         }
         if (wnd->menu &&
-            y >= frame + ween_ncm(WEEN_NC_CAPTION) &&
-            y < frame + ween_ncm(WEEN_NC_CAPTION) + ween_ncm(WEEN_NC_MENU) &&
+            y >= frame + ween_caption_height(wnd) &&
+            y < frame + ween_caption_height(wnd) + ween_ncm(WEEN_NC_MENU) &&
             x >= frame && x < wnd->w - frame)
             return HTMENU;
-        if (y < frame + ween_ncm(WEEN_NC_CAPTION) && y >= frame && x >= frame &&
+        if (y < frame + ween_caption_height(wnd) && y >= frame && x >= frame &&
             x < wnd->w - frame)
             return HTCAPTION;
         return HTCLIENT;
@@ -3044,7 +3073,7 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         /* caption gradient + title (bold, as Win2k captions were) + close */
         int frame = ween_frame_width(wnd);
-        int cap = ween_ncm(WEEN_NC_CAPTION);
+        int cap = ween_caption_height(wnd);
         /* the gradient holds its end colours behind the icon and the
          * buttons; see ween_classic_caption */
         /* What the gradient holds its start colour across. Two past the
@@ -3057,8 +3086,11 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * default; a dialog has no system-menu icon at all, so its title
          * starts hard left and its gradient starts there — which is where
          * the machine's Folder Options has it. */
-        int shows_icon =
-            wnd->icon || ((wnd->style & WS_SYSMENU) && !wnd->is_dialog);
+        /* A tool window's caption holds its title and its close box and
+         * nothing else — no icon, and no room kept for one. */
+        int shows_icon = !(wnd->ex_style & WS_EX_TOOLWINDOW) &&
+                         (wnd->icon ||
+                          ((wnd->style & WS_SYSMENU) && !wnd->is_dialog));
         int icon_w = shows_icon ? ween_ncm(WEEN_NC_SMICON) +
                                       (wnd->icon ? ween_ncm(2) : 0)
                                 : 0;
@@ -3076,10 +3108,18 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int nbtn = 1 + (nc_has_min(wnd) ? 1 : 0) + (nc_has_max(wnd) ? 1 : 0) +
                    (nc_has_help(wnd) ? 1 : 0);
         RECT lb = nc_button_rect(wnd, nbtn - 1);
-        int buttons_w = wnd->w - frame -
-                        (lb.left - (nc_has_help(wnd) ? 0 : ween_ncm(2)));
+        /* A tool window's ramp stops at the close box's very edge too: its
+         * caption has no room to spare and the machine's leaves none. */
+        int flush = nc_has_help(wnd) || (wnd->ex_style & WS_EX_TOOLWINDOW);
+        int buttons_w =
+            wnd->w - frame - (lb.left - (flush ? 0 : ween_ncm(2)));
+        /* Whether this is the window the keyboard belongs to: the active one
+         * itself, or something it owns — a palette floating over its own
+         * window is drawn active with it, the way the machine draws one. */
+        int active = wnd == g_active ||
+                     (g_active && ween_top_level(g_active) == wnd);
         ween_classic_caption(s, frame, frame, wnd->w - 2 * frame, cap - 1,
-                             icon_w, buttons_w);
+                             icon_w, buttons_w, active);
         /* The gradient already holds its start colour across icon_w; this is
          * what goes there. A window without one keeps its title hard left,
          * which is where a window without a system menu wants it anyway. */
@@ -3100,9 +3140,14 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         const ween_strike *f = ween_gui_font_bold();
         if (f) {
-            int ty = frame + (cap - (f->ascent - f->descent)) / 2 - 1;
+            /* Centred in the caption, the odd pixel going below the
+             * title rather than above it: a nineteen-pixel caption comes out
+             * the same either way, a tool window's sixteen does not, and the
+             * machine's sits low. */
+            int ty = frame + (cap - (f->ascent - f->descent) + 1) / 2 - 1;
             ween_strike_draw(f, s, title_x, ty, wnd->text,
-                             (int)strlen(wnd->text), WEEN_CAP_TEXT);
+                             (int)strlen(wnd->text),
+                             active ? WEEN_CAP_TEXT : WEEN_CAP_INACT_TEXT);
         }
         if (wnd->style & WS_SYSMENU) {
             struct ween_dc dc;

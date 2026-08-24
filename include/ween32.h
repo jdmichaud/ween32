@@ -401,10 +401,9 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define WS_EX_DLGMODALFRAME 0x00000001L
 #define WS_EX_CLIENTEDGE 0x00000200L
 #define WS_EX_CONTROLPARENT 0x00010000L
-/* A caption with a question mark in it, left of the close box: the window is
- * offering per-control help. A window with either size box does not get one,
- * which is why it is a dialog's mark. */
-#define WS_EX_CONTEXTHELP 0x00000400L
+/* A palette that floats over the window it belongs to: a shorter caption, a
+ * smaller close box and nothing else in it, and no place in the task bar. */
+#define WS_EX_TOOLWINDOW 0x00000080L
 /* A window that does not take the keyboard when it appears — which is what a
  * menu is: the window under it keeps its focus, and its caret with it. */
 #define WS_EX_NOACTIVATE 0x08000000L
@@ -1217,7 +1216,9 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 
 #define SW_HIDE 0
 #define SW_SHOWNORMAL 1
+#define SW_SHOWNOACTIVATE 4
 #define SW_SHOW 5
+#define SW_SHOWNA 8
 
 /* ---- virtual keys ------------------------------------------------------- */
 
@@ -1254,6 +1255,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 /* ---- system colors (indices as on Windows) ------------------------------ */
 
 #define COLOR_ACTIVECAPTION 2
+#define COLOR_INACTIVECAPTION 3
 #define COLOR_WINDOWFRAME 6
 /* The grey a document window's spare space is filled with -- the surround a
  * picture smaller than its window sits on. */
@@ -1263,6 +1265,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define COLOR_MENUTEXT 7
 #define COLOR_WINDOWTEXT 8
 #define COLOR_CAPTIONTEXT 9
+#define COLOR_INACTIVECAPTIONTEXT 19
 #define COLOR_BTNFACE 15
 #define COLOR_BTNSHADOW 16
 #define COLOR_HIGHLIGHT 13
@@ -1276,6 +1279,7 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define COLOR_INFOTEXT 23
 #define COLOR_INFOBK 24
 #define COLOR_GRADIENTACTIVECAPTION 27
+#define COLOR_GRADIENTINACTIVECAPTION 28
 
 /* ---- DrawEdge / DrawFrameControl ---------------------------------------- */
 

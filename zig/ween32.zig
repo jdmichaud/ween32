@@ -645,6 +645,7 @@ pub const WS_CLIPSIBLINGS = 0x04000000;
 pub const WS_CLIPCHILDREN = 0x02000000;
 pub const WS_OVERLAPPEDWINDOW = (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
 pub const WS_EX_DLGMODALFRAME = 0x00000001;
+pub const WS_EX_TOOLWINDOW = 0x00000080;
 pub const WS_EX_CLIENTEDGE = 0x00000200;
 pub const WS_EX_CONTROLPARENT = 0x00010000;
 pub const WS_EX_CONTEXTHELP = 0x00000400;
@@ -953,7 +954,9 @@ pub const SC_CONTEXTHELP = 0xF180;
 pub const SC_RESTORE = 0xF120;
 pub const SW_HIDE = 0;
 pub const SW_SHOWNORMAL = 1;
+pub const SW_SHOWNOACTIVATE = 4;
 pub const SW_SHOW = 5;
+pub const SW_SHOWNA = 8;
 pub const VK_BACK = 0x08;
 pub const VK_TAB = 0x09;
 pub const VK_RETURN = 0x0D;
@@ -1164,6 +1167,19 @@ pub const WEEN32_HAS_TABS = 1;
 pub const WEEN32_HAS_TREEVIEW = 1;
 pub const WEEN32_HAS_LISTVIEW = 1;
 pub const WEEN32_HAS_TRACKBAR = 1;
+pub const TOOLBARCLASSNAMEA = "ToolbarWindow32";
+
+/// One button on a toolbar, as TB_ADDBUTTONS takes them.
+pub const TBBUTTON = extern struct {
+    iBitmap: c_int = 0,
+    idCommand: c_int = 0,
+    fsState: u8 = 0,
+    fsStyle: u8 = 0,
+    bReserved: [2]u8 = .{ 0, 0 },
+    dwData: usize = 0,
+    iString: isize = 0,
+};
+
 pub const TBSTYLE_BUTTON = 0x0000;
 pub const TBSTYLE_SEP = 0x0001;
 pub const TBSTYLE_CHECK = 0x0002;

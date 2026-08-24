@@ -908,7 +908,7 @@ static int bar_hit(const menu_session *s, const ween_event *ev, int *index)
     if (!s->bar_wnd || ev->win != s->bar_wnd->backend_win)
         return 0;
     frame = ween_frame_width(s->bar_wnd);
-    bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    bar_y = frame + ween_caption_height(s->bar_wnd);
     bar_h = ween_ncm(WEEN_NC_MENU);
     if (ev->y < bar_y || ev->y >= bar_y + bar_h || ev->x < frame ||
         ev->x >= s->bar_wnd->w - frame)
@@ -946,7 +946,7 @@ static void bar_open(menu_session *s, int index)
     s->bar_wnd->menu_hot = index;
     ween_damage_all(s->bar_wnd);
     frame = ween_frame_width(s->bar_wnd);
-    bar_y = frame + ween_ncm(WEEN_NC_CAPTION);
+    bar_y = frame + ween_caption_height(s->bar_wnd);
     /* Where the window actually is, not where it asked to be: under a window
      * manager that puts it somewhere else the two part company, and the menu
      * opens beside a window that is not there. */

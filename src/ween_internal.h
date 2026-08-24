@@ -44,6 +44,12 @@ typedef struct {
 #define WEEN_CAP_LEFT WEEN_RGBX(10, 36, 106)   /* #0A246A */
 #define WEEN_CAP_RIGHT WEEN_RGBX(166, 202, 240) /* #A6CAF0 */
 #define WEEN_CAP_TEXT WEEN_RGBX(255, 255, 255)
+/* And the same three for a window that is not the active one: the grey ramp
+ * a Windows 2000 caption goes to when the keyboard is somewhere else, with
+ * its title in the face colour rather than white. */
+#define WEEN_CAP_INACT_LEFT WEEN_RGBX(128, 128, 128)
+#define WEEN_CAP_INACT_RIGHT WEEN_RGBX(192, 192, 192)
+#define WEEN_CAP_INACT_TEXT WEEN_RGBX(212, 208, 200)
 
 int ween_surface_init(ween_surface *s, int w, int h);
 int ween_surface_resize(ween_surface *s, int w, int h);
@@ -117,7 +123,7 @@ int ween_classic_edge(ween_surface *s, int x, int y, int w, int h,
 /* Shorthand for the button edge (EDGE_RAISED/SUNKEN | BF_RECT | BF_SOFT). */
 void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken);
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
-                          int icon_w, int buttons_w);
+                          int icon_w, int buttons_w, int active);
 #define WEEN_NC_SMICON 16 /* SM_CXSMICON: the caption icon, and its gradient stop */
 /* DrawFrameControl's DFC_BUTTON glyphs (DFCS_* flags as in the SDK). */
 void ween_classic_check(ween_surface *s, int x, int y, int w, int h, unsigned flags);
@@ -185,6 +191,11 @@ typedef struct {
 
 int ween_strike_init(ween_strike *f, const unsigned char *ttf, size_t len, int ppem);
 int ween_strike_text_width(const ween_strike *f, const char *s, int len);
+/* Text with the two styles the glyphs do not hold: slanted, and ruled under
+ * on the row below the baseline. */
+void ween_strike_draw_styled(const ween_strike *f, ween_surface *s, int x,
+                             int y, const char *text, int len,
+                             ween_color color, int italic, int underline);
 int ween_strike_char_advance(const ween_strike *f, unsigned char c);
 /* What GDI would *report* for a character or string — outline advances,
  * rounded up; wider than the strike actually draws. */
@@ -214,6 +225,9 @@ const ween_strike *ween_gui_font(void);
 const ween_strike *ween_dialog_font(void);
 const ween_strike *ween_font_by_face(const char *face);      /* Tahoma 11px — DEFAULT_GUI_FONT */
 const ween_strike *ween_gui_font_bold(void); /* Tahoma Bold 11px */
+/* A face at a size, as CreateFont asks for one: the nearest strike that face
+ * carries, and the bold cut when the weight says so. */
+const ween_strike *ween_font_create(const char *face, int height, int weight);
 const ween_marlett *ween_caption_font(void);
 
 /* ---- GDI objects and device contexts ------------------------------------ */
@@ -223,6 +237,9 @@ typedef struct ween_gdiobj {
            WEEN_OBJ_PEN } kind;
     ween_color color;         /* brush fill / pen colour (surface format) */
     const ween_strike *font;  /* font strike */
+    /* The two a strike cannot carry: a slant and a rule under the line,
+     * both of which GDI puts on at drawing time rather than in the glyphs. */
+    int font_italic, font_underline;
     ween_surface bitmap;      /* WEEN_OBJ_BITMAP/ICON: the pixels */
     unsigned char *mask;      /* WEEN_OBJ_ICON: 1 where a pixel is drawn */
     int pen_style, pen_width; /* WEEN_OBJ_PEN: PS_*, and its width in pixels */
@@ -502,12 +519,17 @@ struct ween_wnd {
 /* Caption strip: 19px at 96 dpi, of which the gradient paints the top 18 and
  * the last row stays face-coloured — what win32 does for CaptionHeight=18. */
 #define WEEN_NC_CAPTION 19
+/* A tool window's, which is what a palette floating over a drawing wears:
+ * shorter, with a smaller close box and no other buttons. */
+#define WEEN_NC_SMCAPTION 16
 /* The menu bar: 19px at 96 dpi, measured off the wine reference — the caption
  * ends and the client area begins exactly that far apart. */
 #define WEEN_NC_MENU 19
 #define WEEN_NC_MENUCHECK 13 /* SM_CXMENUCHECK: the tick column in a popup */
 #define WEEN_NC_BTN_W 16
 #define WEEN_NC_BTN_H 14
+#define WEEN_NC_SMBTN_W 10
+#define WEEN_NC_SMBTN_H 11
 
 /* ---- DPI ------------------------------------------------------------------
  * Classic win32 model: one system dpi; fonts are sized in points against it
@@ -582,7 +604,9 @@ int ween_wnd_reserve_text(struct ween_wnd *w, int len); /* room for len + NUL */
 /* The client origin of a window within its top-level surface. */
 void ween_client_origin(HWND wnd, int *ox, int *oy);
 HWND ween_top_level(HWND wnd);
-int ween_frame_width(const struct ween_wnd *w); /* scaled, per style */
+int ween_frame_width(const struct ween_wnd *w);
+/* How tall this window's caption is: a tool window's is shorter. */
+int ween_caption_height(const struct ween_wnd *w); /* scaled, per style */
 /* Whether the window carries a caption — and so draws WS_BORDER as frame. */
 int ween_has_caption(const struct ween_wnd *w);
 /* Whether a push button draws the default ring: the keyboard takes it. */

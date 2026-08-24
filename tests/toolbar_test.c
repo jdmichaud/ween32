@@ -434,6 +434,45 @@ int main(void)
         DestroyWindow(rebar);
     }
 
+    {
+        /* A bar that was not asked to be flat: every button wears the push
+         * button's own edge all the time — white along the top and left,
+         * shadow and dark shadow down the other two — and the size the bar
+         * was given is the size a button with only a picture takes. */
+        HWND raised = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                      WS_CHILD | WS_VISIBLE, 0, 25, 120, 28, w,
+                                      NULL, NULL, NULL);
+        TBBUTTON one;
+        RECT r, wr;
+        const ween_surface *s;
+        SendMessageA(raised, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        SendMessageA(raised, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+        memset(&one, 0, sizeof(one));
+        one.iBitmap = -1;
+        one.idCommand = ID_BACK;
+        one.fsState = TBSTATE_ENABLED;
+        one.fsStyle = TBSTYLE_CHECK;
+        SendMessageA(raised, TB_ADDBUTTONSA, 1, (LPARAM)&one);
+        SendMessageA(raised, TB_GETITEMRECT, 0, (LPARAM)&r);
+        CHECK(r.right - r.left == 23,
+              "the button size the bar was given is the width it takes");
+        CHECK(r.bottom - r.top == 22, "and the height");
+        GetWindowRect(raised, &wr);
+        InvalidateRect(w, NULL, FALSE);
+        UpdateWindow(w);
+        s = ween_headless_surface();
+        if (s) {
+            long bx = wr.left + r.left, by = wr.top + r.top;
+            CHECK(s->px[by * s->w + bx] == WEEN_WHITE,
+                  "a raised button starts with the white highlight");
+            CHECK(s->px[by * s->w + bx + 22] == WEEN_DKSHADOW,
+                  "and ends with the dark shadow on the other side");
+            CHECK(s->px[(by + 21) * s->w + bx] == WEEN_DKSHADOW,
+                  "as it does along the bottom");
+        }
+        DestroyWindow(raised);
+    }
+
     DestroyWindow(w);
 
     if (g_failures) {
