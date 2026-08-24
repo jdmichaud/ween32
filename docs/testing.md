@@ -517,6 +517,43 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
   WEEN32_SCRIPT="w:400 m:300,60 w:200 m:395,60 w:900" ./examples/explorer
 ```
 
+#### Renaming in place
+
+F2 over the list, or a click on the name of the file already picked, opens a
+box over that name to type a new one in. The machine's box was measured on
+its C: window and ours is the same to the pixel:
+
+- it is **two pixels further left** than the name's own blue box, **twelve
+  wider**, and exactly as tall as the row — 81x17 over a 69-wide box for
+  `CONFIG.SYS`, 84 over 72 for `Program Files`;
+- one pixel of black around it, white inside, and the name in it picked out
+  in the selection colours — a band thirteen rows tall, two below the top of
+  the box;
+- the name lands **one pixel right** of where the row drew it, which is the
+  margin the edit control keeps anyway;
+- and the row keeps its icon and its other columns, with no highlight left
+  under the box.
+
+```sh
+# five downs picks CONFIG.SYS in the fixture's list; F2 is 113
+WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+  WEEN32_BMP=/tmp/ed%d.bmp \
+  WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:300 k:113 w:600" \
+  ./examples/explorer
+```
+
+A 100x26 strip around the box, ours against the machine's, differs by
+**113 pixels of 2600** — every one of them in the seven columns of the file's
+icon at the left of the strip, which is the quantisation the whole fixture
+has. The box itself, its border, its white, its blue and its letters are
+identical.
+
+The click that opens it is not the first one: the view waits out the
+double-click time after a press on the name already picked, because a second
+press within it is a double click and opening what it is on comes first. The
+machine's box appears between 450 and 550 ms after that click, timed by
+taking the screen 50 ms at a time.
+
 #### The bars that can be put away
 
 View > Toolbars turns each band off and on. With the address bar off the
