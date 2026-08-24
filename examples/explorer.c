@@ -4911,7 +4911,10 @@ static HIMAGELIST build_images(const glyph *glyphs, int *missing)
         for (int i = 0; i < (int)(sizeof(shell) / sizeof(*shell)); i++) {
             char path[600];
             HICON icon = NULL;
-            if (g_fixture && !shell[i]) { /* My Computer, drawn from the art */
+            if (!shell[i]) {
+                /* My Computer, drawn from the art rather than loaded: the
+                 * status bar wears it and so does the top of the folder tree,
+                 * fixture or no fixture. */
                 add_glyph(il, &g_shell_computer);
                 continue;
             }
@@ -5359,7 +5362,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if (g_fixture) {
             fill_fixture_tree();
         } else {
-            HTREEITEM root = add_node(NULL, "/", IMG_COMPUTER, IMG_COMPUTER, 1);
+            /* the same My Computer the status bar shows, which is what the
+             * machine puts at the top of its tree */
+            HTREEITEM root = add_node(NULL, "/", IMG_SHELL_COMPUTER,
+                                      IMG_SHELL_COMPUTER, 1);
             SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)root);
         }
         show_directory(g_start[0] ? g_start : home_path());
