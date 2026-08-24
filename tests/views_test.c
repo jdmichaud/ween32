@@ -1280,6 +1280,8 @@ int main(void)
                                   10, 150, 100, cw, (HMENU)(UINT_PTR)8, NULL,
                                   NULL);
         const ween_surface *s;
+        COMBOBOXINFO cbi;
+        HWND list;
         int ox, oy, first_top = -1, first_bottom = -1, then_top = -1;
 
         SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"one");
@@ -1294,12 +1296,19 @@ int main(void)
         SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM)"three");
         SendMessageA(cb, CB_SETCURSEL, 0, 0);
 
-        /* open it, and let go — which is where the tracking used to stop */
+        /* open it, and let go — which is where the tracking used to stop.
+         * The list is a window of its own, so what it drew is in its own
+         * surface and the box will say which window that is. */
         SendMessageA(cb, WM_LBUTTONDOWN, 0, MAKELPARAM(140, 8));
         SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(140, 8));
-        InvalidateRect(cw, NULL, TRUE);
+        memset(&cbi, 0, sizeof(cbi));
+        cbi.cbSize = sizeof(cbi);
+        GetComboBoxInfo(cb, &cbi);
+        CHECK(cbi.hwndList != NULL, "an open list is a window, and it says so");
+        list = cbi.hwndList;
+        InvalidateRect(list, NULL, TRUE);
         ween_flush_paint();
-        s = &cw->surface;
+        s = &list->surface;
         for (int y = 0; y < s->h; y++)
             if ((s->px[(size_t)y * s->w + 20] & 0xffffff) == WEEN_CAP_LEFT) {
                 if (first_top < 0)
@@ -1310,11 +1319,15 @@ int main(void)
 
         /* one item further down, in the coordinates a routed move arrives in */
         ween_client_origin(cb, &ox, &oy);
-        SendMessageA(cb, WM_MOUSEMOVE, 0,
-                     MAKELPARAM(20, first_bottom + 2 - oy));
-        InvalidateRect(cw, NULL, TRUE);
+        {
+            RECT lr;
+            ween_combo_list_rect(cb, &lr);
+            SendMessageA(cb, WM_MOUSEMOVE, 0,
+                         MAKELPARAM(20, lr.top + first_bottom + 2 - oy));
+        }
+        InvalidateRect(list, NULL, TRUE);
         ween_flush_paint();
-        s = &cw->surface;
+        s = &list->surface;
         for (int y = 0; y < s->h && then_top < 0; y++)
             if ((s->px[(size_t)y * s->w + 20] & 0xffffff) == WEEN_CAP_LEFT)
                 then_top = y;

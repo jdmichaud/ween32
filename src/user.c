@@ -1640,7 +1640,6 @@ static void flush_one(struct ween_wnd *top)
     paint_tree(top);
     ween_surface_clip(&top->surface, d.left, d.top, d.right - d.left,
                       d.bottom - d.top);
-    ween_popup_paint(); /* a dropped-down list goes over everything */
     if (ween_active_backend)
         ween_active_backend->present(top->backend_win, &top->surface, &d);
     ween_painting = 0;
@@ -2233,8 +2232,6 @@ static void route_mouse(struct ween_wnd *top, UINT msg, int x, int y)
     g_cursor_top = top; /* the last place the pointer was seen */
     g_cursor_x = x;
     g_cursor_y = y;
-    if (!dst)
-        dst = ween_popup_hit(x, y); /* an open drop-down is over everything */
     if (!dst)
         dst = child_at(top, x, y);
     if (msg == WM_MOUSEMOVE) {

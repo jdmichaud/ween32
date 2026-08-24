@@ -1311,6 +1311,11 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 /* The one control showing a drop-down list, if any. Only a combo box does
  * this today, and only one can be open at a time — as on Windows. */
 static HWND g_dropped;
+/* And the window the list is drawn in. It is a window of its own, as
+ * ComboLBox is on Windows, so that a list longer than the window the box
+ * sits in hangs below it instead of being cut off at its edge. */
+static HWND g_drop_wnd;
+#define WEEN_CBLIST_CLASS "ComboLBox" /* the class win32 gives it */
 
 /* Tell the parent something happened, the way a common control does. */
 /* A notification that carries a row and its text — which is what the two ends
@@ -1934,26 +1939,29 @@ static void combo_list_rect(HWND wnd, int *x, int *y, int *w, int *h)
     *h = combo_list_height(wnd);
 }
 
-void ween_popup_paint(void)
+/* Draw the open list, with its top-left corner at (x, y) of `s`. The list
+ * has a window of its own now, so that is its own surface at 0,0; it is
+ * written this way because everything about where a row sits was worked out
+ * against the box, and moving the origin is all that changed. */
+static void combo_list_draw(ween_surface *surface, int x, int y)
 {
-    struct ween_wnd *top;
     ween_items *it;
     const ween_strike *f;
-    int x, y, w, h, ih;
+    int w, h, ih;
     if (!g_dropped)
         return;
-    top = ween_top_level(g_dropped);
     it = g_dropped->ctl;
     f = g_dropped->font ? g_dropped->font : ween_gui_font();
     ih = item_height(g_dropped);
-    combo_list_rect(g_dropped, &x, &y, &w, &h);
+    w = g_dropped->w;
+    h = combo_list_height(g_dropped);
 
     /* A combo's list is a list box with WS_BORDER, and a classic window
      * border is one pixel of COLOR_WINDOWFRAME — flat black. It was drawn as
      * a sunken edge instead, which over the window beneath is a grey line on
      * two sides and a white one on the other two: no border to speak of. */
-    ween_surface_fill(&top->surface, x, y, w, h, WEEN_BLACK);
-    ween_surface_fill(&top->surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
+    ween_surface_fill(surface, x, y, w, h, WEEN_BLACK);
+    ween_surface_fill(surface, x + 1, y + 1, w - 2, h - 2, WEEN_WINDOWBG);
     /* The rows that fit, from wherever the list is scrolled to; a bar down
      * the side when there are more than that, and the corner it can be
      * dragged bigger by underneath it. */
@@ -1963,10 +1971,10 @@ void ween_popup_paint(void)
          * in the corner. */
         int sb = ween_scroll_metric();
         int rows = combo_list_rows(g_dropped);
-        ween_draw_scrollbar(&top->surface, x + w - 1 - sb, y + 1, sb,
+        ween_draw_scrollbar(surface, x + w - 1 - sb, y + 1, sb,
                             combo_bar_h(g_dropped), 1, 1, it ? it->top : 0,
                             rows, 0, (it ? it->count : 1) - 1);
-        ween_classic_sizegrip(&top->surface, x + w - 2, y + h - 2);
+        ween_classic_sizegrip(surface, x + w - 2, y + h - 2);
     }
     for (int i = it ? it->top : 0; it && i < it->count; i++) {
         int iy = y + 1 + (i - it->top) * ih;
@@ -1980,7 +1988,7 @@ void ween_popup_paint(void)
              * width of its label, as a tree's is — not the whole row. */
             int ix = x + 4 + it->indent[i] * WEEN_CBEX_INDENT;
             if (it->image[i] >= 0)
-                ween_imagelist_draw(it->images, it->image[i], &top->surface, ix,
+                ween_imagelist_draw(it->images, it->image[i], surface, ix,
                                     iy + (ih - WEEN_CBEX_IMAGE) / 2);
             tx = ix + WEEN_CBEX_IMAGE + WEEN_CBEX_GAP;
         }
@@ -1994,11 +2002,11 @@ void ween_popup_paint(void)
                 by = iy + 1; /* nearly the whole row, as the shot has it */
                 bh = ih - 1;
             }
-            ween_surface_fill(&top->surface, tx - 1, by, bar, bh,
+            ween_surface_fill(surface, tx - 1, by, bar, bh,
                               WEEN_CAP_LEFT);
         }
         if (f)
-            ween_strike_draw(f, &top->surface, tx, iy + (ih - th) / 2,
+            ween_strike_draw(f, surface, tx, iy + (ih - th) / 2,
                              it->item[i], (int)strlen(it->item[i]),
                              selected ? WEEN_WHITE : WEEN_BLACK);
     }
@@ -2016,15 +2024,106 @@ void ween_combo_list_rect(HWND combo, RECT *out)
     out->bottom = y + h;
 }
 
-HWND ween_popup_hit(int x, int y)
+/* Where the list goes on the screen: under the box, wherever the window the
+ * box is in happens to be. */
+static void combo_list_screen_rect(HWND wnd, int *x, int *y, int *w, int *h)
 {
-    int px, py, pw, ph;
-    if (!g_dropped)
-        return NULL;
-    combo_list_rect(g_dropped, &px, &py, &pw, &ph);
-    if (x >= px && x < px + pw && y >= py && y < py + ph)
-        return g_dropped;
-    return NULL;
+    int ox, oy;
+    combo_list_rect(wnd, x, y, w, h);
+    ween_window_origin(ween_top_level(wnd), &ox, &oy);
+    *x += ox;
+    *y += oy;
+}
+
+/* What happens on the list is the box's business: a point on it is moved
+ * into the box's own frame and handed on, which is how every line of the
+ * tracking below goes on working now that the list is somewhere else. */
+static LRESULT CALLBACK combo_list_proc(HWND wnd, UINT msg, WPARAM wp,
+                                        LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        BeginPaint(wnd, &ps);
+        combo_list_draw(&wnd->surface, 0, 0);
+        EndPaint(wnd, &ps);
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+        if (g_dropped) {
+            int ox, oy, px, py, pw, ph;
+            ween_client_origin(g_dropped, &ox, &oy);
+            combo_list_rect(g_dropped, &px, &py, &pw, &ph);
+            return SendMessageA(g_dropped, msg, wp,
+                                MAKELPARAM(px + GET_X_LPARAM(lp) - ox,
+                                           py + GET_Y_LPARAM(lp) - oy));
+        }
+        return 0;
+    default:
+        break;
+    }
+    return DefWindowProcA(wnd, msg, wp, lp);
+}
+
+static void ensure_combo_list_class(void)
+{
+    static int done;
+    WNDCLASSA wc;
+    if (done)
+        return;
+    done = 1;
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = combo_list_proc;
+    wc.lpszClassName = WEEN_CBLIST_CLASS;
+    wc.hbrBackground = NULL; /* it fills its own */
+    RegisterClassA(&wc);
+}
+
+/* Put the list where it belongs and draw it again: it is dragged taller and
+ * scrolled while it is up, and it is a window, so it has to be moved. */
+static void combo_list_refresh(HWND combo)
+{
+    int x, y, w, h;
+    if (!g_drop_wnd || g_dropped != combo)
+        return;
+    combo_list_screen_rect(combo, &x, &y, &w, &h);
+    MoveWindow(g_drop_wnd, x, y, w, h, FALSE);
+    ween_damage_all(g_drop_wnd);
+}
+
+/* Open the list under a box, or close the one that is open. */
+static void combo_drop(HWND wnd)
+{
+    int x, y, w, h;
+    /* An open list holds the mouse, so that a press anywhere at all comes
+     * back here to put it away. Closing it gives that up. */
+    if (!wnd && g_dropped && GetCapture() == g_dropped)
+        ReleaseCapture();
+    if (g_drop_wnd) {
+        HWND going = g_drop_wnd;
+        g_drop_wnd = NULL;
+        DestroyWindow(going);
+    }
+    g_dropped = wnd;
+    if (!wnd)
+        return;
+    ensure_combo_list_class();
+    combo_list_screen_rect(wnd, &x, &y, &w, &h);
+    /* No caption, so the window system places it exactly and does not
+     * decorate it; not activated, so the box keeps the keyboard. */
+    g_drop_wnd = CreateWindowExA(WS_EX_NOACTIVATE, WEEN_CBLIST_CLASS, "",
+                                 WS_POPUP | WS_VISIBLE, x, y, w, h, NULL, NULL,
+                                 NULL, NULL);
+}
+
+/* The box and, if it is the one open, its list: what is highlighted and how
+ * tall the list is are drawn in two different windows now. */
+static void combo_damage(HWND wnd)
+{
+    ween_damage_all(wnd);
+    combo_list_refresh(wnd);
 }
 
 /* Whether this combo's field can be typed in. CBS_DROPDOWNLIST is
@@ -2088,7 +2187,11 @@ BOOL GetComboBoxInfo(HWND combo, COMBOBOXINFO *info)
     info->stateButton = 0;
     info->hwndCombo = combo;
     info->hwndItem = it ? it->edit : NULL;
-    info->hwndList = NULL; /* the dropped list is drawn, not a window */
+    /* The list is a window of its own, and there is one to name while it is
+     * open. Windows keeps one from the moment the box is made and hides it;
+     * here it is made when the list drops and goes when it closes, so a box
+     * that is not open answers with nothing. */
+    info->hwndList = g_dropped == combo ? g_drop_wnd : NULL;
     return TRUE;
 }
 
@@ -2122,9 +2225,9 @@ static LRESULT CALLBACK combo_field_proc(HWND box, UINT msg, WPARAM wp,
             return 0;
         case VK_ESCAPE:
             if (g_dropped == cb) { /* the list goes; the text stays */
-                g_dropped = NULL;
+                combo_drop(NULL);
                 it->track = -1;
-                ween_damage_all(cb);
+                combo_damage(cb);
             } else {
                 combo_show_sel(cb, it); /* back to what it was */
                 combo_end_edit(cb, it, CBENF_ESCAPE, -1);
@@ -2142,9 +2245,9 @@ static void combo_commit(HWND wnd, ween_items *it)
 {
     it->cursel = it->track;
     it->track = -1;
-    g_dropped = NULL;
+    combo_drop(NULL);
     combo_show_sel(wnd, it);
-    ween_damage_all(wnd);
+    combo_damage(wnd);
     if (wnd->parent)
         SendMessageA(wnd->parent, WM_COMMAND,
                      MAKEWPARAM((WORD)wnd->id, CBN_SELCHANGE), (LPARAM)wnd);
@@ -2263,7 +2366,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 it->top = it->count - rows;
             if (it->top < 0)
                 it->top = 0;
-            ween_damage_all(wnd);
+            combo_damage(wnd);
         }
         return 0;
     case WM_KEYDOWN: {
@@ -2283,7 +2386,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case VK_DOWN:
         case VK_NEXT:
             if (g_dropped != wnd) {
-                g_dropped = wnd; /* the first Down opens it */
+                combo_drop(wnd); /* the first Down opens it */
                 it->track = it->cursel >= 0 ? it->cursel : 0;
             } else {
                 int step = wp == VK_NEXT ? per : 1;
@@ -2306,10 +2409,10 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case VK_ESCAPE:
             if (g_dropped != wnd)
                 return 0;
-            g_dropped = NULL;
+            combo_drop(NULL);
             it->track = -1;
             combo_show_sel(wnd, it); /* back to what was picked before */
-            ween_damage_all(wnd);
+            combo_damage(wnd);
             return 0;
         default:
             return 0;
@@ -2330,7 +2433,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             else if (it->track >= it->top + rows)
                 it->top = it->track - rows + 1;
         }
-        ween_damage_all(wnd);
+        combo_damage(wnd);
         (void)ih;
         (void)cr;
         return 0;
@@ -2370,6 +2473,26 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (g_dropped == wnd) {
+            /* A press that is neither on the list nor on the box puts the
+             * list away and is worth nothing else: the list holds the mouse
+             * while it is open, which is how the press reached this box at
+             * all when it landed on another window entirely. */
+            int lx = ox + GET_X_LPARAM(lp) - px;
+            int on_list = sy >= 0 && sy < ph - 2 && lx >= 0 && lx < pw;
+            int on_box = GET_X_LPARAM(lp) >= -ween_border_width(wnd) &&
+                         GET_X_LPARAM(lp) < wnd->w &&
+                         GET_Y_LPARAM(lp) >= -ween_border_width(wnd) &&
+                         GET_Y_LPARAM(lp) < wnd->h;
+            if (!on_list && !on_box) {
+                it = items_of(wnd);
+                if (it)
+                    it->track = -1;
+                combo_drop(NULL);
+                combo_damage(wnd);
+                return 0;
+            }
+        }
         if (g_dropped == wnd && sy >= 0 && sy < ph - 2) {
             int sb = ween_scroll_metric();
             int sx = oy; /* the press in the list's own coordinates */
@@ -2391,7 +2514,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     int grab;
                     int pos = sb_click(sy, combo_bar_h(wnd), &st, &grab);
                     it->top = sb_clamp(pos, &st);
-                    ween_damage_all(wnd);
+                    combo_damage(wnd);
                     SetCapture(wnd);
                 }
                 return 0;
@@ -2401,18 +2524,18 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 it->track = it->top + sy / (ih ? ih : 1);
             SetCapture(wnd);
         } else if (g_dropped == wnd) {
-            g_dropped = NULL; /* a second click on the control closes it */
+            combo_drop(NULL); /* a second click on the control closes it */
             if (it)
                 it->track = -1;
         } else {
-            g_dropped = wnd;
+            combo_drop(wnd);
             if (it) {
                 it->track = it->cursel;
                 it->opened = 1;
             }
             SetCapture(wnd);
         }
-        ween_damage_all(wnd);
+        combo_damage(wnd);
         return 0;
     }
     case WM_MOUSEMOVE: {
@@ -2439,7 +2562,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 rows = it->count;
             if (rows != it->rows) {
                 it->rows = rows;
-                ween_damage_all(wnd);
+                combo_damage(wnd);
             }
             return 0;
         }
@@ -2450,14 +2573,17 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (at != it->track) {
                 it->track = at;
                 it->opened = 0; /* a drag into the list commits on release */
-                ween_damage_all(wnd);
+                combo_damage(wnd);
             }
         }
         return 0;
     }
     case WM_LBUTTONUP: {
         int ox, oy, px, py, pw, ph, sy, ih = item_height(wnd);
-        if (GetCapture() == wnd)
+        /* The mouse is given back when the list closes, not when the button
+         * comes up: an open list keeps it so that the press that puts it
+         * away is heard wherever it lands. */
+        if (GetCapture() == wnd && g_dropped != wnd)
             ReleaseCapture();
         if (g_dropped != wnd)
             return 0;
@@ -2481,14 +2607,14 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                  (LPARAM)wnd);
             }
             it->track = -1;
-            g_dropped = NULL;
+            combo_drop(NULL);
         } else if (it && !it->opened) {
-            g_dropped = NULL; /* released off the list without opening it */
+            combo_drop(NULL); /* released off the list without opening it */
             it->track = -1;
         }
         if (it)
             it->opened = 0;
-        ween_damage_all(wnd);
+        combo_damage(wnd);
         return 0;
     }
     case WM_KILLFOCUS:
@@ -2496,13 +2622,13 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             it = wnd->ctl;
             if (it)
                 it->track = -1;
-            g_dropped = NULL;
-            ween_damage_all(wnd);
+            combo_drop(NULL);
+            combo_damage(wnd);
         }
         return 0;
     case WM_DESTROY:
         if (g_dropped == wnd)
-            g_dropped = NULL;
+            combo_drop(NULL);
         return 0;
     case WM_CREATE: {
         /* The combo box wears the field border itself, whatever ex-style it
@@ -2574,15 +2700,15 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case CB_SHOWDROPDOWN:
         it = items_of(wnd);
         if (wp && it && it->count) {
-            g_dropped = wnd;
+            combo_drop(wnd);
             it->track = -1;
             it->opened = 1;
         } else if (g_dropped == wnd) {
-            g_dropped = NULL;
+            combo_drop(NULL);
             if (it)
                 it->track = -1;
         }
-        ween_damage_all(wnd);
+        combo_damage(wnd);
         return 0;
     case CB_GETDROPPEDSTATE:
         return g_dropped == wnd;
@@ -2610,7 +2736,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         }
         if (g_dropped == wnd)
-            g_dropped = NULL;
+            combo_drop(NULL);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case CB_SETCURSEL:

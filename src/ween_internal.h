@@ -580,8 +580,6 @@ int ween_toolbar_menu_step(HWND bar, int from, int dir);
 /* A control showing a drop-down paints it after everything else and gets
  * first refusal on the mouse: this is how a combo box's list escapes its
  * own client area without a second top-level window. */
-void ween_popup_paint(void);
-HWND ween_popup_hit(int x, int y);
 /* Where a combo box's dropped list is, in surface pixels — the tests reach
  * for it, since a list that stops at eight rows and can be dragged taller has
  * a size worth checking. */
