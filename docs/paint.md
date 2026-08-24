@@ -192,13 +192,20 @@ means the window has to be told it wants double clicks (`CS_DBLCLKS`) and the
 second click has to reach the tool with the vertices in it rather than start a
 new one.
 
-**Undo is Paint's own, three deep.** win32 has no undo for a picture -- an
+**Undo is Paint's own, eight deep.** win32 has no undo for a picture -- an
 edit control has one for its text and that is all -- so this is the
-application's: the last three states of the picture, kept whole, because a
-drawing program's undo is not a list of operations (a flood fill has no
-inverse worth writing). Three is what the machine keeps, and it was measured
-rather than remembered: five strokes on its Paint, then Ctrl+Z five times,
-and the third undo is the last one that does anything.
+application's: the last states of the picture, kept whole, because a drawing
+program's undo is not a list of operations (a flood fill has no inverse worth
+writing).
+
+The machine keeps three, which was measured rather than remembered: five
+strokes on its Paint, then Ctrl+Z five times, and the third undo is the last
+one that does anything. This keeps **eight**, and that is the one number in
+the program chosen because it is better rather than because it is what Paint
+did -- running out of undo at three is the thing everyone remembers about
+that program. Each level costs a copy of the picture, so the default 512x384
+costs six megabytes for all eight, and none of it is copied until something
+is drawn.
 
 Two things about it are less obvious, and both were wrong here until the
 machine was asked. What is kept has to include the picture's *size*, or an

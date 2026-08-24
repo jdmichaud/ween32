@@ -1,14 +1,21 @@
-//! Undo, as Paint has it: the last three states of the picture, kept whole.
+//! Undo: the last eight states of the picture, kept whole.
 //!
 //! A drawing program's undo is not a list of operations — a flood fill has no
 //! inverse worth writing — so what is kept is the picture itself, copied
-//! before anything changes it. Three of them, which is what Paint keeps.
+//! before anything changes it.
+//!
+//! The machine keeps three, and three is what everyone who has ever run out
+//! of them remembers about it. This keeps eight, which is a deliberate
+//! parting from it: the one number in this program chosen because it is
+//! better rather than because it is what Paint did. Each one costs a copy of
+//! the picture, so a large one costs eight of those — 512x384 is six
+//! megabytes for the lot, and nothing is copied until something is drawn.
 
 const w = @import("ween32");
 const A = @import("app.zig");
 const app = &A.app;
 
-const depth = 3;
+const depth = 8;
 
 const Snapshot = struct {
     dc: w.HDC = undefined,
