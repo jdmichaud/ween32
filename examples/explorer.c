@@ -1454,8 +1454,6 @@ static void make_new_item(const char *base, const char *ext)
     begin_rename_of(name);
 }
 
-/* Open what the list has picked: a folder is walked into, and anything else
- * is left alone — this shell has nothing to open a file with. */
 /* What a double click does, and what Enter does: a folder is gone into, and
  * a file is handed to whatever opens its kind. The fixture's listing is a
  * picture of another machine's disk rather than files that are here, so
