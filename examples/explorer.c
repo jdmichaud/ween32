@@ -4116,7 +4116,9 @@ static HMENU build_background_menu(void)
     AppendMenuA(m, MF_STRING, IDM_CUSTOMIZE_FOLDER,
                 "C&ustomize This Folder...");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "&Paste");
+    /* Paste is greyed until there is something to paste, which is settled
+     * when the menu is put up rather than when it is built. */
+    AppendMenuA(m, MF_STRING | MF_GRAYED, IDM_PASTE, "&Paste");
     AppendMenuA(m, MF_STRING | MF_GRAYED, 0, "Paste &Shortcut");
     AppendMenuA(m, MF_SEPARATOR, 0, NULL);
     AppendMenuA(m, MF_POPUP, (UINT_PTR)new_menu, "Ne&w");
@@ -4156,12 +4158,13 @@ static void build_context_menus(void)
     AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(g_folder_menu, MF_POPUP, (UINT_PTR)build_send_to(), "Se&nd To");
     AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(g_folder_menu, MF_STRING, 0, "Cu&t");
-    AppendMenuA(g_folder_menu, MF_STRING, 0, "&Copy");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_CUT, "Cu&t");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_COPY, "&Copy");
     AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(g_folder_menu, MF_STRING, 0, "Create &Shortcut");
-    AppendMenuA(g_folder_menu, MF_STRING, 0, "&Delete");
-    AppendMenuA(g_folder_menu, MF_STRING, 0, "Rena&me");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_CREATE_SHORTCUT,
+                "Create &Shortcut");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_DELETE, "&Delete");
+    AppendMenuA(g_folder_menu, MF_STRING, IDM_RENAME, "Rena&me");
     AppendMenuA(g_folder_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(g_folder_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
 
@@ -4175,12 +4178,13 @@ static void build_context_menus(void)
     AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(g_file_menu, MF_POPUP, (UINT_PTR)build_send_to(), "Se&nd To");
     AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(g_file_menu, MF_STRING, 0, "Cu&t");
-    AppendMenuA(g_file_menu, MF_STRING, 0, "&Copy");
+    AppendMenuA(g_file_menu, MF_STRING, IDM_CUT, "Cu&t");
+    AppendMenuA(g_file_menu, MF_STRING, IDM_COPY, "&Copy");
     AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
-    AppendMenuA(g_file_menu, MF_STRING, 0, "Create &Shortcut");
-    AppendMenuA(g_file_menu, MF_STRING, 0, "&Delete");
-    AppendMenuA(g_file_menu, MF_STRING, 0, "Rena&me");
+    AppendMenuA(g_file_menu, MF_STRING, IDM_CREATE_SHORTCUT,
+                "Create &Shortcut");
+    AppendMenuA(g_file_menu, MF_STRING, IDM_DELETE, "&Delete");
+    AppendMenuA(g_file_menu, MF_STRING, IDM_RENAME, "Rena&me");
     AppendMenuA(g_file_menu, MF_SEPARATOR, 0, NULL);
     AppendMenuA(g_file_menu, MF_STRING, IDM_CTX_PROPERTIES, "P&roperties");
 }
@@ -5265,9 +5269,22 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
             g_ctx_row = -1;
             menu = g_folder_menu;
         }
-        if (menu)
+        if (menu) {
+            /* What the menu can do is settled as it goes up, not when it was
+             * built: Paste is greyed until something has been cut or copied,
+             * and the four that work on a row are greyed on the tree's menu,
+             * where what was asked about is a folder in the other pane. */
+            UINT on = MF_BYCOMMAND | MF_ENABLED, off = MF_BYCOMMAND | MF_GRAYED;
+            int row = g_ctx_row >= 0;
+            EnableMenuItem(menu, IDM_PASTE, g_clip_n ? on : off);
+            EnableMenuItem(menu, IDM_CUT, row ? on : off);
+            EnableMenuItem(menu, IDM_COPY, row ? on : off);
+            EnableMenuItem(menu, IDM_DELETE, row ? on : off);
+            EnableMenuItem(menu, IDM_RENAME, row ? on : off);
+            EnableMenuItem(menu, IDM_CREATE_SHORTCUT, row ? on : off);
             TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, pt.x, pt.y,
                            0, w, NULL);
+        }
         return 0;
     }
 
