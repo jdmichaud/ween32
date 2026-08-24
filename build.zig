@@ -19,8 +19,16 @@ pub fn build(b: *std.Build) void {
     // unoptimised, which is the difference between a pencil that follows the
     // pointer and one that lags a tenth of a second behind it.
     // `-Doptimize=Debug` still asks for the other thing.
+    // The mode's own spelling changed between Zig versions — `ReleaseFast`
+    // became `release_fast` — so the default is looked up by whichever name
+    // this compiler's enum carries rather than written as a literal.
+    const fast: std.builtin.OptimizeMode = @field(std.builtin.OptimizeMode,
+        if (@hasField(std.builtin.OptimizeMode, "ReleaseFast"))
+            "ReleaseFast"
+        else
+            "release_fast");
     const optimize = b.option(std.builtin.OptimizeMode, "optimize",
-        "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
+        "Prioritize performance, safety, or binary size") orelse fast;
 
     const mod = b.addModule("ween32", .{
         .root_source_file = b.path("zig/ween32.zig"),
