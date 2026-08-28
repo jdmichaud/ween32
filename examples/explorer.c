@@ -3209,8 +3209,10 @@ static void folder_options(HWND owner)
     n = 0;
     memset(items, 0, sizeof(items));
     LABEL(7, 7, 120, 9, IDC_FO_TS1, "&Registered file types:");
+    /* SHAREIMAGELISTS: the type pictures are built once and kept for the
+     * next time the page is opened, so they outlive this list. */
     ITEM(WS_TABSTOP | WS_VSCROLL | LVS_REPORT | LVS_SINGLESEL |
-             LVS_SHOWSELALWAYS,
+             LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS,
          7, 18, 232, 87, IDC_FO_TYPES, 0, NULL);
     items[n - 1].clsname = WC_LISTVIEWA;
     items[n - 1].exstyle = WS_EX_CLIENTEDGE;
@@ -5283,9 +5285,13 @@ static void build_views(HWND w)
      * comes up as icons, which is not what a details pane is. */
     /* Both panes are tab stops, and so is the address bar: Tab walks them,
      * which is how the machine moves between them. */
+    /* SHAREIMAGELISTS because the pictures are not this pane's to destroy:
+     * the same set is on the tree beside it, on both toolbars and on the
+     * address bar. */
     g_list = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "",
                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT |
-                                 LVS_SHOWSELALWAYS | LVS_EDITLABELS,
+                                 LVS_SHOWSELALWAYS | LVS_EDITLABELS |
+                                 LVS_SHAREIMAGELISTS,
                              0, 0, 10, 10, w, (HMENU)(UINT_PTR)ID_LIST, NULL,
                              NULL);
 

@@ -6055,6 +6055,20 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     case WM_DESTROY:
+        /* The view owns the pictures it was given and takes them with it,
+         * unless it was made to share: LVS_SHAREIMAGELISTS is how a program
+         * says the same list hangs on another control too -- which is what
+         * the file dialog's list and the explorer's do, both of them drawing
+         * from the one set the tree beside them draws from. Without the
+         * style, whoever set the list has let go of it. */
+        l = wnd->ctl; /* not list_of: a view that was never asked anything has
+                       * no pictures to let go of, and no state worth making */
+        if (l && !(wnd->style & LVS_SHAREIMAGELISTS)) {
+            if (l->big != l->images) /* one list set as both is destroyed once */
+                ImageList_Destroy(l->big);
+            ImageList_Destroy(l->images);
+            l->big = l->images = NULL;
+        }
         if (wnd->ctl) {
             list_ctl_free(wnd->ctl);
             wnd->ctl = NULL;

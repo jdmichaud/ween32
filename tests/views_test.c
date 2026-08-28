@@ -1266,6 +1266,45 @@ int main(void)
         DestroyWindow(rw);
     }
 
+    /* Whose the pictures are. A view takes the image lists it was given with
+     * it when it goes, which is why the block above hands one over and never
+     * destroys it. LVS_SHAREIMAGELISTS is how a program says the set hangs on
+     * other controls too and is not this one's to take: the file dialog's
+     * list says it, and so does an explorer's, whose one set of icons is also
+     * on the tree, both toolbars and the address bar. Only the sharing half
+     * can be asserted from here — the other half is a leak, and the
+     * sanitizer is what sees that. */
+    {
+        unsigned char bits[16 * 16 * 3];
+        HWND sw = CreateWindowExA(0, "weenviews", "shared", WS_POPUP, 0, 0,
+                                  200, 120, NULL, NULL, NULL, NULL);
+        HIMAGELIST shared = ImageList_Create(16, 16, ILC_MASK, 2, 0);
+        HWND shares = CreateWindowExA(0, WC_LISTVIEWA, "",
+                                      WS_CHILD | LVS_REPORT |
+                                          LVS_SHAREIMAGELISTS,
+                                      0, 0, 180, 80, sw, (HMENU)(UINT_PTR)11,
+                                      NULL, NULL);
+        HBITMAP art;
+
+        memset(bits, 0x40, sizeof bits);
+        art = CreateBitmap(16, 16, 1, 24, bits);
+        ImageList_AddMasked(shared, art, RGB(0xff, 0, 0xff));
+        DeleteObject(art);
+        CHECK(ImageList_GetImageCount(shared) == 1,
+              "an image list with one picture in it");
+        CHECK(SendMessageA(shares, LVM_SETIMAGELIST, LVSIL_SMALL,
+                           (LPARAM)shared) == 0,
+              "a view that was carrying none hands back none");
+        CHECK((HIMAGELIST)(UINT_PTR)SendMessageA(shares, LVM_SETIMAGELIST,
+                                                 LVSIL_SMALL,
+                                                 (LPARAM)shared) == shared,
+              "and hands back the one it was carrying");
+        DestroyWindow(sw);
+        CHECK(ImageList_GetImageCount(shared) == 1,
+              "a shared list stands after the view that drew from it is gone");
+        ImageList_Destroy(shared);
+    }
+
     /* A combo box's drop-down. It can be emptied — an address bar refills
      * itself on every folder, and without CB_RESETCONTENT it only ever grew,
      * going on showing the first path it was ever given. And once open it
