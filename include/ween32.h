@@ -2226,6 +2226,76 @@ BOOL WriteFile(HANDLE file, const void *buf, DWORD to_write, DWORD *written,
 DWORD SetFilePointer(HANDLE file, LONG distance, LONG *high, DWORD method);
 DWORD GetFileSize(HANDLE file, DWORD *high);
 BOOL CloseHandle(HANDLE h);
+/* ---- the registry --------------------------------------------------------
+ *
+ * Where a Windows program keeps what it remembers between runs: the window it
+ * had open, the font it was set to, the boxes that were ticked. Off Windows
+ * there is no registry, so this one is a file in the user's config directory
+ * written in the REGEDIT4 format regedit itself exports -- a readable file a
+ * person can look at and edit, rather than an invention of ours.
+ *
+ * What it holds is what a program of this kind stores: values under a key,
+ * REG_SZ and REG_DWORD spelled out and anything else kept as bytes. There is
+ * no enumeration, no deletion of whole keys, and no security: a program that
+ * needs those is asking for a registry rather than for somewhere to put its
+ * settings, and would be better told so than half-answered. */
+typedef struct HKEY__ *HKEY;
+typedef HKEY *PHKEY;
+typedef DWORD REGSAM;
+typedef LONG LSTATUS;
+/* The predefined keys are numbers rather than pointers to anything, and the
+ * cast is winreg.h's own: through a signed LONG first, so that on a 64-bit
+ * build the top bit is carried up the whole pointer. Casting the unsigned
+ * number instead gives a different value, which the constant gate catches. */
+#define HKEY_CLASSES_ROOT ((HKEY)(UINT_PTR)((LONG)0x80000000))
+#define HKEY_CURRENT_USER ((HKEY)(UINT_PTR)((LONG)0x80000001))
+#define HKEY_LOCAL_MACHINE ((HKEY)(UINT_PTR)((LONG)0x80000002))
+#define HKEY_USERS ((HKEY)(UINT_PTR)((LONG)0x80000003))
+#define HKEY_CURRENT_CONFIG ((HKEY)(UINT_PTR)((LONG)0x80000005))
+#define ERROR_SUCCESS 0L
+#define ERROR_FILE_NOT_FOUND 2L
+#define ERROR_ACCESS_DENIED 5L
+#define ERROR_INVALID_PARAMETER 87L
+#define ERROR_INVALID_HANDLE 6L
+#define ERROR_MORE_DATA 234L
+#define ERROR_NO_MORE_ITEMS 259L
+#define REG_NONE 0
+#define REG_SZ 1
+#define REG_EXPAND_SZ 2
+#define REG_BINARY 3
+#define REG_DWORD 4
+#define REG_DWORD_LITTLE_ENDIAN 4
+#define REG_MULTI_SZ 7
+#define REG_OPTION_NON_VOLATILE 0x00000000L
+#define REG_OPTION_VOLATILE 0x00000001L
+#define REG_CREATED_NEW_KEY 0x00000001L
+#define REG_OPENED_EXISTING_KEY 0x00000002L
+/* The access rights, by the numbers winnt.h works out for them: the standard
+ * rights of a read or a write, or'd with the key rights and with SYNCHRONIZE
+ * taken back out. Nothing here acts on them -- a key that opens, opens for
+ * both -- but a program passes them and they have to be the right numbers. */
+#define KEY_QUERY_VALUE 0x0001
+#define KEY_SET_VALUE 0x0002
+#define KEY_CREATE_SUB_KEY 0x0004
+#define KEY_ENUMERATE_SUB_KEYS 0x0008
+#define KEY_NOTIFY 0x0010
+#define KEY_CREATE_LINK 0x0020
+#define KEY_READ 0x20019
+#define KEY_WRITE 0x20006
+#define KEY_EXECUTE 0x20019
+#define KEY_ALL_ACCESS 0xF003F
+LSTATUS RegCreateKeyExA(HKEY key, LPCSTR sub, DWORD reserved, LPSTR cls,
+                        DWORD options, REGSAM access, void *security,
+                        PHKEY out, DWORD *disposition);
+LSTATUS RegOpenKeyExA(HKEY key, LPCSTR sub, DWORD options, REGSAM access,
+                      PHKEY out);
+LSTATUS RegCloseKey(HKEY key);
+LSTATUS RegQueryValueExA(HKEY key, LPCSTR name, DWORD *reserved, DWORD *type,
+                         BYTE *data, DWORD *size);
+LSTATUS RegSetValueExA(HKEY key, LPCSTR name, DWORD reserved, DWORD type,
+                       const BYTE *data, DWORD size);
+LSTATUS RegDeleteValueA(HKEY key, LPCSTR name);
+
 #define CF_TEXT 1
 #define CF_BITMAP 2
 #define WM_CUT 0x0300

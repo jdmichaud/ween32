@@ -570,6 +570,9 @@ int ween_wnd_sb_at(const struct ween_wnd *w, int x, int y);
 int ween_wnd_sb_timer(struct ween_wnd *w); /* the held-arrow repeat */
 #define WEEN_SB_TIMER_ID 0x5343524C /* the id that repeat runs on */
 void ween_register_controls(void);
+/* The registry, emptied: the next call reads its file again. Test-only, and
+ * not part of the win32 API. */
+void ween_registry_forget(void);
 /* Mark a class as drawing its own WS_*SCROLL bars (user.c). */
 void ween_class_owns_scroll(LPCSTR name);
 /* A toolbar in menu mode, for the menu tracker: which bar has a drop-down up,

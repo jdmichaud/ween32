@@ -37,6 +37,15 @@ that no application has asked for:
   follows the caret and the bar drives it — and what is missing is the
   sideways offset that would go with it, `WS_HSCROLL`, and `EM_LINESCROLL`'s
   first argument, which is taken and ignored today.
+- [ ] **The edit's scroll bar, against the machine.** The three numbers in it
+  — the thumb's size, a screenful for a click in the track, three lines for a
+  notch of the wheel — come from ween32's own scroll helpers, the same ones
+  the list box and the views use. They have not been read off the Windows
+  2000 machine: the VM was down when the bar was written, and following the
+  helpers already there beat inventing a second set of numbers. The sampler's
+  field settles the *disabled* bar to the pixel and nothing settles the live
+  one yet.
+
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
 - [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
@@ -158,6 +167,18 @@ the dotted focus rectangle. Accelerator tables
 Ctrl+X/C/V/A and `WM_CUT`/`WM_COPY`/`WM_PASTE`, and a double click selecting
 the word under it. Within one process: sharing with other X clients still
 needs selection ownership.
+
+**The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
+`RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows
+program remembers its font, its window and its ticked boxes between runs.
+There is no registry here, so it is a file: `registry.reg` under the user's
+config directory (`$XDG_CONFIG_HOME/ween32`, else `~/.config/ween32`), in the
+REGEDIT4 format regedit itself exports, which a person can read and edit.
+`WEEN32_REGISTRY` names the file outright, which is what the tests use.
+REG_SZ is written as text and a four-byte REG_DWORD as `dword:` hex;
+everything else keeps its type and its bytes as `hex(n):`. The file is read
+once and written whole after every change, through a temporary and a rename
+so that a program stopped mid-save keeps the settings it had.
 
 **A static that is not text** — the low five bits of a `STATIC`'s style are a
 type: `SS_BITMAP` and `SS_ICON` draw the picture hung on it with
@@ -344,6 +365,12 @@ manager so, which is why one could not be resized before.
 
 Shortcuts the current code takes deliberately; each is a candidate task.
 
+- **The registry is a settings file, not a registry.** Values under a key,
+  and that is all: no enumerating keys or values, no deleting a key or its
+  tree, no security, no remote hives, and the classes root is just another
+  name a path can start with. A program needing those is asking for a
+  registry rather than for somewhere to put its settings, and a missing
+  symbol tells it so more honestly than a call that pretends.
 - **`SetBkMode(OPAQUE)` is accepted but unimplemented** (`src/gdi.c:322`):
   text is always drawn transparent.
 - **No `PeekMessageA`**, so a message loop can only be run once per process:
