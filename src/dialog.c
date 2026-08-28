@@ -243,13 +243,40 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     ensure_dialog_class();
     const unsigned char *b = (const unsigned char *)tmpl;
 
-    DWORD style = rd_d(b, 0);
-    DWORD ex_style = rd_d(b, 4); /* the template's own, which was being lost */
-    WORD cdit = rd_w(b, 8);
-    short dx = (short)rd_w(b, 10), dy = (short)rd_w(b, 12);
-    short cx = (short)rd_w(b, 14), cy = (short)rd_w(b, 16);
-
-    size_t p = 18;
+    /* Two templates wear the same name. The older DLGTEMPLATE starts with its
+     * style; the extended one, which `rc` writes for any DIALOGEX -- and that
+     * is every dialog with a FONT line in it, so most dialogs written this
+     * century -- starts with a version of 1 and a signature of 0xFFFF, which
+     * no style can be: the low word of a dialog's style is its class bits and
+     * WS_POPUP is in the high word. So the pair is the flag, as it is on
+     * Windows. The two differ in their headers and in every item header; what
+     * they name and how it is laid out is the same, which is why one walk
+     * reads both. */
+    int ex = rd_w(b, 0) == 1 && rd_w(b, 2) == 0xFFFF;
+    DWORD style, ex_style;
+    WORD cdit;
+    short dx, dy, cx, cy;
+    size_t p;
+    if (ex) {
+        /* dlgVer, signature, helpID, exStyle, style, cDlgItems, x, y, cx, cy */
+        ex_style = rd_d(b, 8);
+        style = rd_d(b, 12);
+        cdit = rd_w(b, 16);
+        dx = (short)rd_w(b, 18);
+        dy = (short)rd_w(b, 20);
+        cx = (short)rd_w(b, 22);
+        cy = (short)rd_w(b, 24);
+        p = 26;
+    } else {
+        style = rd_d(b, 0);
+        ex_style = rd_d(b, 4); /* the template's own, which was being lost */
+        cdit = rd_w(b, 8);
+        dx = (short)rd_w(b, 10);
+        dy = (short)rd_w(b, 12);
+        cx = (short)rd_w(b, 14);
+        cy = (short)rd_w(b, 16);
+        p = 18;
+    }
     char title[128];
     p = parse_sz(b, p, NULL, NULL, 0);        /* menu */
     p = parse_sz(b, p, NULL, NULL, 0);        /* class (ignored: our own) */
@@ -257,7 +284,10 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     char face[64];
     face[0] = 0;
     if (style & DS_SETFONT) {
-        p += 2;                                     /* point size */
+        /* point size, and in the extended one a weight, a slant and a
+         * character set with it -- none of which is used here, the face
+         * being what a strike is chosen by. */
+        p += ex ? 6 : 2;
         p = parse_sz(b, p, NULL, face, sizeof face); /* typeface */
     }
 
@@ -311,15 +341,34 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
      * edge (MulDiv(60) - MulDiv(13) = 90 - 20) would have made it 70. */
     for (int i = 0; i < cdit; i++) {
         p = (p + 3) & ~(size_t)3; /* items are DWORD-aligned in the stream */
-        DWORD istyle = rd_d(b, p);
-        /* The item's extended style, which is where a field gets its sunken
-         * border from: a template that asks for WS_EX_CLIENTEDGE must get
-         * one, and this used to drop it on the floor. */
-        DWORD iex = rd_d(b, p + 4);
-        short ix = (short)rd_w(b, p + 8), iy = (short)rd_w(b, p + 10);
-        short icx = (short)rd_w(b, p + 12), icy = (short)rd_w(b, p + 14);
-        WORD id = rd_w(b, p + 16);
-        p += 18;
+        DWORD istyle, iex;
+        short ix, iy, icx, icy;
+        WORD id;
+        if (ex) {
+            /* helpID, exStyle, style, x, y, cx, cy, and an id four bytes
+             * wide rather than two -- the one place the two item headers
+             * differ in more than their order. */
+            iex = rd_d(b, p + 4);
+            istyle = rd_d(b, p + 8);
+            ix = (short)rd_w(b, p + 12);
+            iy = (short)rd_w(b, p + 14);
+            icx = (short)rd_w(b, p + 16);
+            icy = (short)rd_w(b, p + 18);
+            id = (WORD)rd_d(b, p + 20);
+            p += 24;
+        } else {
+            istyle = rd_d(b, p);
+            /* The item's extended style, which is where a field gets its
+             * sunken border from: a template that asks for WS_EX_CLIENTEDGE
+             * must get one, and this used to drop it on the floor. */
+            iex = rd_d(b, p + 4);
+            ix = (short)rd_w(b, p + 8);
+            iy = (short)rd_w(b, p + 10);
+            icx = (short)rd_w(b, p + 12);
+            icy = (short)rd_w(b, p + 14);
+            id = rd_w(b, p + 16);
+            p += 18;
+        }
         WORD cls_ord;
         /* Room for a paragraph: a label in a dialog is often one, and the
          * shell's are. */
