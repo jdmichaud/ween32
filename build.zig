@@ -88,12 +88,11 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .root_module = lib_mod,
     });
+    // Installed as well, for `zig build install` and anything that consumes
+    // the artifact's headers rather than linking the package: ween32.h at the
+    // root, and the win32 one-liners beside it. On Windows the package is not
+    // built at all and the real headers are the ones found.
     lib.installHeadersDirectory(b.path("include"), "", .{});
-    // A C program says `#include <windows.h>`, and off Windows that has to
-    // find something: the one-line headers in include/win32 are installed at
-    // the root as well, so a program built against this package includes the
-    // names it always did. On Windows the package is not built at all and the
-    // real headers are the ones found.
     lib.installHeadersDirectory(b.path("include/win32"), "", .{});
     b.installArtifact(lib);
 
@@ -127,6 +126,28 @@ pub fn optimizeNamed(comptime want: []const u8) std.builtin.OptimizeMode {
         }
         break :blk @enumFromInt(0); // Debug, if nothing carries that name
     };
+}
+
+/// Where a C program finds ween32's headers: `#include <windows.h>` has to
+/// resolve off Windows, and `<ween32.h>` under it.
+///
+/// Both are added as include paths straight into the package, rather than
+/// left to the copy `installHeadersDirectory` makes, because that copy does
+/// not always happen: on the machine this is developed on, ween32's own
+/// checkout is an sshfs mount, and installing headers out of one produces an
+/// **empty** tree with no error at all. The program then fails on
+/// `'windows.h' file not found` while the Windows build of the same source
+/// is green, because that one uses the real headers -- so the half that
+/// proves the port works is the half that breaks, silently, on a filesystem.
+/// An include path is read where it stands and has no such failure.
+///
+///     const w = b.dependency("ween32", .{ .target = t, .optimize = o });
+///     exe.root_module.linkLibrary(w.artifact("ween32"));
+///     ween32.addHeaders(w, exe);
+pub fn addHeaders(ween32: *std.Build.Dependency,
+                  exe: *std.Build.Step.Compile) void {
+    exe.root_module.addIncludePath(ween32.path("include"));
+    exe.root_module.addIncludePath(ween32.path("include/win32"));
 }
 
 /// What to compile, and where its includes come from.
