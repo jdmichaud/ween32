@@ -382,6 +382,54 @@ int main(void)
         CHECK(tbr.left > 0 && ar.left > tbr.left,
               "both are inset past the gripper, and the labelled one further");
 
+        /* Carrying a band about, without a pointer. RB_MOVEBAND takes one
+         * out of the order and puts it back somewhere else, which is what a
+         * gripper carried up or down comes to on the machine.
+         *
+         * A band takes its style with it and the layout's rule is unchanged:
+         * whichever band ends up first starts a row whether it asks to or
+         * not. So moving the toolbar past the address bar does not simply
+         * swap two rows -- the address bar becomes the first band and keeps
+         * its break, the toolbar follows it without one, and the two end up
+         * side by side on a single row. That is the machine's behaviour too:
+         * a bar carried onto another's row goes beside it, and the row it
+         * came from closes up. */
+        {
+            RECT tb2, ar3;
+            int stacked = (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0);
+            GetWindowRect(g_tb, &tb2);
+            GetWindowRect(addr, &ar3);
+            CHECK(tb2.top < ar3.top, "the toolbar starts above the address bar");
+            CHECK(SendMessageA(rebar, RB_MOVEBAND, 0, 1),
+                  "and can be carried past it");
+            GetWindowRect(g_tb, &tb2);
+            GetWindowRect(addr, &ar3);
+            /* Sideways, not downwards -- and the rebar losing a whole row
+             * is what says they are on one. The tops are not compared: this
+             * toolbar is the window's child rather than the rebar's, so the
+             * band moves it to the same place within the band and it lands
+             * on screen a rebar's-worth higher than the address bar does. */
+            CHECK((int)SendMessageA(rebar, RB_GETBANDCOUNT, 0, 0) == 2 &&
+                      (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0) ==
+                          stacked - (2 + 22),
+                  "which closes the row they were stacked in: two bands, one "
+                  "row, the height of one less");
+            CHECK(tb2.left > ar3.left,
+                  "and leaves it beside the address bar rather than under "
+                  "it -- whichever band is first starts the row, and this "
+                  "one asked for no break of its own");
+            CHECK(SendMessageA(rebar, RB_MOVEBAND, 1, 0),
+                  "and carried back again");
+            GetWindowRect(g_tb, &tb2);
+            GetWindowRect(addr, &ar3);
+            CHECK(tb2.top < ar3.top &&
+                      (int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0) == stacked,
+                  "leaving them stacked as they started");
+            CHECK(!SendMessageA(rebar, RB_MOVEBAND, 0, 7) &&
+                      !SendMessageA(rebar, RB_MOVEBAND, -1, 0),
+                  "a place that is not there moves nothing");
+        }
+
         /* A band that does not ask to break shares the row with the one
          * before it — which is what a rebar is named for, and what an
          * application that never asks for the break gets on Windows. */

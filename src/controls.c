@@ -8665,6 +8665,40 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             SendMessageA(wnd->parent, WM_SIZE, 0, 0);
         return TRUE;
     }
+    case RB_MOVEBAND: {
+        /* Take a band out of the order and put it back at another place, the
+         * ones between closing up behind it. This is what carrying a gripper
+         * up or down comes to, and the drag will be written in terms of it so
+         * that the two cannot come to disagree: what a program asks for and
+         * what a pointer does are then the same rearrangement.
+         *
+         * A band takes its own style with it, RBBS_BREAK and all, so one that
+         * started a row goes on starting one. Whichever band ends up first
+         * starts a row whether it asks to or not, which is the layout's rule
+         * and not this one's — so moving a band to the front can put the band
+         * that was there beside it rather than under it, which is what the
+         * machine does when a bar is carried onto the row above. */
+        int from = (int)wp, to = (int)lp;
+        ween_rbband moved;
+        rb = rebar_of(wnd);
+        if (!rb || from < 0 || from >= rb->count || to < 0 || to >= rb->count)
+            return FALSE;
+        if (from == to)
+            return TRUE;
+        moved = rb->band[from];
+        if (to > from)
+            memmove(&rb->band[from], &rb->band[from + 1],
+                    (size_t)(to - from) * sizeof *rb->band);
+        else
+            memmove(&rb->band[to + 1], &rb->band[to],
+                    (size_t)(from - to) * sizeof *rb->band);
+        rb->band[to] = moved;
+        rebar_layout(wnd, rb);
+        InvalidateRect(wnd, NULL, TRUE);
+        if (wnd->parent) /* the rows may have changed, and with them the height */
+            SendMessageA(wnd->parent, WM_SIZE, 0, 0);
+        return TRUE;
+    }
     case RB_GETBANDCOUNT:
         rb = rebar_of(wnd);
         return rb ? rb->count : 0;

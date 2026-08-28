@@ -1900,6 +1900,9 @@ typedef struct {
 #define RB_GETBARHEIGHT (WM_USER + 27)
 /* Show or hide one band, which is what View > Toolbars does to each of them. */
 #define RB_SHOWBAND (WM_USER + 35)
+/* Take a band out of the order and put it back somewhere else. This is the
+ * move a gripper carried up or down makes, without the pointer. */
+#define RB_MOVEBAND (WM_USER + 39)
 
 /* Registering the common control classes. ween32 has them registered before
  * anything can ask for one, so this says yes and does nothing — but an
