@@ -198,6 +198,46 @@ int main(void)
             CHECK((s.px[0] & 0xffffff) == WEEN_WHITE,
                   "which is the one the mask named, in the right corner");
             ween_surface_free(&s);
+
+            /* What an icon that could not be loaded does, which is nothing:
+             * AddIcon with none adds none and says so with -1. A caller
+             * keeping one entry per row -- the shell example's File Types
+             * list is one -- has to put a blank in itself, or every row after
+             * a missing picture wears the one before's. */
+            CHECK(ImageList_AddIcon(ic, NULL) == -1,
+                  "no icon goes in nowhere, and the list says so");
+            CHECK(ImageList_GetImageCount(ic) == 1,
+                  "and is no longer for having been asked");
+            {
+                /* The blank to put there instead: a square of nothing but the
+                 * colour the mask takes out. win32 has no "add an empty one",
+                 * so this is how a place is reserved. */
+                unsigned char clear[4 * 4 * 4];
+                HBITMAP blank;
+                ween_surface b;
+                int untouched = 0;
+                for (size_t i = 0; i < sizeof(clear); i += 4) {
+                    clear[i + 0] = 0xff;
+                    clear[i + 1] = 0x00;
+                    clear[i + 2] = 0xff;
+                    clear[i + 3] = 0xff;
+                }
+                blank = CreateBitmap(4, 4, 1, 32, clear);
+                CHECK(ImageList_AddMasked(blank ? ic : NULL, blank,
+                                          RGB(0xff, 0, 0xff)) == 1,
+                      "a fully masked square does take the next place");
+                CHECK(ImageList_GetImageCount(ic) == 2, "and the list counts it");
+                ween_surface_init(&b, 4, 4);
+                ween_surface_clear(&b, WEEN_WHITE);
+                ween_imagelist_draw(ic, 1, &b, 0, 0);
+                for (int i = 0; i < 16; i++)
+                    if ((b.px[i] & 0xffffff) == WEEN_WHITE)
+                        untouched++;
+                CHECK(untouched == 16, "and draws nothing where it is put");
+                ween_surface_free(&b);
+                DeleteObject(blank);
+            }
+
             ImageList_Destroy(ic);
             DestroyIcon(icon);
         }

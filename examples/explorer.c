@@ -2948,6 +2948,27 @@ static HICON load_icon_named(const char *name, int size)
                              LR_LOADFROMFILE);
 }
 
+/* An entry that draws nothing, to stand in for a picture that is not there.
+ * A sixteen-square of the colour the mask takes out, which is the only way
+ * win32 offers of reserving a place in a list: there is no "add a blank".
+ * Magenta is the same three bytes whichever way round the channels go. */
+static void add_blank_image(HIMAGELIST il)
+{
+    unsigned char bits[16 * 16 * 4];
+    HBITMAP bmp;
+    for (size_t i = 0; i < sizeof(bits); i += 4) {
+        bits[i + 0] = 0xff;
+        bits[i + 1] = 0x00;
+        bits[i + 2] = 0xff;
+        bits[i + 3] = 0xff;
+    }
+    bmp = CreateBitmap(16, 16, 1, 32, bits);
+    if (!bmp)
+        return;
+    ImageList_AddMasked(il, bmp, RGB(0xff, 0x00, 0xff));
+    DeleteObject(bmp);
+}
+
 /* The picture each kind of file wears, one per row of the File Types list and
  * in its order, so a row names its own by index. */
 static HIMAGELIST fo_types_images(void)
@@ -2962,7 +2983,11 @@ static HIMAGELIST fo_types_images(void)
             ImageList_AddIcon(il, icon);
             DestroyIcon(icon);
         } else {
-            ImageList_AddIcon(il, NULL); /* keep the indices lined up */
+            /* A blank, so the row keeps its own index. Adding nothing here --
+             * which is what ImageList_AddIcon does when there is no icon, and
+             * what stood here under a comment saying the opposite -- shifts
+             * every kind after a missing picture onto the one before's. */
+            add_blank_image(il);
         }
     }
     return il;
