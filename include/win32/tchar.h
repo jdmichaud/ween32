@@ -7,6 +7,7 @@
 #ifndef WEEN_TCHAR_H
 #define WEEN_TCHAR_H
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

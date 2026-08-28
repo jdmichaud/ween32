@@ -34,7 +34,12 @@ extern "C" {
 /* ---- fundamental types (LLP64-faithful) ------------------------------- */
 
 typedef int BOOL;
+typedef int INT;
+/* Memory a handle stands for, which the calls below hand out and take. */
+typedef void *HGLOBAL;
+typedef void *HLOCAL;
 typedef unsigned char BYTE;
+typedef BYTE *LPBYTE, *PBYTE;
 typedef uint16_t WORD;
 typedef int16_t SHORT;
 typedef uint32_t DWORD;
@@ -227,6 +232,9 @@ typedef struct tagCREATESTRUCTA {
 #define WM_SETTEXT 0x000C
 #define WM_GETTEXT 0x000D
 #define WM_GETTEXTLENGTH 0x000E
+/* Drawing switched off while a program makes a run of changes, and on again
+ * after; the control redraws once rather than once a change. */
+#define WM_SETREDRAW 0x000B
 #define WM_PAINT 0x000F
 #define WM_CLOSE 0x0010
 #define WM_QUIT 0x0012
@@ -1261,6 +1269,20 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define SW_SHOWNOACTIVATE 4
 #define SW_SHOW 5
 #define SW_SHOWNA 8
+#define SW_MINIMIZE 6
+#define SW_SHOWMINIMIZED 2
+#define SW_SHOWMAXIMIZED 3
+#define SW_MAXIMIZE 3
+#define SW_RESTORE 9
+/* What a program started from a shortcut is given, and what it hands
+ * straight to ShowWindow: whatever the shortcut said, or normal. */
+#define SW_SHOWDEFAULT 10
+
+/* The program itself, as a handle. Windows gives a module handle meaning the
+ * loaded image; nothing here is loaded from an image, and every call that
+ * takes an HINSTANCE ignores it, so this is a handle to say which program
+ * rather than a way to reach into it. NULL names the program itself. */
+HINSTANCE GetModuleHandleA(LPCSTR name);
 
 /* ---- virtual keys ------------------------------------------------------- */
 
@@ -1387,6 +1409,11 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
  * after it. Windows hides those until the keyboard has been used, and asks
  * for them this way when they are hidden. */
 #define DT_HIDEPREFIX 0x00100000
+/* Lay the text out the way an edit control does -- which for DrawText means
+ * only whole lines, so a program printing what is in a field breaks the page
+ * where the field would. Nothing here draws partial lines anyway, so it is
+ * accepted and changes nothing. */
+#define DT_EDITCONTROL 0x00002000
 
 /* ---- GDI misc ------------------------------------------------------------ */
 
@@ -1411,7 +1438,99 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 #define DEFAULT_QUALITY 0
 #define DEFAULT_PITCH 0
 #define FIXED_PITCH 1
+#define VARIABLE_PITCH 2
 #define FF_DONTCARE (0 << 4)
+#define FF_ROMAN (1 << 4)
+#define FF_SWISS (2 << 4)
+#define FF_MODERN (3 << 4)
+#define FF_SCRIPT (4 << 4)
+#define FF_DECORATIVE (5 << 4)
+#define FW_DONTCARE 0
+#define FW_THIN 100
+#define FW_LIGHT 300
+#define FW_REGULAR 400
+#define FW_MEDIUM 500
+#define FW_SEMIBOLD 600
+#define FW_HEAVY 900
+#define OEM_CHARSET 255
+#define OUT_TT_PRECIS 4
+#define OUT_TT_ONLY_PRECIS 7
+#define CLIP_STROKE_PRECIS 2
+#define DRAFT_QUALITY 1
+#define PROOF_QUALITY 2
+#define NONANTIALIASED_QUALITY 3
+#define ANTIALIASED_QUALITY 4
+#define CLEARTYPE_QUALITY 5
+
+/* A font described rather than listed out: the same fourteen things
+ * CreateFont takes, in a structure a program can keep, hand to ChooseFont and
+ * store in its settings. CreateFontIndirect is CreateFont with them read out
+ * of it, which is exactly what it is on Windows. */
+#define LF_FACESIZE 32
+typedef struct tagLOGFONTA {
+    LONG lfHeight;
+    LONG lfWidth;
+    LONG lfEscapement;
+    LONG lfOrientation;
+    LONG lfWeight;
+    BYTE lfItalic;
+    BYTE lfUnderline;
+    BYTE lfStrikeOut;
+    BYTE lfCharSet;
+    BYTE lfOutPrecision;
+    BYTE lfClipPrecision;
+    BYTE lfQuality;
+    BYTE lfPitchAndFamily;
+    CHAR lfFaceName[LF_FACESIZE];
+} LOGFONTA, *PLOGFONTA, *LPLOGFONTA;
+HFONT CreateFontIndirectA(const LOGFONTA *lf);
+
+/* What a font comes out as once it is realised: the numbers a program lays
+ * text out with. GetTextMetrics answers for the font selected into the DC. */
+typedef struct tagTEXTMETRICA {
+    LONG tmHeight;
+    LONG tmAscent;
+    LONG tmDescent;
+    LONG tmInternalLeading;
+    LONG tmExternalLeading;
+    LONG tmAveCharWidth;
+    LONG tmMaxCharWidth;
+    LONG tmWeight;
+    LONG tmOverhang;
+    LONG tmDigitizedAspectX;
+    LONG tmDigitizedAspectY;
+    BYTE tmFirstChar;
+    BYTE tmLastChar;
+    BYTE tmDefaultChar;
+    BYTE tmBreakChar;
+    BYTE tmItalic;
+    BYTE tmUnderlined;
+    BYTE tmStruckOut;
+    BYTE tmPitchAndFamily;
+    BYTE tmCharSet;
+} TEXTMETRICA, *PTEXTMETRICA, *LPTEXTMETRICA;
+BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm);
+
+/* What the device this DC draws on is like. The screen here is the desktop
+ * and its dots per inch are the ones the whole library scales by, which is
+ * how a program turns a point size into a height and gets the same answer
+ * the library would. */
+#define DRIVERVERSION 0
+#define TECHNOLOGY 2
+#define HORZSIZE 4
+#define VERTSIZE 6
+#define HORZRES 8
+#define VERTRES 10
+#define BITSPIXEL 12
+#define PLANES 14
+#define NUMCOLORS 24
+#define LOGPIXELSX 88
+#define LOGPIXELSY 90
+#define PHYSICALWIDTH 110
+#define PHYSICALHEIGHT 111
+#define PHYSICALOFFSETX 112
+#define PHYSICALOFFSETY 113
+int GetDeviceCaps(HDC dc, int index);
 
 /* ---- a window's own scroll bars -------------------------------------------
  *
@@ -1679,6 +1798,183 @@ typedef struct tagCHOOSECOLORA {
 #define CC_ENABLEHOOK 0x00000010
 
 BOOL ChooseColorA(CHOOSECOLORA *cc);
+
+/* ---- the common dialogs that are not here yet -----------------------------
+ *
+ * A Windows program that can choose a font, find text or print links against
+ * these whether or not it ever opens one, so a program cannot be built at all
+ * without them. They are declared with the structures win32 gives them --
+ * a program fills one in and takes sizeof it -- and they answer the way the
+ * real call answers when the user changes their mind: FALSE, and nothing
+ * written back. What each one would take to be real is in ROADMAP.md; until
+ * then a program builds, runs, and finds that menu item does nothing, which
+ * is a truthful state of affairs rather than a wrong dialog.
+ */
+
+typedef struct tagCHOOSEFONTA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HDC hDC;
+    LPLOGFONTA lpLogFont;
+    INT iPointSize;
+    DWORD Flags;
+    COLORREF rgbColors;
+    LPARAM lCustData;
+    INT_PTR(CALLBACK *lpfnHook)(HWND, UINT, WPARAM, LPARAM);
+    LPCSTR lpTemplateName;
+    HINSTANCE hInstance;
+    LPSTR lpszStyle;
+    WORD nFontType;
+    WORD ___MISSING_ALIGNMENT__;
+    INT nSizeMin;
+    INT nSizeMax;
+} CHOOSEFONTA, *LPCHOOSEFONTA;
+
+#define CF_SCREENFONTS 0x00000001
+#define CF_PRINTERFONTS 0x00000002
+#define CF_BOTH 0x00000003
+#define CF_INITTOLOGFONTSTRUCT 0x00000040
+#define CF_USESTYLE 0x00000080
+#define CF_EFFECTS 0x00000100
+#define CF_APPLY 0x00000200
+#define CF_ANSIONLY 0x00000400
+#define CF_NOVECTORFONTS 0x00000800
+#define CF_NOSIMULATIONS 0x00001000
+#define CF_LIMITSIZE 0x00002000
+#define CF_FIXEDPITCHONLY 0x00004000
+#define CF_FORCEFONTEXIST 0x00010000
+#define CF_SCALABLEONLY 0x00020000
+#define CF_TTONLY 0x00040000
+#define CF_NOFACESEL 0x00080000
+#define CF_NOSCRIPTSEL 0x00800000
+BOOL ChooseFontA(CHOOSEFONTA *cf);
+
+/* Find and Replace are modeless: the real ones put a window up and send the
+ * owner the message RegisterWindowMessage(FINDMSGSTRING) each time the user
+ * presses a button. Nothing here puts that window up, so nothing sends that
+ * message, and the call answers with no window at all. */
+typedef struct tagFINDREPLACEA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HINSTANCE hInstance;
+    DWORD Flags;
+    LPSTR lpstrFindWhat;
+    LPSTR lpstrReplaceWith;
+    WORD wFindWhatLen;
+    WORD wReplaceWithLen;
+    LPARAM lCustData;
+    INT_PTR(CALLBACK *lpfnHook)(HWND, UINT, WPARAM, LPARAM);
+    LPCSTR lpTemplateName;
+} FINDREPLACEA, *LPFINDREPLACEA;
+
+#define FR_DOWN 0x00000001
+#define FR_WHOLEWORD 0x00000002
+#define FR_MATCHCASE 0x00000004
+#define FR_FINDNEXT 0x00000008
+#define FR_REPLACE 0x00000010
+#define FR_REPLACEALL 0x00000020
+#define FR_DIALOGTERM 0x00000040
+#define FR_SHOWHELP 0x00000080
+#define FR_NOUPDOWN 0x00000400
+#define FR_NOMATCHCASE 0x00000800
+#define FR_NOWHOLEWORD 0x00001000
+#define FR_HIDEUPDOWN 0x00004000
+#define FR_HIDEMATCHCASE 0x00008000
+#define FR_HIDEWHOLEWORD 0x00010000
+#define FINDMSGSTRING "commdlg_FindReplace"
+HWND FindTextA(FINDREPLACEA *fr);
+HWND ReplaceTextA(FINDREPLACEA *fr);
+
+/* Printing. A printer here would mean a device context that draws into a
+ * spool file and something to send it to, neither of which exists; the
+ * dialogs answer as a cancelled one does and the document calls fail, which
+ * is what a program checks for anyway. */
+typedef struct tagPDA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HGLOBAL hDevMode;
+    HGLOBAL hDevNames;
+    HDC hDC;
+    DWORD Flags;
+    WORD nFromPage;
+    WORD nToPage;
+    WORD nMinPage;
+    WORD nMaxPage;
+    WORD nCopies;
+    HINSTANCE hInstance;
+    LPARAM lCustData;
+    INT_PTR(CALLBACK *lpfnPrintHook)(HWND, UINT, WPARAM, LPARAM);
+    INT_PTR(CALLBACK *lpfnSetupHook)(HWND, UINT, WPARAM, LPARAM);
+    LPCSTR lpPrintTemplateName;
+    LPCSTR lpSetupTemplateName;
+    HGLOBAL hPrintTemplate;
+    HGLOBAL hSetupTemplate;
+} PRINTDLGA, *LPPRINTDLGA;
+
+#define PD_ALLPAGES 0x00000000
+#define PD_SELECTION 0x00000001
+#define PD_PAGENUMS 0x00000002
+#define PD_NOSELECTION 0x00000004
+#define PD_NOPAGENUMS 0x00000008
+#define PD_COLLATE 0x00000010
+#define PD_PRINTTOFILE 0x00000020
+#define PD_PRINTSETUP 0x00000040
+#define PD_NOWARNING 0x00000080
+#define PD_RETURNDC 0x00000100
+#define PD_RETURNIC 0x00000200
+#define PD_RETURNDEFAULT 0x00000400
+#define PD_USEDEVMODECOPIES 0x00040000
+#define PD_USEDEVMODECOPIESANDCOLLATE 0x00040000
+#define PD_HIDEPRINTTOFILE 0x00100000
+BOOL PrintDlgA(PRINTDLGA *pd);
+
+typedef struct tagPSDA {
+    DWORD lStructSize;
+    HWND hwndOwner;
+    HGLOBAL hDevMode;
+    HGLOBAL hDevNames;
+    DWORD Flags;
+    POINT ptPaperSize;
+    RECT rtMinMargin;
+    RECT rtMargin;
+    HINSTANCE hInstance;
+    LPARAM lCustData;
+    INT_PTR(CALLBACK *lpfnPageSetupHook)(HWND, UINT, WPARAM, LPARAM);
+    INT_PTR(CALLBACK *lpfnPagePaintHook)(HWND, UINT, WPARAM, LPARAM);
+    LPCSTR lpPageSetupTemplateName;
+    HGLOBAL hPageSetupTemplate;
+} PAGESETUPDLGA, *LPPAGESETUPDLGA;
+
+#define PSD_DEFAULTMINMARGINS 0x00000000
+#define PSD_INWININIINTLMEASURE 0x00000000
+#define PSD_MINMARGINS 0x00000001
+#define PSD_MARGINS 0x00000002
+#define PSD_INTHOUSANDTHSOFINCHES 0x00000004
+#define PSD_INHUNDREDTHSOFMILLIMETERS 0x00000008
+#define PSD_DISABLEMARGINS 0x00000010
+#define PSD_DISABLEPRINTER 0x00000020
+#define PSD_NOWARNING 0x00000080
+#define PSD_DISABLEORIENTATION 0x00000100
+#define PSD_RETURNDEFAULT 0x00000400
+#define PSD_DISABLEPAPER 0x00000200
+BOOL PageSetupDlgA(PAGESETUPDLGA *psd);
+
+/* A document on a printer DC: begun, paged and ended. Windows answers with a
+ * positive number on success and a negative one or zero on failure, and that
+ * is what a program checks. */
+typedef struct tagDOCINFOA {
+    int cbSize;
+    LPCSTR lpszDocName;
+    LPCSTR lpszOutput;
+    LPCSTR lpszDatatype;
+    DWORD fwType;
+} DOCINFOA, *LPDOCINFOA;
+
+int StartDocA(HDC dc, const DOCINFOA *di);
+int StartPage(HDC dc);
+int EndPage(HDC dc);
+int EndDoc(HDC dc);
+int AbortDoc(HDC dc);
 
 /* ---- implemented controls -------------------------------------------------
  * examples/controls.c switches its blocks on these: a control is announced
@@ -2074,6 +2370,19 @@ BOOL EnableWindow(HWND wnd, BOOL enable);
 BOOL IsWindowEnabled(HWND wnd);
 /* Whether a window is shown, which a program asks about one it put up. */
 BOOL IsWindowVisible(HWND wnd);
+/* Whether it is an icon or filling the screen. A program asks before saving
+ * its window position, since the position of a minimised window is not the
+ * one to come back to. There is no minimising here -- the window manager's
+ * business, and the library never asks for it -- so IsIconic answers FALSE
+ * and means it. */
+int GetWindowTextLengthA(HWND wnd);
+/* A message the system gives a name rather than a number: everyone who asks
+ * for the same name is given the same message, which is how two programs --
+ * or a program and a common dialog -- agree on one without a header between
+ * them. The numbers start where win32's do, above the last WM_. */
+UINT RegisterWindowMessageA(LPCSTR name);
+BOOL IsIconic(HWND wnd);
+BOOL IsZoomed(HWND wnd);
 BOOL CheckDlgButton(HWND dlg, int id, UINT check);
 UINT IsDlgButtonChecked(HWND dlg, int id);
 BOOL CheckRadioButton(HWND dlg, int first, int last, int check);
@@ -2218,6 +2527,103 @@ typedef void *HANDLE;
 #define FILE_END 2
 #define INVALID_SET_FILE_POINTER ((DWORD)-1)
 #define INVALID_FILE_SIZE ((DWORD)0xFFFFFFFF)
+/* ---- files dropped on a window, and the About box -------------------------
+ *
+ * SHELL32's small corner of this: a window that says it will take dropped
+ * files hears WM_DROPFILES with a handle it asks for the names, and a
+ * program's About box is one the shell puts up with the program's name and
+ * icon in it. Dropping needs the drag protocol of whatever is dragging --
+ * XDND on X11 -- which is not here yet, so a window can say it accepts files
+ * and simply never hears about any; the About box is a MessageBox with the
+ * program's own text in it, which is what the shell's own is underneath. */
+typedef struct HDROP__ *HDROP;
+#define WM_DROPFILES 0x0233
+void DragAcceptFiles(HWND wnd, BOOL accept);
+UINT DragQueryFileA(HDROP drop, UINT index, LPSTR name, UINT max);
+void DragFinish(HDROP drop);
+BOOL DragQueryPoint(HDROP drop, POINT *pt);
+void ShellAboutA(HWND owner, LPCSTR app, LPCSTR other, HICON icon);
+
+/* ---- memory a handle stands for ------------------------------------------
+ *
+ * GlobalAlloc and LocalAlloc are what a win32 program allocates with when
+ * something else will free it -- the clipboard, a common dialog, an edit
+ * control's own buffer. Windows keeps moveable blocks and hands out handles
+ * that have to be locked; nothing here moves, so a block is its own handle
+ * and locking it hands it back, which is what GlobalLock does for the fixed
+ * kind on Windows too. */
+#define GMEM_FIXED 0x0000
+#define GMEM_MOVEABLE 0x0002
+#define GMEM_ZEROINIT 0x0040
+#define GPTR 0x0040
+#define GHND 0x0042
+#define LMEM_FIXED 0x0000
+#define LMEM_MOVEABLE 0x0002
+#define LMEM_ZEROINIT 0x0040
+#define LPTR 0x0040
+#define LHND 0x0042
+HGLOBAL GlobalAlloc(UINT flags, size_t bytes);
+void *GlobalLock(HGLOBAL mem);
+BOOL GlobalUnlock(HGLOBAL mem);
+HGLOBAL GlobalFree(HGLOBAL mem);
+size_t GlobalSize(HGLOBAL mem);
+HLOCAL LocalAlloc(UINT flags, size_t bytes);
+void *LocalLock(HLOCAL mem);
+BOOL LocalUnlock(HLOCAL mem);
+HLOCAL LocalFree(HLOCAL mem);
+size_t LocalSize(HLOCAL mem);
+#define ZeroMemory(dst, len) memset((dst), 0, (len))
+#define CopyMemory(dst, src, len) memcpy((dst), (src), (len))
+#define FillMemory(dst, len, fill) memset((dst), (fill), (len))
+
+/* ---- the clock, and the two text encodings -------------------------------
+ *
+ * A program that stamps the time into a document asks the system for it and
+ * asks the system to spell it, so that it comes out the way the user's
+ * machine writes dates. Here that is the C library's locale, which is the
+ * same idea in the same place. */
+typedef struct _SYSTEMTIME {
+    WORD wYear;
+    WORD wMonth;
+    WORD wDayOfWeek;
+    WORD wDay;
+    WORD wHour;
+    WORD wMinute;
+    WORD wSecond;
+    WORD wMilliseconds;
+} SYSTEMTIME, *LPSYSTEMTIME;
+void GetLocalTime(SYSTEMTIME *st);
+void GetSystemTime(SYSTEMTIME *st);
+typedef DWORD LCID;
+#define LOCALE_USER_DEFAULT 0x0400
+#define LOCALE_SYSTEM_DEFAULT 0x0800
+#define DATE_SHORTDATE 0x00000001
+#define DATE_LONGDATE 0x00000002
+#define TIME_NOMINUTESORSECONDS 0x00000001
+#define TIME_NOSECONDS 0x00000002
+#define TIME_NOTIMEMARKER 0x00000004
+#define TIME_FORCE24HOURFORMAT 0x00000008
+int GetDateFormatA(LCID locale, DWORD flags, const SYSTEMTIME *st,
+                   LPCSTR format, LPSTR out, int max);
+int GetTimeFormatA(LCID locale, DWORD flags, const SYSTEMTIME *st,
+                   LPCSTR format, LPSTR out, int max);
+
+/* UTF-16 is what a file may be written in even when the program itself is an
+ * ANSI one, so the two conversions are real: CP_UTF8 both ways, and CP_ACP
+ * being Latin-1 here -- the character set the A-API of this library speaks.
+ * A character with no Latin-1 spelling comes out as a question mark, which
+ * is what WideCharToMultiByte does with a default character. */
+typedef uint16_t WCHAR;
+typedef WCHAR *LPWSTR;
+typedef const WCHAR *LPCWSTR;
+#define CP_ACP 0
+#define CP_UTF8 65001
+int MultiByteToWideChar(UINT page, DWORD flags, LPCSTR in, int in_len,
+                        LPWSTR out, int out_len);
+int WideCharToMultiByte(UINT page, DWORD flags, LPCWSTR in, int in_len,
+                        LPSTR out, int out_len, LPCSTR default_char,
+                        BOOL *used_default);
+
 HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, void *security,
                    DWORD disposition, DWORD flags, HANDLE template_file);
 BOOL ReadFile(HANDLE file, void *buf, DWORD to_read, DWORD *read, void *ovl);
@@ -2298,6 +2704,7 @@ LSTATUS RegDeleteValueA(HKEY key, LPCSTR name);
 
 #define CF_TEXT 1
 #define CF_BITMAP 2
+#define CF_UNICODETEXT 13
 #define WM_CUT 0x0300
 #define WM_COPY 0x0301
 #define WM_PASTE 0x0302
@@ -2548,15 +2955,70 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define SetWindowLongPtr SetWindowLongPtrA
 #define GetWindowLongPtr GetWindowLongPtrA
 #define RegisterWindowMessage RegisterWindowMessageA
+#define RegCreateKeyEx RegCreateKeyExA
+#define RegOpenKeyEx RegOpenKeyExA
+#define RegQueryValueEx RegQueryValueExA
+#define RegSetValueEx RegSetValueExA
+#define RegDeleteValue RegDeleteValueA
+#define WNDCLASSEX WNDCLASSEXA
+#define WNDCLASS WNDCLASSA
 #define DrawText DrawTextA
 #define TextOut TextOutA
 #define GetTextExtentPoint32 GetTextExtentPoint32A
 #define CreateFont CreateFontA
+#define CreateFontIndirect CreateFontIndirectA
+#define GetTextMetrics GetTextMetricsA
+#define LOGFONT LOGFONTA
+#define PLOGFONT PLOGFONTA
+#define LPLOGFONT LPLOGFONTA
+#define TEXTMETRIC TEXTMETRICA
+#define LPTEXTMETRIC LPTEXTMETRICA
 #define GetOpenFileName GetOpenFileNameA
 #define GetSaveFileName GetSaveFileNameA
 #define ChooseColor ChooseColorA
+#define ChooseFont ChooseFontA
+#define FindText FindTextA
+#define ReplaceText ReplaceTextA
+#define PrintDlg PrintDlgA
+#define PageSetupDlg PageSetupDlgA
+#define StartDoc StartDocA
+#define CHOOSEFONT CHOOSEFONTA
+#define LPCHOOSEFONT LPCHOOSEFONTA
+#define FINDREPLACE FINDREPLACEA
+#define LPFINDREPLACE LPFINDREPLACEA
+#define PRINTDLG PRINTDLGA
+#define LPPRINTDLG LPPRINTDLGA
+#define PAGESETUPDLG PAGESETUPDLGA
+#define LPPAGESETUPDLG LPPAGESETUPDLGA
+#define DOCINFO DOCINFOA
+#define LPDOCINFO LPDOCINFOA
+#define OPENFILENAME OPENFILENAMEA
+#define LPOPENFILENAME LPOPENFILENAMEA
+#define CHOOSECOLOR CHOOSECOLORA
+#define LPCHOOSECOLOR LPCHOOSECOLORA
 #define CreateFile CreateFileA
+#define GetModuleHandle GetModuleHandleA
+#define GetDateFormat GetDateFormatA
+#define GetTimeFormat GetTimeFormatA
+#define DragQueryFile DragQueryFileA
+#define ShellAbout ShellAboutA
+#define DialogBox(inst, name, owner, proc)                                     \
+    DialogBoxParamA(inst, name, owner, proc, 0)
+#define CreateDialog(inst, name, owner, proc)                                  \
+    CreateDialogParamA(inst, name, owner, proc, 0)
+#define MAKEINTRESOURCE MAKEINTRESOURCEA
 #define PropertySheet PropertySheetA
+#define STATUSCLASSNAME STATUSCLASSNAMEA
+#define WC_TABCONTROL WC_TABCONTROLA
+#define WC_TREEVIEW WC_TREEVIEWA
+#define WC_LISTVIEW WC_LISTVIEWA
+#define WC_COMBOBOXEX WC_COMBOBOXEXA
+#define TOOLBARCLASSNAME TOOLBARCLASSNAMEA
+#define REBARCLASSNAME REBARCLASSNAMEA
+#define TRACKBAR_CLASS TRACKBAR_CLASSA
+#define PROGRESS_CLASS PROGRESS_CLASSA
+#define SB_SETTEXT SB_SETTEXTA
+#define SB_GETTEXT SB_GETTEXTA
 
 #ifdef __cplusplus
 }

@@ -472,6 +472,17 @@ BOOL ScreenToClient(HWND wnd, POINT *pt)
 /* The command line, as one string with the program name first: what win32
  * hands over, rebuilt here from what this machine keeps instead. An
  * argument with a space in it is quoted, as the caller will expect. */
+/* The running program, as a handle. There is no loaded image here to point
+ * at and every call taking an HINSTANCE ignores it, so what matters is only
+ * that it is not NULL and is the same one every time: a program compares the
+ * handle it was given in WinMain with this. A name asks for some other
+ * module, and there are none. */
+HINSTANCE GetModuleHandleA(LPCSTR name)
+{
+    static char self;
+    return name ? NULL : (HINSTANCE)&self;
+}
+
 LPSTR GetCommandLineA(void)
 {
     static char line[4096];
@@ -709,6 +720,21 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
      * wants inherits the root's cursor, and on a bare X server that is the
      * X shape rather than an arrow. */
     wnd->cursor_shown = -1;
+    /* CW_USEDEFAULT: the system picks. For a size it is valid only on an
+     * overlapped window -- win32 sets a popup or a child asking for one to
+     * nothing, and so does this -- and where it is valid Windows cascades a
+     * window across the desktop at about three quarters of it. Nothing here
+     * cascades; the size is those three quarters, which is what a program
+     * that says "you decide" is asking for. Before this, a window created
+     * that way took the number itself as its width and failed to be made at
+     * all. */
+    if (w == CW_USEDEFAULT || h == CW_USEDEFAULT) {
+        int overlapped = !(style & (WS_CHILD | WS_POPUP));
+        if (w == CW_USEDEFAULT)
+            w = overlapped ? GetSystemMetrics(SM_CXSCREEN) * 3 / 4 : 0;
+        if (h == CW_USEDEFAULT)
+            h = overlapped ? GetSystemMetrics(SM_CYSCREEN) * 3 / 4 : 0;
+    }
     wnd->x = x == CW_USEDEFAULT ? 0 : x;
     wnd->y = y == CW_USEDEFAULT ? 0 : y;
     wnd->w = w;
@@ -1263,6 +1289,52 @@ BOOL IsWindowVisible(HWND wnd)
     return wnd != NULL;
 }
 
+/* How long the text is, which a program asks before allocating room for it.
+ * Through WM_GETTEXTLENGTH, so a control that keeps its text somewhere of its
+ * own answers for itself. */
+int GetWindowTextLengthA(HWND wnd)
+{
+    return wnd ? (int)SendMessageA(wnd, WM_GETTEXTLENGTH, 0, 0) : 0;
+}
+
+/* A message named rather than numbered. The same name always gives the same
+ * number, and a name nobody has asked for before takes the next one; win32
+ * hands these out from 0xC000 upwards, which is above every WM_ there is. */
+UINT RegisterWindowMessageA(LPCSTR name)
+{
+    static char *names[256];
+    static int count;
+    if (!name || !*name)
+        return 0;
+    for (int i = 0; i < count; i++)
+        if (!strcmp(names[i], name))
+            return (UINT)(0xC000 + i);
+    if (count == (int)(sizeof names / sizeof names[0]))
+        return 0;
+    names[count] = malloc(strlen(name) + 1);
+    if (!names[count])
+        return 0;
+    strcpy(names[count], name);
+    return (UINT)(0xC000 + count++);
+}
+
+/* Minimising is the window manager's, and nothing here asks for it, so a
+ * window is never an icon. Saying so is what a program checking before it
+ * saves its position needs; being told it is minimised when it is not would
+ * lose the position instead. */
+BOOL IsIconic(HWND wnd)
+{
+    (void)wnd;
+    return FALSE;
+}
+
+/* Maximised, though, the library does know: a window filling the screen is
+ * drawn with the restore button and SC_MAXIMIZE toggles it. */
+BOOL IsZoomed(HWND wnd)
+{
+    return wnd && wnd->maximized ? TRUE : FALSE;
+}
+
 BOOL CheckDlgButton(HWND dlg, int id, UINT check)
 {
     HWND c = GetDlgItem(dlg, id);
@@ -1665,9 +1737,20 @@ static void paint_tree(struct ween_wnd *w)
         int b = oy + cr.bottom < outer.bottom ? oy + cr.bottom : outer.bottom;
         ween_surface_clip(&top->surface, l, t, r - l, b - t);
     }
-    if (w->cls && w->cls->background)
-        ween_surface_fill(&top->surface, ox, oy, cr.right, cr.bottom,
-                          w->cls->background->color);
+    {
+        /* A class background is either a brush or, by an old win32 habit, a
+         * system colour index with one added -- `(HBRUSH)(COLOR_WINDOW + 1)`
+         * is how nearly every program written since 1993 spells "the window
+         * colour", and it is a small number rather than anything that can be
+         * read through. */
+        HBRUSH back = w->cls ? w->cls->background : NULL;
+        if ((UINT_PTR)back &&
+            (UINT_PTR)back <= COLOR_GRADIENTINACTIVECAPTION + 1)
+            back = GetSysColorBrush((int)(UINT_PTR)back - 1);
+        if (back)
+            ween_surface_fill(&top->surface, ox, oy, cr.right, cr.bottom,
+                              back->color);
+    }
     SendMessageA(w, WM_PAINT, 0, 0);
     for (struct ween_wnd *c = w->first_child; c; c = c->next_sibling)
         paint_tree(c);

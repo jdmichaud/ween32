@@ -132,7 +132,92 @@ HFONT CreateFontA(int height, int width, int escapement, int orientation,
     f->font = ween_font_create(face_name, height, weight);
     f->font_italic = italic != 0;
     f->font_underline = underline != 0;
+    f->font_weight = weight ? weight : FW_NORMAL;
     return f;
+}
+
+/* The same font, described in a structure rather than in fourteen arguments.
+ * Windows implements one as the other, and so does this. */
+HFONT CreateFontIndirectA(const LOGFONTA *lf)
+{
+    if (!lf)
+        return NULL;
+    return CreateFontA(lf->lfHeight, lf->lfWidth, lf->lfEscapement,
+                       lf->lfOrientation, lf->lfWeight, lf->lfItalic,
+                       lf->lfUnderline, lf->lfStrikeOut, lf->lfCharSet,
+                       lf->lfOutPrecision, lf->lfClipPrecision, lf->lfQuality,
+                       lf->lfPitchAndFamily, lf->lfFaceName);
+}
+
+/* What the font selected into this DC comes out as. The strike carries the
+ * ascent and the descent it was cut with -- the descent negative, as the font
+ * writes it -- and everything a program lays text out with is worked from
+ * those and from the widths of the characters themselves. */
+BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm)
+{
+    const ween_strike *f;
+    int wide = 0, sum = 0, n = 0;
+    if (!dc || !tm)
+        return FALSE;
+    f = dc->font ? dc->font : ween_gui_font();
+    memset(tm, 0, sizeof *tm);
+    if (!f)
+        return FALSE;
+    for (int c = 32; c < 127; c++) {
+        int w = ween_strike_char_advance(f, (unsigned char)c);
+        sum += w;
+        n++;
+        if (w > wide)
+            wide = w;
+    }
+    tm->tmAscent = f->ascent;
+    tm->tmDescent = -f->descent; /* the strike keeps it negative */
+    tm->tmHeight = tm->tmAscent + tm->tmDescent;
+    tm->tmAveCharWidth = n ? (sum + n / 2) / n : 0;
+    tm->tmMaxCharWidth = wide;
+    tm->tmWeight = dc->font_obj && dc->font_obj->font_weight
+                       ? dc->font_obj->font_weight
+                       : FW_NORMAL;
+    tm->tmItalic = (BYTE)(dc->font_obj ? dc->font_obj->font_italic : 0);
+    tm->tmUnderlined = (BYTE)(dc->font_obj ? dc->font_obj->font_underline : 0);
+    tm->tmFirstChar = 32;
+    tm->tmLastChar = 255;
+    tm->tmDefaultChar = '?';
+    tm->tmBreakChar = ' ';
+    tm->tmCharSet = ANSI_CHARSET;
+    tm->tmDigitizedAspectX = (LONG)ween_render_dpi();
+    tm->tmDigitizedAspectY = (LONG)ween_render_dpi();
+    return TRUE;
+}
+
+/* What the device is like. The screen is the desktop, and its dots per inch
+ * are the ones the library scales everything else by -- so a program working
+ * a point size into a height with LOGPIXELSY lands on the size the library
+ * would have chosen anyway. */
+int GetDeviceCaps(HDC dc, int index)
+{
+    (void)dc;
+    switch (index) {
+    case LOGPIXELSX:
+    case LOGPIXELSY:
+        return ween_render_dpi();
+    case HORZRES:
+        return GetSystemMetrics(SM_CXSCREEN);
+    case VERTRES:
+        return GetSystemMetrics(SM_CYSCREEN);
+    case BITSPIXEL:
+        return 32;
+    case PLANES:
+        return 1;
+    case TECHNOLOGY:
+        return 1; /* DT_RASDISPLAY */
+    case HORZSIZE: /* the screen in millimetres, from its dots */
+        return MulDiv(GetSystemMetrics(SM_CXSCREEN), 254, ween_render_dpi() * 10);
+    case VERTSIZE:
+        return MulDiv(GetSystemMetrics(SM_CYSCREEN), 254, ween_render_dpi() * 10);
+    default:
+        return 0;
+    }
 }
 
 BOOL DeleteObject(HGDIOBJ obj)

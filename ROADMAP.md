@@ -37,6 +37,39 @@ that no application has asked for:
   follows the caret and the bar drives it — and what is missing is the
   sideways offset that would go with it, `WS_HSCROLL`, and `EM_LINESCROLL`'s
   first argument, which is taken and ignored today.
+- [ ] **ChooseFont.** The dialog links and answers as a cancelled one does,
+  since a program with a Font item on its menu cannot be built without it.
+  What it wants underneath is font enumeration: the box lists the faces
+  installed and previews each, and this library carries four strikes and no
+  way to ask what else is there. A box offering four faces would be worse
+  than none.
+
+- [ ] **Find and Replace.** Modeless dialogs: the real ones put a window up
+  and send the owner `RegisterWindowMessage(FINDMSGSTRING)` each time a
+  button is pressed, which the library now has. Nothing underneath is
+  missing -- the dialog itself is a small one -- so these are next rather
+  than never. Today `FindTextA` and `ReplaceTextA` answer with no window.
+
+- [ ] **Printing.** `PrintDlgA`, `PageSetupDlgA` and `StartDoc`/`StartPage`/
+  `EndPage`/`EndDoc` link and fail honestly. What is missing is a device
+  context whose pixels go somewhere other than a window -- PostScript or PDF
+  is the shape of it -- and something to send the result to. A program draws
+  a page with the same GDI calls it draws a window with, so the drawing half
+  is already here.
+
+- [ ] **Files dropped on a window.** `DragAcceptFiles` remembers that a
+  window would take them and `DragQueryFileA` answers with none, because the
+  drag protocol belongs to the desktop -- XDND on X11 -- and the backend does
+  not speak it. A gap in the backend rather than in any program: the same
+  source dropped on by Windows works there.
+
+- [ ] **One source list, not two.** The Makefile and build.zig each name the
+  library's .c files, and the pair went stale within an hour of the second
+  one being added -- a build that links a library missing five objects fails
+  at the last step with undefined symbols rather than at the first with a
+  name. A check that compares the two lists is a few lines and would have
+  said so at once.
+
 - [ ] **The edit's scroll bar, against the machine.** The three numbers in it
   — the thumb's size, a screenful for a click in the track, three lines for a
   notch of the wheel — come from ween32's own scroll helpers, the same ones
@@ -167,6 +200,22 @@ the dotted focus rectangle. Accelerator tables
 Ctrl+X/C/V/A and `WM_CUT`/`WM_COPY`/`WM_PASTE`, and a double click selecting
 the word under it. Within one process: sharing with other X clients still
 needs selection ownership.
+
+**Fonts a program describes** — `LOGFONTA` and `CreateFontIndirectA`, which
+is `CreateFontA` with the structure read out of it; `TEXTMETRICA` and
+`GetTextMetricsA`, worked out from the strike selected into the DC and the
+widths of the characters themselves; and `GetDeviceCaps`, whose `LOGPIXELSX`
+and `LOGPIXELSY` are the dots per inch the whole library scales by, so a
+program working a point size into a height lands where the library would.
+
+**KERNEL32's smaller corners** — `GlobalAlloc`/`LocalAlloc` and their locks,
+where a block is its own handle, as it is for fixed memory on Windows;
+`GetLocalTime` with `GetDateFormatA`/`GetTimeFormatA` over the C library's
+locale, taking win32's flags or a picture (`yyyy-MM-dd`, `h:mm tt`);
+`MultiByteToWideChar`/`WideCharToMultiByte` for CP_UTF8 and CP_ACP, the
+latter being Latin-1 here, surrogate pairs included. And the entry point: a
+win32 program has `WinMain` rather than `main`, and the library supplies the
+`main` that calls it — weakly, so a program with one of its own keeps it.
 
 **The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
 `RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows

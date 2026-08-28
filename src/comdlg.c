@@ -2090,3 +2090,42 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
     cc->rgbResult = g_cc.chosen;
     return TRUE;
 }
+
+/* ---- the common dialogs that are not here yet -----------------------------
+ *
+ * A Windows program links against every dialog it can open, whether or not it
+ * ever opens one, so these have to exist for a program to be built at all.
+ * What each would take to be real is different, and none of it is small:
+ *
+ * ChooseFont wants a list of the faces installed and a preview of each; this
+ * library carries four strikes and no font enumeration, so the box would have
+ * four faces in it and lie about the rest.
+ *
+ * Find and Replace are modeless -- the real ones put a window up and send the
+ * owner RegisterWindowMessage(FINDMSGSTRING) each time a button is pressed.
+ * The dialog itself is a small one; what is missing is nothing at all, so
+ * these are next rather than never.
+ *
+ * Until then they answer the way the real call answers when the user changes
+ * their mind: FALSE, and nothing written back. A program built against this
+ * runs, and finds that menu item does nothing -- which is truthful, where a
+ * dialog with four fonts in it would not be.
+ */
+
+BOOL ChooseFontA(CHOOSEFONTA *cf)
+{
+    (void)cf;
+    return FALSE;
+}
+
+HWND FindTextA(FINDREPLACEA *fr)
+{
+    (void)fr;
+    return NULL;
+}
+
+HWND ReplaceTextA(FINDREPLACEA *fr)
+{
+    (void)fr;
+    return NULL;
+}

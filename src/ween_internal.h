@@ -240,6 +240,7 @@ typedef struct ween_gdiobj {
     /* The two a strike cannot carry: a slant and a rule under the line,
      * both of which GDI puts on at drawing time rather than in the glyphs. */
     int font_italic, font_underline;
+    int font_weight; /* what was asked for, which GetTextMetrics reports back */
     ween_surface bitmap;      /* WEEN_OBJ_BITMAP/ICON: the pixels */
     unsigned char *mask;      /* WEEN_OBJ_ICON: 1 where a pixel is drawn */
     int pen_style, pen_width; /* WEEN_OBJ_PEN: PS_*, and its width in pixels */
@@ -511,6 +512,10 @@ struct ween_wnd {
     int nc_close_pressed;   /* close-box tracking */
     int nc_button_pressed;  /* 1 maximize, 2 minimize, 0 none */
     int maximized;          /* drawn as restore, and SC_MAXIMIZE toggles it */
+    /* DragAcceptFiles: whether this window would take files dropped on it.
+       Nothing can drop on it yet -- the backend does not speak XDND -- so
+       this is remembered and read by nobody but the call that set it. */
+    int accepts_files;
     RECT restore_rect;      /* where it goes back to */
 };
 

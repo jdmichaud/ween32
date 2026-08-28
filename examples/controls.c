@@ -28,7 +28,6 @@
 /* An undefined identifier evaluates to 0 in #if, so a control that ween32 has
  * not announced yet is simply absent. */
 #define HAVE(feature) WEEN32_HAS_##feature
-#define ZeroMemory(p, n) memset((p), 0, (n))
 #include <string.h>
 #endif
 

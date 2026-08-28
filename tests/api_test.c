@@ -333,6 +333,115 @@ int main(void)
         DestroyWindow(paper);
     }
 
+    /* ---- a font described, and what it comes out as ---- */
+    {
+        HWND paper = CreateWindowExA(0, "weentest", "paper", WS_POPUP, 0, 0, 200,
+                                     100, NULL, NULL, NULL, NULL);
+        HDC dc = GetDC(paper);
+        LOGFONTA lf;
+        TEXTMETRICA tm;
+        HFONT f, was;
+        memset(&lf, 0, sizeof lf);
+        lf.lfHeight = 16;
+        lf.lfWeight = FW_BOLD;
+        lf.lfItalic = 1;
+        strcpy(lf.lfFaceName, "Tahoma");
+        f = CreateFontIndirectA(&lf);
+        CHECK(f != NULL, "a font described in a LOGFONT is made");
+        was = SelectObject(dc, f);
+        CHECK(GetTextMetricsA(dc, &tm), "and measured once it is selected");
+        CHECK(tm.tmHeight == tm.tmAscent + tm.tmDescent,
+              "its height is its ascent and its descent");
+        CHECK(tm.tmAscent > 0 && tm.tmDescent > 0, "both of which it has");
+        CHECK(tm.tmWeight == FW_BOLD, "the weight it was asked for");
+        CHECK(tm.tmItalic == 1, "and the slant");
+        CHECK(tm.tmAveCharWidth > 0 && tm.tmMaxCharWidth >= tm.tmAveCharWidth,
+              "an average character is narrower than the widest one");
+        SelectObject(dc, was);
+        DeleteObject(f);
+
+        /* The device: what a program turns a point size into a height with. */
+        CHECK(GetDeviceCaps(dc, LOGPIXELSY) == 96,
+              "the screen's dots per inch, which is what this test set");
+        CHECK(GetDeviceCaps(dc, LOGPIXELSX) == GetDeviceCaps(dc, LOGPIXELSY),
+              "the same both ways, the pixels being square");
+        CHECK(GetDeviceCaps(dc, HORZRES) == GetSystemMetrics(SM_CXSCREEN),
+              "the screen's width in pixels is the screen's width");
+        CHECK(GetDeviceCaps(dc, BITSPIXEL) == 32, "and its colour depth");
+        CHECK(GetDeviceCaps(dc, 4242) == 0, "something it does not know is 0");
+        ReleaseDC(paper, dc);
+        DestroyWindow(paper);
+    }
+
+    /* ---- a class background named by colour rather than by brush ---- */
+    {
+        /* `(HBRUSH)(COLOR_WINDOW + 1)` is how a program has spelled "the
+         * window colour" since 1993: a small number, not a brush to read
+         * through. */
+        WNDCLASSA wc;
+        HWND w;
+        struct ween_wnd *tw;
+        DWORD want = GetSysColor(COLOR_WINDOW);
+        memset(&wc, 0, sizeof wc);
+        wc.lpfnWndProc = DefWindowProcA;
+        wc.lpszClassName = "weencolorback";
+        wc.hbrBackground = (HBRUSH)(UINT_PTR)(COLOR_WINDOW + 1);
+        RegisterClassA(&wc);
+        w = CreateWindowExA(0, "weencolorback", "back",
+                            WS_POPUP | WS_VISIBLE, 0, 0, 60, 40, NULL, NULL,
+                            NULL, NULL);
+        CHECK(w != NULL, "a window of a class whose background is a colour");
+        InvalidateRect(w, NULL, TRUE);
+        ween_flush_paint();
+        tw = ween_top_level(w);
+        CHECK(tw && (tw->surface.px[0] & 0xffffff) ==
+                        (((want & 0xff) << 16) | (want & 0xff00) |
+                         ((want >> 16) & 0xff)),
+              "is filled with that colour rather than crashing on the number");
+        DestroyWindow(w);
+    }
+
+    /* ---- a window that lets the system choose its size ---- */
+    {
+        HWND w = CreateWindowExA(0, "weentest", "default",
+                                 WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                                 NULL, NULL, NULL, NULL);
+        RECT r;
+        CHECK(w != NULL, "a window created with CW_USEDEFAULT is made at all");
+        GetClientRect(w, &r);
+        CHECK(r.right > 0 && r.bottom > 0, "and has a size somebody chose");
+        CHECK(r.right < GetSystemMetrics(SM_CXSCREEN),
+              "smaller than the screen, as a default window is");
+        DestroyWindow(w);
+    }
+
+    /* ---- odds a program asks about itself ---- */
+    {
+        HWND w = CreateWindowExA(0, "weentest", "state", WS_POPUP | WS_VISIBLE,
+                                 0, 0, 100, 50, NULL, NULL, NULL, NULL);
+        SetWindowTextA(w, "twelve chars");
+        CHECK(GetWindowTextLengthA(w) == 12, "the length of a window's text");
+        CHECK(IsIconic(w) == FALSE, "a window is not an icon: nothing minimises");
+        CHECK(IsZoomed(w) == FALSE, "nor is it maximised until it is");
+        CHECK(GetModuleHandleA(NULL) != NULL, "the program has a handle");
+        CHECK(GetModuleHandleA(NULL) == GetModuleHandleA(NULL),
+              "and it is the same one every time");
+        CHECK(GetModuleHandleA("other.dll") == NULL,
+              "and there are no other modules to ask for");
+        DestroyWindow(w);
+    }
+
+    /* ---- a message named rather than numbered ---- */
+    {
+        UINT a = RegisterWindowMessageA("commdlg_FindReplace");
+        UINT b = RegisterWindowMessageA("commdlg_FindReplace");
+        UINT c = RegisterWindowMessageA("something else entirely");
+        CHECK(a >= 0xC000, "a registered message is above the WM_ numbers");
+        CHECK(a == b, "the same name is the same message");
+        CHECK(c != a, "and a different name a different one");
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

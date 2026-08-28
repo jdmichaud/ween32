@@ -242,6 +242,75 @@ int main(void)
     CHECK(cc.rgbResult == bar_clicked && bar_clicked != RGB(0, 0, 0),
           "and so does the brightness bar");
 
+    /* ---- the ones that are not here yet ----
+     *
+     * These exist so that a program with a Font, a Find or a Print item on
+     * its menus can be built at all. What is checked is that each answers the
+     * way a cancelled dialog answers, and writes nothing back -- so a program
+     * checking the return, as every program does, carries on correctly rather
+     * than acting on a structure nobody filled in. */
+    {
+        LOGFONTA lf;
+        CHOOSEFONTA cf;
+        FINDREPLACEA fr;
+        PRINTDLGA pd;
+        PAGESETUPDLGA psd;
+        DOCINFOA di;
+        char what[64] = "needle";
+
+        memset(&lf, 0, sizeof lf);
+        strcpy(lf.lfFaceName, "Tahoma");
+        memset(&cf, 0, sizeof cf);
+        cf.lStructSize = sizeof cf;
+        cf.lpLogFont = &lf;
+        cf.Flags = CF_INITTOLOGFONTSTRUCT | CF_SCREENFONTS;
+        CHECK(ChooseFontA(&cf) == FALSE, "there is no font dialog to open");
+        CHECK(strcmp(lf.lfFaceName, "Tahoma") == 0,
+              "and what the program had chosen is left as it was");
+
+        memset(&fr, 0, sizeof fr);
+        fr.lStructSize = sizeof fr;
+        fr.lpstrFindWhat = what;
+        fr.wFindWhatLen = sizeof what;
+        fr.Flags = FR_DOWN;
+        CHECK(FindTextA(&fr) == NULL, "nor a Find window to put up");
+        CHECK(ReplaceTextA(&fr) == NULL, "nor a Replace one");
+        CHECK(strcmp(what, "needle") == 0, "and neither touched the buffer");
+
+        memset(&pd, 0, sizeof pd);
+        pd.lStructSize = sizeof pd;
+        pd.Flags = PD_RETURNDC;
+        pd.hDC = (HDC)(UINT_PTR)0x1234; /* whatever was there before */
+        CHECK(PrintDlgA(&pd) == FALSE, "there is no printer to choose");
+        CHECK(pd.hDC == NULL,
+              "and no device context, cleared rather than left as rubbish");
+
+        memset(&psd, 0, sizeof psd);
+        psd.lStructSize = sizeof psd;
+        CHECK(PageSetupDlgA(&psd) == FALSE, "nor a page to set up");
+
+        memset(&di, 0, sizeof di);
+        di.cbSize = sizeof di;
+        di.lpszDocName = "nothing";
+        CHECK(StartDocA(NULL, &di) <= 0, "a document cannot be started");
+        CHECK(StartPage(NULL) <= 0 && EndPage(NULL) <= 0 && EndDoc(NULL) <= 0,
+              "and the calls that would page it all fail the same way");
+    }
+
+    /* Files dropped on a window: a window can say it takes them, and nothing
+     * can drop yet, so a handle nobody handed out names no files. */
+    {
+        HWND w = CreateWindowExA(0, "STATIC", "drop", WS_POPUP, 0, 0, 40, 20,
+                                 NULL, NULL, NULL, NULL);
+        char name[32] = "x";
+        DragAcceptFiles(w, TRUE);
+        CHECK(DragQueryFileA(NULL, 0, name, sizeof name) == 0,
+              "no files have been dropped, there being no way to drop any");
+        CHECK(name[0] == 0, "and the name comes back empty rather than unset");
+        DragFinish(NULL);
+        DestroyWindow(w);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
