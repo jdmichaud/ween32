@@ -1839,8 +1839,10 @@ typedef struct {
  * left, an optional label, and one control filling the rest. An etched line
  * runs above every band, which is what separates them.
  *
- * Bands are stacked, one per row. A real rebar can put two side by side and
- * let them be dragged; this does the arrangement a shell actually uses. */
+ * Bands share a row until one asks to start a new one with RBBS_BREAK, which
+ * a shell sets on each of its bars — so a shell's stack and a plainer rebar's
+ * row of bars side by side both come out as they do on Windows. What is not
+ * here yet is carrying a band about by its gripper. */
 #define REBARCLASSNAMEA "ReBarWindow32"
 /* A rebar rules its bands off from each other and from what is above and
  * below. A shell's does; a bare one does not, and then the bands sit flush. */

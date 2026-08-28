@@ -8540,6 +8540,11 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     ween_classic_edge(&top->surface, ox, oy, r.right, r.bottom, EDGE_ETCHED,
                       BF_RECT, NULL);
 
+    /* Which row has had its rule drawn. A rule belongs to a row, not to a
+     * band: bands sharing one are beside each other, not under each other,
+     * and a second band drawing its own put a line across the top of the
+     * rebar where the etched edge already was. */
+    int ruled_y = -1;
     for (int i = 0; i < rb->count; i++) {
         ween_rbband *b = &rb->band[i];
         int by = oy + b->y;
@@ -8550,25 +8555,34 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
          * View > Toolbars > Address Bar had put that bar away. */
         if (b->style & RBBS_HIDDEN)
             continue;
-        if (i) { /* the rebar's own top edge is the first band's */
-            int e = ween_ncm(WEEN_RB_EDGE_H);
-            ween_surface_hline(&top->surface, ox + e, by, r.right - 2 * e,
-                               WEEN_SHADOW);
-            ween_surface_hline(&top->surface, ox + e, by + 1, r.right - 2 * e,
-                               WEEN_WHITE);
+        if (b->y != ruled_y) {
+            if (b->y) { /* the rebar's own top edge is the first row's */
+                int e = ween_ncm(WEEN_RB_EDGE_H);
+                ween_surface_hline(&top->surface, ox + e, by, r.right - 2 * e,
+                                   WEEN_SHADOW);
+                ween_surface_hline(&top->surface, ox + e, by + 1,
+                                   r.right - 2 * e, WEEN_WHITE);
+            }
+            ruled_y = b->y;
         }
         by += ween_ncm(WEEN_RB_EDGE_H);
 
+        /* The gripper and the label are placed from the band's own left edge.
+         * They were placed from the rebar's, which is the same thing only
+         * while every band starts a row of its own: put two on a row and the
+         * second drew no gripper at all and its name landed on the first's. */
         if (!(b->style & RBBS_NOGRIPPER)) {
             /* one pixel of raised edge, not two: white down the left and
              * along the top, shadow down the right and along the bottom */
             int gi = ween_ncm(WEEN_RB_GRIPPER_INSET);
-            ween_classic_edge(&top->surface, ox + ween_ncm(WEEN_RB_GRIPPER_X),
+            ween_classic_edge(&top->surface,
+                              ox + b->x + ween_ncm(WEEN_RB_GRIPPER_X),
                               by + gi, ween_ncm(WEEN_RB_GRIPPER_W),
                               inner - 2 * gi, BDR_RAISEDINNER, BF_RECT, NULL);
         }
         if (b->text && f)
-            ween_strike_draw(f, &top->surface, ox + ween_ncm(WEEN_RB_LABEL_X),
+            ween_strike_draw(f, &top->surface,
+                             ox + b->x + ween_ncm(WEEN_RB_LABEL_X),
                              by + (inner - th) / 2 - 1, b->text,
                              (int)strlen(b->text), WEEN_BLACK);
     }

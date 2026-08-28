@@ -475,6 +475,74 @@ int main(void)
 
     DestroyWindow(w);
 
+    /* And each of them carries its own gripper. The handle and the name
+     * are placed from the band's left edge, which is the same thing as
+     * the rebar's only while every band starts a row of its own: with two
+     * on a row the second drew no gripper at all -- its handle went where
+     * the first's already was -- and printed its name over the first's.
+     *
+     * A window of its own, sized to the one row, because the rebar above
+     * already stands taller than the window it is in and a third row
+     * would be painted off the bottom of it. Both bands carry the same
+     * text, so their content sits the same distance into each and the
+     * second gripper is exactly one band along from the first -- nothing
+     * here has to know the numbers. */
+    {
+        HWND pw = CreateWindowExA(0, "weentb", "pair",
+                                  WS_POPUP | WS_VISIBLE, 0, 0, 400, 60,
+                                  NULL, NULL, NULL, NULL);
+        HWND pr = CreateWindowExA(0, REBARCLASSNAMEA, "",
+                                  WS_CHILD | WS_VISIBLE | RBS_BANDBORDERS,
+                                  0, 0, 400, 40, pw, NULL, NULL, NULL);
+        HWND lc = CreateWindowA("BUTTON", "l", WS_CHILD | WS_VISIBLE, 0, 0,
+                                40, 22, pr, NULL, NULL, NULL);
+        HWND rc = CreateWindowA("BUTTON", "r", WS_CHILD | WS_VISIBLE, 0, 0,
+                                40, 22, pr, NULL, NULL, NULL);
+        REBARBANDINFOA pb;
+        const ween_surface *ps;
+        RECT lr, rr;
+        int gy, gx = -1, pitch;
+
+        memset(&pb, 0, sizeof(pb));
+        pb.cbSize = sizeof(pb);
+        pb.fMask = RBBIM_CHILD | RBBIM_TEXT | RBBIM_CHILDSIZE | RBBIM_STYLE;
+        pb.cyMinChild = 22;
+        pb.lpText = (char *)"Pair";
+        pb.fStyle = 0;
+        pb.hwndChild = lc;
+        SendMessageA(pr, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&pb);
+        pb.hwndChild = rc; /* no break: beside it, on the same row */
+        SendMessageA(pr, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&pb);
+
+        InvalidateRect(pw, NULL, TRUE);
+        ween_flush_paint();
+        ps = ween_headless_surface();
+        GetWindowRect(lc, &lr);
+        GetWindowRect(rc, &rr);
+        pitch = (int)(rr.left - lr.left);
+        CHECK(lr.top == rr.top && pitch > 0,
+              "two labelled bands sharing a row, the second along from "
+              "the first");
+        /* The gripper's left edge is white down its whole height, so a row
+         * well inside it holds one white pixel per handle. The scan starts
+         * left of the control, not on it: a button's own highlight is white
+         * too, and a scan that begins there finds that instead -- and then
+         * compares one control's edge against the other's, which is true
+         * whether or not the band ever drew a gripper. */
+        gy = (int)lr.top + 5;
+        for (long x = lr.left - 1; x > lr.left - 40 && x > 0; x--)
+            if (ps && ps->px[gy * ps->w + x] == WEEN_WHITE) {
+                gx = (int)x;
+                break;
+            }
+        CHECK(gx > 0, "the first band's gripper is left of its control");
+        if (ps && gx > 0 && gx + pitch < ps->w)
+            CHECK(ps->px[gy * ps->w + gx + pitch] == WEEN_WHITE,
+                  "and the second band has one of its own, a band along, "
+                  "drawn from its own edge and not the rebar's");
+        DestroyWindow(pw);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
