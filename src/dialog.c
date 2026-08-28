@@ -235,9 +235,26 @@ static void dlg_focus(HWND ctl)
     SetFocus(ctl);
 }
 
+/* Whether a window is somewhere inside another, which is how a window
+ * remembered from before a dialog went up is checked for still being there:
+ * the pointer is only ever compared, never followed, so a window destroyed
+ * while the box was up is simply not found. */
+static int wnd_contains(HWND root, HWND w)
+{
+    if (!root || !w)
+        return 0;
+    if (root == w)
+        return 1;
+    for (HWND c = root->first_child; c; c = c->next_sibling)
+        if (wnd_contains(c, w))
+            return 1;
+    return 0;
+}
+
 HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
                                 HWND parent, DLGPROC proc, LPARAM init_param)
 {
+    HWND was_focused = ween_focus_get();
     if (!tmpl)
         return NULL;
     ensure_dialog_class();
@@ -330,6 +347,7 @@ HWND CreateDialogIndirectParamA(HINSTANCE inst, LPCDLGTEMPLATEA tmpl,
     if (!dlg)
         return NULL;
     dlg->is_dialog = 1;
+    dlg->dlg_prev_focus = was_focused;
     dlg->dlgproc = proc;
     dlg->font = dlg_font;
 
@@ -581,8 +599,25 @@ INT_PTR ween_dialog_modal(HWND dlg, HWND owner, int reenable)
     result = dlg->dlg_result;
     if (reenable && owner)
         EnableWindow(owner, TRUE);
-    if (!dlg->destroyed)
-        DestroyWindow(dlg);
+    /* Where the keyboard goes when the box comes down. On Windows the owner
+     * is activated again and the focus goes back to whatever had it inside
+     * that window; a program that never sees that message goes on typing
+     * into nothing -- which is what happened after Notepad's Open dialog:
+     * the file came up and the next keystroke went nowhere.
+     *
+     * Read before the dialog is destroyed, and checked against the owner's
+     * tree rather than trusted: a box whose work destroyed the control that
+     * had the keyboard leaves a pointer to nothing behind. */
+    {
+        HWND back = dlg->dlg_prev_focus;
+        HWND top = owner ? ween_top_level(owner) : NULL;
+        if (!dlg->destroyed)
+            DestroyWindow(dlg);
+        if (top) {
+            ween_set_active(top);
+            SetFocus(back && wnd_contains(top, back) ? back : top);
+        }
+    }
     return result;
 }
 

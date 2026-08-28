@@ -120,6 +120,62 @@ static void test_field_focus(void)
     DestroyWindow(dlg);
 }
 
+/* What a modal box does to the keyboard on its way out. A program puts one
+ * up from a window where something already had the focus -- a text editor's
+ * Open dialog, opened while the caret was in the page -- and when the box
+ * closes the typing has to go back where it was. Windows activates the owner
+ * again and restores the focus within it; here that used to be nobody's job,
+ * so the next keystroke after Notepad's Open dialog went nowhere. */
+static int g_owner_focus;
+
+static LRESULT CALLBACK owner_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_SETFOCUS) {
+        g_owner_focus++;
+        return 0;
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
+static void test_focus_comes_back(void)
+{
+    static const dlg_item items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 10, 30, 50, 14,
+          ID_OK, ATOM_BUTTON, "OK", NULL, 0 },
+    };
+    static unsigned char tmpl[1024];
+    WNDCLASSA wc;
+    HWND owner, field;
+    memset(&wc, 0, sizeof wc);
+    wc.lpfnWndProc = owner_proc;
+    wc.lpszClassName = "weendlgowner";
+    RegisterClassA(&wc);
+    owner = CreateWindowExA(0, "weendlgowner", "owner",
+                            WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 240, 120,
+                            NULL, NULL, NULL, NULL);
+    field = CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE, 0, 0, 200, 20,
+                            owner, (HMENU)(UINT_PTR)ID_EDIT1, NULL, NULL);
+    SetFocus(field);
+    CHECK(GetFocus() == field, "the keyboard is in the owner's field");
+
+    build_dialog_template(tmpl, sizeof(tmpl),
+                          WS_POPUP | WS_CAPTION | WS_SYSMENU, 140, 60, "Modal",
+                          items, 1);
+    ween_headless_inject(ev_key(VK_ESCAPE)); /* the box cancels itself */
+    g_owner_focus = 0;
+    DialogBoxIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, owner, proc, 0);
+    CHECK(GetFocus() == field,
+          "and it is back in it when the box comes down");
+    SendMessageA(GetFocus(), WM_CHAR, 'z', 0);
+    {
+        char buf[16] = "";
+        GetWindowTextA(field, buf, sizeof buf);
+        CHECK(strcmp(buf, "z") == 0, "so what is typed next lands in it");
+    }
+    CHECK(GetActiveWindow() == owner, "and the owner is the active window again");
+    DestroyWindow(owner);
+}
+
 int main(void)
 {
     setenv("WEEN32_DPI", "96", 1); /* pixel asserts are 96-dpi */
@@ -179,6 +235,7 @@ int main(void)
     }
     CHECK(g_ok_clicks == 2, "clicking OK routed a second WM_COMMAND");
     test_field_focus();
+    test_focus_comes_back();
     (void)g_enter_clicks;
 
     if (g_failures) {

@@ -115,7 +115,7 @@ static int g_nclasses, g_classes_cap;
  * fallback. */
 static struct ween_wnd *g_tops = NULL;
 static struct ween_wnd *g_active = NULL;
-static void ween_set_active(struct ween_wnd *w);
+
 static HWND g_focus = NULL;
 static HWND g_capture = NULL;
 static HWND g_hot = NULL; /* what the pointer was last over, for hover */
@@ -1504,7 +1504,7 @@ LONG SetWindowLongA(HWND wnd, int index, LONG value)
 /* Make a window the active one, and repaint the captions that say so: the
  * one losing it goes grey and the one taking it goes blue, and neither
  * happens unless both are told to draw themselves again. */
-static void ween_set_active(struct ween_wnd *w)
+void ween_set_active(struct ween_wnd *w)
 {
     struct ween_wnd *was = g_active;
     if (was == w)
