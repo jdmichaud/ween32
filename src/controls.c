@@ -1087,7 +1087,14 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
     {
         ween_edit *e = edit_state(wnd);
-        int from = 0, to = 0, focused = ween_focus_get() == wnd;
+        /* A field hides its selection when the keyboard leaves it, unless it
+         * was made with ES_NOHIDESEL -- which is what a program asks for so
+         * that what its Find box just found is still shown while the box has
+         * the focus. Notepad asks for it, and until this the match it found
+         * was selected and invisible. */
+        int from = 0, to = 0;
+        int focused = ween_focus_get() == wnd ||
+                      (wnd->style & ES_NOHIDESEL) != 0;
         RECT cr;
         GetClientRect(wnd, &cr);
         if (e && focused)

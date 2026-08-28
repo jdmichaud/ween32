@@ -117,6 +117,8 @@ static struct ween_wnd *g_tops = NULL;
 static struct ween_wnd *g_active = NULL;
 
 static HWND g_focus = NULL;
+/* Windows destroyed but not yet freed; see the end of DestroyWindow. */
+static struct ween_wnd *g_dead = NULL;
 static HWND g_capture = NULL;
 static HWND g_hot = NULL; /* what the pointer was last over, for hover */
 static int g_dblclk = 0;  /* this press is the second of a pair */
@@ -928,6 +930,13 @@ BOOL DestroyWindow(HWND wnd)
                     break;
                 }
             g_active = next;
+            /* And it is repainted, because a caption says which window has
+             * the keyboard: the one that takes it back from a box that has
+             * just closed was still wearing the grey caption otherwise, with
+             * the state right and the pixels a lie. Only the new one is
+             * damaged -- the old one is this window, half torn down. */
+            if (next)
+                ween_damage_all(next);
         }
     }
     if (g_focus == wnd)
@@ -945,9 +954,36 @@ BOOL DestroyWindow(HWND wnd)
      * application put there and still owns. */
     if (wnd->menu)
         DestroyMenu(wnd->menu);
-    free(wnd->text);
-    free(wnd);
+    /* Not freed here. A window destroyed from inside its own message
+     * procedure is the ordinary way a modeless dialog closes itself --
+     * `case IDCANCEL: DestroyWindow(hDlg)` -- and whoever called that
+     * procedure is still inside it and about to read the window again: the
+     * dialog manager wants the result the procedure left, the message loop
+     * asks whether a window has gone before dispatching to it. On Windows a
+     * window is a handle and the memory outlives the moment; here it is a
+     * pointer, and freeing it under the caller is a use-after-free the
+     * sanitizer finds and a crash it does not.
+     *
+     * So the window is taken out of every list, marked, and put aside. What
+     * is left is freed by the message loop, which is the one place nothing
+     * is inside a window procedure. Until then it is still readable and
+     * still says it is destroyed, which is what every one of those callers
+     * is asking. */
+    wnd->next_top = g_dead;
+    g_dead = wnd;
     return TRUE;
+}
+
+/* Free what DestroyWindow set aside. Called from the message loop only: a
+ * window procedure may be somewhere up the stack anywhere else. */
+static void reap_windows(void)
+{
+    while (g_dead) {
+        struct ween_wnd *w = g_dead;
+        g_dead = w->next_top;
+        free(w->text);
+        free(w);
+    }
 }
 
 BOOL ShowWindow(HWND wnd, int cmd)
@@ -2994,6 +3030,9 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
     (void)max;
     if (!msg)
         return -1;
+    /* The safe point for the windows DestroyWindow set aside: nothing is
+     * inside a window procedure here. */
+    reap_windows();
     for (;;) {
         if (g_qhead != g_qtail) {
             *msg = g_queue[g_qhead];

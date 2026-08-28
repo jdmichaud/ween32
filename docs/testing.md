@@ -886,6 +886,39 @@ Replace drops the direction group, adds `Re&place with:` under the first
 field, and stacks `Find Next`, `Replace`, `Replace All` and `Cancel` down its
 right-hand side.
 
+**What ours counts against it.** Render the box on its own surface and diff:
+
+```c
+FINDREPLACEA fr = { .lStructSize = sizeof fr, .hwndOwner = host,
+                    .lpstrFindWhat = buf, .wFindWhatLen = sizeof buf,
+                    .Flags = FR_DOWN };
+HWND dlg = FindTextA(&fr);
+InvalidateRect(dlg, NULL, TRUE); ween_flush_paint();
+ween_surface_write_bmp(&((struct ween_wnd *)dlg)->surface, "/tmp/find-ours.bmp");
+```
+
+Counted in two halves, because one number hides the story:
+
+| region | differing | of | |
+| --- | --- | --- | --- |
+| body, rows 22..123 | 4912 | 36516 | 13% — every control within a pixel |
+| caption, rows 0..21 | 6779 | 7876 | 86% — see below |
+
+The caption is not eighty-six percent wrong: **our window is one pixel wider
+than the machine's**, and a gradient shifted by one column differs in almost
+every pixel of it. Where that pixel comes from is arithmetic: the machine's
+client is 352 wide, and at this dialog's base units (6 across, 13 down at 96
+dpi) `MulDiv(u, 6, 4)` gives 351 for 234 units and 353 for 235. No integer
+lands on 352, so either the machine's dialog is not in these units or its
+frame is not three pixels — unresolved, and worth an hour with the capture.
+
+**And the reference may itself be a pixel short.** Both captures were trimmed
+by walking out from a point inside until the row or column was entirely the
+white of the Notepad window behind — which would eat a frame column that is
+*also* white. Ours has face at column 0 and white at column 1; the machine's
+crop has face at both. Before anyone chases the last pixels, re-take the
+capture with a fixed generous crop and find the edges by structure.
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the

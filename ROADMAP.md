@@ -45,11 +45,17 @@ that no application has asked for:
   way to ask what else is there. A box offering four faces would be worse
   than none.
 
-- [ ] **Find and Replace.** Modeless dialogs: the real ones put a window up
-  and send the owner `RegisterWindowMessage(FINDMSGSTRING)` each time a
-  button is pressed, which the library now has. Nothing underneath is
-  missing -- the dialog itself is a small one -- so these are next rather
-  than never. Today `FindTextA` and `ReplaceTextA` answer with no window.
+- [ ] **The Find box, to the pixel.** It is built from the machine's own
+  rectangles and its body counts **4,912 pixels of 36,516** against
+  `find-machine.png`, every control within a pixel of where the machine puts
+  it. Two things are known and unfixed: our window comes out **one pixel
+  wider** (353 of client where the machine has 352, and at this font's dialog
+  units no integer width lands on 352 -- 234 gives 351 and 235 gives 353),
+  and that one pixel shifts the caption's gradient so that **86% of the
+  caption band differs** where the body is at 13%. And the reference itself
+  is suspect: it was trimmed by walking out until a row was entirely the
+  white of the window behind, which would have eaten a white frame column.
+  Re-take it before trusting a smaller number.
 
 - [ ] **Printing.** `PrintDlgA`, `PageSetupDlgA` and `StartDoc`/`StartPage`/
   `EndPage`/`EndDoc` link and fail honestly. What is missing is a device
@@ -242,6 +248,16 @@ directory, picks the row nearest the size a caption wears and with the most
 colours in it, and reads that `RT_ICON` with the same decoder a `.ico` file
 goes through. `DrawIconEx` draws the size it is asked for, so the one 32x32
 image a script usually carries becomes the sixteen a caption wants.
+
+**Find and Replace** — `FindTextA` and `ReplaceTextA`, modeless as win32 has
+them: the call puts the box up and answers with its window, and every press
+reaches the owner as `RegisterWindowMessage(FINDMSGSTRING)` with the
+`FINDREPLACE` the program handed over — `FR_FINDNEXT`, `FR_REPLACE`,
+`FR_REPLACEALL`, `FR_DIALOGTERM` on the way out, and `FR_DOWN`/`FR_MATCHCASE`
+read off the controls rather than remembered. What was typed goes back into
+the program's own buffers. The searching is the program's: that is why a text
+editor and a hex editor can wear the same box. Laid out from the machine's
+own rectangles, and what is still a pixel out is on the Next list.
 
 **The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
 `RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows

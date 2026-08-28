@@ -92,6 +92,24 @@ static void key(unsigned vk)
 static int g_seen, g_moved;
 static int g_at_x, g_at_y, g_min_w, g_max_w;
 
+/* What the owner of a Find or Replace box hears. */
+static UINT g_fr_msg;
+static int g_fr_told;
+static DWORD g_fr_flags;
+static const FINDREPLACEA *g_fr_ptr;
+
+static LRESULT CALLBACK fr_owner_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (g_fr_msg && msg == g_fr_msg) {
+        const FINDREPLACEA *fr = (const FINDREPLACEA *)lp;
+        g_fr_told++;
+        g_fr_ptr = fr;
+        g_fr_flags = fr ? fr->Flags : 0;
+        return 0;
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+
 static INT_PTR CALLBACK watch_hook(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
     (void)msg;
@@ -252,11 +270,9 @@ int main(void)
     {
         LOGFONTA lf;
         CHOOSEFONTA cf;
-        FINDREPLACEA fr;
         PRINTDLGA pd;
         PAGESETUPDLGA psd;
         DOCINFOA di;
-        char what[64] = "needle";
 
         memset(&lf, 0, sizeof lf);
         strcpy(lf.lfFaceName, "Tahoma");
@@ -267,15 +283,6 @@ int main(void)
         CHECK(ChooseFontA(&cf) == FALSE, "there is no font dialog to open");
         CHECK(strcmp(lf.lfFaceName, "Tahoma") == 0,
               "and what the program had chosen is left as it was");
-
-        memset(&fr, 0, sizeof fr);
-        fr.lStructSize = sizeof fr;
-        fr.lpstrFindWhat = what;
-        fr.wFindWhatLen = sizeof what;
-        fr.Flags = FR_DOWN;
-        CHECK(FindTextA(&fr) == NULL, "nor a Find window to put up");
-        CHECK(ReplaceTextA(&fr) == NULL, "nor a Replace one");
-        CHECK(strcmp(what, "needle") == 0, "and neither touched the buffer");
 
         memset(&pd, 0, sizeof pd);
         pd.lStructSize = sizeof pd;
@@ -309,6 +316,163 @@ int main(void)
         CHECK(name[0] == 0, "and the name comes back empty rather than unset");
         DragFinish(NULL);
         DestroyWindow(w);
+    }
+
+    /* ---- Find and Replace ----
+     *
+     * Modeless: the call puts a window up and answers with it, and every
+     * press reaches the owner as RegisterWindowMessage(FINDMSGSTRING) with
+     * the FINDREPLACE the program handed over. What the box does not do is
+     * search -- so what is checked here is what it tells the program, and
+     * that what was typed is in the program's own buffer when it is told. */
+    {
+        static char what[64] = "needle";
+        static char with[64] = "";
+        FINDREPLACEA fr;
+        HWND owner, dlg;
+        WNDCLASSA fc;
+
+        memset(&fc, 0, sizeof fc);
+        fc.lpfnWndProc = fr_owner_proc;
+        fc.lpszClassName = "weenfrowner";
+        RegisterClassA(&fc);
+        owner = CreateWindowExA(0, "weenfrowner", "owner",
+                                WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 400,
+                                200, NULL, NULL, NULL, NULL);
+        g_fr_msg = RegisterWindowMessageA(FINDMSGSTRING);
+        CHECK(g_fr_msg >= 0xC000, "FINDMSGSTRING has a message number");
+
+        memset(&fr, 0, sizeof fr);
+        fr.lStructSize = sizeof fr;
+        fr.hwndOwner = owner;
+        fr.lpstrFindWhat = what;
+        fr.wFindWhatLen = sizeof what;
+        fr.Flags = FR_DOWN | FR_MATCHCASE;
+        dlg = FindTextA(&fr);
+        CHECK(dlg != NULL, "the Find box comes up");
+        {
+            /* And the owner goes grey behind it, because the keyboard has
+             * left. Painted now so that the check after the box closes is
+             * comparing against a caption that really was repainted grey. */
+            struct ween_wnd *w = (struct ween_wnd *)owner;
+            ween_flush_paint();
+            CHECK(w->surface.px &&
+                      (w->surface.px[(size_t)6 * w->surface.w + 6] & 0xffffff) ==
+                          WEEN_CAP_INACT_LEFT,
+                  "and the window behind it wears the caption of one that is "
+                  "not active");
+        }
+        CHECK(GetDlgItem(dlg, 0x0480) && GetDlgItem(dlg, 0x0410) &&
+                  GetDlgItem(dlg, 0x0420) && GetDlgItem(dlg, 0x0421),
+              "with the controls win32 gives it, under win32's own ids");
+        {
+            char buf[64] = "";
+            GetDlgItemTextA(dlg, 0x0480, buf, sizeof buf);
+            CHECK(strcmp(buf, "needle") == 0,
+                  "the field starts with what the program was looking for");
+        }
+        CHECK(IsDlgButtonChecked(dlg, 0x0410) == BST_CHECKED,
+              "and the tick with the flag it was given");
+        CHECK(IsDlgButtonChecked(dlg, 0x0421) == BST_CHECKED,
+              "FR_DOWN is the Down radio, as it is on the machine");
+        CHECK(IsWindowEnabled(GetDlgItem(dlg, IDOK)),
+              "Find Next can be pressed while there is something to find");
+
+        /* Emptying the field greys it, which is what the machine shows the
+         * moment the box comes up with nothing in it. Typed rather than set:
+         * a field that is *given* its text is a different path, and it is
+         * the user's that has to work. */
+        {
+            HWND field = GetDlgItem(dlg, 0x0480);
+            SendMessageA(field, EM_SETSEL, 0, (LPARAM)-1);
+            for (int i = 0; i < 8; i++)
+                SendMessageA(field, WM_KEYDOWN, VK_DELETE, 0);
+            CHECK(!IsWindowEnabled(GetDlgItem(dlg, IDOK)),
+                  "and cannot while the field is empty");
+            SendMessageA(field, WM_CHAR, (WPARAM)'h', 0);
+            CHECK(IsWindowEnabled(GetDlgItem(dlg, IDOK)),
+                  "and can again the moment something is typed");
+            for (const char *p2 = "aystack"; *p2; p2++)
+                SendMessageA(field, WM_CHAR, (WPARAM)*p2, 0);
+        }
+
+        /* The press, and what the owner is told. */
+        g_fr_told = 0;
+        g_fr_flags = 0;
+        CheckDlgButton(dlg, 0x0410, BST_UNCHECKED);
+        CheckRadioButton(dlg, 0x0420, 0x0421, 0x0420); /* Up */
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED),
+                     (LPARAM)GetDlgItem(dlg, IDOK));
+        CHECK(g_fr_told == 1, "pressing Find Next tells the owner, once");
+        CHECK(g_fr_ptr == &fr, "with the FINDREPLACE it was given");
+        CHECK((g_fr_flags & FR_FINDNEXT) != 0, "and FR_FINDNEXT set");
+        CHECK(strcmp(what, "haystack") == 0,
+              "what was typed is in the program's own buffer");
+        CHECK((g_fr_flags & FR_DOWN) == 0 && (g_fr_flags & FR_MATCHCASE) == 0,
+              "and the direction and the case are the controls', not the "
+              "flags it was opened with");
+
+        /* Closing it: the program is told before the window goes, since what
+         * it does with that is forget the handle it is holding. */
+        g_fr_told = 0;
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(IDCANCEL, BN_CLICKED),
+                     (LPARAM)GetDlgItem(dlg, IDCANCEL));
+        CHECK(g_fr_told == 1 && (g_fr_flags & FR_DIALOGTERM) != 0,
+              "Cancel says FR_DIALOGTERM");
+
+        /* And the window that takes the keyboard back is repainted, because
+         * a caption is how a person is told which window has it: with the
+         * state right and the pixels stale, Notepad sat behind a closed box
+         * still wearing the grey caption. */
+        {
+            struct ween_wnd *w = (struct ween_wnd *)owner;
+            ween_flush_paint();
+            CHECK(GetActiveWindow() == owner,
+                  "the owner is active again once the box has gone");
+            CHECK(w->surface.px &&
+                      (w->surface.px[(size_t)6 * w->surface.w + 6] & 0xffffff) ==
+                          WEEN_CAP_LEFT,
+                  "and its caption is drawn in the colour of one that is");
+        }
+
+        /* Replace is the same box with another field and two more buttons. */
+        memset(&fr, 0, sizeof fr);
+        fr.lStructSize = sizeof fr;
+        fr.hwndOwner = owner;
+        fr.lpstrFindWhat = what;
+        fr.wFindWhatLen = sizeof what;
+        fr.lpstrReplaceWith = with;
+        fr.wReplaceWithLen = sizeof with;
+        fr.Flags = FR_DOWN;
+        dlg = ReplaceTextA(&fr);
+        CHECK(dlg != NULL, "the Replace box comes up too");
+        CHECK(GetDlgItem(dlg, 0x0481) && GetDlgItem(dlg, 0x0400) &&
+                  GetDlgItem(dlg, 0x0401),
+              "with the second field and the two buttons Find has not got");
+        SetDlgItemTextA(dlg, 0x0480, "old");
+        SetDlgItemTextA(dlg, 0x0481, "new");
+        g_fr_told = 0;
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(0x0400, BN_CLICKED),
+                     (LPARAM)GetDlgItem(dlg, 0x0400));
+        CHECK(g_fr_told == 1 && (g_fr_flags & FR_REPLACE) != 0,
+              "Replace says so");
+        CHECK(strcmp(what, "old") == 0 && strcmp(with, "new") == 0,
+              "and both buffers come back filled");
+        g_fr_told = 0;
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(0x0401, BN_CLICKED),
+                     (LPARAM)GetDlgItem(dlg, 0x0401));
+        CHECK(g_fr_told == 1 && (g_fr_flags & FR_REPLACEALL) != 0,
+              "and Replace All says something else");
+
+        /* One at a time, which is what a program keeping a single handle
+         * expects: opening the other takes this one down. */
+        {
+            HWND second = FindTextA(&fr);
+            CHECK(second != NULL && second != dlg,
+                  "opening Find while Replace is up gives a new window");
+            DestroyWindow(second);
+        }
+        DestroyWindow(owner);
     }
 
     if (g_failures) {

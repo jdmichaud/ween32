@@ -2101,15 +2101,12 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
  * library carries four strikes and no font enumeration, so the box would have
  * four faces in it and lie about the rest.
  *
- * Find and Replace are modeless -- the real ones put a window up and send the
- * owner RegisterWindowMessage(FINDMSGSTRING) each time a button is pressed.
- * The dialog itself is a small one; what is missing is nothing at all, so
- * these are next rather than never.
- *
- * Until then they answer the way the real call answers when the user changes
+ * Until then it answers the way the real call answers when the user changes
  * their mind: FALSE, and nothing written back. A program built against this
  * runs, and finds that menu item does nothing -- which is truthful, where a
  * dialog with four fonts in it would not be.
+ *
+ * Find and Replace are below, and are no longer among them.
  */
 
 BOOL ChooseFontA(CHOOSEFONTA *cf)
@@ -2118,14 +2115,216 @@ BOOL ChooseFontA(CHOOSEFONTA *cf)
     return FALSE;
 }
 
+/* ---- Find, and Replace ----------------------------------------------------
+ *
+ * Both are modeless: the call puts a window up and answers with it, and the
+ * program hears about every press through RegisterWindowMessage(FINDMSGSTRING)
+ * with the FINDREPLACE it handed over. What the box does *not* do is search --
+ * the searching is the program's, which is why a text editor and a hex editor
+ * can wear the same dialog.
+ *
+ * The layout is the machine's, read off tools/refcapture/find-machine.png and
+ * written down in docs/testing.md: a field, a Match case tick, a Direction
+ * group with two radios, Find Next above Cancel. The control ids are win32's
+ * own -- edt1, chx1, rad1, rad2 -- because a program that hooks this dialog
+ * addresses them by those numbers.
+ */
+
+#define FR_EDT1 0x0480 /* "Find what" */
+#define FR_EDT2 0x0481 /* "Replace with" */
+#define FR_CHX1 0x0410 /* Match case */
+#define FR_RAD1 0x0420 /* Up */
+#define FR_RAD2 0x0421 /* Down */
+#define FR_PSH1 0x0400 /* Replace */
+#define FR_PSH2 0x0401 /* Replace All */
+
+/* The one dialog of each kind that can be up at a time, which is what a
+ * program keeps a single HWND for. */
+static struct {
+    FINDREPLACEA *fr;
+    HWND dlg;
+    int replace; /* which of the two boxes this is */
+} g_fr;
+
+/* What the owner is told, and the message it is told through: registered by
+ * name, so the program and the library agree on the number without a header
+ * between them. */
+static void fr_notify(HWND dlg, DWORD flags)
+{
+    FINDREPLACEA *fr = g_fr.fr;
+    UINT msg = RegisterWindowMessageA(FINDMSGSTRING);
+    char buf[512];
+    if (!fr || !msg)
+        return;
+    /* What was typed goes back in the caller's own buffers, which is where a
+     * program reads it from -- notepad passes the array it searches with. */
+    if (fr->lpstrFindWhat && fr->wFindWhatLen) {
+        GetDlgItemTextA(dlg, FR_EDT1, buf, (int)sizeof buf);
+        buf[fr->wFindWhatLen - 1] = 0;
+        strcpy(fr->lpstrFindWhat, buf);
+    }
+    if (g_fr.replace && fr->lpstrReplaceWith && fr->wReplaceWithLen) {
+        GetDlgItemTextA(dlg, FR_EDT2, buf, (int)sizeof buf);
+        buf[fr->wReplaceWithLen - 1] = 0;
+        strcpy(fr->lpstrReplaceWith, buf);
+    }
+    /* The direction and the case are the dialog's answer, so they are read
+     * off the controls rather than remembered. */
+    fr->Flags &= ~(DWORD)(FR_DOWN | FR_MATCHCASE | FR_FINDNEXT | FR_REPLACE |
+                          FR_REPLACEALL | FR_DIALOGTERM);
+    if (!g_fr.replace && IsDlgButtonChecked(dlg, FR_RAD2))
+        fr->Flags |= FR_DOWN;
+    if (g_fr.replace)
+        fr->Flags |= FR_DOWN; /* the Replace box has no direction to offer */
+    if (IsDlgButtonChecked(dlg, FR_CHX1))
+        fr->Flags |= FR_MATCHCASE;
+    fr->Flags |= flags;
+    if (fr->hwndOwner)
+        SendMessageA(fr->hwndOwner, msg, 0, (LPARAM)fr);
+}
+
+/* Find Next, Replace and Replace All are grey until there is something to
+ * look for, which is what the machine shows the moment the box comes up. */
+static void fr_enable(HWND dlg)
+{
+    int has = GetWindowTextLengthA(GetDlgItem(dlg, FR_EDT1)) > 0;
+    EnableWindow(GetDlgItem(dlg, IDOK), has);
+    if (g_fr.replace) {
+        EnableWindow(GetDlgItem(dlg, FR_PSH1), has);
+        EnableWindow(GetDlgItem(dlg, FR_PSH2), has);
+    }
+}
+
+static INT_PTR CALLBACK fr_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    FINDREPLACEA *fr = g_fr.fr;
+    (void)lp;
+    switch (msg) {
+    case WM_INITDIALOG:
+        if (fr) {
+            if (fr->lpstrFindWhat)
+                SetDlgItemTextA(dlg, FR_EDT1, fr->lpstrFindWhat);
+            if (g_fr.replace && fr->lpstrReplaceWith)
+                SetDlgItemTextA(dlg, FR_EDT2, fr->lpstrReplaceWith);
+            CheckDlgButton(dlg, FR_CHX1,
+                           (fr->Flags & FR_MATCHCASE) ? BST_CHECKED
+                                                      : BST_UNCHECKED);
+            if (!g_fr.replace)
+                CheckRadioButton(dlg, FR_RAD1, FR_RAD2,
+                                 (fr->Flags & FR_DOWN) ? FR_RAD2 : FR_RAD1);
+        }
+        fr_enable(dlg);
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case FR_EDT1:
+            if (HIWORD(wp) == EN_CHANGE)
+                fr_enable(dlg);
+            return TRUE;
+        case IDOK:
+            fr_notify(dlg, FR_FINDNEXT);
+            return TRUE;
+        case FR_PSH1:
+            fr_notify(dlg, FR_REPLACE);
+            return TRUE;
+        case FR_PSH2:
+            fr_notify(dlg, FR_REPLACEALL);
+            return TRUE;
+        case IDCANCEL:
+            /* The program is told the box is going *before* it goes, since
+             * what it does with that is forget the window it is holding. */
+            fr_notify(dlg, FR_DIALOGTERM);
+            g_fr.fr = NULL;
+            g_fr.dlg = NULL;
+            DestroyWindow(dlg);
+            return TRUE;
+        default:
+            return FALSE;
+        }
+    default:
+        return FALSE;
+    }
+}
+
+/* The two boxes, in dialog units mapped from the machine's pixels: a unit is
+ * six quarters of a pixel across and thirteen eighths down at 96 dpi, and
+ * every rectangle here came from the capture rather than from memory. */
+static HWND fr_open(FINDREPLACEA *fr, int replace)
+{
+    static unsigned char tmpl[2048];
+    static const dlg_item find_items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 7, 44, 8, 0xFFFF, ATOM_STATIC,
+          NULL, "Fin&d what:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+          WS_EX_CLIENTEDGE, 46, 5, 136, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 3, 42, 60,
+          10, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 106, 28, 67, 24,
+          0xFFFF, ATOM_BUTTON, NULL, "Direction" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
+          0, 110, 38, 26, 10, FR_RAD1, ATOM_BUTTON, NULL, "&Up" },
+        { WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON, 0, 138, 38, 34, 10,
+          FR_RAD2, ATOM_BUTTON, NULL, "&Down" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
+          181, 3, 53, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 181, 21, 53,
+          14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
+    };
+    static const dlg_item replace_items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 7, 44, 8, 0xFFFF, ATOM_STATIC,
+          NULL, "Fin&d what:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+          WS_EX_CLIENTEDGE, 50, 6, 132, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 23, 48, 8, 0xFFFF,
+          ATOM_STATIC, NULL, "Re&place with:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+          WS_EX_CLIENTEDGE, 50, 22, 132, 12, FR_EDT2, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 3, 45, 60,
+          10, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
+          186, 4, 53, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 21, 53,
+          14, FR_PSH1, ATOM_BUTTON, NULL, "&Replace" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 38, 53,
+          14, FR_PSH2, ATOM_BUTTON, NULL, "Replace &All" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 55, 53,
+          14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
+    };
+    /* DS_CONTEXTHELP: the machine's box wears the question mark beside its
+     * close box, which is what a dialog with no Help button offers instead. */
+    DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME |
+                  DS_SETFONT | DS_3DLOOK | DS_CONTEXTHELP;
+    DLGTEMPLATE *t;
+    HWND dlg;
+
+    if (!fr || fr->lStructSize != sizeof(FINDREPLACEA))
+        return NULL;
+    /* One at a time, as a program keeping one HWND expects. */
+    if (g_fr.dlg)
+        DestroyWindow(g_fr.dlg);
+    g_fr.fr = fr;
+    g_fr.replace = replace;
+    t = replace ? build(tmpl, style, 245, 78, "Replace", replace_items,
+                        (int)(sizeof replace_items / sizeof replace_items[0]))
+                : build(tmpl, style, 235, 61, "Find", find_items,
+                        (int)(sizeof find_items / sizeof find_items[0]));
+    dlg = CreateDialogIndirectParamA(fr->hInstance, (LPCDLGTEMPLATEA)t,
+                                     fr->hwndOwner, fr_proc, 0);
+    if (!dlg) {
+        g_fr.fr = NULL;
+        return NULL;
+    }
+    g_fr.dlg = dlg;
+    ShowWindow(dlg, SW_SHOW);
+    return dlg;
+}
+
 HWND FindTextA(FINDREPLACEA *fr)
 {
-    (void)fr;
-    return NULL;
+    return fr_open(fr, 0);
 }
 
 HWND ReplaceTextA(FINDREPLACEA *fr)
 {
-    (void)fr;
-    return NULL;
+    return fr_open(fr, 1);
 }
