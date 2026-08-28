@@ -8436,6 +8436,8 @@ typedef struct {
 typedef struct {
     ween_rbband *band;
     int count, cap;
+    int drag;   /* the band being carried by its gripper, -1 for none */
+    int grab_x; /* how far into that band the gripper was taken hold of */
 } ween_rebar;
 
 static void rebar_free(void *p)
@@ -8452,8 +8454,67 @@ static ween_rebar *rebar_of(HWND w)
     if (!w->ctl) {
         w->ctl = calloc(1, sizeof(ween_rebar));
         w->ctl_free = rebar_free;
+        if (w->ctl)
+            ((ween_rebar *)w->ctl)->drag = -1;
     }
     return w->ctl;
+}
+
+/* How far into a band its control starts: past the gripper, and past the
+ * band's name when it has one. The layout places the child by this, the paint
+ * places the name by it and the hit test divides the band by it, so all three
+ * cannot drift apart. */
+static int rb_content_x(const ween_strike *f, const ween_rbband *b)
+{
+    if (b->text && f)
+        return ween_ncm(WEEN_RB_LABEL_X) +
+               ween_strike_text_width(f, b->text, (int)strlen(b->text)) +
+               ween_ncm(WEEN_RB_LABEL_GAP);
+    return ween_ncm(WEEN_RB_CONTENT_X);
+}
+
+/* The narrowest a band is allowed to be squeezed: its own handle and name,
+ * and the edge, so that what is left for the child is never less than
+ * nothing. The machine goes narrower than this -- a toolbar being squeezed
+ * drops its buttons into a chevron and the band follows it down in steps --
+ * and ween32 has no chevron, so this is a floor where the machine has a
+ * staircase. Written down in docs/testing.md as the known difference. */
+static int rb_min_w(const ween_strike *f, const ween_rbband *b, int edge)
+{
+    return rb_content_x(f, b) + edge;
+}
+
+/* Which row a band is on. Rows are made by RBBS_BREAK, and the first band
+ * starts one whether it asks to or not, which is the layout's rule. */
+static int rb_row_of(const ween_rebar *rb, int band)
+{
+    int row = 0;
+    for (int i = 1; i <= band && i < rb->count; i++)
+        if (rb->band[i].style & RBBS_BREAK)
+            row++;
+    return row;
+}
+
+static int rb_rows(const ween_rebar *rb)
+{
+    return rb->count ? rb_row_of(rb, rb->count - 1) + 1 : 0;
+}
+
+static int rb_row_first(const ween_rebar *rb, int row)
+{
+    for (int i = 0; i < rb->count; i++)
+        if (rb_row_of(rb, i) == row)
+            return i;
+    return -1;
+}
+
+static int rb_row_last(const ween_rebar *rb, int row)
+{
+    int last = -1;
+    for (int i = 0; i < rb->count; i++)
+        if (rb_row_of(rb, i) == row)
+            last = i;
+    return last;
 }
 
 /* Stack the bands and put each child where its band says. */
@@ -8484,18 +8545,13 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
         share = n > 1 ? cr.right / n : cr.right;
         for (int j = i; j < i + n; j++) {
             ween_rbband *b = &rb->band[j];
-            int content = ween_ncm(WEEN_RB_CONTENT_X);
+            int content = rb_content_x(f, b);
             b->y = y;
             b->h = (b->style & RBBS_HIDDEN) ? 0 : edge + row_h;
             b->x = x;
             /* the last on the row takes whatever is left of the width */
             b->w = (j == i + n - 1) ? cr.right - x : (b->cx ? b->cx : share);
             x += b->w;
-            if (b->text && f)
-                content = ween_ncm(WEEN_RB_LABEL_X) +
-                          ween_strike_text_width(f, b->text,
-                                                 (int)strlen(b->text)) +
-                          ween_ncm(WEEN_RB_LABEL_GAP);
             if (b->child)
                 MoveWindow(b->child, b->x + content, y + edge,
                            b->w - content - edge, b->h - edge, TRUE);
@@ -8518,6 +8574,36 @@ static int rebar_height(HWND wnd, ween_rebar *rb)
     return h;
 }
 
+/* What a rebar says to the window it is in, when the message is nothing but
+ * the fact of it. */
+static void rb_notify_simple(HWND wnd, UINT code)
+{
+    NMHDR nm;
+    if (!wnd->parent)
+        return;
+    memset(&nm, 0, sizeof nm);
+    nm.hwndFrom = wnd;
+    nm.idFrom = (UINT_PTR)wnd->id;
+    nm.code = code;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
+/* And when it is about one band: which one, and how it is styled. */
+static void rb_notify_band(HWND wnd, UINT code, int band, UINT style)
+{
+    NMREBAR nm;
+    if (!wnd->parent)
+        return;
+    memset(&nm, 0, sizeof nm);
+    nm.hdr.hwndFrom = wnd;
+    nm.hdr.idFrom = (UINT_PTR)wnd->id;
+    nm.hdr.code = code;
+    nm.dwMask = RBNM_STYLE;
+    nm.uBand = (UINT)band;
+    nm.fStyle = style;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
 /* The bar's height changed, so the application is told and lays out round it.
  * win32 sends RBN_HEIGHTCHANGE and nothing else. What stood here was a
  * WM_SIZE sent to the parent, which is wrong twice over: a control does not
@@ -8531,14 +8617,136 @@ static int rebar_height(HWND wnd, ween_rebar *rb)
  * message and most of those leave the height alone. */
 static void rebar_height_changed(HWND wnd, ween_rebar *rb, int was)
 {
-    NMHDR nm;
     if (!wnd->parent || rebar_height(wnd, rb) == was)
         return;
-    memset(&nm, 0, sizeof nm);
-    nm.hwndFrom = wnd;
-    nm.idFrom = (UINT_PTR)wnd->id;
-    nm.code = RBN_HEIGHTCHANGE;
-    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+    rb_notify_simple(wnd, RBN_HEIGHTCHANGE);
+}
+
+/* What is under a point, and which band it is in: the handle it is carried
+ * by, the name it wears, or the control filling the rest. */
+static int rb_hittest(HWND wnd, ween_rebar *rb, int x, int y, UINT *flags)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    rebar_layout(wnd, rb);
+    for (int i = 0; i < rb->count; i++) {
+        const ween_rbband *b = &rb->band[i];
+        if ((b->style & RBBS_HIDDEN) || !b->h)
+            continue;
+        if (x < b->x || x >= b->x + b->w || y < b->y || y >= b->y + b->h)
+            continue;
+        if (flags) {
+            int past = b->x + ween_ncm(WEEN_RB_GRIPPER_X) +
+                       ween_ncm(WEEN_RB_GRIPPER_W);
+            if (!(b->style & RBBS_NOGRIPPER) && x < past)
+                *flags = RBHT_GRABBER;
+            else if (b->text && x < b->x + rb_content_x(f, b))
+                *flags = RBHT_CAPTION;
+            else
+                *flags = RBHT_CLIENT;
+        }
+        return i;
+    }
+    if (flags)
+        *flags = RBHT_NOWHERE;
+    return -1;
+}
+
+/* Which row a point is over — or one past the last, when it is below them
+ * all, which is how a band is carried out to a row of its own. */
+static int rb_row_at(HWND wnd, ween_rebar *rb, int y)
+{
+    rebar_layout(wnd, rb);
+    if (y < 0)
+        return 0;
+    for (int i = 0; i < rb->count; i++) {
+        const ween_rbband *b = &rb->band[i];
+        if (!(b->style & RBBS_HIDDEN) && b->h && y >= b->y && y < b->y + b->h)
+            return rb_row_of(rb, i);
+    }
+    return rb_rows(rb);
+}
+
+/* Carry a band to another row. It joins that row at the end, which is what
+ * the machine does: a bar dropped on another's row goes beside the one
+ * already there. Dropped below them all it gets a row of its own.
+ *
+ * The break is handed on first. A band that starts a row carries RBBS_BREAK
+ * and the ones beside it do not, so taking the first one away would fold its
+ * row into the one above; the next band along inherits the break instead.
+ *
+ * The move itself is RB_MOVEBAND — the same message a program would send —
+ * so a pointer and a program cannot produce different arrangements. Returns
+ * where the band ended up. */
+static int rb_carry_to_row(HWND wnd, ween_rebar *rb, int band, int row)
+{
+    int next = band + 1, last, to, was;
+    if (row < 0 || row == rb_row_of(rb, band))
+        return band;
+    was = rebar_height(wnd, rb);
+    if ((band == 0 || (rb->band[band].style & RBBS_BREAK)) &&
+        next < rb->count && !(rb->band[next].style & RBBS_BREAK))
+        rb->band[next].style |= RBBS_BREAK;
+
+    if (row >= rb_rows(rb)) { /* past the last: a row of its own, at the end */
+        rb->band[band].style |= RBBS_BREAK;
+        to = rb->count - 1;
+    } else {
+        last = rb_row_last(rb, row);
+        if (last < 0)
+            return band;
+        rb->band[band].style &= ~(UINT)RBBS_BREAK;
+        to = band < last ? last : last + 1;
+    }
+    if (to != band) {
+        if (!SendMessageA(wnd, RB_MOVEBAND, (WPARAM)band, (LPARAM)to))
+            return band;
+        return to;
+    }
+    /* It did not have to change places: it was already beside the row it was
+     * carried to, and only the break decided which row that was. RB_MOVEBAND
+     * would have nothing to do and would rightly say nothing, so the
+     * arrangement is settled and announced here instead -- a band that
+     * changed rows without changing index still changed the bar. */
+    rebar_layout(wnd, rb);
+    InvalidateRect(wnd, NULL, TRUE);
+    rebar_height_changed(wnd, rb, was);
+    rb_notify_simple(wnd, RBN_LAYOUTCHANGED);
+    return band;
+}
+
+/* Carry a band along its row: its left edge follows the pointer and the width
+ * comes off the band to its left. The first band on a row has nothing to its
+ * left and does not move — which is the machine's behaviour too, where a lone
+ * bar's handle dragged sideways does nothing at all. */
+static void rb_carry_along_row(HWND wnd, ween_rebar *rb, int band, int x)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int edge = (wnd->style & RBS_BANDBORDERS) ? ween_ncm(WEEN_RB_EDGE_H) : 0;
+    int row = rb_row_of(rb, band), prev = band - 1;
+    int want, lo, hi, right;
+
+    if (band <= 0 || band == rb_row_first(rb, row))
+        return;
+    right = rb->band[band].x + rb->band[band].w;
+    want = x - rb->grab_x;
+    lo = rb->band[prev].x + rb_min_w(f, &rb->band[prev], edge);
+    hi = right - rb_min_w(f, &rb->band[band], edge);
+    if (hi < lo)
+        return; /* neither of them has room to give */
+    if (want < lo)
+        want = lo;
+    if (want > hi)
+        want = hi;
+    if (want == rb->band[band].x)
+        return;
+    /* The band being carried takes what its neighbour gives up, unless it is
+     * the last on the row, which the layout stretches to the end anyway. */
+    if (band != rb_row_last(rb, row))
+        rb->band[band].cx = right - want;
+    rb->band[prev].cx = want - rb->band[prev].x;
+    rebar_layout(wnd, rb);
+    InvalidateRect(wnd, NULL, TRUE);
+    rb_notify_simple(wnd, RBN_LAYOUTCHANGED);
 }
 
 static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
@@ -8720,7 +8928,89 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rebar_layout(wnd, rb);
         InvalidateRect(wnd, NULL, TRUE);
         rebar_height_changed(wnd, rb, was);
+        rb_notify_simple(wnd, RBN_LAYOUTCHANGED);
         return TRUE;
+    }
+    case RB_HITTEST: {
+        RBHITTESTINFO *ht = (RBHITTESTINFO *)lp;
+        rb = rebar_of(wnd);
+        if (!rb || !ht)
+            return -1;
+        ht->iBand = rb_hittest(wnd, rb, (int)ht->pt.x, (int)ht->pt.y,
+                               &ht->flags);
+        return ht->iBand;
+    }
+    case WM_SETCURSOR: {
+        /* The divider arrow over a handle. It is worn whenever the pointer is
+         * over one, not only while a band is being carried: the shape is how
+         * a person is told the band can be taken hold of at all, which is
+         * what the machine's gripper does. */
+        POINT at;
+        UINT what = 0;
+        rb = rebar_of(wnd);
+        if (rb && rb->drag >= 0) {
+            SetCursor(LoadCursorA(NULL, IDC_SIZEWE));
+            return TRUE;
+        }
+        if (rb && GetCursorPos(&at) && ScreenToClient(wnd, &at) &&
+            rb_hittest(wnd, rb, (int)at.x, (int)at.y, &what) >= 0 &&
+            what == RBHT_GRABBER) {
+            SetCursor(LoadCursorA(NULL, IDC_SIZEWE));
+            return TRUE;
+        }
+        return DefWindowProcA(wnd, msg, wp, lp);
+    }
+    case WM_LBUTTONDOWN: {
+        /* Taken hold of by the handle, and by nothing else: a press on a
+         * band's name or on the control in it is not a drag. */
+        UINT what = 0;
+        int band;
+        rb = rebar_of(wnd);
+        if (!rb)
+            return 0;
+        band = rb_hittest(wnd, rb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &what);
+        if (band < 0 || what != RBHT_GRABBER)
+            return 0;
+        rb->drag = band;
+        rb->grab_x = GET_X_LPARAM(lp) - rb->band[band].x;
+        SetCapture(wnd);
+        rb_notify_band(wnd, RBN_BEGINDRAG, band, rb->band[band].style);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        /* One gesture, two axes, as the machine has it: carried up or down
+         * the band moves between rows, carried along its row it takes width
+         * off the band to its left. The arrangement follows the pointer as it
+         * goes -- there is no outline and nothing waits for the release,
+         * which is what was watched on the machine. */
+        int row, want;
+        rb = rebar_of(wnd);
+        if (!rb || rb->drag < 0)
+            return 0;
+        if (GetCapture() != wnd) { /* the capture went somewhere else */
+            rb->drag = -1;
+            return 0;
+        }
+        row = rb_row_of(rb, rb->drag);
+        want = rb_row_at(wnd, rb, GET_Y_LPARAM(lp));
+        if (want != row)
+            rb->drag = rb_carry_to_row(wnd, rb, rb->drag, want);
+        else
+            rb_carry_along_row(wnd, rb, rb->drag, GET_X_LPARAM(lp));
+        return 0;
+    }
+    case WM_LBUTTONUP: {
+        int band;
+        rb = rebar_of(wnd);
+        if (!rb || rb->drag < 0)
+            return 0;
+        band = rb->drag;
+        rb->drag = -1;
+        if (GetCapture() == wnd)
+            ReleaseCapture();
+        rb_notify_band(wnd, RBN_ENDDRAG, band,
+                       band < rb->count ? rb->band[band].style : 0);
+        return 0;
     }
     case WM_PARENTNOTIFY:
         /* A band's child belongs to the application, not to the rebar, which

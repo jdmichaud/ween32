@@ -32,6 +32,7 @@ static int g_command, g_dropdown = -1;
 static HWND g_menu_bar;
 static int g_tip_asked = -1; /* the button the bar asked about */
 static int g_heights;        /* how many times a rebar said its height moved */
+static int g_begindrag, g_enddrag, g_layouts, g_dragband = -1;
 static int g_dropped[2];
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -44,6 +45,19 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         const NMHDR *nm = (const NMHDR *)lp;
         if (nm->code == RBN_HEIGHTCHANGE) {
             g_heights++;
+            return 0;
+        }
+        if (nm->code == RBN_BEGINDRAG) {
+            g_begindrag++;
+            g_dragband = (int)((const NMREBAR *)lp)->uBand;
+            return 0;
+        }
+        if (nm->code == RBN_ENDDRAG) {
+            g_enddrag++;
+            return 0;
+        }
+        if (nm->code == RBN_LAYOUTCHANGED) {
+            g_layouts++;
             return 0;
         }
         if (nm->code == TTN_GETDISPINFOA) {
@@ -616,6 +630,117 @@ int main(void)
                   "and the second band has one of its own, a band along, "
                   "drawn from its own edge and not the rebar's");
         DestroyWindow(pw);
+    }
+
+    /* Carrying a band by its gripper. Watched on the machine and written down
+     * in docs/testing.md: one gesture with two axes -- up and down moves the
+     * band between rows, along its row it takes width off the band to its
+     * left -- the arrangement following the pointer as it goes rather than an
+     * outline dropped at the end. */
+    {
+        HWND dw = CreateWindowExA(0, "weentb", "drag", WS_POPUP | WS_VISIBLE,
+                                  0, 0, 400, 100, NULL, NULL, NULL, NULL);
+        HWND dr = CreateWindowExA(0, REBARCLASSNAMEA, "",
+                                  WS_CHILD | WS_VISIBLE | RBS_BANDBORDERS,
+                                  0, 0, 400, 80, dw, NULL, NULL, NULL);
+        HWND c1 = CreateWindowA("BUTTON", "1", WS_CHILD | WS_VISIBLE, 0, 0, 40,
+                                22, dr, NULL, NULL, NULL);
+        HWND c2 = CreateWindowA("BUTTON", "2", WS_CHILD | WS_VISIBLE, 0, 0, 40,
+                                22, dr, NULL, NULL, NULL);
+        REBARBANDINFOA db;
+        RBHITTESTINFO ht;
+        RECT r1, r2;
+        int stacked, joined, was_left;
+
+        memset(&db, 0, sizeof(db));
+        db.cbSize = sizeof(db);
+        db.fMask = RBBIM_CHILD | RBBIM_TEXT | RBBIM_CHILDSIZE | RBBIM_STYLE;
+        db.cyMinChild = 22;
+        db.lpText = (char *)"One";
+        db.fStyle = 0;
+        db.hwndChild = c1;
+        SendMessageA(dr, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&db);
+        db.lpText = (char *)"Two";
+        db.fStyle = RBBS_BREAK; /* a row of its own, under the first */
+        db.hwndChild = c2;
+        SendMessageA(dr, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&db);
+        stacked = (int)SendMessageA(dr, RB_GETBARHEIGHT, 0, 0);
+
+        /* What is under a point. The handle, the name it wears, the control
+         * filling the rest, and nothing at all. */
+        memset(&ht, 0, sizeof(ht));
+        ht.pt.x = 5;
+        ht.pt.y = 30;
+        CHECK(SendMessageA(dr, RB_HITTEST, 0, (LPARAM)&ht) == 1 &&
+                  ht.flags == RBHT_GRABBER && ht.iBand == 1,
+              "a point on the second band's handle is that band's grabber");
+        ht.pt.x = 12;
+        ht.pt.y = 30;
+        CHECK(SendMessageA(dr, RB_HITTEST, 0, (LPARAM)&ht) == 1 &&
+                  ht.flags == RBHT_CAPTION,
+              "one on its name is its caption");
+        ht.pt.x = 200;
+        ht.pt.y = 30;
+        CHECK(SendMessageA(dr, RB_HITTEST, 0, (LPARAM)&ht) == 1 &&
+                  ht.flags == RBHT_CLIENT,
+              "and one past that is the band itself");
+        ht.pt.x = 200;
+        ht.pt.y = 600;
+        CHECK(SendMessageA(dr, RB_HITTEST, 0, (LPARAM)&ht) == -1 &&
+                  ht.flags == RBHT_NOWHERE,
+              "below every band there is no band");
+
+        /* Taken hold of by the handle. */
+        g_begindrag = g_enddrag = g_layouts = g_heights = 0;
+        g_dragband = -1;
+        SendMessageA(dr, WM_LBUTTONDOWN, 0, MAKELPARAM(5, 30));
+        CHECK(g_begindrag == 1 && g_dragband == 1,
+              "a press on a handle begins a drag, and says which band");
+        CHECK(GetCapture() == dr, "and the rebar takes the pointer");
+
+        /* Carried up onto the first band's row: it goes beside it, the row it
+         * left closes, and the bar loses a row's height. */
+        SendMessageA(dr, WM_MOUSEMOVE, 0, MAKELPARAM(5, 10));
+        joined = (int)SendMessageA(dr, RB_GETBARHEIGHT, 0, 0);
+        GetWindowRect(c1, &r1);
+        GetWindowRect(c2, &r2);
+        CHECK(joined == stacked - (2 + 22),
+              "carried onto the row above, it joins it and the bar is a row "
+              "shorter");
+        CHECK(r1.top == r2.top && r2.left > r1.left,
+              "the two of them side by side, in the order they were in");
+        CHECK(g_heights == 1, "which the window is told about once");
+
+        /* And along the row: the boundary follows the pointer, the width
+         * coming off the band to its left. */
+        was_left = (int)r2.left;
+        SendMessageA(dr, WM_MOUSEMOVE, 0, MAKELPARAM(300, 10));
+        GetWindowRect(c2, &r2);
+        CHECK(r2.left > was_left,
+              "carried along the row it takes width off its neighbour");
+        CHECK((int)SendMessageA(dr, RB_GETBARHEIGHT, 0, 0) == joined,
+              "and the bar is no taller for it");
+
+        /* It cannot be pushed past what its neighbour can spare. */
+        SendMessageA(dr, WM_MOUSEMOVE, 0, MAKELPARAM(-500, 10));
+        GetWindowRect(c1, &r1);
+        GetWindowRect(c2, &r2);
+        CHECK(r2.left > r1.left,
+              "pushed back past the end of the row it stops, rather than "
+              "running through the band beside it");
+
+        SendMessageA(dr, WM_LBUTTONUP, 0, MAKELPARAM(300, 10));
+        CHECK(g_enddrag == 1 && GetCapture() != dr,
+              "letting go ends the drag and gives the pointer back");
+        CHECK(g_layouts > 0, "and the arrangement it left was said to have "
+                             "changed");
+
+        /* A press that is not on a handle is not a drag. */
+        g_begindrag = 0;
+        SendMessageA(dr, WM_LBUTTONDOWN, 0, MAKELPARAM(200, 10));
+        CHECK(g_begindrag == 0 && GetCapture() != dr,
+              "a press on the band itself carries nothing");
+        DestroyWindow(dw);
     }
 
     if (g_failures) {

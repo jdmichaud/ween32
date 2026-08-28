@@ -102,16 +102,12 @@ that no application has asked for:
   *created* and when one is *pressed*; neither is here, because nothing has
   needed them. `WS_EX_NOPARENTNOTIFY` is honoured for the half that exists.
 
-- [ ] **Dragging a band by its gripper.** Bands share a row and `RB_MOVEBAND`
-  carries one to another place in the order, but no pointer can do either yet:
-  the rebar answers no mouse message at all. Watched on the machine, a gripper
-  is **one gesture with two axes** — carried up or down it moves the band
-  between rows, carried along its row it takes width off the band to its left,
-  which is why it wears the column-divider cursor. The layout reflows live
-  rather than dragging an outline; a band pushed past the end of a row is
-  clamped at its smallest rather than wrapping; a band left alone on a row
-  takes the whole width back. `RBN_BEGINDRAG`, `RBN_ENDDRAG`,
-  `RBN_LAYOUTCHANGED` and `RB_HITTEST` go with it.
+- [ ] **A toolbar's chevron**, and with it the last of the rebar's drag. A
+  bar too narrow for its buttons puts the ones that do not fit behind a `»`,
+  and a rebar band being squeezed follows that down in steps — which is why
+  the machine's band boundary snaps where ours slides. Ours stops at a band's
+  own handle and name; the difference is measured in
+  [docs/testing.md](docs/testing.md). `RBN_CHEVRONPUSHED` goes with it.
 
 - [ ] **A fixed-width band beside one that stretches** — `RBBIM_SIZE`,
   `RBBS_FIXEDSIZE`. Bands share a row, but the last band on a row takes

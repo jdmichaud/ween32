@@ -582,6 +582,59 @@ after the menu closes and the machine puts them away again, while a dialog
 opened the same way keeps them on both. The state win32 keeps per window is
 one flag here; see the roadmap.
 
+#### Carrying a band by its gripper
+
+Watched on the machine, in My Computer's rebar — the menu band, the toolbar
+and the address bar. `tools/vm/drive.py` again, because none of this can be
+seen without holding the button down and taking a picture in the middle of
+it:
+
+```sh
+JSLINUX_SOCK=/tmp/jslinux-mcp.sock JSLINUX_SHM=/dev/shm/jslinux-mcp.fb \
+  tools/vm/drive.py press 141,191 sleep 150 \
+  holdmove 300,167 sleep 200 shot /tmp/mid.png 134,158,650,74 \
+  release sleep 400 park shot /tmp/after.png 134,158,650,74
+```
+
+With that window at 133,136 the three grippers are one white column at x=140,
+and the bands run 158..179, 182..203 and 206..227.
+
+**A gripper is one gesture with two axes.** Five things measured:
+
+1. **The pointer over a gripper is the column-divider cursor** — a vertical
+   bar with an arrow either side, the same shape a list view's header divider
+   wears. Not a move cursor and not a hand. It is the first thing that says
+   this is a resize as much as a move.
+2. **It follows, and it is not a ghost.** The real layout reflows while the
+   button is down: bands resize, rows appear and close. The shot taken
+   mid-drag and the shot after the release are the same picture. This is the
+   opposite of the column drag above, which *does* carry a ghost.
+3. **Along a row it resizes**, taking width off the band to its left. With the
+   menu and toolbar sharing a row, carrying the toolbar's gripper left walked
+   the menu down its chevron states — `File Edit View Favorites Tools Help` →
+   `File Edit View Favo »` → `File Edit »` → `File »` — and carrying it right
+   gave the width back and squeezed the toolbar to `←Back ▾ »`.
+4. **Up and down it moves.** Carried onto the row above, the band goes
+   *beside* the one already there and the row it left closes up — three rows
+   became two. Carried below the last row it gets a row of its own, and the
+   order changes with it.
+5. **Past the end of a row it clamps**, and **a band left alone on a row takes
+   the whole width back**. Pointer at 775 and pointer at 900 — well past the
+   window's right edge at 783 — gave identical layouts: the band shrinks to
+   its smallest and stops, rather than wrapping or vanishing.
+
+**The known difference.** The boundary does not track the pointer on the
+machine. Pressing a gripper whose edge is at 296 with the pointer at 297 is a
+grab offset of one pixel, but dragging to 240 left the edge at 262 and
+dragging to 180 left it at 196 — out by 22 and by 16. The reading that fits
+those four measurements is that the edge follows the pointer but is clamped by
+the left neighbour's current smallest width, and that smallest falls in steps
+as that neighbour's toolbar sheds buttons into its chevron. ween32 has no
+chevron, so a band here has one floor where the machine has a staircase: the
+band's own handle and name, and the edge. Everything else about the gesture is
+the machine's; this one part is a straight line where the machine has steps,
+and it is the thing to fix when a toolbar learns to chevron.
+
 #### Moving a column
 
 A heading dragged sideways carries its column, cells and all — the shell's

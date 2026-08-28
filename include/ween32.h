@@ -2220,6 +2220,44 @@ typedef struct {
  * control sending one has to invent the size it carries. */
 #define RBN_FIRST (0U - 831U)
 #define RBN_HEIGHTCHANGE (RBN_FIRST - 0U)
+/* And what it says while a band is being carried by its gripper: once when
+ * the drag starts, once when it ends, and once for the arrangement it left
+ * behind. An application that has to save where the bars ended up listens to
+ * the last of these. */
+#define RBN_LAYOUTCHANGED (RBN_FIRST - 2U)
+#define RBN_BEGINDRAG (RBN_FIRST - 4U)
+#define RBN_ENDDRAG (RBN_FIRST - 5U)
+
+/* Which band, and which part of it. dwMask says which of the last three
+ * fields were filled in. */
+#define RBNM_ID 0x1
+#define RBNM_STYLE 0x2
+#define RBNM_LPARAM 0x4
+
+typedef struct {
+    NMHDR hdr;
+    DWORD dwMask;
+    UINT uBand;
+    UINT fStyle;
+    UINT wID;
+    LPARAM lParam;
+} NMREBAR;
+
+/* What is under a point: nothing, a band's name, a band's contents, or the
+ * handle it is carried by. */
+#define RBHT_NOWHERE 0x1
+#define RBHT_CAPTION 0x2
+#define RBHT_CLIENT 0x3
+#define RBHT_GRABBER 0x4
+
+typedef struct {
+    POINT pt;
+    UINT flags;
+    int iBand;
+} RBHITTESTINFO;
+
+/* Ask which band a point is in, and what part of it. */
+#define RB_HITTEST (WM_USER + 8)
 
 /* Registering the common control classes. ween32 has them registered before
  * anything can ask for one, so this says yes and does nothing — but an
