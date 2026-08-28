@@ -8498,6 +8498,11 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 #define WEEN_RB_CHEVRON_W 8
 #define WEEN_RB_CHEVRON_H 5
 #define WEEN_RB_CHEVRON_GAP 3 /* from the band's right edge */
+/* And from the band's top -- not centred in it, which is what this was until
+ * the machine was asked. Measured on three bands at two band positions: a
+ * band starting at 158 has its chevron's top row at 162, and one starting at
+ * 182 has it at 186. */
+#define WEEN_RB_CHEVRON_TOP 4
 
 typedef struct {
     HWND child;
@@ -8677,9 +8682,10 @@ static void rb_chevron_rect(const ween_strike *f, const ween_rbband *b,
     int w = ween_ncm(WEEN_RB_CHEVRON_W), h = ween_ncm(WEEN_RB_CHEVRON_H);
     int gap = ween_ncm(WEEN_RB_CHEVRON_GAP);
     (void)f;
+    (void)edge;
     r->right = b->x + b->w - gap;
     r->left = r->right - w;
-    r->top = b->y + edge + (b->h - edge - h) / 2;
+    r->top = b->y + ween_ncm(WEEN_RB_CHEVRON_TOP);
     r->bottom = r->top + h;
 }
 

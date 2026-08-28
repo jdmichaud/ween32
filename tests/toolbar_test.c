@@ -823,10 +823,19 @@ int main(void)
         SendMessageA(cr, WM_LBUTTONDOWN, 0, MAKELPARAM(295, 10));
         CHECK(g_chevrons == 1 && g_chevband == 0,
               "pressing it asks the window what to put up, naming the band");
-        CHECK(g_chevrect.right > g_chevrect.left &&
-                  g_chevrect.bottom > g_chevrect.top &&
-                  g_chevrect.right <= 300,
-              "and hands it the rectangle to put it under");
+        /* The rectangle, to the pixel, because it is where the application
+         * hangs its menu and it was measured off the machine: eight by five,
+         * three in from the band's right edge, and its top four below the
+         * band's -- not centred in the band, which is what this was until the
+         * machine was asked. */
+        CHECK(g_chevrect.right - g_chevrect.left == 8 &&
+                  g_chevrect.bottom - g_chevrect.top == 5,
+              "and hands it a rectangle eight by five, as the machine draws "
+              "it");
+        CHECK(g_chevrect.right == 300 - 3,
+              "three pixels in from the band's right edge");
+        CHECK(g_chevrect.top == 4,
+              "and four below the band's top, rather than centred in it");
         CHECK(GetCapture() != cr,
               "a chevron is not a handle: it takes no capture and drags "
               "nothing");

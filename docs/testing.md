@@ -958,6 +958,66 @@ so a one-pixel shift is visible. What the standing difference consists of is
 tabulated in ROADMAP.md — if your total matches those totals, nothing has
 moved.
 
+#### A band's chevron
+
+A band too narrow for what is in it wears a `»` at its right edge. Measured on
+My Computer's rebar, with the window dragged narrow enough that both the menu
+band and the toolbar band wore one:
+
+```sh
+JSLINUX_SOCK=/tmp/jslinux-mcp.sock JSLINUX_SHM=/dev/shm/jslinux-mcp.fb \
+  tools/vm/drive.py press 782,400 holdmove 430,400 release \
+  sleep 600 park shot /tmp/narrow.png
+```
+
+**The glyph** is two arrowheads, each two pixels thick, stepping out for three
+columns and back — **eight wide by five tall**, counted three times on three
+different bands:
+
+```
+##..##..
+.##..##.
+..##..##
+.##..##.
+##..##..
+```
+
+**Where it sits.** Three pixels in from the band's right edge, and its top
+**four pixels below the band's top** — *not* centred in the band, which is
+what it looks like and what ween32 did until this was measured. Two band
+positions agree: a band starting at y 158 has its chevron top at 162, one
+starting at 182 has it at 186.
+
+**What comes out of it is a popup menu**, not a floating strip of buttons: the
+hidden buttons with their icons at the left and their labels as text, disabled
+ones still greyed, a drop-down button keeping its submenu arrow, then a
+separator and **Customize…** — which is the toolbar's own item rather than a
+button that did not fit. It hangs directly off the band's bottom edge with its
+left two pixels left of the chevron's, which is what an application gets by
+taking the rectangle out of `NMREBARCHEVRON` and calling `TrackPopupMenu` at
+its bottom-left. ween32 sends that notification and draws that chevron; what
+goes in the menu is the application's, because only the application knows what
+is in the band.
+
+#### How far a track click pages
+
+Clicking the scroll bar's track below the thumb, in the explorer's list:
+
+| list client height | rows that fit whole | rows the click moved |
+| --- | --- | --- |
+| 383 px | 22 | 22 — the top went `addins` → `system32` |
+| 270 px | 15 | 15 — the top went `addins` → `mww32` |
+
+So a list view pages by **exactly the number of fully visible rows**, and the
+row that was partly visible at the bottom becomes the new top. There is no
+line of overlap — a page is not a screenful less one here.
+
+Two heights, because one number is not a rule. And a warning for whoever
+measures the tree: it has to have **more than twice as many rows as fit**, or
+the page clamps at the bottom of its range and what you measure is the clamp.
+A first attempt read 7 rows moved with 25 visible, which is the tree running
+out of scroll and not the tree's page size.
+
 ### What the gates cannot see
 
 The constants gate compares every `#define` against the real headers and every
