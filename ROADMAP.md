@@ -21,8 +21,8 @@ that no application has asked for:
   trip that goes with it.
 
 - [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
-  repeats a held arrow; the list box, tree view and list view draw and handle
-  their bars inline and do not.
+  repeats a held arrow; the list box, tree view, list view and edit draw and
+  handle their bars inline and do not.
 
 - [ ] **An icon out of a resource script.** `LoadIconA` answers with nothing:
   a window with no class icon draws none, so nothing pretends, but a program
@@ -33,7 +33,10 @@ that no application has asked for:
   missing capability.
 
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
-  scrolls rather than being clipped.
+  scrolls rather than being clipped. The vertical half is there — the view
+  follows the caret and the bar drives it — and what is missing is the
+  sideways offset that would go with it, `WS_HSCROLL`, and `EM_LINESCROLL`'s
+  first argument, which is taken and ignored today.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
 - [ ] **GDI's ellipse, exactly.** ween32's is the mathematically inscribed
@@ -269,7 +272,14 @@ message its win32 counterpart uses:
 
 - **EDIT** — click to place the caret, drag or Shift+arrows to select, type
   over a selection, backspace, delete, arrows and Home/End; `EN_CHANGE` to the
-  parent, a caret when focused, and the selection on a highlight bar.
+  parent, a caret when focused, and the selection on a highlight bar. A
+  multiline one makes lines with Return, keeps its column between them, and
+  answers the messages a text editor asks it — `EM_GETSEL`, `EM_REPLACESEL`,
+  the line arithmetic (`EM_GETLINECOUNT`, `EM_LINEINDEX`, `EM_LINEFROMCHAR`,
+  `EM_LINELENGTH`, `EM_GETLINE`), `EM_GETMODIFY`, `EM_LIMITTEXT` with
+  `EN_MAXTEXT`, and one step of undo. It scrolls to keep the caret in view,
+  by `EM_LINESCROLL` and `EM_SCROLLCARET`, and its `WS_VSCROLL` bar is live:
+  arrows, track, thumb and wheel, with `EN_VSCROLL` to the parent.
 - **BUTTON** — press and release tracking, auto check boxes and radio groups,
   `BN_CLICKED`.
 - **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`; its scroll bar

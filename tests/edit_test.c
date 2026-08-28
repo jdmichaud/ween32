@@ -30,11 +30,14 @@ static int g_failures = 0;
     } while (0)
 
 static int g_maxtext;
+static int g_vscroll;
 
 static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_COMMAND && HIWORD(wp) == EN_MAXTEXT)
         g_maxtext++;
+    if (msg == WM_COMMAND && HIWORD(wp) == EN_VSCROLL)
+        g_vscroll++;
     return DefWindowProcA(wnd, msg, wp, lp);
 }
 
@@ -366,6 +369,78 @@ int main(void)
     CHECK(SendMessageA(shortfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
           "typing on a line in view does not move it");
 
+    /* ---- the bar an application asks for with WS_VSCROLL ----
+     *
+     * Ten lines showing in a field of twenty: the thumb is half the track and
+     * the arrows step a line, which is the same bar the list box and the
+     * views draw and the same hit-testing behind it. */
+
+    HWND host3 = CreateWindowExA(0, "weenedit", "host3",
+                                 WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0, 160,
+                                 170, NULL, NULL, NULL, NULL);
+    HWND barfield = CreateWindowExA(0, "EDIT", "",
+                                    WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                        WS_VSCROLL,
+                                    0, 0, 120, 130, host3,
+                                    (HMENU)(UINT_PTR)13, NULL, NULL);
+    {
+        char many[256];
+        int n = 0;
+        for (int i = 0; i < 20; i++)
+            n += sprintf(many + n, "line%d%s", i, i < 19 ? "\r\n" : "");
+        SetWindowTextA(barfield, many);
+    }
+    SetFocus(barfield);
+    CHECK(SendMessageA(barfield, EM_GETLINECOUNT, 0, 0) == 20,
+          "twenty lines in a field showing ten");
+    {
+        /* Sixteen pixels of bar down the right-hand edge; its bottom arrow is
+         * the last sixteen of a hundred and thirty. */
+        int bar = 120 - 16;
+        SendMessageA(barfield, EM_SETSEL, 0, 0);
+        g_vscroll = 0;
+        SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 122));
+        SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 122));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 1,
+              "the bar's down arrow steps one line");
+        CHECK(g_vscroll == 1,
+              "and the parent hears EN_VSCROLL, as it does on Windows");
+        {
+            DWORD from = 0, to = 0;
+            SendMessageA(barfield, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+            CHECK(from == 0 && to == 0,
+                  "and a click in the bar does not move the caret");
+        }
+        SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 2));
+        SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 2));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+              "and its up arrow steps back");
+        /* Below the thumb is a page: what the field shows, which is ten. */
+        SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 100));
+        SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 100));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 10,
+              "the track below the thumb is a screenful");
+        /* And the thumb is dragged: to the foot of the track is the last line
+         * that still shows a full page. */
+        SendMessageA(barfield, EM_LINESCROLL, 0, -50);
+        SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 20));
+        SendMessageA(barfield, WM_MOUSEMOVE, 0, MAKELPARAM(bar + 8, 120));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 10,
+              "dragging the thumb down goes to the last full page");
+        SendMessageA(barfield, WM_MOUSEMOVE, 0, MAKELPARAM(bar + 8, 16));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+              "and back up to the top");
+        SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 16));
+    }
+    g_vscroll = 0;
+    SendMessageA(barfield, WM_MOUSEWHEEL, MAKEWPARAM(0, (WORD)-WHEEL_DELTA), 0);
+    CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 3,
+          "a notch of the wheel is three lines");
+    CHECK(g_vscroll == 0, "which is not the bar, and says nothing");
+    SendMessageA(barfield, WM_MOUSEWHEEL, MAKEWPARAM(0, (WORD)WHEEL_DELTA), 0);
+    CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+          "and back the other way");
+
     /* A single-line field has no lines to move between, and hands the key
      * back so that a dialog can move the focus with it. */
     HWND one = CreateWindowExA(0, "EDIT", "single", WS_CHILD | WS_VISIBLE, 0,
@@ -381,6 +456,7 @@ int main(void)
     CHECK(SendMessageA(one, EM_LINESCROLL, 0, 1) == FALSE,
           "and nothing to scroll, which is what it answers");
 
+    DestroyWindow(host3);
     DestroyWindow(host2);
     DestroyWindow(host);
 

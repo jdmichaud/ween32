@@ -544,6 +544,8 @@ typedef struct {
 #define EN_KILLFOCUS 0x0200
 #define EN_CHANGE 0x0300
 #define EN_MAXTEXT 0x0501
+#define EN_HSCROLL 0x0601
+#define EN_VSCROLL 0x0602
 #define EN_UPDATE 0x0400
 /* Select a run of the text: wParam is where it starts, lParam where it ends,
  * and -1 for the end means all of it. */

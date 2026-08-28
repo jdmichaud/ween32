@@ -814,6 +814,7 @@ typedef struct {
     char *undo;
     int undo_caret;
     int first_visible; /* the top line of a multiline field, once scrolled */
+    int sb_grab; /* where in the scroll bar's thumb a drag took hold, or -1 */
 } ween_edit;
 
 /* Win2000's default caret blink rate, the one Control Panel's slider sits at
@@ -836,8 +837,10 @@ static ween_edit *edit_state(HWND w)
 {
     if (!w->ctl) {
         ween_edit *e = calloc(1, sizeof(ween_edit));
-        if (e) /* no margin of its own until the application says */
+        if (e) { /* no margin of its own until the application says */
             e->left_margin = e->right_margin = -1;
+            e->sb_grab = -1;
+        }
         w->ctl = e;
         w->ctl_free = edit_ctl_free;
     }
@@ -960,6 +963,19 @@ static int edit_line_height(HWND wnd)
     return f ? f->ascent - f->descent : 13;
 }
 
+/* How many whole lines the field shows at once -- at least one, since a field
+ * too short for its font still has a line in it and something to scroll. */
+static int edit_visible_lines(HWND wnd)
+{
+    RECT r;
+    int inset = ween_border_width(wnd) ? 1 : 0;
+    int line = edit_line_height(wnd);
+    int rows;
+    GetClientRect(wnd, &r);
+    rows = line > 0 ? (r.bottom - r.top - 2 * inset) / line : 0;
+    return rows > 0 ? rows : 1;
+}
+
 /* Where a point lands in a field of many lines: the line under y, and the
  * character under x within it. */
 static int edit_index_at_point(HWND wnd, int x, int y)
@@ -993,6 +1009,30 @@ static int edit_index_at_point(HWND wnd, int x, int y)
     return start + best;
 }
 
+/* The column the scroll bar takes, in client coordinates, or the client
+ * width when the field has not got one. */
+static int edit_bar_left(HWND wnd)
+{
+    RECT r;
+    GetClientRect(wnd, &r);
+    return r.right - ((wnd->style & WS_VSCROLL) ? ween_scroll_metric() : 0);
+}
+
+/* Where the bar is: the top visible line against the lines there are, a page
+ * of what the field shows. A field is scrolled by lines, so the arrows step
+ * one and the track a screenful. */
+static ween_sbstate edit_sbstate(HWND wnd)
+{
+    ween_edit *e = edit_state(wnd);
+    ween_sbstate st;
+    st.pos = e ? e->first_visible : 0;
+    st.min = 0;
+    st.max = edit_line_count(wnd->text) - 1;
+    st.page = edit_visible_lines(wnd);
+    st.line = 1;
+    return st;
+}
+
 static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
@@ -1008,9 +1048,6 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                               (wnd->style & ES_READONLY)
                                           ? COLOR_BTNFACE
                                           : COLOR_WINDOW));
-    if (sb)
-        ween_draw_scrollbar(&top->surface, ox + r.right - sb, oy, sb,
-                            r.bottom - r.top, 1, 0, 0, 0, 0, 0);
 
     ween_color ink = (wnd->style & WS_DISABLED) ? WEEN_SHADOW : WEEN_BLACK;
     /* Wine's EDIT_SetRectNP: a field-bordered edit gives up one pixel on each
@@ -1117,6 +1154,17 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                    WEEN_BLACK);
         }
     }
+
+    /* The bar last, so that a line long enough to reach it is covered by it
+     * rather than drawn through it. Its thumb is where the view is: a bar
+     * with nothing to scroll is drawn disabled, which is what an edit told
+     * SIF_DISABLENOSCROLL shows. */
+    if (sb) {
+        ween_sbstate st = edit_sbstate(wnd);
+        ween_draw_scrollbar(&top->surface, ox + r.right - sb, oy, sb,
+                            r.bottom - r.top, 1, sb_maxpos(&st) > st.min,
+                            st.pos, st.page, st.min, st.max);
+    }
 }
 
 /* The parent hears about every edit the same way. */
@@ -1219,19 +1267,6 @@ static void edit_insert(HWND wnd, ween_edit *e, const char *text)
 
 /* Typing or moving the caret makes it solid again and restarts the blink, so
  * it never vanishes just as you are looking for it — what win32 does. */
-/* How many whole lines the field shows at once -- at least one, since a field
- * too short for its font still has a line in it and something to scroll. */
-static int edit_visible_lines(HWND wnd)
-{
-    RECT r;
-    int inset = ween_border_width(wnd) ? 1 : 0;
-    int line = edit_line_height(wnd);
-    int rows;
-    GetClientRect(wnd, &r);
-    rows = line > 0 ? (r.bottom - r.top - 2 * inset) / line : 0;
-    return rows > 0 ? rows : 1;
-}
-
 /* The top line, kept where the caret is in view, and whether it moved. A
  * field of one line has nowhere to scroll to: this is the vertical half of
  * what an edit does, and the sideways half waits for a field that scrolls
@@ -1450,6 +1485,30 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int had = ween_focus_get() == wnd;
         if (wnd->style & WS_DISABLED)
             return 0;
+        /* The bar's column is the bar's: an arrow steps a line, the track a
+         * screenful, and the thumb is dragged. */
+        if ((wnd->style & WS_VSCROLL) && e &&
+            GET_X_LPARAM(lp) >= edit_bar_left(wnd)) {
+            RECT cr;
+            ween_sbstate st = edit_sbstate(wnd);
+            int grab, pos;
+            GetClientRect(wnd, &cr);
+            SetFocus(wnd);
+            pos = sb_click(GET_Y_LPARAM(lp), cr.bottom - cr.top, &st, &grab);
+            if (grab >= 0) {
+                SetCapture(wnd);
+                e->sb_grab = grab;
+            }
+            e->first_visible = sb_clamp(pos, &st);
+            /* The parent hears that the user worked the bar, which is what
+             * EN_VSCROLL is for; the wheel and the caret are not it. */
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_COMMAND,
+                             MAKEWPARAM((WORD)wnd->id, EN_VSCROLL),
+                             (LPARAM)wnd);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         SetFocus(wnd);
         if (f && e) {
             e->caret = edit_index_at_point(wnd, GET_X_LPARAM(lp) - edit_margin(wnd),
@@ -1469,7 +1528,22 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_MOUSEMOVE:
-        if (GetCapture() == wnd && e) {
+        if (GetCapture() == wnd && e && e->sb_grab >= 0) {
+            RECT cr;
+            ween_sbstate st = edit_sbstate(wnd);
+            GetClientRect(wnd, &cr);
+            int top = sb_clamp(sb_drag(GET_Y_LPARAM(lp), cr.bottom - cr.top,
+                                       &st, e->sb_grab),
+                               &st);
+            if (top != e->first_visible) {
+                e->first_visible = top;
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_COMMAND,
+                                 MAKEWPARAM((WORD)wnd->id, EN_VSCROLL),
+                                 (LPARAM)wnd);
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        } else if (GetCapture() == wnd && e) {
             int at = edit_index_at_point(wnd, GET_X_LPARAM(lp) - edit_margin(wnd),
                                          GET_Y_LPARAM(lp));
             if (at != e->caret) {
@@ -1479,8 +1553,22 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     case WM_LBUTTONUP:
+        if (e)
+            e->sb_grab = -1;
         if (GetCapture() == wnd)
             ReleaseCapture();
+        return 0;
+    case WM_MOUSEWHEEL:
+        /* Three lines a notch, as everything else that scrolls here does. */
+        if (e && (wnd->style & ES_MULTILINE)) {
+            ween_sbstate st = edit_sbstate(wnd);
+            int delta = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+            int top = sb_clamp(e->first_visible - delta * 3, &st);
+            if (top != e->first_visible) {
+                e->first_visible = top;
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        }
         return 0;
     case WM_LBUTTONDBLCLK:
         if (e && !(wnd->style & WS_DISABLED)) {
