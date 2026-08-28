@@ -29,6 +29,7 @@ pub const LPARAM = isize;
 pub const LRESULT = isize;
 pub const INT_PTR = isize;
 pub const UINT_PTR = usize;
+pub const SIZE_T = usize;
 pub const ATOM = u16;
 pub const COLORREF = u32; // 0x00BBGGRR
 pub const LPCSTR = [*:0]const u8;
@@ -318,15 +319,21 @@ pub extern fn CheckRadioButton(dlg: HWND, first: c_int, last: c_int, check: c_in
 pub extern fn GetSystemMetrics(index: c_int) callconv(.c) c_int;
 pub extern fn GetCommandLineA() callconv(.c) LPSTR;
 
+/// The six byte counts are SIZE_T -- as wide as a pointer -- and only the
+/// length and the load are DWORD. Declaring them all DWORD makes this struct
+/// half the size win32 fills in, and GlobalMemoryStatus writes the whole of
+/// its own over the top of it: the fields read wrong and the stack takes the
+/// rest. That is true of the real USER32 as much as of ween32, so this was
+/// wrong on Windows too.
 pub const MEMORYSTATUS = extern struct {
     dwLength: DWORD = @sizeOf(MEMORYSTATUS),
     dwMemoryLoad: DWORD = 0,
-    dwTotalPhys: DWORD = 0,
-    dwAvailPhys: DWORD = 0,
-    dwTotalPageFile: DWORD = 0,
-    dwAvailPageFile: DWORD = 0,
-    dwTotalVirtual: DWORD = 0,
-    dwAvailVirtual: DWORD = 0,
+    dwTotalPhys: SIZE_T = 0,
+    dwAvailPhys: SIZE_T = 0,
+    dwTotalPageFile: SIZE_T = 0,
+    dwAvailPageFile: SIZE_T = 0,
+    dwTotalVirtual: SIZE_T = 0,
+    dwAvailVirtual: SIZE_T = 0,
 };
 pub extern fn GlobalMemoryStatus(status: *MEMORYSTATUS) callconv(.c) void;
 pub extern fn ClientToScreen(wnd: HWND, pt: *POINT) callconv(.c) BOOL;
