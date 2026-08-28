@@ -33,6 +33,8 @@ static HWND g_menu_bar;
 static int g_tip_asked = -1; /* the button the bar asked about */
 static int g_heights;        /* how many times a rebar said its height moved */
 static int g_begindrag, g_enddrag, g_layouts, g_dragband = -1;
+static int g_chevrons, g_chevband = -1;
+static RECT g_chevrect;
 static int g_dropped[2];
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -58,6 +60,13 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (nm->code == RBN_LAYOUTCHANGED) {
             g_layouts++;
+            return 0;
+        }
+        if (nm->code == RBN_CHEVRONPUSHED) {
+            const NMREBARCHEVRON *cv = (const NMREBARCHEVRON *)lp;
+            g_chevrons++;
+            g_chevband = (int)cv->uBand;
+            g_chevrect = cv->rc;
             return 0;
         }
         if (nm->code == TTN_GETDISPINFOA) {
@@ -741,6 +750,87 @@ int main(void)
         CHECK(g_begindrag == 0 && GetCapture() != dr,
               "a press on the band itself carries nothing");
         DestroyWindow(dw);
+    }
+
+    /* The chevron. A band told to use one wears it when what is left for its
+     * child is less than the child said it wanted -- cxIdeal is how an
+     * application says that -- and pressing it asks the application what to
+     * put up rather than putting up something the library invented. */
+    {
+        HWND cw = CreateWindowExA(0, "weentb", "chev", WS_POPUP | WS_VISIBLE,
+                                  0, 0, 300, 60, NULL, NULL, NULL, NULL);
+        HWND cr = CreateWindowExA(0, REBARCLASSNAMEA, "",
+                                  WS_CHILD | WS_VISIBLE | RBS_BANDBORDERS,
+                                  0, 0, 300, 40, cw, NULL, NULL, NULL);
+        HWND cc = CreateWindowA("BUTTON", "c", WS_CHILD | WS_VISIBLE, 0, 0, 40,
+                                22, cr, NULL, NULL, NULL);
+        REBARBANDINFOA cb;
+        RBHITTESTINFO ht;
+
+        memset(&cb, 0, sizeof(cb));
+        cb.cbSize = sizeof(cb);
+        cb.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE | RBBIM_ID |
+                   RBBIM_LPARAM;
+        cb.cyMinChild = 22;
+        cb.fStyle = RBBS_USECHEVRON;
+        cb.hwndChild = cc;
+        cb.wID = 77;
+        cb.lParam = 1234;
+        SendMessageA(cr, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&cb);
+
+        /* What a program set is what it gets back -- RB_SETBANDINFOA had been
+         * declared and never answered, so a band could only ever be described
+         * as it went in. */
+        memset(&cb, 0, sizeof(cb));
+        cb.cbSize = sizeof(cb);
+        cb.fMask = RBBIM_ID | RBBIM_LPARAM | RBBIM_IDEALSIZE;
+        CHECK(SendMessageA(cr, RB_GETBANDINFOA, 0, (LPARAM)&cb) &&
+                  cb.wID == 77 && cb.lParam == 1234 && cb.cxIdeal == 0,
+              "a band hands back the id and the value it was given, and no "
+              "ideal width until it is told one");
+
+        /* With no ideal width there is nothing to be too narrow for. */
+        memset(&ht, 0, sizeof(ht));
+        ht.pt.x = 295;
+        ht.pt.y = 10;
+        SendMessageA(cr, RB_HITTEST, 0, (LPARAM)&ht);
+        CHECK(ht.flags != RBHT_CHEVRON,
+              "a band with no ideal width wears no chevron");
+
+        /* Told the child wants far more room than the band has, it does. */
+        memset(&cb, 0, sizeof(cb));
+        cb.cbSize = sizeof(cb);
+        cb.fMask = RBBIM_IDEALSIZE;
+        cb.cxIdeal = 1000;
+        CHECK(SendMessageA(cr, RB_SETBANDINFOA, 0, (LPARAM)&cb),
+              "a band can be told the width its child would like");
+        memset(&ht, 0, sizeof(ht));
+        ht.pt.x = 295;
+        ht.pt.y = 10;
+        CHECK(SendMessageA(cr, RB_HITTEST, 0, (LPARAM)&ht) == 0 &&
+                  ht.flags == RBHT_CHEVRON,
+              "and one too narrow for it wears a chevron at its right edge");
+        memset(&ht, 0, sizeof(ht));
+        ht.pt.x = 150;
+        ht.pt.y = 10;
+        SendMessageA(cr, RB_HITTEST, 0, (LPARAM)&ht);
+        CHECK(ht.flags == RBHT_CLIENT,
+              "which is at the edge and not over the whole band");
+
+        /* And pressing it asks rather than answers. */
+        g_chevrons = 0;
+        g_chevband = -1;
+        SendMessageA(cr, WM_LBUTTONDOWN, 0, MAKELPARAM(295, 10));
+        CHECK(g_chevrons == 1 && g_chevband == 0,
+              "pressing it asks the window what to put up, naming the band");
+        CHECK(g_chevrect.right > g_chevrect.left &&
+                  g_chevrect.bottom > g_chevrect.top &&
+                  g_chevrect.right <= 300,
+              "and hands it the rectangle to put it under");
+        CHECK(GetCapture() != cr,
+              "a chevron is not a handle: it takes no capture and drags "
+              "nothing");
+        DestroyWindow(cw);
     }
 
     if (g_failures) {

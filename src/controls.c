@@ -8420,12 +8420,29 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 #define WEEN_RB_EDGE_H 2 /* the etched line above each band, and around all */
 #define WEEN_RB_LABEL_X 11  /* a band's label, a pixel past its content */
 #define WEEN_RB_LABEL_GAP 4 /* and what follows it starts four past that */
+/* The chevron: two arrowheads, each two pixels thick, stepping out and back.
+ * Read off the machine pixel by pixel -- a band squeezed until its menu bar
+ * had dropped everything but File, whose chevron is these eight columns by
+ * five rows exactly. See docs/testing.md. */
+#define WEEN_RB_CHEVRON_W 8
+#define WEEN_RB_CHEVRON_H 5
+#define WEEN_RB_CHEVRON_GAP 3 /* from the band's right edge */
 
 typedef struct {
     HWND child;
     char *text;
     UINT style;
     int cx;     /* the width the band asked for, 0 for none */
+    int ideal;  /* cxIdeal: the width the child would like, which is what
+                 * decides whether a band has anything hidden and so whether
+                 * it wears a chevron */
+    UINT id;      /* wID, the band's own name for itself */
+    LPARAM lparam;/* and whatever the application hung on it */
+    /* Taken and handed back, but not acted on. Each is a line in the ROADMAP:
+     * a field that cannot be named is intolerable, one that is named, kept
+     * and honestly listed as unread is merely unfinished. */
+    HBITMAP hbm_back;
+    UINT cy_child, cy_max_child, cy_integral, cx_header;
     int min_h;  /* what the band asked for, or the child's height when it went
                  * in — never re-read from the child, because the layout
                  * resizes the child and the two would chase each other down */
@@ -8460,6 +8477,80 @@ static ween_rebar *rebar_of(HWND w)
     return w->ctl;
 }
 
+/* Take a REBARBANDINFOA into a band. One place, so that inserting a band and
+ * changing one afterwards cannot come to mean different things -- which they
+ * did, RB_SETBANDINFOA having been declared and never answered at all. Every
+ * field is kept whether or not the layout reads it, so that RB_GETBANDINFOA
+ * can hand back what was put in. */
+static void rb_take_info(ween_rbband *b, const REBARBANDINFOA *info)
+{
+    if (info->fMask & RBBIM_CHILD)
+        b->child = info->hwndChild;
+    if (info->fMask & RBBIM_STYLE)
+        b->style = info->fStyle;
+    if ((info->fMask & RBBIM_TEXT)) {
+        free(b->text);
+        b->text = info->lpText ? dup_str(info->lpText) : NULL;
+    }
+    if (info->fMask & RBBIM_SIZE)
+        b->cx = (int)info->cx;
+    if (info->fMask & RBBIM_IDEALSIZE)
+        b->ideal = (int)info->cxIdeal;
+    if (info->fMask & RBBIM_ID)
+        b->id = info->wID;
+    if (info->fMask & RBBIM_LPARAM)
+        b->lparam = info->lParam;
+    if (info->fMask & RBBIM_HEADERSIZE)
+        b->cx_header = info->cxHeader;
+    if (info->fMask & RBBIM_CHILDSIZE) {
+        b->min_h = (int)info->cyMinChild;
+        b->cy_child = info->cyChild;
+        b->cy_max_child = info->cyMaxChild;
+        b->cy_integral = info->cyIntegral;
+    }
+    if (info->fMask & RBBIM_BACKGROUND)
+        b->hbm_back = info->hbmBack;
+}
+
+/* And back out again, so a program can read what it set. */
+static void rb_read_info(const ween_rbband *b, REBARBANDINFOA *info)
+{
+    if (info->fMask & RBBIM_CHILD)
+        info->hwndChild = b->child;
+    if (info->fMask & RBBIM_STYLE)
+        info->fStyle = b->style;
+    if ((info->fMask & RBBIM_TEXT) && info->lpText && info->cch) {
+        UINT n = info->cch - 1;
+        if (b->text) {
+            UINT len = (UINT)strlen(b->text);
+            if (len < n)
+                n = len;
+            memcpy(info->lpText, b->text, n);
+        } else {
+            n = 0;
+        }
+        info->lpText[n] = 0;
+    }
+    if (info->fMask & RBBIM_SIZE)
+        info->cx = (UINT)b->cx;
+    if (info->fMask & RBBIM_IDEALSIZE)
+        info->cxIdeal = (UINT)b->ideal;
+    if (info->fMask & RBBIM_ID)
+        info->wID = b->id;
+    if (info->fMask & RBBIM_LPARAM)
+        info->lParam = b->lparam;
+    if (info->fMask & RBBIM_HEADERSIZE)
+        info->cxHeader = b->cx_header;
+    if (info->fMask & RBBIM_CHILDSIZE) {
+        info->cyMinChild = (UINT)b->min_h;
+        info->cyChild = b->cy_child;
+        info->cyMaxChild = b->cy_max_child;
+        info->cyIntegral = b->cy_integral;
+    }
+    if (info->fMask & RBBIM_BACKGROUND)
+        info->hbmBack = b->hbm_back;
+}
+
 /* How far into a band its control starts: past the gripper, and past the
  * band's name when it has one. The layout places the child by this, the paint
  * places the name by it and the hit test divides the band by it, so all three
@@ -8481,7 +8572,44 @@ static int rb_content_x(const ween_strike *f, const ween_rbband *b)
  * staircase. Written down in docs/testing.md as the known difference. */
 static int rb_min_w(const ween_strike *f, const ween_rbband *b, int edge)
 {
-    return rb_content_x(f, b) + edge;
+    /* A band that can put what does not fit behind a chevron may be squeezed
+     * past its content: the floor is then the handle, the name and the
+     * chevron itself. Without one it stops where its child would vanish.
+     *
+     * The machine's floor is not a floor but a staircase -- its band steps
+     * down as the toolbar inside sheds buttons into the chevron -- and this
+     * is the straight line under those steps. docs/testing.md has both. */
+    int w = rb_content_x(f, b) + edge;
+    if (b->style & RBBS_USECHEVRON)
+        w += ween_ncm(WEEN_RB_CHEVRON_W) + 2 * ween_ncm(WEEN_RB_CHEVRON_GAP);
+    return w;
+}
+
+/* Does this band have something hidden? A band asked to use a chevron wears
+ * one when what is left for its child is less than the child said it wanted:
+ * cxIdeal is how the application says that, and a band with no ideal width
+ * set has nothing to compare against and so never wears one. */
+static int rb_chevron_w(const ween_strike *f, const ween_rbband *b, int edge)
+{
+    if (!(b->style & RBBS_USECHEVRON) || b->ideal <= 0)
+        return 0;
+    if (b->w - rb_content_x(f, b) - edge >= b->ideal)
+        return 0;
+    return ween_ncm(WEEN_RB_CHEVRON_W) + 2 * ween_ncm(WEEN_RB_CHEVRON_GAP);
+}
+
+/* Where it is drawn: against the band's right edge, and the rectangle an
+ * application is handed so it can put its menu under it. */
+static void rb_chevron_rect(const ween_strike *f, const ween_rbband *b,
+                            int edge, RECT *r)
+{
+    int w = ween_ncm(WEEN_RB_CHEVRON_W), h = ween_ncm(WEEN_RB_CHEVRON_H);
+    int gap = ween_ncm(WEEN_RB_CHEVRON_GAP);
+    (void)f;
+    r->right = b->x + b->w - gap;
+    r->left = r->right - w;
+    r->top = b->y + edge + (b->h - edge - h) / 2;
+    r->bottom = r->top + h;
 }
 
 /* Which row a band is on. Rows are made by RBBS_BREAK, and the first band
@@ -8637,6 +8765,16 @@ static int rb_hittest(HWND wnd, ween_rebar *rb, int x, int y, UINT *flags)
         if (flags) {
             int past = b->x + ween_ncm(WEEN_RB_GRIPPER_X) +
                        ween_ncm(WEEN_RB_GRIPPER_W);
+            RECT cv;
+            if (rb_chevron_w(f, b, ween_ncm(WEEN_RB_EDGE_H))) {
+                rb_chevron_rect(f, b, ween_ncm(WEEN_RB_EDGE_H), &cv);
+                /* the whole strip it sits in answers, not the eight pixels of
+                 * the arrows: a chevron is pressed at, not aimed at */
+                if (x >= cv.left - ween_ncm(WEEN_RB_CHEVRON_GAP)) {
+                    *flags = RBHT_CHEVRON;
+                    return i;
+                }
+            }
             if (!(b->style & RBBS_NOGRIPPER) && x < past)
                 *flags = RBHT_GRABBER;
             else if (b->text && x < b->x + rb_content_x(f, b))
@@ -8816,6 +8954,23 @@ static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                              ox + b->x + ween_ncm(WEEN_RB_LABEL_X),
                              by + (inner - th) / 2 - 1, b->text,
                              (int)strlen(b->text), WEEN_BLACK);
+
+        /* The chevron, when the band is too narrow for what is in it. Two
+         * arrowheads, each two pixels thick, stepping out for three columns
+         * and back: exactly what the machine draws, counted off a squeezed
+         * menu band. */
+        if (rb_chevron_w(f, b, ween_ncm(WEEN_RB_EDGE_H))) {
+            RECT cv;
+            rb_chevron_rect(f, b, ween_ncm(WEEN_RB_EDGE_H), &cv);
+            for (int a = 0; a < 2; a++) {   /* two arrowheads, four apart */
+                int cx0 = ox + cv.left + a * 4;
+                for (int row = 0; row < 5; row++) {
+                    int step = row < 3 ? row : 4 - row;
+                    ween_surface_hline(&top->surface, cx0 + step,
+                                       oy + cv.top + row, 2, WEEN_BLACK);
+                }
+            }
+        }
     }
 }
 
@@ -8854,17 +9009,9 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         ween_rbband *b = &rb->band[rb->count];
         memset(b, 0, sizeof(*b));
-        if (info->fMask & RBBIM_CHILD)
-            b->child = info->hwndChild;
-        if (info->fMask & RBBIM_STYLE)
-            b->style = info->fStyle;
-        if ((info->fMask & RBBIM_TEXT) && info->lpText)
-            b->text = dup_str(info->lpText);
+        rb_take_info(b, info);
         /* the height the band keeps: what it asked for, else what the child
          * was when it went in, else a toolbar's worth */
-        if (info->fMask & RBBIM_SIZE)
-            b->cx = (int)info->cx;
-        b->min_h = (info->fMask & RBBIM_CHILDSIZE) ? (int)info->cyMinChild : 0;
         if (!b->min_h && b->child) {
             RECT chr;
             GetClientRect(b->child, &chr);
@@ -8875,6 +9022,32 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rb->count++;
         rebar_layout(wnd, rb);
         InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case RB_SETBANDINFOA: {
+        /* Declared and never answered until now, so a band could be described
+         * when it went in and never afterwards -- and a chevron needs exactly
+         * that, an application telling the band how wide its child would like
+         * to be once the child knows. */
+        const REBARBANDINFOA *info = (const REBARBANDINFOA *)lp;
+        int i = (int)wp, was;
+        rb = rebar_of(wnd);
+        if (!rb || !info || i < 0 || i >= rb->count)
+            return FALSE;
+        was = rebar_height(wnd, rb);
+        rb_take_info(&rb->band[i], info);
+        rebar_layout(wnd, rb);
+        InvalidateRect(wnd, NULL, TRUE);
+        rebar_height_changed(wnd, rb, was);
+        return TRUE;
+    }
+    case RB_GETBANDINFOA: {
+        REBARBANDINFOA *info = (REBARBANDINFOA *)lp;
+        int i = (int)wp;
+        rb = rebar_of(wnd);
+        if (!rb || !info || i < 0 || i >= rb->count)
+            return FALSE;
+        rb_read_info(&rb->band[i], info);
         return TRUE;
     }
     case RB_SHOWBAND: {
@@ -8969,6 +9142,27 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!rb)
             return 0;
         band = rb_hittest(wnd, rb, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &what);
+        if (band >= 0 && what == RBHT_CHEVRON) {
+            /* The library draws it and says it was pressed; what comes out of
+             * it is the application's, because only the application knows
+             * what is in the band. The rectangle goes with the message so a
+             * menu can be put under it. */
+            const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+            NMREBARCHEVRON nm;
+            memset(&nm, 0, sizeof nm);
+            nm.hdr.hwndFrom = wnd;
+            nm.hdr.idFrom = (UINT_PTR)wnd->id;
+            nm.hdr.code = RBN_CHEVRONPUSHED;
+            nm.uBand = (UINT)band;
+            nm.wID = rb->band[band].id;
+            nm.lParam = rb->band[band].lparam;
+            rb_chevron_rect(f, &rb->band[band], ween_ncm(WEEN_RB_EDGE_H),
+                            &nm.rc);
+            if (wnd->parent)
+                SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id,
+                             (LPARAM)&nm);
+            return 0;
+        }
         if (band < 0 || what != RBHT_GRABBER)
             return 0;
         rb->drag = band;

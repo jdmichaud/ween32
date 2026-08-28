@@ -2165,6 +2165,14 @@ typedef struct {
 #define RBBIM_CHILD 0x00000010
 #define RBBIM_CHILDSIZE 0x00000020
 #define RBBIM_SIZE 0x00000040
+#define RBBIM_BACKGROUND 0x00000080
+#define RBBIM_ID 0x00000100
+/* The width the band's child would like: what it takes to show everything in
+ * it. A band narrower than this has something hidden, which is what puts a
+ * chevron on it. */
+#define RBBIM_IDEALSIZE 0x00000200
+#define RBBIM_LPARAM 0x00000400
+#define RBBIM_HEADERSIZE 0x00000800
 
 /* Where a control bar puts itself. A toolbar, a status bar and a rebar are
  * all "control bars": left alone they align themselves to the top of their
@@ -2187,7 +2195,19 @@ typedef struct {
 #define RBBS_HIDDEN 0x00000008
 #define RBBS_GRIPPERALWAYS 0x00000080
 #define RBBS_NOGRIPPER 0x00000100
+/* A band too narrow for what is in it wears a chevron -- the double arrow at
+ * its right edge -- and pressing it asks the application what to put up. */
+#define RBBS_USECHEVRON 0x00000200
 
+/* The whole of the classic struct, in win32's own order, down to cxHeader.
+ * Not as far as the field the library happens to read: an application fills
+ * this in, so the shape is the contract, and a program setting cxIdeal or
+ * lParam has to compile on both sides whether or not ween32 acts on it yet.
+ * The Vista pair after cxHeader -- rcChevronLocation, uChevronState -- is
+ * left out; it is guarded by NTDDI_VERSION there too.
+ *
+ * What is stored and handed back, what is only taken, and what is acted on
+ * are three different questions; the ROADMAP says which is which. */
 typedef struct {
     UINT cbSize;
     UINT fMask;
@@ -2201,10 +2221,20 @@ typedef struct {
     UINT cxMinChild;
     UINT cyMinChild;
     UINT cx;
+    HBITMAP hbmBack;
+    UINT wID;
+    UINT cyChild;
+    UINT cyMaxChild;
+    UINT cyIntegral;
+    UINT cxIdeal;
+    LPARAM lParam;
+    UINT cxHeader;
 } REBARBANDINFOA;
 
 #define RB_INSERTBANDA (WM_USER + 1)
 #define RB_SETBANDINFOA (WM_USER + 6)
+/* And read one back: what a program set is what it gets. */
+#define RB_GETBANDINFOA (WM_USER + 29)
 #define RB_GETBANDCOUNT (WM_USER + 12)
 #define RB_GETBARHEIGHT (WM_USER + 27)
 /* Show or hide one band, which is what View > Toolbars does to each of them. */
@@ -2227,6 +2257,19 @@ typedef struct {
 #define RBN_LAYOUTCHANGED (RBN_FIRST - 2U)
 #define RBN_BEGINDRAG (RBN_FIRST - 4U)
 #define RBN_ENDDRAG (RBN_FIRST - 5U)
+/* A chevron was pressed. The rebar draws it and says so; what comes out of it
+ * -- which buttons, as a menu or otherwise -- is the application's, because
+ * only the application knows what is in the band. */
+#define RBN_CHEVRONPUSHED (RBN_FIRST - 10U)
+
+typedef struct {
+    NMHDR hdr;
+    UINT uBand;
+    UINT wID;
+    LPARAM lParam;
+    RECT rc; /* where the chevron is, so a menu can be put under it */
+    LPARAM lParamNM;
+} NMREBARCHEVRON;
 
 /* Which band, and which part of it. dwMask says which of the last three
  * fields were filled in. */
@@ -2249,6 +2292,7 @@ typedef struct {
 #define RBHT_CAPTION 0x2
 #define RBHT_CLIENT 0x3
 #define RBHT_GRABBER 0x4
+#define RBHT_CHEVRON 0x8
 
 typedef struct {
     POINT pt;

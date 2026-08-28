@@ -790,6 +790,49 @@ so a one-pixel shift is visible. What the standing difference consists of is
 tabulated in ROADMAP.md — if your total matches those totals, nothing has
 moved.
 
+### What the gates cannot see
+
+The constants gate compares every `#define` against the real headers and every
+alias against what it stands for, and a name win32 has not got fails it. That
+is a strong instrument and it has a hole worth naming, because naming it is
+what makes the next person think to look:
+
+**A struct with the right name and half the fields passes both gates.**
+`REBARBANDINFOA` was declared here down to `cx` and stopped, eight fields short
+of win32's — no `cxIdeal`, no `wID`, no `lParam`, no `cxHeader`. Every constant
+around it agreed; every alias resolved; the examples compiled against real
+win32 because no example used those fields. A program that sets `cxIdeal`
+compiles on Windows and not here, which is the one thing this library promises
+it will not do, and nothing in the suite or either gate said a word.
+
+A struct-shape checker is not the answer: ween32 implements a subset on
+purpose, so `_Static_assert(sizeof(X) == sizeof(X))` would fail on nearly
+everything and the exception list would be longer than the header. The answer
+is knowing the hole is there. When a struct is touched, read it beside win32's
+own field by field, to the end of the classic definition — not as far as the
+field being added.
+
+It is the same shape as three other things that have caught us, all of them
+the instrument rather than the code:
+
+- **a test binary that was not rebuilt** — `make` builds the library and the
+  examples, and *not* the tests, so `make && ./tests/foo` can run yesterday's
+  binary against today's library and pass;
+- **a number read out of a worktree somebody was still typing in** — the gate
+  reported 951 constants for a commit that had 932, because it was run in a
+  tree with uncommitted work in it. Measure at the sha, in a worktree of its
+  own: `git worktree add --detach /tmp/review-<sha> <sha>`;
+- **a grep that matched a test's name** — `grep -c ERROR` over a sanitizer log
+  finds `ok   a buffer too small is ERROR_MORE_DATA`. Grep for the
+  sanitizer's own words, `AddressSanitizer|LeakSanitizer|runtime error`.
+
+And the rule under all four: **a test that passes is worth nothing until it has
+been made to fail.** Two tests written the same day passed with the fix and
+without it — one scanned for a gripper starting on the control's own white edge
+and so compared two buttons rather than two grippers; the other read freed
+memory that happened to survive, and only the sanitizer build could tell.
+Break the library on purpose, watch the assertion go red, put it back.
+
 ### Window geometry, without a window system
 
 The headless backend is a fake window system, not just a hole where one should

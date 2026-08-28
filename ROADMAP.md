@@ -102,12 +102,29 @@ that no application has asked for:
   *created* and when one is *pressed*; neither is here, because nothing has
   needed them. `WS_EX_NOPARENTNOTIFY` is honoured for the half that exists.
 
-- [ ] **A toolbar's chevron**, and with it the last of the rebar's drag. A
-  bar too narrow for its buttons puts the ones that do not fit behind a `»`,
-  and a rebar band being squeezed follows that down in steps — which is why
-  the machine's band boundary snaps where ours slides. Ours stops at a band's
-  own handle and name; the difference is measured in
-  [docs/testing.md](docs/testing.md). `RBN_CHEVRONPUSHED` goes with it.
+- [ ] **Four fields of `REBARBANDINFOA` that are taken and not read.** The
+  struct is win32's shape to the end of the classic definition, and every
+  field is stored and handed back by `RB_GETBANDINFOA`, but `cyChild`,
+  `cyMaxChild`, `cyIntegral` and `hbmBack` are only kept: a band's height is
+  still `cyMinChild`, and a band has no background bitmap. A field that cannot
+  be named is intolerable; one that is named, kept and listed here is merely
+  unfinished.
+
+- [ ] **What comes out of a chevron.** The band draws one when it is narrower
+  than `cxIdeal` and sends `RBN_CHEVRONPUSHED` with the rectangle to hang a
+  menu under, but nothing answers it yet: the explorer's bands do not set
+  `RBBS_USECHEVRON`, and what the machine puts up when one is pressed — a
+  menu, a floating strip of the buttons, and where — has not been measured.
+  The library half is deliberately landed without it: a `»` that appears at
+  the right width and does nothing is an honest half, a `»` that puts up a
+  menu we designed ourselves is a wrong whole.
+
+- [ ] **The chevron's staircase.** A band that can hide what does not fit has
+  one floor here — its handle, its name and the chevron — where the machine
+  has steps, because the machine's toolbar sheds buttons into the chevron a
+  button at a time and the band follows it down. Measured in
+  [docs/testing.md](docs/testing.md); it needs the toolbar to learn to hide
+  clipped buttons (`TBSTYLE_EX_HIDECLIPPEDBUTTONS`) before the band can step.
 
 - [ ] **A fixed-width band beside one that stretches** — `RBBIM_SIZE`,
   `RBBS_FIXEDSIZE`. Bands share a row, but the last band on a row takes
