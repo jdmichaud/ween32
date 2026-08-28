@@ -2127,7 +2127,15 @@ typedef struct {
     int idCommand;
     BYTE fsState;
     BYTE fsStyle;
-    BYTE bReserved[2];
+    /* Six, not two: win32 declares this [6] under _WIN64 and [2] otherwise,
+     * and this library builds 64-bit -- its own win32 gate targets x86_64.
+     * Not written as that #ifdef, because _WIN64 is not defined when this
+     * header is compiled natively, so the test would take the wrong arm on
+     * the very side it is meant to describe. The padding to dwData is the
+     * same either way, so every offset and the struct's size agree with two;
+     * the only thing that differs is how much of it an application may write,
+     * which is why only a comparison of the field's own width finds it. */
+    BYTE bReserved[6];
     DWORD_PTR dwData;
     INT_PTR iString;
 } TBBUTTON, *LPTBBUTTON;

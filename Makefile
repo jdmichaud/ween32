@@ -159,6 +159,13 @@ win32:
 	@/tmp/ween32-dump > /tmp/ween32-structs.c
 	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-structs.exe \
 	   /tmp/ween32-structs.c && echo "  win32 structs agree"
+	@python3 tools/zigbind/checkconsts.py include/ween32.h zig/ween32.zig
+	@python3 tools/zigbind/genstructs.py > /tmp/ween32-zdump.c
+	@$(CC) -std=c99 -Iinclude -o /tmp/ween32-zdump /tmp/ween32-zdump.c
+	@/tmp/ween32-zdump > /tmp/ween32-zcheck.zig
+	@$(ZIG) build-obj -femit-bin=/tmp/ween32-zcheck.o \
+	   --dep ween32 -Mroot=/tmp/ween32-zcheck.zig -Mween32=zig/ween32.zig \
+	   && echo "  zig binding agrees with the header"
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
 	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1;; \

@@ -49,6 +49,14 @@ SKIP = {
 # grows a tail behind a version guard that ween32 deliberately stops before.
 # Every field ween32 does declare is still checked, so this excuses the size
 # and nothing else -- a field in the wrong place still fails.
+# Fields whose own width is allowed to differ, for the same reason: the field
+# is itself one of the structs above, so it carries that struct's guarded tail.
+# Its offset is still checked, and so is every field of the struct it holds.
+WIDTH_DIFFERS = {
+    "TVINSERTSTRUCTA.itemex": "it is a TVITEMEXA, whose tail is guarded",
+    "NMLVDISPINFOA.item": "it is an LVITEMA, whose tail is guarded",
+}
+
 SIZE_DIFFERS = {
     "REBARBANDINFOA": "rcChevronLocation and uChevronState, NTDDI >= Vista",
     "LVITEMA": "piColFmt and iGroup, NTDDI >= Vista",
@@ -58,6 +66,9 @@ SIZE_DIFFERS = {
     "TVITEMEXA": "uStateEx, hwnd and iExpandedImage from IE6, iReserved later",
     "NMLVDISPINFOA": "it carries an LVITEMA, whose tail is guarded as above",
     "TVINSERTSTRUCTA": "its union carries a TVITEMEXA, guarded as above",
+    "PROPSHEETPAGEA": "win32's plain name is its V3 struct; ween32 fills in "
+                      "V1, which win32 versions by dwSize and sizes itself "
+                      "with PROPSHEETPAGEA_V1_SIZE",
 }
 
 
@@ -76,6 +87,18 @@ def structs_of(body):
         # offset, and offsetof reaches them by name, so they are read like any
         # other. A *named* nested struct or union is not, and the struct is
         # reported as unread rather than skipped quietly.
+        # Comments first: the check below refuses a struct with a nested one
+        # in it, and a comment that merely says "struct" is not that. TBBUTTON
+        # went unread for exactly that reason.
+        inner = re.sub(r"/\*.*?\*/", " ", inner, flags=re.S)
+        # This builds for x86_64, so where win32 and the header both branch on
+        # _WIN64 the 64-bit arm is the one that is real. Without this the
+        # directives eat the fields around them: a `#endif` and the field after
+        # it are one statement to a parser that splits on semicolons, so
+        # TBBUTTON lost bReserved and dwData both.
+        inner = re.sub(r"#\s*ifdef\s+_WIN64(.*?)#\s*else.*?#\s*endif",
+                       r"\1", inner, flags=re.S)
+        inner = re.sub(r"^\s*#.*$", "", inner, flags=re.M)
         inner = re.sub(r"__extension__\s*", " ", inner)
         inner = re.sub(r"union\s*\{([^{}]*)\}\s*;", r"\1;", inner)
         if "union" in inner or "struct" in inner:
@@ -132,6 +155,17 @@ def main():
             print('    printf("_Static_assert(offsetof(%s, %s) == %%zu, '
                   '\\"%s.%s\\");\\n", offsetof(%s, %s));'
                   % (name, f, name, f, name, f))
+            # And the field's own width. An offset only shows a type that
+            # changed width when the change moves something, and alignment can
+            # absorb it: one SIZE_T made a DWORD in the middle of MEMORYSTATUS
+            # leaves every offset and the size alone, because the next field is
+            # eight-aligned and the padding takes it. That is the bug this gate
+            # was built for and it walked through the offsets untouched.
+            if "%s.%s" % (name, f) in WIDTH_DIFFERS:
+                continue
+            print('    printf("_Static_assert(sizeof(((%s *)0)->%s) == %%zu, '
+                  '\\"%s.%s width\\");\\n", sizeof(((%s *)0)->%s));'
+                  % (name, f, name, f, name, f))
         if name not in SIZE_DIFFERS:
             print('    printf("_Static_assert(sizeof(%s) == %%zu, '
                   '\\"sizeof %s\\");\\n", sizeof(%s));' % (name, name, name))
@@ -147,6 +181,10 @@ def main():
     if SKIP:
         print("/* %d skipped on purpose, and why, in genstructs.py: %s */"
               % (len(SKIP), ", ".join(sorted(SKIP))), file=sys.stderr)
+    print("/* %d fields not compared by width, being structs with a guarded "
+          "tail of their own: %s */"
+          % (len(WIDTH_DIFFERS), ", ".join(sorted(WIDTH_DIFFERS))),
+          file=sys.stderr)
     print("/* %d compared field by field but not by size, win32's own tail "
           "being version-guarded: %s */"
           % (len(SIZE_DIFFERS), ", ".join(sorted(SIZE_DIFFERS))),

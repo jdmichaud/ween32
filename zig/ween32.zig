@@ -200,9 +200,14 @@ pub const BITMAPFILEHEADER = extern struct {
 // A dialog template, as CreateDialogIndirectParam takes one: the header, then
 // each control, every one of them padded to a 4-byte boundary. The strings
 // are UTF-16 in a real template; ween32 and win32 both read them that way.
+// align(2), not align(4): the C header wraps these two in `#pragma pack(2)`,
+// as win32 does, so DLGTEMPLATE is eighteen bytes and not twenty. A dialog
+// template is a run of bytes -- the header, then the menu, class and title,
+// then the items -- so two bytes of tail padding here put everything after it
+// out of place. Caught by tools/zigbind/genstructs.py.
 pub const DLGTEMPLATE = extern struct {
-    style: DWORD align(4),
-    dwExtendedStyle: DWORD,
+    style: DWORD align(2),
+    dwExtendedStyle: DWORD align(2),
     cdit: WORD,
     x: i16,
     y: i16,
@@ -211,8 +216,8 @@ pub const DLGTEMPLATE = extern struct {
 };
 
 pub const DLGITEMTEMPLATE = extern struct {
-    style: DWORD align(4),
-    dwExtendedStyle: DWORD,
+    style: DWORD align(2),
+    dwExtendedStyle: DWORD align(2),
     x: i16,
     y: i16,
     cx: i16,
@@ -462,6 +467,12 @@ pub const OPENFILENAMEA = extern struct {
     /// title of its own with.
     lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
     lpTemplateName: ?LPCSTR = null,
+    /// win32's three, which nothing here reads. They are declared because the
+    /// struct an application fills in has to be the struct it is filling --
+    /// the C header grew them for the same reason.
+    pvReserved: ?*anyopaque = null,
+    dwReserved: DWORD = 0,
+    FlagsEx: DWORD = 0,
 };
 
 pub const CHOOSECOLORA = extern struct {
@@ -1182,7 +1193,11 @@ pub const TBBUTTON = extern struct {
     idCommand: c_int = 0,
     fsState: u8 = 0,
     fsStyle: u8 = 0,
-    bReserved: [2]u8 = .{ 0, 0 },
+    /// Six on a 64-bit build, which is what this is; win32 declares [2] on a
+    /// 32-bit one. Every offset and the struct's size come out the same
+    /// either way, so only a comparison of the field's own width finds it --
+    /// which is what tools/zigbind/genstructs.py does.
+    bReserved: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
     dwData: usize = 0,
     iString: isize = 0,
 };
