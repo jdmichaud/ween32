@@ -32,14 +32,6 @@ that no application has asked for:
   repeats a held arrow; the list box, tree view, list view and edit draw and
   handle their bars inline and do not.
 
-- [ ] **An icon out of a resource script.** `LoadIconA` answers with nothing:
-  a window with no class icon draws none, so nothing pretends, but a program
-  that put its icon in its `.rc` does not get it. The pieces are there —
-  `LoadImageA` already reads a `.ico` and a `.bmp`, and what an `RT_ICON`
-  lacks is the file header that would go in front of it, with `RT_GROUP_ICON`
-  as the index saying which size to take. A short piece of work rather than a
-  missing capability.
-
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
   scrolls rather than being clipped. The vertical half is there — the view
   follows the caret and the bar drives it — and what is missing is the
@@ -235,6 +227,12 @@ locale, taking win32's flags or a picture (`yyyy-MM-dd`, `h:mm tt`);
 latter being Latin-1 here, surrogate pairs included. And the entry point: a
 win32 program has `WinMain` rather than `main`, and the library supplies the
 `main` that calls it — weakly, so a program with one of its own keeps it.
+
+**An icon out of a resource script** — `LoadIconA` walks the `RT_GROUP_ICON`
+directory, picks the row nearest the size a caption wears and with the most
+colours in it, and reads that `RT_ICON` with the same decoder a `.ico` file
+goes through. `DrawIconEx` draws the size it is asked for, so the one 32x32
+image a script usually carries becomes the sixteen a caption wants.
 
 **The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
 `RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows

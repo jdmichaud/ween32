@@ -690,6 +690,14 @@ pixel line, so **36 lines show**. With 83 lines in it, four things:
    `edit_scroll_into_view` computes -- a rule that came free with the other
    three.
 
+**The caption, with an icon in it.** Notepad is the first program here to
+have one, and the layout can be counted against the machine's the same way.
+With both windows at their own origin, the caption's gradient begins to
+change at column 27 on both -- so the room kept for the icon is the same to
+the pixel -- and the title's glyphs occupy exactly the same columns, 24 and
+25 solid, 26 to 28 one pixel each, 29 and 30 solid. The pictures differ,
+this clone's icon not being the machine's, and nothing else does.
+
 The wheel is the one number here that is *not* off this machine:
 `tools/vm/drive.py` has no wheel command, so three lines a notch is Windows'
 documented default (`SPI_GETWHEELSCROLLLINES`) rather than something read

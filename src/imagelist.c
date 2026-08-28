@@ -255,6 +255,26 @@ static HICON load_ico(const char *path, int cx, int cy)
     return (HICON)icon;
 }
 
+/* One image's worth of bytes -- a BITMAPINFOHEADER with the colours and the
+ * mask stacked under it -- made into an icon. That is exactly what an RT_ICON
+ * resource holds, which is why resource.c can hand its bytes straight here:
+ * an .ico file is this with a directory in front of it, and inside a program
+ * the directory is a resource of its own. */
+HICON ween_icon_from_bits(const unsigned char *bits, size_t len)
+{
+    ween_gdiobj *icon;
+    if (!bits || !len)
+        return NULL;
+    icon = calloc(1, sizeof(*icon));
+    if (!icon)
+        return NULL;
+    if (!ico_read_image(bits, len, icon)) {
+        free(icon);
+        return NULL;
+    }
+    return (HICON)icon;
+}
+
 /* win32's oldest way of making an icon: an AND mask, a row per scanline
  * padded to a word, and the colours under it. Only the 32-bit colour form is
  * taken, which is what a program building an icon in memory hands over. */
@@ -454,23 +474,37 @@ void DestroyIcon(HICON icon)
     free(ic);
 }
 
+/* The size asked for is the size drawn, which is what cx and cy are for:
+ * an icon file usually carries one 32x32 image and a caption wants sixteen,
+ * so something has to shrink it. Windows stretches with StretchBlt, which
+ * without a halftone mode drops pixels -- so nearest is not an approximation
+ * of what it does, it is what it does. Nought means the icon's own size.
+ *
+ * The frame of an animated cursor, the flicker-free brush and the DI_ flags
+ * are taken and not used: nothing here animates, nothing double-buffers
+ * through a brush, and every caller wants DI_NORMAL. */
 BOOL DrawIconEx(HDC dc, int x, int y, HICON icon, int cx, int cy,
                 UINT frame, HBRUSH flicker, UINT flags)
 {
     ween_gdiobj *ic = (ween_gdiobj *)icon;
-    (void)cx;
-    (void)cy;
+    int w, h;
     (void)frame;
     (void)flicker;
     (void)flags;
     if (!dc || !ic || ic->kind != WEEN_OBJ_ICON)
         return FALSE;
-    for (int iy = 0; iy < ic->bitmap.h; iy++)
-        for (int ix = 0; ix < ic->bitmap.w; ix++)
+    w = cx > 0 ? cx : ic->bitmap.w;
+    h = cy > 0 ? cy : ic->bitmap.h;
+    for (int dy = 0; dy < h; dy++) {
+        int iy = h == ic->bitmap.h ? dy : dy * ic->bitmap.h / h;
+        for (int dx = 0; dx < w; dx++) {
+            int ix = w == ic->bitmap.w ? dx : dx * ic->bitmap.w / w;
             if (ic->mask[(size_t)iy * ic->bitmap.w + ix])
-                ween_surface_pixel(dc->s, dc->org_x + x + ix,
-                                   dc->org_y + y + iy,
+                ween_surface_pixel(dc->s, dc->org_x + x + dx,
+                                   dc->org_y + y + dy,
                                    ic->bitmap.px[(size_t)iy * ic->bitmap.w + ix]);
+        }
+    }
     return TRUE;
 }
 

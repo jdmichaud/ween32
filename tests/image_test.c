@@ -238,6 +238,48 @@ int main(void)
                 DeleteObject(blank);
             }
 
+            /* DrawIconEx draws the size it is asked for, not the size the
+             * icon happens to be: an icon file usually carries one 32x32
+             * image and a caption wants sixteen, so something has to shrink
+             * it. Nought asks for the icon's own size. Drawn here at twice
+             * and at half, into a surface of nothing, and counted. */
+            {
+                ween_surface s;
+                struct ween_dc dc;
+                int drawn2 = 0, drawn1 = 0;
+                ween_surface_init(&s, 8, 8);
+                ween_surface_clear(&s, WEEN_WHITE);
+                memset(&dc, 0, sizeof dc);
+                dc.s = &s;
+                dc.clip_w = 8;
+                dc.clip_h = 8;
+                DrawIconEx(&dc, 0, 0, icon, 8, 8, 0, NULL, DI_NORMAL);
+                for (int i = 0; i < 64; i++)
+                    if ((s.px[i] & 0xffffff) != WEEN_WHITE)
+                        drawn2++;
+                /* the 4x4 icon has one masked pixel, so four of its sixteen
+                 * quarters are left alone: 64 - 4 */
+                CHECK(drawn2 == 60, "an icon drawn at twice its size fills it");
+                ween_surface_clear(&s, WEEN_WHITE);
+                DrawIconEx(&dc, 0, 0, icon, 2, 2, 0, NULL, DI_NORMAL);
+                for (int i = 0; i < 64; i++)
+                    if ((s.px[i] & 0xffffff) != WEEN_WHITE)
+                        drawn1++;
+                CHECK(drawn1 == 3,
+                      "and at half its size covers a quarter of the pixels, "
+                      "less the masked one");
+                ween_surface_clear(&s, WEEN_WHITE);
+                DrawIconEx(&dc, 0, 0, icon, 0, 0, 0, NULL, DI_NORMAL);
+                {
+                    int own = 0;
+                    for (int i = 0; i < 64; i++)
+                        if ((s.px[i] & 0xffffff) != WEEN_WHITE)
+                            own++;
+                    CHECK(own == 15, "and nought is the size it was drawn at");
+                }
+                ween_surface_free(&s);
+            }
+
             ImageList_Destroy(ic);
             DestroyIcon(icon);
         }

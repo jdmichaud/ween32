@@ -587,6 +587,9 @@ void ween_register_controls(void);
 /* The registry, emptied: the next call reads its file again. Test-only, and
  * not part of the win32 API. */
 void ween_registry_forget(void);
+/* An icon out of the bytes one is stored as -- a BITMAPINFOHEADER with the
+ * colours and the mask under it, which is what an RT_ICON holds. */
+HICON ween_icon_from_bits(const unsigned char *bits, size_t len);
 /* Mark a class as drawing its own WS_*SCROLL bars (user.c). */
 void ween_class_owns_scroll(LPCSTR name);
 /* A toolbar in menu mode, for the menu tracker: which bar has a drop-down up,

@@ -31,10 +31,12 @@ extern const unsigned char ween_app_resource_data[];
 extern const unsigned int ween_app_resource_len;
 
 /* Resource types, by the numbers winuser.h gives them. */
+#define WEEN_RT_ICON 3
 #define WEEN_RT_MENU 4
 #define WEEN_RT_DIALOG 5
 #define WEEN_RT_STRING 6
 #define WEEN_RT_ACCELERATOR 9
+#define WEEN_RT_GROUP_ICON 14
 
 /* ---- walking a .res ------------------------------------------------------ */
 
@@ -325,13 +327,59 @@ HWND CreateDialogParamA(HINSTANCE inst, LPCSTR name, HWND owner, DLGPROC proc,
                                       param);
 }
 
-/* An icon in a .res is a picture in a format this has no decoder for -- a
- * DIB, or a PNG in the newer ones. A program that asks for its own gets
- * nothing rather than a wrong one, which is what a window with no class icon
- * already draws. */
+/* An icon a program keeps in its script.
+ *
+ * What the name asks for is an RT_GROUP_ICON: a directory of the sizes the
+ * icon was drawn at, each row naming an RT_ICON of its own. So this is two
+ * lookups -- the directory, then the image -- and the image is a
+ * BITMAPINFOHEADER with the colours and the mask stacked under it, which is
+ * what the .ico reader already takes.
+ *
+ * The row picked is the one nearest the size a window wears in its caption,
+ * and of those the one with the most colours: an icon file usually carries
+ * the sixteen colour image ahead of the two hundred and fifty six colour
+ * one, and taking the first gives a flat, wrong-coloured icon.
+ *
+ * A stock icon -- IDI_APPLICATION and its neighbours -- is not in any script
+ * and there is no art for one here, so it answers with nothing, as it did
+ * before: a window with no icon draws none rather than a wrong one. */
 HICON LoadIconA(HINSTANCE inst, LPCSTR name)
 {
+    unsigned size = 0, count, best_id = 0;
+    int ok, id = res_number(name, &ok);
+    const unsigned char *dir, *img;
+    int best_d = 1 << 20, best_bpp = -1;
     (void)inst;
-    (void)name;
-    return NULL;
+    if (!ok || id <= 0)
+        return NULL;
+    dir = res_find(WEEN_RT_GROUP_ICON, id, &size);
+    if (!dir || size < 6)
+        return NULL;
+    count = rd16(dir + 4);
+    if (!count || 6 + count * 14 > size)
+        return NULL;
+    for (unsigned i = 0; i < count; i++) {
+        const unsigned char *e = dir + 6 + i * 14;
+        /* width, height, colours, reserved, planes, bitcount, bytes, id --
+         * and a width of nought means 256, as it does in an .ico */
+        int w = e[0] ? e[0] : 256;
+        int bpp = (int)rd16(e + 6);
+        int d = w > WEEN_NC_SMICON ? w - WEEN_NC_SMICON : WEEN_NC_SMICON - w;
+        if (!bpp) { /* older scripts leave it out and count the colours */
+            int colours = e[2];
+            bpp = colours == 0 ? 8 : colours <= 2 ? 1 : colours <= 16 ? 4 : 8;
+        }
+        if (d < best_d || (d == best_d && bpp > best_bpp)) {
+            best_d = d;
+            best_bpp = bpp;
+            best_id = rd16(e + 12);
+        }
+    }
+    if (!best_id)
+        return NULL;
+    size = 0;
+    img = res_find(WEEN_RT_ICON, (int)best_id, &size);
+    if (!img || !size)
+        return NULL;
+    return ween_icon_from_bits(img, size);
 }
