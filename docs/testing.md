@@ -762,11 +762,28 @@ tools/vm/drive.py click 300,200 type "find me here" \
 ```
 
 and trimmed to the frame by walking out from a point inside until the row or
-column is entirely the white of the window behind. The Find box is
-`Find what:` with a field, a `Match case` tick, a `Direction` group with `Up`
-and `Down`, and `Find Next` (the default, disabled while the field is empty)
-over `Cancel`; Replace drops the direction group, adds `Replace with:` and
-stacks `Find Next`, `Replace`, `Replace All`, `Cancel`.
+column is entirely the white of the window behind.
+
+Every rectangle in the Find box, read off that capture in pixels from the
+window's own top-left, so that whoever writes the template can check the
+mapping rather than guess it (the dialog is 358x124 with its frame, and at
+96 dpi its base units are 6 and 13, so a dialog unit is 1.5 px across and
+1.625 down):
+
+| part | rect | size |
+| --- | --- | --- |
+| `Fin&d what:` label ink | 8,35 | to 52,45 |
+| the field | 72,31 | 204 x 20 |
+| `&Find Next` (default, disabled while empty) | 274,28 | 79 x 23 |
+| `Cancel` | 274,57 | 79 x 23 |
+| `Direction` group | 162,68 | 101 x 39 |
+| `&Up` radio | 168,85 | circle 12, label from 188 |
+| `&Down` radio | 210,85 | circle 12, label from 228 |
+| `Match &case` tick | 8,91 | box 13, label from 26 |
+
+Replace drops the direction group, adds `Re&place with:` under the first
+field, and stacks `Find Next`, `Replace`, `Replace All` and `Cancel` down its
+right-hand side.
 
 ### The explorer's commands
 
