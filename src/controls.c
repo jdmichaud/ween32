@@ -8518,6 +8518,29 @@ static int rebar_height(HWND wnd, ween_rebar *rb)
     return h;
 }
 
+/* The bar's height changed, so the application is told and lays out round it.
+ * win32 sends RBN_HEIGHTCHANGE and nothing else. What stood here was a
+ * WM_SIZE sent to the parent, which is wrong twice over: a control does not
+ * send its parent WM_SIZE -- that is the frame's own message about its own
+ * client area -- and the one sent carried a zero lParam, so an application
+ * reading LOWORD and HIWORD for the new size, which is the documented
+ * contract, got zeros here and the truth on Windows. Nothing here read it,
+ * which is why it went unnoticed.
+ *
+ * Only when it really changed: a drag moves a band on nearly every mouse
+ * message and most of those leave the height alone. */
+static void rebar_height_changed(HWND wnd, ween_rebar *rb, int was)
+{
+    NMHDR nm;
+    if (!wnd->parent || rebar_height(wnd, rb) == was)
+        return;
+    memset(&nm, 0, sizeof nm);
+    nm.hwndFrom = wnd;
+    nm.idFrom = (UINT_PTR)wnd->id;
+    nm.code = RBN_HEIGHTCHANGE;
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&nm);
+}
+
 static void rebar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_rebar *rb = rebar_of(wnd);
@@ -8649,10 +8672,11 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case RB_SHOWBAND: {
         /* a band that is not shown keeps its place but takes no room, which
          * is what makes hiding a toolbar close the gap it was in */
-        int i = (int)wp;
+        int i = (int)wp, was;
         rb = rebar_of(wnd);
         if (!rb || i < 0 || i >= rb->count)
             return FALSE;
+        was = rebar_height(wnd, rb);
         if (lp)
             rb->band[i].style &= ~RBBS_HIDDEN;
         else
@@ -8661,8 +8685,7 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             ShowWindow(rb->band[i].child, lp ? SW_SHOW : SW_HIDE);
         rebar_layout(wnd, rb);
         InvalidateRect(wnd, NULL, TRUE);
-        if (wnd->parent) /* the frame lays out again around the new height */
-            SendMessageA(wnd->parent, WM_SIZE, 0, 0);
+        rebar_height_changed(wnd, rb, was);
         return TRUE;
     }
     case RB_MOVEBAND: {
@@ -8678,13 +8701,14 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * and not this one's — so moving a band to the front can put the band
          * that was there beside it rather than under it, which is what the
          * machine does when a bar is carried onto the row above. */
-        int from = (int)wp, to = (int)lp;
+        int from = (int)wp, to = (int)lp, was;
         ween_rbband moved;
         rb = rebar_of(wnd);
         if (!rb || from < 0 || from >= rb->count || to < 0 || to >= rb->count)
             return FALSE;
         if (from == to)
             return TRUE;
+        was = rebar_height(wnd, rb);
         moved = rb->band[from];
         if (to > from)
             memmove(&rb->band[from], &rb->band[from + 1],
@@ -8695,10 +8719,24 @@ static LRESULT rebar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rb->band[to] = moved;
         rebar_layout(wnd, rb);
         InvalidateRect(wnd, NULL, TRUE);
-        if (wnd->parent) /* the rows may have changed, and with them the height */
-            SendMessageA(wnd->parent, WM_SIZE, 0, 0);
+        rebar_height_changed(wnd, rb, was);
         return TRUE;
     }
+    case WM_PARENTNOTIFY:
+        /* A band's child belongs to the application, not to the rebar, which
+         * holds nothing but a pointer to it. When that window goes the
+         * pointer has to go with it, or the next layout moves a window that
+         * is not there. The band stays: a band is the rebar's, and one with
+         * nothing in it is still a row of the bar. */
+        if (LOWORD(wp) == WM_DESTROY) {
+            rb = wnd->ctl; /* not rebar_of: a rebar being torn down itself
+                            * hears this for every band it holds, and has no
+                            * use for state made on the way out */
+            for (int i = 0; rb && i < rb->count; i++)
+                if (rb->band[i].child == (HWND)lp)
+                    rb->band[i].child = NULL;
+        }
+        return 0;
     case RB_GETBANDCOUNT:
         rb = rebar_of(wnd);
         return rb ? rb->count : 0;

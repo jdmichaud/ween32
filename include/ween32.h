@@ -283,6 +283,17 @@ typedef struct tagCREATESTRUCTA {
 #define SC_KEYMENU 0xF100
 #define SC_CONTEXTHELP 0xF180
 #define WM_NOTIFY 0x004E
+/* What a parent is told about its own children. win32 sends this when a child
+ * is created, when one is destroyed, and when one is pressed; only the destroy
+ * half is here, because that is the half something depends on — a control that
+ * holds a child's HWND has to hear when that window goes, or it is left with a
+ * pointer to nothing. The low word of wParam is the event, the high word the
+ * child's id, and lParam the child itself. See the ROADMAP for the other two.
+ *
+ * A child created WS_EX_NOPARENTNOTIFY sends none of it, which is how a
+ * control made of many small windows keeps from telling its parent about each
+ * of them. */
+#define WM_PARENTNOTIFY 0x0210
 #define WM_VSCROLL 0x0115
 #define WM_HSCROLL 0x0114
 #define WM_MOUSEMOVE 0x0200
@@ -412,6 +423,8 @@ HCURSOR SetCursor(HCURSOR cursor);
  * has no minimise or maximise box: the three do not share the strip. */
 #define WS_EX_CONTEXTHELP 0x00000400L
 #define WS_EX_STATICEDGE 0x00020000L
+/* A child that does not tell its parent when it comes and goes. */
+#define WS_EX_NOPARENTNOTIFY 0x00000004L
 
 /* EDIT styles */
 #define ES_LEFT 0x0000L
@@ -1903,6 +1916,14 @@ typedef struct {
 /* Take a band out of the order and put it back somewhere else. This is the
  * move a gripper carried up or down makes, without the pointer. */
 #define RB_MOVEBAND (WM_USER + 39)
+
+/* What a rebar tells its parent. A bar whose height changed says so and the
+ * application lays out around it -- which is the win32 shape, the control
+ * noticing and the application arranging. It does *not* send its parent a
+ * WM_SIZE: that is the frame's own message about its own client area, and a
+ * control sending one has to invent the size it carries. */
+#define RBN_FIRST (0U - 831U)
+#define RBN_HEIGHTCHANGE (RBN_FIRST - 0U)
 
 /* Registering the common control classes. ween32 has them registered before
  * anything can ask for one, so this says yes and does nothing — but an

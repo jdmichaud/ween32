@@ -5523,6 +5523,14 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_NOTIFY: {
         const NMHDR *nm = (const NMHDR *)lp;
+        /* The bars grew or shrank a row — putting one away, bringing one
+         * back, or carrying one onto another's row — so everything under
+         * them moves. The rebar says what happened and this arranges the
+         * window round it, which is the win32 division of the work. */
+        if (nm->code == RBN_HEIGHTCHANGE) {
+            layout(w);
+            return 0;
+        }
         if (nm->code == TVN_SELCHANGEDA) {
             HTREEITEM sel = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM,
                                                     TVGN_CARET, 0);

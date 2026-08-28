@@ -858,6 +858,17 @@ BOOL DestroyWindow(HWND wnd)
     }
     SendMessageA(wnd, WM_DESTROY, 0, 0);
 
+    /* The parent is told its child is going, while the child is still there
+     * to be named. A control that holds one of its children by handle — a
+     * rebar's band, and it will not be the last — has nothing else to tell it
+     * that the window it is pointing at has been freed, and lays the freed
+     * one out the next time it lays anything out. win32 sends the same
+     * message for a child being created and for one being pressed; only this
+     * half is here, and the ROADMAP says so. */
+    if (wnd->parent && !(wnd->ex_style & WS_EX_NOPARENTNOTIFY))
+        SendMessageA(wnd->parent, WM_PARENTNOTIFY,
+                     MAKEWPARAM(WM_DESTROY, (WORD)wnd->id), (LPARAM)wnd);
+
     if (wnd->parent) {
         struct ween_wnd **link = &wnd->parent->first_child;
         while (*link && *link != wnd)

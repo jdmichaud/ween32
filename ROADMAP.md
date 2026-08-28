@@ -53,11 +53,30 @@ that no application has asked for:
   `WM_NCACTIVATE` — a window already draws the inactive caption when the
   keyboard leaves it, but it does not tell the application.
 
-- [ ] **Bands side by side in a rebar**, and dragging them. Bands stack, which
-  is the arrangement a shell uses, but a shell also puts a fixed-width band
-  beside one that stretches — `RBBIM_SIZE`, `RBBS_FIXEDSIZE`, `RBBS_BREAK` —
-  and until that exists the explorer's brand box is a stray child of the rebar
-  that the application places itself.
+- [ ] **The other two halves of `WM_PARENTNOTIFY`**. A parent is told when a
+  child of its is destroyed, because a control that holds a child by handle —
+  a rebar's band is the first, and will not be the last — is otherwise left
+  pointing at freed memory. win32 sends the same message when a child is
+  *created* and when one is *pressed*; neither is here, because nothing has
+  needed them. `WS_EX_NOPARENTNOTIFY` is honoured for the half that exists.
+
+- [ ] **Dragging a band by its gripper.** Bands share a row and `RB_MOVEBAND`
+  carries one to another place in the order, but no pointer can do either yet:
+  the rebar answers no mouse message at all. Watched on the machine, a gripper
+  is **one gesture with two axes** — carried up or down it moves the band
+  between rows, carried along its row it takes width off the band to its left,
+  which is why it wears the column-divider cursor. The layout reflows live
+  rather than dragging an outline; a band pushed past the end of a row is
+  clamped at its smallest rather than wrapping; a band left alone on a row
+  takes the whole width back. `RBN_BEGINDRAG`, `RBN_ENDDRAG`,
+  `RBN_LAYOUTCHANGED` and `RB_HITTEST` go with it.
+
+- [ ] **A fixed-width band beside one that stretches** — `RBBIM_SIZE`,
+  `RBBS_FIXEDSIZE`. Bands share a row, but the last band on a row takes
+  whatever width is left, unconditionally, so a fixed width at the *right end*
+  of a row cannot be said at all — which is exactly where the explorer's brand
+  box sits, and why the application places that one itself instead of giving
+  it to a band.
 
 ### What the explorer still writes for itself
 

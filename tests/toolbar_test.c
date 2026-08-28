@@ -31,6 +31,7 @@ static int g_command, g_dropdown = -1;
  * asked to drop down */
 static HWND g_menu_bar;
 static int g_tip_asked = -1; /* the button the bar asked about */
+static int g_heights;        /* how many times a rebar said its height moved */
 static int g_dropped[2];
 
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
@@ -41,6 +42,10 @@ static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     }
     if (msg == WM_NOTIFY) {
         const NMHDR *nm = (const NMHDR *)lp;
+        if (nm->code == RBN_HEIGHTCHANGE) {
+            g_heights++;
+            return 0;
+        }
         if (nm->code == TTN_GETDISPINFOA) {
             NMTTDISPINFOA *ti = (NMTTDISPINFOA *)lp;
             g_tip_asked = (int)ti->hdr.idFrom;
@@ -428,6 +433,21 @@ int main(void)
             CHECK(!SendMessageA(rebar, RB_MOVEBAND, 0, 7) &&
                       !SendMessageA(rebar, RB_MOVEBAND, -1, 0),
                   "a place that is not there moves nothing");
+
+            /* And the window hears about it the way win32 says: the bar
+             * whose height changed sends RBN_HEIGHTCHANGE, and the
+             * application lays out round it. Not a WM_SIZE invented by the
+             * control, and not on a move that left the height alone. */
+            g_heights = 0;
+            SendMessageA(rebar, RB_MOVEBAND, 0, 1);
+            CHECK(g_heights == 1, "losing a row is said once, as a height "
+                                  "change");
+            SendMessageA(rebar, RB_MOVEBAND, 1, 0);
+            CHECK(g_heights == 2, "and getting it back is said again");
+            SendMessageA(rebar, RB_MOVEBAND, 1, 1);
+            SendMessageA(rebar, RB_MOVEBAND, 0, 9);
+            CHECK(g_heights == 2,
+                  "a move that moves nothing says nothing");
         }
 
         /* A band that does not ask to break shares the row with the one
@@ -450,6 +470,13 @@ int main(void)
             CHECK(sr.top == ar2.top && sr.left > ar2.left,
                   "it sits beside the band before it, on the same row");
             DestroyWindow(side);
+            /* The band outlives its control. Laying out afterwards used to
+             * move a window that had been freed -- the rebar held the only
+             * pointer to it and nothing told it the window had gone. */
+            CHECK((int)SendMessageA(rebar, RB_GETBANDCOUNT, 0, 0) == 3,
+                  "a band whose control is destroyed is still a band");
+            CHECK((int)SendMessageA(rebar, RB_GETBARHEIGHT, 0, 0) > 0,
+                  "and the rebar lays out again without it");
         }
 
         /* A control created as the rebar's own child, the way a shell makes
