@@ -18,6 +18,16 @@ So an absent name is a failure now. The handful that are genuinely absent are
 named in ABSENT below, each with the reason it is; a name reaching that
 failure without a reason beside it is a conversation, not a silent pass.
 
+A T-layer alias -- LOGFONT for LOGFONTA -- is checked as whatever it stands
+for: a type through __builtin_types_compatible_p, a class name through
+__builtin_strcmp, a number as a number, a call by existing. The type check is
+emitted outside any #ifdef, because win32 spells its T-names as typedefs and
+a typedef is invisible to the preprocessor; one line then answers both "is it
+there" and "does it mean the same". The cost is that a type alias win32 has
+not got fails with the compiler's own "unknown type name" rather than with
+the sentence below telling the reader to name it in ABSENT -- so if that is
+what you are looking at, that is what it means.
+
 Reads include/ween32.h, writes C to stdout, and says on stderr how many it
 compared and how many it knowingly did not.
 """
@@ -119,7 +129,8 @@ def main():
             # pointed at the other half: an alias naming LOGFONTW is still a
             # type alias, and a wrong one, which is the case worth catching.
             def like(kind, v=val):
-                return v in kind or (v[-1:] in "AW" and v[:-1] + "A" in kind)
+                return v in kind or (v.endswith(("A", "W")) and
+                                     v[:-1] + "A" in kind)
             # Where win32 has the name too, the two are compared as whatever
             # they are: types with __builtin_types_compatible_p, class names
             # with __builtin_strcmp, numbers as numbers. That is what catches
