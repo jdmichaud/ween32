@@ -12,6 +12,7 @@ than in a chain of separate calls.
     tools/vm/drive.py drag 60,80 200,240 260,300  # more points: a polyline
     tools/vm/drive.py press 60,80 holdmove 120,140 shot /tmp/mid.png release
     tools/vm/drive.py key Enter  key KeyO:AltLeft  type "hello"
+    tools/vm/drive.py move 300,300 wheel -1              # one notch down
     tools/vm/drive.py wait 800  park  shot /tmp/s.png
     tools/vm/drive.py shot /tmp/win.png 132,132,654,544   # a crop of it
 
@@ -173,6 +174,14 @@ def main(argv):
             vm.call("tap", name=name)
             for m in reversed(mods):
                 vm.call("key", name=m, down=False)
+        elif c == "wheel":
+            # A notch of the wheel, positive up and negative down, delivered
+            # where the pointer is: the daemon has had this all along and
+            # this file had no word for it, which is why "three lines a
+            # notch" went unmeasured for a day.
+            vm.call("wheel", dz=int(args[i]))
+            i += 1
+            time.sleep(0.08)
         elif c == "type":
             vm.call("type", text=args[i])
             i += 1
