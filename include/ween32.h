@@ -48,6 +48,11 @@ typedef uint32_t UINT;
 typedef intptr_t LONG_PTR;
 typedef uintptr_t UINT_PTR;
 typedef UINT_PTR DWORD_PTR;
+typedef UINT_PTR ULONG_PTR;
+/* A count of bytes, which is as wide as a pointer -- not as wide as a DWORD.
+ * MEMORYSTATUS is declared with these, and declaring them DWORD put every
+ * field after the second one four bytes short of where win32 has it. */
+typedef ULONG_PTR SIZE_T;
 typedef UINT_PTR WPARAM;
 typedef LONG_PTR LPARAM;
 typedef LONG_PTR LRESULT;
@@ -2561,12 +2566,12 @@ int GetSystemMetrics(int index);
 typedef struct {
     DWORD dwLength;
     DWORD dwMemoryLoad;
-    DWORD dwTotalPhys;
-    DWORD dwAvailPhys;
-    DWORD dwTotalPageFile;
-    DWORD dwAvailPageFile;
-    DWORD dwTotalVirtual;
-    DWORD dwAvailVirtual;
+    SIZE_T dwTotalPhys;
+    SIZE_T dwAvailPhys;
+    SIZE_T dwTotalPageFile;
+    SIZE_T dwAvailPageFile;
+    SIZE_T dwTotalVirtual;
+    SIZE_T dwAvailVirtual;
 } MEMORYSTATUS, *LPMEMORYSTATUS;
 void GlobalMemoryStatus(LPMEMORYSTATUS status);
 BOOL GetWindowRect(HWND wnd, LPRECT rect);

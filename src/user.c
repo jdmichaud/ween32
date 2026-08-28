@@ -528,14 +528,16 @@ void GlobalMemoryStatus(LPMEMORYSTATUS status)
     long pages = sysconf(_SC_PHYS_PAGES), avail = sysconf(_SC_AVPHYS_PAGES);
     long page = sysconf(_SC_PAGESIZE);
     if (pages > 0 && page > 0) {
-        /* The fields are 32 bits wide, so a machine with more than four
-         * gigabytes reports four: the same answer Windows gives, and the
-         * reason it grew a GlobalMemoryStatusEx. */
-        double total = (double)pages * (double)page;
-        double free_ = (double)(avail > 0 ? avail : 0) * (double)page;
-        double cap = 4294967295.0;
-        status->dwTotalPhys = (DWORD)(total > cap ? cap : total);
-        status->dwAvailPhys = (DWORD)(free_ > cap ? cap : free_);
+        /* The byte counts are SIZE_T, as win32 declares them -- as wide as a
+         * pointer, not as wide as a DWORD. They were DWORD here, which both
+         * put every field after the second one where win32 does not have it
+         * and clamped a machine like this one to four gigabytes; the clamp
+         * was written to match what a 32-bit Windows answers, and on a 64-bit
+         * build it was inventing a wrong number rather than reporting a
+         * ceiling. GlobalMemoryStatusEx exists for the 32-bit case, not for
+         * this one. */
+        status->dwTotalPhys = (SIZE_T)pages * (SIZE_T)page;
+        status->dwAvailPhys = (SIZE_T)(avail > 0 ? avail : 0) * (SIZE_T)page;
         status->dwMemoryLoad =
             (DWORD)(100 - (avail > 0 ? avail * 100 / pages : 0));
     }

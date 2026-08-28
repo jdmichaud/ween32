@@ -168,6 +168,29 @@ int main(void)
               "a buffer too small answers with nothing, as win32 does");
     }
 
+    /* What the machine has. The byte counts in MEMORYSTATUS are SIZE_T on
+     * win32 -- as wide as a pointer -- and were DWORD here, which is the kind
+     * of mistake no eye catches: it reads correctly, compiles on both sides,
+     * and puts every field after the second one four bytes from where win32
+     * has it, so a program built against the real header and run against this
+     * library reads the wrong halves of the wrong fields. It also clamped a
+     * machine with more than four gigabytes to four. */
+    {
+        MEMORYSTATUS ms;
+        memset(&ms, 0xcd, sizeof ms);
+        GlobalMemoryStatus(&ms);
+        CHECK(sizeof ms.dwTotalPhys == sizeof(void *),
+              "a byte count in MEMORYSTATUS is as wide as a pointer, not as "
+              "wide as a DWORD");
+        CHECK(ms.dwLength == sizeof ms, "it says how big it is");
+        CHECK(ms.dwTotalPhys > 0 && ms.dwAvailPhys <= ms.dwTotalPhys,
+              "the machine has some memory, and no more free than it has");
+        CHECK(ms.dwMemoryLoad <= 100, "and a load that is a percentage");
+        CHECK(ms.dwTotalPhys != 0xffffffffu,
+              "a machine with more than four gigabytes is not reported as "
+              "having four");
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
