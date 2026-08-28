@@ -83,10 +83,15 @@ pub fn build(b: *std.Build) void {
             "src/imagelist.c",
             "src/user.c",
             "src/dialog.c",
+            "src/registry.c",
             "src/resource.c",
             "src/resource_none.c",
             "src/controls.c",
+            "src/printing.c",
             "src/file.c",
+            "src/kernel.c",
+            "src/shell.c",
+            "src/winmain.c",
             "src/shellart.c",
             "src/cursorart.c",
             "src/headless.c",
@@ -103,10 +108,69 @@ pub fn build(b: *std.Build) void {
         .root_module = lib_mod,
     });
     lib.installHeadersDirectory(b.path("include"), "", .{});
+    // A C program says `#include <windows.h>`, and off Windows that has to
+    // find something: the one-line headers in include/win32 are installed at
+    // the root as well, so a program built against this package includes the
+    // names it always did. On Windows the package is not built at all and the
+    // real headers are the ones found.
+    lib.installHeadersDirectory(b.path("include/win32"), "", .{});
     b.installArtifact(lib);
 
     mod.linkLibrary(lib);
     addExamples(b, mod, target, optimize);
+}
+
+/// What to compile, and where its includes come from.
+pub const ResourceOptions = struct {
+    /// The .rc itself.
+    file: std.Build.LazyPath,
+    /// Directories its #includes are looked for in -- the one it sits in,
+    /// usually, since a resource script includes the program's resource.h.
+    include_dirs: []const std.Build.LazyPath = &.{},
+};
+
+/// Give a program its resources: its menus, its accelerators, its dialogs and
+/// its strings, out of the .rc it already has.
+///
+/// On Windows this is `addWin32ResourceFile` and the linker puts them in the
+/// .exe, which is where USER32 looks. Everywhere else there is no .exe to
+/// look in, so the script is compiled with the same `zig rc` and the bytes it
+/// produces are carried into the program as an object; ween32 reads the .res
+/// itself. Either way the program calls LoadMenu and gets its menu, which is
+/// the whole point: nothing in the program knows which of the two happened.
+///
+///     const w = b.dependency("ween32", .{ .target = t, .optimize = o });
+///     ween32.addResources(b, w, exe, .{ .file = b.path("app.rc"),
+///                                       .include_dirs = &.{b.path(".")} });
+pub fn addResources(b: *std.Build, ween32: *std.Build.Dependency,
+                    exe: *std.Build.Step.Compile, opts: ResourceOptions) void {
+    if (exe.rootModuleTarget().os.tag == .windows) {
+        exe.root_module.addWin32ResourceFile(.{ .file = opts.file });
+        return;
+    }
+    const rc = b.addSystemCommand(&.{ b.graph.zig_exe, "rc", "/fo" });
+    const res = rc.addOutputFileArg("app.res");
+    for (opts.include_dirs) |dir| {
+        rc.addArg("/i");
+        rc.addDirectoryArg(dir);
+    }
+    // Everything after `--` is the input, however it begins: an absolute path
+    // starts with a slash and `zig rc` takes options with one too, so without
+    // this the script's own path is read as an option and the compile stops
+    // on it.
+    rc.addArg("--");
+    rc.addFileArg(opts.file);
+
+    const blob = b.createModule(.{
+        .root_source_file = ween32.path("zig/resource_blob.zig"),
+        .target = exe.root_module.resolved_target,
+        .optimize = exe.root_module.optimize orelse .Debug,
+    });
+    blob.addAnonymousImport("app_res", .{ .root_source_file = res });
+    exe.root_module.addObject(b.addObject(.{
+        .name = "ween32_resources",
+        .root_module = blob,
+    }));
 }
 
 /// The Zig examples. `zig build paint` builds Paint; `zig build` builds it
