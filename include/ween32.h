@@ -420,6 +420,13 @@ HCURSOR SetCursor(HCURSOR cursor);
 #define ES_AUTOVSCROLL 0x0040L
 #define ES_AUTOHSCROLL 0x0080L
 #define ES_READONLY 0x0800L
+/* A field that takes digits and nothing else, and one that keeps no undo. */
+#define ES_NUMBER 0x2000L
+#define ES_NOHIDESEL 0x0100L
+#define ES_UPPERCASE 0x0008L
+#define ES_LOWERCASE 0x0010L
+#define ES_PASSWORD 0x0020L
+#define ES_WANTRETURN 0x1000L
 
 /* LISTBOX and COMBOBOX styles, messages and classes */
 #define LBS_NOTIFY 0x0001L
@@ -1913,6 +1920,26 @@ void InitCommonControls(void);
 /* ---- USER32 -------------------------------------------------------------- */
 
 ATOM RegisterClassA(const WNDCLASSA *wc);
+
+/* The same class, with the two fields the later one added: its own size, so
+ * the call can tell the two apart, and a small icon for the caption. */
+typedef struct tagWNDCLASSEXA {
+    UINT cbSize;
+    UINT style;
+    WNDPROC lpfnWndProc;
+    int cbClsExtra;
+    int cbWndExtra;
+    HINSTANCE hInstance;
+    HICON hIcon;
+    HCURSOR hCursor;
+    HBRUSH hbrBackground;
+    LPCSTR lpszMenuName;
+    LPCSTR lpszClassName;
+    HICON hIconSm;
+} WNDCLASSEXA;
+
+ATOM RegisterClassExA(const WNDCLASSEXA *wc);
+
 HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
                      DWORD style, int x, int y, int w, int h,
                      HWND parent, HMENU menu, HINSTANCE inst, LPVOID param);
@@ -2227,6 +2254,24 @@ HACCEL CreateAcceleratorTableA(LPACCEL entries, int count);
 BOOL DestroyAcceleratorTable(HACCEL table);
 int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg);
 
+/* ---- resources ----------------------------------------------------------
+ *
+ * What a program keeps in its .rc and asks for back by number. On Windows
+ * these read the resources the linker put in the binary; here they read the
+ * .res the build compiled and embedded, which is the same data in the same
+ * layouts.
+ */
+
+int LoadStringA(HINSTANCE inst, UINT id, LPSTR buf, int max);
+HMENU LoadMenuA(HINSTANCE inst, LPCSTR name);
+HMENU LoadMenuIndirectA(const void *tmpl);
+HACCEL LoadAcceleratorsA(HINSTANCE inst, LPCSTR name);
+HICON LoadIconA(HINSTANCE inst, LPCSTR name);
+INT_PTR DialogBoxParamA(HINSTANCE inst, LPCSTR name, HWND owner, DLGPROC proc,
+                        LPARAM param);
+HWND CreateDialogParamA(HINSTANCE inst, LPCSTR name, HWND owner, DLGPROC proc,
+                        LPARAM param);
+
 /* Move the focus to the next or previous control, or to a named one — what a
  * dialog sends itself rather than calling SetFocus, so the dialog manager can
  * keep track of the default button. */
@@ -2313,6 +2358,87 @@ HFONT CreateFontA(int height, int width, int escapement, int orientation,
 BOOL DeleteObject(HGDIOBJ obj);
 HGDIOBJ GetStockObject(int what);
 HGDIOBJ SelectObject(HDC dc, HGDIOBJ obj);
+
+/* ---- the ANSI side of the T-names ----------------------------------------
+ *
+ * windows.h hands a program TCHAR, TEXT() and the undecorated names --
+ * SendMessage, DefWindowProc, LoadString -- resolved to whichever half of the
+ * API the build asked for. This header stands in for windows.h off Windows,
+ * so it owes a program the same names; and since the library is an A-API one,
+ * they resolve to the A half. On Windows none of this is reached: the real
+ * header is included instead and defines them itself.
+ *
+ * A program built with UNICODE wants the W half, and there is none here.
+ * Saying so once is worth more than five hundred errors about types nobody
+ * declared.
+ */
+
+#if defined(UNICODE) || defined(_UNICODE)
+#error "ween32 is an ANSI (A-API) library: build without UNICODE/_UNICODE."
+#endif
+
+typedef char TCHAR;
+typedef char _TCHAR;
+typedef char *LPTSTR, *PTSTR, *LPTCH, *PTCHAR;
+typedef const char *LPCTSTR, *PCTSTR;
+#define TEXT(quote) quote
+#define _T(quote) quote
+#ifndef MAX_PATH
+#define MAX_PATH 260
+#endif
+
+#define CreateWindow CreateWindowA
+#define CreateWindowEx CreateWindowExA
+#define RegisterClass RegisterClassA
+#define RegisterClassEx RegisterClassExA
+#define UnregisterClass UnregisterClassA
+#define GetClassName GetClassNameA
+#define DefWindowProc DefWindowProcA
+#define CallWindowProc CallWindowProcA
+#define SendMessage SendMessageA
+#define SendDlgItemMessage SendDlgItemMessageA
+#define PostMessage PostMessageA
+#define GetMessage GetMessageA
+#define PeekMessage PeekMessageA
+#define DispatchMessage DispatchMessageA
+#define IsDialogMessage IsDialogMessageA
+#define SetWindowText SetWindowTextA
+#define GetWindowText GetWindowTextA
+#define GetWindowTextLength GetWindowTextLengthA
+#define SetDlgItemText SetDlgItemTextA
+#define GetDlgItemText GetDlgItemTextA
+#define SetDlgItemInt SetDlgItemIntA
+#define GetDlgItemInt GetDlgItemIntA
+#define MessageBox MessageBoxA
+#define LoadCursor LoadCursorA
+#define LoadIcon LoadIconA
+#define LoadString LoadStringA
+#define LoadMenu LoadMenuA
+#define LoadMenuIndirect LoadMenuIndirectA
+#define LoadAccelerators LoadAcceleratorsA
+#define CreateAcceleratorTable CreateAcceleratorTableA
+#define TranslateAccelerator TranslateAcceleratorA
+#define DialogBoxParam DialogBoxParamA
+#define DialogBoxIndirectParam DialogBoxIndirectParamA
+#define CreateDialogParam CreateDialogParamA
+#define CreateDialogIndirectParam CreateDialogIndirectParamA
+#define AppendMenu AppendMenuA
+#define InsertMenu InsertMenuA
+#define ModifyMenu ModifyMenuA
+#define SetWindowLong SetWindowLongA
+#define GetWindowLong GetWindowLongA
+#define SetWindowLongPtr SetWindowLongPtrA
+#define GetWindowLongPtr GetWindowLongPtrA
+#define RegisterWindowMessage RegisterWindowMessageA
+#define DrawText DrawTextA
+#define TextOut TextOutA
+#define GetTextExtentPoint32 GetTextExtentPoint32A
+#define CreateFont CreateFontA
+#define GetOpenFileName GetOpenFileNameA
+#define GetSaveFileName GetSaveFileNameA
+#define ChooseColor ChooseColorA
+#define CreateFile CreateFileA
+#define PropertySheet PropertySheetA
 
 #ifdef __cplusplus
 }

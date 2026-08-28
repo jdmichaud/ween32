@@ -416,6 +416,10 @@ typedef struct ween_class {
      * wear both, and the client rectangle would lose the width twice. */
     int own_scroll;
     char *name;
+    /* The menu a window of this class is given when it is made, by the name
+     * the class was registered with -- lpszMenuName. The window owns what it
+     * is handed, the way win32 has it: the menu goes when the window does. */
+    char *menu_name;
     WNDPROC proc;
     HBRUSH background;
     HICON icon;  /* drawn in the caption, at the left of the gradient */

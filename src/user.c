@@ -260,9 +260,38 @@ ATOM RegisterClassA(const WNDCLASSA *wc)
     c->proc = wc->lpfnWndProc;
     c->background = wc->hbrBackground;
     c->icon = wc->hIcon;
+    /* The menu every window of this class is given. A name here is a
+     * resource name -- usually a number in a pointer -- and it is kept as it
+     * came: what it means is LoadMenu's business, at the moment a window
+     * needs one. */
+    c->menu_name = (char *)wc->lpszMenuName;
     c->in_use = 1;
     g_classes[g_nclasses++] = c;
     return (ATOM)g_nclasses;
+}
+
+/* The later form of the same call. The two extra fields are its own size,
+ * which says which one was passed, and a small icon; the small one is drawn
+ * in the caption here, so it is taken when there is no other. */
+ATOM RegisterClassExA(const WNDCLASSEXA *wc)
+{
+    WNDCLASSA plain;
+    ATOM atom;
+    if (!wc || wc->cbSize < sizeof(*wc))
+        return 0;
+    memset(&plain, 0, sizeof plain);
+    plain.style = wc->style;
+    plain.lpfnWndProc = wc->lpfnWndProc;
+    plain.cbClsExtra = wc->cbClsExtra;
+    plain.cbWndExtra = wc->cbWndExtra;
+    plain.hInstance = wc->hInstance;
+    plain.hIcon = wc->hIcon ? wc->hIcon : wc->hIconSm;
+    plain.hCursor = wc->hCursor;
+    plain.hbrBackground = wc->hbrBackground;
+    plain.lpszMenuName = wc->lpszMenuName;
+    plain.lpszClassName = wc->lpszClassName;
+    atom = RegisterClassA(&plain);
+    return atom;
 }
 
 /* ---- geometry ---------------------------------------------------------- */
@@ -322,6 +351,9 @@ static void own_client_origin(const struct ween_wnd *w, int *ox, int *oy)
     }
 }
 
+/* The menu a window wears from now on. What was there is *not* destroyed:
+ * the application put it there and may put it back, and win32 leaves it to
+ * them. Destroying the window destroys whatever it is wearing then. */
 BOOL SetMenu(HWND wnd, HMENU menu)
 {
     if (!wnd)
@@ -687,6 +719,11 @@ HWND CreateWindowExA(DWORD ex_style, LPCSTR class_name, LPCSTR window_name,
         wnd->id = (UINT_PTR)menu;
     else
         wnd->menu = (HMENU)menu;
+    /* A window made from a class that names a menu is given that menu when
+     * it asks for none of its own, which is how a program that keeps its bar
+     * in its resource script comes to have one without a line about it. */
+    if (!(style & WS_CHILD) && !wnd->menu && cls && cls->menu_name)
+        wnd->menu = LoadMenuA(inst, cls->menu_name);
     wnd->menu_hot = -1;
     wnd->font = ween_gui_font();
     wnd->visible = (style & WS_VISIBLE) != 0;
@@ -862,6 +899,13 @@ BOOL DestroyWindow(HWND wnd)
         g_hot = NULL;
     ween_controls_free(wnd);
     ween_kill_timers_of(wnd);
+    /* The menu a window wears goes with it, submenus and all, which is
+     * win32's rule and the only way a menu a class loaded can ever be freed:
+     * the application never sees that handle. SetMenu is the other half of
+     * the rule and does *not* free the one it replaces -- that one the
+     * application put there and still owns. */
+    if (wnd->menu)
+        DestroyMenu(wnd->menu);
     free(wnd->text);
     free(wnd);
     return TRUE;

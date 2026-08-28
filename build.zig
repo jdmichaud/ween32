@@ -83,6 +83,8 @@ pub fn build(b: *std.Build) void {
             "src/imagelist.c",
             "src/user.c",
             "src/dialog.c",
+            "src/resource.c",
+            "src/resource_none.c",
             "src/controls.c",
             "src/file.c",
             "src/shellart.c",

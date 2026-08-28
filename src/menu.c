@@ -233,12 +233,45 @@ int GetMenuItemCount(HMENU menu)
     return ween_menu_count(menu);
 }
 
+/* The item carrying a command, wherever in the menu it is. Asked for by id
+ * rather than by position, which is how a program that knows what it put in
+ * a menu reaches it again -- and win32 looks through the submenus too, since
+ * an id is unique to the whole menu rather than to one level of it. */
+static ween_menuitem *menu_by_command(HMENU menu, UINT id)
+{
+    int n = ween_menu_count(menu);
+    for (int i = 0; i < n; i++) {
+        ween_menuitem *it = ween_menu_item(menu, i);
+        if (!it)
+            continue;
+        if (!(it->flags & MF_POPUP) && it->text && it->id == id)
+            return it;
+        if (it->flags & MF_POPUP) {
+            ween_menuitem *found = menu_by_command(it->popup, id);
+            if (found)
+                return found;
+        }
+    }
+    return NULL;
+}
+
 int GetMenuStringA(HMENU menu, UINT item, LPSTR out, int max, UINT flags)
 {
     ween_menuitem *it;
     int n;
-    if (!(flags & MF_BYPOSITION))
-        return 0; /* by command id is not answered here */
+    if (!(flags & MF_BYPOSITION)) {
+        it = menu_by_command(menu, item);
+        if (!it || !it->text)
+            return 0;
+        n = (int)strlen(it->text);
+        if (!out || max <= 0)
+            return n;
+        if (n > max - 1)
+            n = max - 1;
+        memcpy(out, it->text, (size_t)n);
+        out[n] = 0;
+        return n;
+    }
     it = ween_menu_item(menu, (int)item);
     if (!it || !it->text)
         return 0;

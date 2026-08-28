@@ -366,8 +366,10 @@ int main(void)
         CHECK(IsDialogMessageA(w, &msg), "Alt is taken by the menu bar");
     }
 
+    /* The window is wearing the bar, so destroying the window destroys it:
+     * that is win32's rule, and destroying it here as well would be a double
+     * free there as much as here. */
     DestroyWindow(w);
-    DestroyMenu(g_bar);
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

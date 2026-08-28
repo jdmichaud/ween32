@@ -24,6 +24,14 @@ that no application has asked for:
   repeats a held arrow; the list box, tree view and list view draw and handle
   their bars inline and do not.
 
+- [ ] **An icon out of a resource script.** `LoadIconA` answers with nothing:
+  a window with no class icon draws none, so nothing pretends, but a program
+  that put its icon in its `.rc` does not get it. The pieces are there —
+  `LoadImageA` already reads a `.ico` and a `.bmp`, and what an `RT_ICON`
+  lacks is the file header that would go in front of it, with `RT_GROUP_ICON`
+  as the index saying which size to take. A short piece of work rather than a
+  missing capability.
+
 - [ ] **Horizontal scrolling in an edit**, so text that outruns the field
   scrolls rather than being clipped.
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.

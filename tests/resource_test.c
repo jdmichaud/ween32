@@ -1,0 +1,255 @@
+/* Resources: a compiled .res, read back the way a program asks for it.
+ *
+ * The bytes below are what `zig rc` makes of the script in the comment --
+ * the same compiler the Windows build of such a program uses, so what is
+ * being read here is a real resource file rather than one written by hand to
+ * suit the reader. A program links its own the same way: the build embeds
+ * the .res and defines these two symbols, which the library declares weakly.
+ *
+ * The script:
+ *
+ *     IDR_MENU MENU
+ *     BEGIN
+ *         POPUP "&File"
+ *         BEGIN
+ *             MENUITEM "&New\tCtrl+N", IDM_NEW
+ *             MENUITEM SEPARATOR
+ *             MENUITEM "E&xit",        IDM_EXIT
+ *         END
+ *     END
+ *     IDA_ACCEL ACCELERATORS
+ *     BEGIN
+ *         "N", IDM_NEW, VIRTKEY, CONTROL
+ *     END
+ *     IDD_BOX DIALOG 0, 0, 160, 60
+ *     STYLE 0x80c80000L
+ *     CAPTION "A Box"
+ *     FONT 8, "MS Shell Dlg"
+ *     BEGIN
+ *         LTEXT         "Name:", -1, 7, 9, 40, 10
+ *         EDITTEXT      IDC_FIELD, 50, 7, 100, 14
+ *         DEFPUSHBUTTON "OK", IDOK, 50, 30, 40, 14
+ *         PUSHBUTTON    "Cancel", IDCANCEL, 100, 30, 40, 14
+ *     END
+ *     STRINGTABLE
+ *     BEGIN
+ *         IDS_HELLO  "hello from the script"
+ *         IDS_OTHER  "and another"
+ *     END
+ */
+
+#define _POSIX_C_SOURCE 200112L /* setenv */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "../src/ween_internal.h"
+
+static int g_failures = 0;
+
+#define CHECK(cond, name)                                                      \
+    do {                                                                       \
+        if (cond) {                                                            \
+            printf("ok   %s\n", name);                                         \
+        } else {                                                               \
+            printf("FAIL %s\n", name);                                         \
+            g_failures++;                                                      \
+        }                                                                      \
+    } while (0)
+
+#define IDR_MENU 101
+#define IDA_ACCEL 102
+#define IDD_BOX 200
+#define IDM_NEW 1001
+#define IDM_EXIT 1002
+#define IDS_HELLO 64
+#define IDS_OTHER 65
+#define IDC_FIELD 300
+
+/* The .res itself, and the two names the library looks for. */
+const unsigned char ween_app_resource_data[] = {
+    0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00,
+    0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x44, 0x00, 0x00, 0x00,
+    0x20, 0x00, 0x00, 0x00, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff, 0x65, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x30, 0x10, 0x09, 0x04, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x26, 0x00,
+    0x46, 0x00, 0x69, 0x00, 0x6c, 0x00, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xe9, 0x03, 0x26, 0x00, 0x4e, 0x00, 0x65, 0x00, 0x77, 0x00, 0x09, 0x00,
+    0x43, 0x00, 0x74, 0x00, 0x72, 0x00, 0x6c, 0x00, 0x2b, 0x00, 0x4e, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0xea, 0x03,
+    0x45, 0x00, 0x26, 0x00, 0x78, 0x00, 0x69, 0x00, 0x74, 0x00, 0x00, 0x00,
+    0x08, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0xff, 0xff, 0x09, 0x00,
+    0xff, 0xff, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x09, 0x04,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x89, 0x00, 0x4e, 0x00,
+    0xe9, 0x03, 0x00, 0x00, 0xc6, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0x05, 0x00, 0xff, 0xff, 0xc8, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x30, 0x10, 0x09, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x40, 0x00, 0xc8, 0x80, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xa0, 0x00, 0x3c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00,
+    0x20, 0x00, 0x42, 0x00, 0x6f, 0x00, 0x78, 0x00, 0x00, 0x00, 0x08, 0x00,
+    0x4d, 0x00, 0x53, 0x00, 0x20, 0x00, 0x53, 0x00, 0x68, 0x00, 0x65, 0x00,
+    0x6c, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x44, 0x00, 0x6c, 0x00, 0x67, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x50, 0x00, 0x00, 0x00, 0x00,
+    0x07, 0x00, 0x09, 0x00, 0x28, 0x00, 0x0a, 0x00, 0xff, 0xff, 0xff, 0xff,
+    0x82, 0x00, 0x4e, 0x00, 0x61, 0x00, 0x6d, 0x00, 0x65, 0x00, 0x3a, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x81, 0x50, 0x00, 0x00, 0x00, 0x00,
+    0x32, 0x00, 0x07, 0x00, 0x64, 0x00, 0x0e, 0x00, 0x2c, 0x01, 0xff, 0xff,
+    0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x50,
+    0x00, 0x00, 0x00, 0x00, 0x32, 0x00, 0x1e, 0x00, 0x28, 0x00, 0x0e, 0x00,
+    0x01, 0x00, 0xff, 0xff, 0x80, 0x00, 0x4f, 0x00, 0x4b, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x00, 0x00, 0x00, 0x00,
+    0x64, 0x00, 0x1e, 0x00, 0x28, 0x00, 0x0e, 0x00, 0x02, 0x00, 0xff, 0xff,
+    0x80, 0x00, 0x43, 0x00, 0x61, 0x00, 0x6e, 0x00, 0x63, 0x00, 0x65, 0x00,
+    0x6c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00,
+    0x20, 0x00, 0x00, 0x00, 0xff, 0xff, 0x06, 0x00, 0xff, 0xff, 0x05, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x30, 0x10, 0x09, 0x04, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x15, 0x00, 0x68, 0x00, 0x65, 0x00, 0x6c, 0x00,
+    0x6c, 0x00, 0x6f, 0x00, 0x20, 0x00, 0x66, 0x00, 0x72, 0x00, 0x6f, 0x00,
+    0x6d, 0x00, 0x20, 0x00, 0x74, 0x00, 0x68, 0x00, 0x65, 0x00, 0x20, 0x00,
+    0x73, 0x00, 0x63, 0x00, 0x72, 0x00, 0x69, 0x00, 0x70, 0x00, 0x74, 0x00,
+    0x0b, 0x00, 0x61, 0x00, 0x6e, 0x00, 0x64, 0x00, 0x20, 0x00, 0x61, 0x00,
+    0x6e, 0x00, 0x6f, 0x00, 0x74, 0x00, 0x68, 0x00, 0x65, 0x00, 0x72, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+};
+const unsigned int ween_app_resource_len = sizeof ween_app_resource_data;
+
+static int g_command;
+
+static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_COMMAND)
+        g_command = (int)LOWORD(wp);
+    return DefWindowProcA(wnd, msg, wp, lp);
+}
+
+static INT_PTR CALLBACK box_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)lp;
+    if (msg == WM_INITDIALOG)
+        return TRUE;
+    if (msg == WM_COMMAND && LOWORD(wp) == IDOK) {
+        EndDialog(dlg, 42);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+int main(void)
+{
+    setenv("WEEN32_HEADLESS", "1", 1);
+    setenv("WEEN32_DPI", "96", 1);
+
+    char buf[64];
+    int n = LoadStringA(NULL, IDS_HELLO, buf, sizeof buf);
+    CHECK(n == 21 && strcmp(buf, "hello from the script") == 0,
+          "a string comes back by number");
+    LoadStringA(NULL, IDS_OTHER, buf, sizeof buf);
+    CHECK(strcmp(buf, "and another") == 0, "and so does its neighbour");
+    buf[0] = 'x';
+    CHECK(LoadStringA(NULL, 9999, buf, sizeof buf) == 0 && buf[0] == 0,
+          "one that is not there answers with nothing at all");
+
+    /* A short buffer is filled as far as it goes and terminated, which is
+     * what LoadString does rather than refusing. */
+    char small[6];
+    n = LoadStringA(NULL, IDS_HELLO, small, sizeof small);
+    CHECK(n == 5 && strcmp(small, "hello") == 0,
+          "a buffer too small takes what fits");
+
+    HMENU menu = LoadMenuA(NULL, MAKEINTRESOURCEA(IDR_MENU));
+    CHECK(menu != NULL, "the menu loads");
+    CHECK(GetMenuItemCount(menu) == 1, "one title on the bar");
+    HMENU file = GetSubMenu(menu, 0);
+    CHECK(file != NULL, "and a popup under it");
+    CHECK(GetMenuItemCount(file) == 3, "with its three rows, separator and all");
+    GetMenuStringA(menu, 0, buf, sizeof buf, MF_BYPOSITION);
+    CHECK(strcmp(buf, "&File") == 0, "the title keeps its mnemonic");
+    GetMenuStringA(file, 0, buf, sizeof buf, MF_BYPOSITION);
+    CHECK(strcmp(buf, "&New\tCtrl+N") == 0,
+          "and an item keeps the tab its shortcut is written after");
+    CHECK(GetMenuStringA(file, IDM_EXIT, buf, sizeof buf, MF_BYCOMMAND) > 0 &&
+              strcmp(buf, "E&xit") == 0,
+          "an item is there under the id the script gave it");
+
+    HACCEL accel = LoadAcceleratorsA(NULL, MAKEINTRESOURCEA(IDA_ACCEL));
+    CHECK(accel != NULL, "the accelerator table loads");
+
+    /* The whole point of the table: a key reaches the window as a command. */
+    WNDCLASSA wc;
+    memset(&wc, 0, sizeof wc);
+    wc.lpfnWndProc = host_proc;
+    wc.lpszClassName = "weenres";
+    RegisterClassA(&wc);
+    HWND host = CreateWindowExA(0, "weenres", "host",
+                                WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0, 300,
+                                200, NULL, NULL, NULL, NULL);
+    MSG msg;
+    memset(&msg, 0, sizeof msg);
+    msg.hwnd = host;
+    msg.message = WM_KEYDOWN;
+    msg.wParam = 'N';
+    msg.lParam = 1L << 28; /* Control held, as the library posts it */
+    g_command = 0;
+    CHECK(TranslateAcceleratorA(host, accel, &msg) != 0,
+          "Ctrl+N is taken by the table");
+    CHECK(g_command == IDM_NEW, "and arrives as the command the script names");
+
+    /* A class that names a menu gives it to the windows made from it, which
+     * is how a program with its bar in a script comes to have one. */
+    WNDCLASSEXA ex;
+    memset(&ex, 0, sizeof ex);
+    ex.cbSize = sizeof ex;
+    ex.lpfnWndProc = host_proc;
+    ex.lpszClassName = "weenresmenu";
+    ex.lpszMenuName = MAKEINTRESOURCEA(IDR_MENU);
+    CHECK(RegisterClassExA(&ex) != 0, "a class registered the later way");
+    HWND barred = CreateWindowExA(0, "weenresmenu", "barred",
+                                  WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0, 300,
+                                  200, NULL, NULL, NULL, NULL);
+    CHECK(barred && GetMenu(barred) != NULL,
+          "and a window of it has the menu the class named");
+    CHECK(barred && GetMenuItemCount(GetMenu(barred)) == 1,
+          "the same one, loaded again for it");
+
+    /* A dialog resource is a template: the box comes up, its controls are
+     * the ones the script listed, and it answers what EndDialog was given. */
+    HWND box = CreateDialogParamA(NULL, MAKEINTRESOURCEA(IDD_BOX), host,
+                                  box_proc, 0);
+    CHECK(box != NULL, "the dialog template loads");
+    if (box) {
+        CHECK(GetDlgItem(box, IDC_FIELD) != NULL, "its field is there");
+        CHECK(GetDlgItem(box, IDOK) != NULL, "and its buttons");
+        GetWindowTextA(box, buf, sizeof buf);
+        CHECK(strcmp(buf, "A Box") == 0, "with the caption the script gave it");
+        RECT r;
+        GetClientRect(box, &r);
+        /* 160 by 60 dialog units, which the manager maps to pixels: the
+         * mapping is its business, so this only asks that it happened. */
+        CHECK(r.right > 160 && r.bottom > 60,
+              "and its size in dialog units, mapped to pixels");
+        DestroyWindow(box);
+    }
+
+    CHECK(LoadMenuA(NULL, MAKEINTRESOURCEA(9999)) == NULL,
+          "a resource that is not there is not invented");
+
+    /* What was loaded and never given to a window is the caller's, the way
+     * LoadMenu and LoadAccelerators hand a program theirs on Windows. The
+     * one the class loaded is not: no handle for it ever reached here, and
+     * destroying the window is what frees it. */
+    DestroyMenu(menu);
+    DestroyAcceleratorTable(accel);
+    DestroyWindow(barred);
+    DestroyWindow(host);
+
+    if (g_failures) {
+        printf("%d failure(s)\n", g_failures);
+        return 1;
+    }
+    printf("resource_test: all passed\n");
+    return 0;
+}
