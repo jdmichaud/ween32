@@ -684,7 +684,13 @@ typedef struct {
 #define TVGN_PARENT 0x0003
 #define TVGN_CHILD 0x0004
 #define TVGN_CARET 0x0009
+/* The item at the top of what is shown, which is how a program asks where a
+ * tree has been scrolled to -- and how a test asks. */
+#define TVGN_FIRSTVISIBLE 0x0005
 #define TVM_EXPAND (TV_FIRST + 2)
+/* How many items are shown whole. A page of this tree is one of these less a
+ * row -- measured on the machine, and written down in docs/testing.md. */
+#define TVM_GETVISIBLECOUNT (TV_FIRST + 16)
 #define TVM_SELECTITEM (TV_FIRST + 11)
 #define TVM_HITTEST (TV_FIRST + 17)
 #define TVHT_ONITEMICON 0x0002

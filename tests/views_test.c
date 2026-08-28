@@ -368,6 +368,70 @@ int main(void)
               "and the whole tree emptied for the next folder");
     }
 
+    /* Scrolling a tree taller than its window, and the one number in it that
+     * had to be measured: a click in the track moves a screenful *less one
+     * row*, so the row that was last whole is the row at the top afterwards.
+     *
+     * That is the machine's, read off its explorer -- tree client 208..490
+     * with sixteen-pixel rows from 208, so seventeen whole and a clipped
+     * eighteenth, and a track click put row sixteen at the top. The strip of
+     * the row that landed there is pixel-identical to that row before the
+     * click, so there is no judgement in it. The list view next door does
+     * *not* do this: it moves a whole screenful. Two controls, two rules.
+     */
+    {
+        int rows, visible, sb = ween_scroll_metric();
+        HTREEITEM first = NULL;
+        RECT cr;
+        for (int i = 0; i < 40; i++) {
+            char name[32];
+            sprintf(name, "row%02d", i);
+            HTREEITEM h = add_node(NULL, name);
+            if (!i)
+                first = h;
+        }
+        rows = 40;
+        /* Painted before it is clicked, as a window on a screen would be:
+         * the tree works out its rows and its bars while it draws. */
+        InvalidateRect(g_tree, NULL, TRUE);
+        ween_flush_paint();
+        GetClientRect(g_tree, &cr);
+        visible = (int)SendMessageA(g_tree, TVM_GETVISIBLECOUNT, 0, 0);
+        CHECK(visible > 2 && visible < rows,
+              "a tree with more rows than its window shows");
+        CHECK((HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_FIRSTVISIBLE,
+                                      0) == first,
+              "and it starts at the first of them");
+        /* a click in the track, below the thumb and above the down arrow */
+        {
+            int x = cr.right - sb / 2, y = cr.bottom - sb - 2;
+            HTREEITEM top_after;
+            SendMessageA(g_tree, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(g_tree, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            top_after = (HTREEITEM)SendMessageA(g_tree, TVM_GETNEXTITEM,
+                                                TVGN_FIRSTVISIBLE, 0);
+            {
+                char buf[32];
+                TVITEMA q;
+                memset(&q, 0, sizeof q);
+                q.mask = TVIF_TEXT;
+                q.hItem = top_after;
+                q.pszText = buf;
+                q.cchTextMax = (int)sizeof buf;
+                buf[0] = 0;
+                SendMessageA(g_tree, TVM_GETITEMA, 0, (LPARAM)&q);
+                {
+                    char want[32];
+                    sprintf(want, "row%02d", visible - 1);
+                    CHECK(strcmp(buf, want) == 0,
+                          "a click in the track moves a screenful less one "
+                          "row, so the last whole row is the top one");
+                }
+            }
+        }
+        SendMessageA(g_tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
+    }
+
     /* A tree filled a level at a time. An item says through cChildren that it
      * can be opened before anything is under it — otherwise a shell would
      * have to walk every directory on the machine to draw one tree, and no

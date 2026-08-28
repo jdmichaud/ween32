@@ -20,13 +20,14 @@ that no application has asked for:
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
 
-- [ ] **Does everything page by a screenful less one line?** The machine's
-  edit does — measured, and ween32's edit now does too. The list box, the
-  tree view and the list view page by a whole screenful through the same
-  shared helper, and if they are the same as the edit the fix belongs in the
-  helper rather than in one control. Nobody has measured those three, so
-  nobody should change them: four controls doing three different things is
-  what guessing here would cost.
+- [ ] **Does the list box page by a screenful or one less?** The edit and the
+  tree view page by a screenful *less one row* and the list view by a whole
+  one — all three measured on the machine, and written up in
+  [docs/testing.md](docs/testing.md#which-controls-page-by-a-whole-screenful-and-which-by-one-less)
+  with the method, which matters because two plausible ways of counting are
+  both off by one. The list box and the combo box's dropped list are the two
+  nobody has measured; they page by a whole screenful today because that is
+  what the shared helper does, not because anyone checked.
 
 - [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
   repeats a held arrow; the list box, tree view, list view and edit draw and
@@ -69,13 +70,6 @@ that no application has asked for:
   at the last step with undefined symbols rather than at the first with a
   name. A check that compares the two lists is a few lines and would have
   said so at once.
-
-- [ ] **The wheel, against the machine.** Three lines a notch is Windows'
-  documented default (`SPI_GETWHEELSCROLLLINES`) and ween32's own figure; it
-  is the one number on the edit's bar that has *not* been read off the
-  Windows 2000 machine, because `tools/vm/drive.py` has no wheel command.
-  Adding one settles it. The other three were measured — see
-  [docs/testing.md](docs/testing.md#the-edits-scroll-bar-beside-the-machines-notepad).
 
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 

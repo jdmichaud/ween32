@@ -698,10 +698,56 @@ the pixel -- and the title's glyphs occupy exactly the same columns, 24 and
 25 solid, 26 to 28 one pixel each, 29 and 30 solid. The pictures differ,
 this clone's icon not being the machine's, and nothing else does.
 
-The wheel is the one number here that is *not* off this machine:
-`tools/vm/drive.py` has no wheel command, so three lines a notch is Windows'
-documented default (`SPI_GETWHEELSCROLLLINES`) rather than something read
-off the screen. Anyone adding a wheel to the driver should check it.
+The wheel is three lines a notch, measured with `drive.py`'s `wheel` verb --
+the daemon had the command all along and the driver had no word for it. One
+notch up took the top line from 44 to 41, a second to 38, and two notches
+down took it back to 44, so it is three a notch and a notch count multiplies.
+
+Point 3 above is the one that had to be re-measured, twice: see [Which
+controls page by a whole screenful, and which by one
+less](#which-controls-page-by-a-whole-screenful-and-which-by-one-less).
+
+### Which controls page by a whole screenful, and which by one less
+
+A click in a scroll bar's track moves a page. *How much a page is* turned out
+to differ between controls, and the answer took three of us and two wrong
+methods to get right, so the method matters as much as the numbers.
+
+**What does not work.** Dividing a client height by a row height and calling
+the answer "rows visible" is off by one whenever the last row is clipped, and
+it usually is. Reading the row names off the picture and judging by eye which
+is the last *whole* one is off by one too: a row's ink sits in the top of its
+box, so a row can have every pixel of its letters drawn and still be cut.
+Both mistakes were made here, in that order.
+
+**What works** is a comparison with no judgement in it. Before the click, and
+after it, crop the strip of the row at the top afterwards and find which row
+before the click it is *pixel-identical* to. Then measure the client's last
+pixel and the row grid, and say whether that row was whole. Nothing is
+divided, nothing is eyeballed.
+
+    A = before, B = after; rows are `pitch` tall from `origin`
+    for k in range(...):
+        if B.crop(x0, origin, x1, origin+pitch) == A.crop(x0, origin+pitch*k, ...):
+            that is the row that moved to the top
+
+Measured that way on Windows 2000:
+
+| control | client | rows | whole | moved | rule |
+| --- | --- | --- | --- | --- | --- |
+| Notepad's **edit** | 132..603 | 13 from 133 | 36 | **35** | a screenful less one |
+| explorer's **tree** | 208..490 | 16 from 208 | 17 | **16** | a screenful less one |
+| explorer's **list view** | 204..439 | 17 from 209 | 13 | **13** | a whole screenful |
+
+The list view's is Dan's, measured twice at two window heights; the other two
+are on the strip test above. So the edit and the tree overlap a row and the
+list view does not — two rules in the same window, both read off the same
+machine. ween32 follows each control's own.
+
+The clamp is the other trap: a control cannot move a page it has not got. A
+tree of 38 items showing 17 can only move 21, so a "page" measured from
+halfway down measures the end of the range instead. Page from the top, with
+more than two screenfuls below.
 
 ### The explorer's commands
 

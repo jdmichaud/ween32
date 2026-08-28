@@ -4074,6 +4074,25 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (vbar && GET_X_LPARAM(lp) >= cr.right - sb) {
                 ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
                 pos = sb_click(GET_Y_LPARAM(lp), view_h, &st, &grab);
+                /* A tree pages by a screenful *less one row*: the row that
+                 * was last whole is the row at the top afterwards. Measured
+                 * on the machine's explorer -- client 208..490, rows sixteen
+                 * tall from 208, so seventeen whole and a clipped
+                 * eighteenth; a click in the track put row sixteen at the
+                 * top, which is the last whole one. The test had no
+                 * judgement in it: the strip of the row that landed on top
+                 * is pixel-identical to that row before the click.
+                 *
+                 * The list view next door does *not* do this -- it moves a
+                 * whole screenful and the clipped row becomes the top, which
+                 * Dan measured twice. Two controls, two rules, both read off
+                 * the same machine. */
+                if (grab < 0 && st.page > 1) {
+                    if (pos == st.pos - st.page)
+                        pos = st.pos - (st.page - 1);
+                    else if (pos == st.pos + st.page)
+                        pos = st.pos + (st.page - 1);
+                }
                 if (grab >= 0) {
                     SetCapture(wnd);
                     wnd->drag_offset = grab;
@@ -4298,9 +4317,28 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return (LRESULT)(UINT_PTR)(it ? it->next : NULL);
         case TVGN_PARENT:
             return (LRESULT)(UINT_PTR)(it ? it->parent : NULL);
+        case TVGN_FIRSTVISIBLE: {
+            /* What is at the top of the window: the item on the row the tree
+             * is scrolled to. A program asks this to remember where it was. */
+            int row = 0, depth = 0;
+            return (LRESULT)(UINT_PTR)tree_at_row(t->root, 0, t->scroll_row,
+                                                  &row, &depth);
+        }
         default:
             return 0;
         }
+    }
+    case TVM_GETVISIBLECOUNT: {
+        /* The rows that fit whole, which is what win32 answers and what a
+         * program pages by. */
+        RECT r;
+        int sb = ween_scroll_metric(), hbar;
+        t = tree_of(wnd);
+        if (!t)
+            return 0;
+        GetClientRect(wnd, &r);
+        hbar = t->content_w > r.right;
+        return (r.bottom - (hbar ? sb : 0)) / WEEN_TV_ITEM_H;
     }
     case TVM_GETITEMA: {
         /* An app that walks the tree needs the text back out of it. */
