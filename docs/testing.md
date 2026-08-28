@@ -659,6 +659,42 @@ WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/hd%d.bmp \
   ./examples/explorer /tmp/somefolder
 ```
 
+### The edit's scroll bar, beside the machine's Notepad
+
+The library's own Notepad clone put a real win32 program on top of ween32, and
+the machine runs the same program's ancestor -- so its edit control is
+measurable the same way the explorer's panes are. Start Notepad on the
+machine, fill it with numbered lines, and read the bar off the screen:
+
+```sh
+JSLINUX_SOCK=/tmp/jslinux-mcp.sock JSLINUX_SHM=/dev/shm/jslinux-mcp.fb \
+  tools/vm/drive.py click 300,200 type "$(seq -f 'line %02g' 0 79)" \
+  wait 1200 park shot /tmp/w0.png
+```
+
+The window as it opens has a client area of **740 x 472** with a thirteen
+pixel line, so **36 lines show**. With 83 lines in it, four things:
+
+1. **An arrow is one line.** The top line read `line 44`; one click on the up
+   arrow and it read `line 43`.
+2. **The thumb is `MulDiv(page, track, lines)`** -- the formula the shared
+   scroll helper already used, guessed from the views and unchecked until
+   now. Bar 131..603 with sixteen-pixel arrows is a track of 441, and
+   36 x 441 / 83 = 191.3; the thumb measured 191 pixels.
+3. **A click in the track is a screenful less one line**, not a screenful:
+   `line 43` to `line 08` is 35 with 36 showing. The line that was at the
+   bottom is the line at the top, so the eye keeps its place. ween32 moved a
+   whole screenful until this was measured.
+4. **The view follows the caret to the line.** Typing past the bottom left
+   the top line at exactly lines minus visible, which is what
+   `edit_scroll_into_view` computes -- a rule that came free with the other
+   three.
+
+The wheel is the one number here that is *not* off this machine:
+`tools/vm/drive.py` has no wheel command, so three lines a notch is Windows'
+documented default (`SPI_GETWHEELSCROLLLINES`) rather than something read
+off the screen. Anyone adding a wheel to the driver should check it.
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the

@@ -20,6 +20,14 @@ that no application has asked for:
   one; sharing with other X clients needs selection ownership and the round
   trip that goes with it.
 
+- [ ] **Does everything page by a screenful less one line?** The machine's
+  edit does — measured, and ween32's edit now does too. The list box, the
+  tree view and the list view page by a whole screenful through the same
+  shared helper, and if they are the same as the edit the fix belongs in the
+  helper rather than in one control. Nobody has measured those three, so
+  nobody should change them: four controls doing three different things is
+  what guessing here would cost.
+
 - [ ] **Auto-repeat in the views' own scroll bars.** The `SCROLLBAR` control
   repeats a held arrow; the list box, tree view, list view and edit draw and
   handle their bars inline and do not.
@@ -70,14 +78,12 @@ that no application has asked for:
   name. A check that compares the two lists is a few lines and would have
   said so at once.
 
-- [ ] **The edit's scroll bar, against the machine.** The three numbers in it
-  — the thumb's size, a screenful for a click in the track, three lines for a
-  notch of the wheel — come from ween32's own scroll helpers, the same ones
-  the list box and the views use. They have not been read off the Windows
-  2000 machine: the VM was down when the bar was written, and following the
-  helpers already there beat inventing a second set of numbers. The sampler's
-  field settles the *disabled* bar to the pixel and nothing settles the live
-  one yet.
+- [ ] **The wheel, against the machine.** Three lines a notch is Windows'
+  documented default (`SPI_GETWHEELSCROLLLINES`) and ween32's own figure; it
+  is the one number on the edit's bar that has *not* been read off the
+  Windows 2000 machine, because `tools/vm/drive.py` has no wheel command.
+  Adding one settles it. The other three were measured — see
+  [docs/testing.md](docs/testing.md#the-edits-scroll-bar-beside-the-machines-notepad).
 
 - [ ] **Multi-row tabs** (`TCS_MULTILINE`) and tab images.
 
@@ -381,7 +387,10 @@ message its win32 counterpart uses:
   `EM_LINELENGTH`, `EM_GETLINE`), `EM_GETMODIFY`, `EM_LIMITTEXT` with
   `EN_MAXTEXT`, and one step of undo. It scrolls to keep the caret in view,
   by `EM_LINESCROLL` and `EM_SCROLLCARET`, and its `WS_VSCROLL` bar is live:
-  arrows, track, thumb and wheel, with `EN_VSCROLL` to the parent.
+  arrows, track, thumb and wheel, with `EN_VSCROLL` to the parent. Three of
+  those four numbers are the machine's own, read off its Notepad — an arrow
+  is a line, the thumb is `MulDiv(page, track, lines)`, and a click in the
+  track is a screenful *less one line*.
 - **BUTTON** — press and release tracking, auto check boxes and radio groups,
   `BN_CLICKED`.
 - **LISTBOX** — click or arrow keys to select, `LBN_SELCHANGE`; its scroll bar

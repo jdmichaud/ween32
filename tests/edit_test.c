@@ -415,11 +415,18 @@ int main(void)
         SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 2));
         CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
               "and its up arrow steps back");
-        /* Below the thumb is a page: what the field shows, which is ten. */
+        /* Below the thumb is a screenful less one line: the line that was at
+         * the bottom is at the top afterwards. Ten showing, so nine. That is
+         * the machine's number, read off its own Notepad -- 36 lines
+         * showing and a track click moving 35. */
         SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 100));
         SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 100));
-        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 10,
-              "the track below the thumb is a screenful");
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 9,
+              "the track below the thumb is a screenful less one line");
+        SendMessageA(barfield, WM_LBUTTONDOWN, 0, MAKELPARAM(bar + 8, 20));
+        SendMessageA(barfield, WM_LBUTTONUP, 0, MAKELPARAM(bar + 8, 20));
+        CHECK(SendMessageA(barfield, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+              "and back up the same way");
         /* And the thumb is dragged: to the foot of the track is the last line
          * that still shows a full page. */
         SendMessageA(barfield, EM_LINESCROLL, 0, -50);

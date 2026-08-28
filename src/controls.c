@@ -1495,6 +1495,19 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             GetClientRect(wnd, &cr);
             SetFocus(wnd);
             pos = sb_click(GET_Y_LPARAM(lp), cr.bottom - cr.top, &st, &grab);
+            /* A click in the track is a screenful less one line, not a whole
+             * screenful: the line that was at the bottom is at the top
+             * afterwards, so the eye keeps its place. Measured on the
+             * Windows 2000 machine -- 36 lines showing, and a click above
+             * the thumb moved the view 35 -- rather than reasoned out, and
+             * ours moved 36 until it was. The arrows and the thumb were
+             * already right; this is the one number that was not. */
+            if (grab < 0 && st.page > 1) {
+                if (pos == st.pos - st.page)
+                    pos = st.pos - (st.page - 1);
+                else if (pos == st.pos + st.page)
+                    pos = st.pos + (st.page - 1);
+            }
             if (grab >= 0) {
                 SetCapture(wnd);
                 e->sb_grab = grab;
