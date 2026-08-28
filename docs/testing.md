@@ -201,6 +201,48 @@ in and the pixel of white above its first row are measured against a Windows
 item, and its header's text sitting six in rather than eight, against the same
 machine's list. See the ROADMAP for what was measured.
 
+### A machine of your own
+
+The Windows 2000 the captures come from is a program with a socket, not a
+singular thing: boot one whenever you need to measure something, and shut it
+down when you are done. Sharing one means queueing, and a VM nobody is
+watching is 192 MB and a core.
+
+```sh
+cd /home/jd/jslinux
+setsid node jslinux-node.js --cpu=x86 --emu=. --url=win2000/win2k.cfg \
+  --mem=192 --graphic --w=1024 --h=768 --net --drive=vm-daemon.js \
+  --sock=/tmp/jslinux-<you>.sock --shm=/dev/shm/jslinux-<you>.fb &
+```
+
+About a minute to the desktop. Then everything below, pointed at it:
+
+```sh
+export JSLINUX_SOCK=/tmp/jslinux-<you>.sock JSLINUX_SHM=/dev/shm/jslinux-<you>.fb
+tools/vm/drive.py click 300,200 type hello key Enter park shot /tmp/s.png
+node /home/jd/jslinux/vmctl.js --sock=/tmp/jslinux-<you>.sock quit
+```
+
+`quit` answers `bye` and takes the socket and the shared memory with it. A VM
+that *dies* leaves both behind, and the next thing to connect gets
+`Connection refused` on a socket file that is still there -- so a socket
+existing is not a machine running. If one goes quiet in the middle of a
+measurement, suspect the machine before your method, and throw away anything
+that straddles the death: the frame counter in the shared memory stops with
+it, which is the quickest way to tell.
+
+**A fresh VM is a fresh Windows.** Before any explorer capture: Tools >
+Folder Options > General > "Use Windows classic folders", and the four column
+widths from [the explorer's section](#the-explorer-beside-the-machine). With
+the web view on, the shell puts a third panel between the tree and the list
+and nothing lines up.
+
+Two key names that work in `drive.py`: `key KeyF:ControlLeft` for Ctrl+F, and
+`key Home:ControlLeft` for Ctrl+Home. One that does not is `MetaLeft` -- the
+daemon answered an empty line and stopped listening, taking the machine with
+it, so a name the daemon does not know is not something to try on a machine
+somebody else is using.
+
 ### Paint beside the machine
 
 `examples/paint` is held up against a Windows 2000 running the real
