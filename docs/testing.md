@@ -749,6 +749,25 @@ tree of 38 items showing 17 can only move 21, so a "page" measured from
 halfway down measures the end of the range instead. Page from the top, with
 more than two screenfuls below.
 
+### Notepad's Find and Replace, as the machine draws them
+
+`tools/refcapture/find-machine.png` (358x124) and `replace-machine.png`
+(349x176) are the two boxes cut out of the machine's own Notepad, for
+whenever `FindTextA` and `ReplaceTextA` are written: today they answer with
+no window at all, which is honest but is not a dialog. Taken with
+
+```sh
+tools/vm/drive.py click 300,200 type "find me here" \
+  key KeyF:ControlLeft wait 1500 park shot /tmp/find.png
+```
+
+and trimmed to the frame by walking out from a point inside until the row or
+column is entirely the white of the window behind. The Find box is
+`Find what:` with a field, a `Match case` tick, a `Direction` group with `Up`
+and `Down`, and `Find Next` (the default, disabled while the field is empty)
+over `Cancel`; Replace drops the direction group, adds `Replace with:` and
+stacks `Find Next`, `Replace`, `Replace All`, `Cancel`.
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the
