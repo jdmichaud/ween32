@@ -112,14 +112,19 @@ that no application has asked for:
   be named is intolerable; one that is named, kept and listed here is merely
   unfinished.
 
-- [ ] **What comes out of a chevron.** The band draws one when it is narrower
-  than `cxIdeal` and sends `RBN_CHEVRONPUSHED` with the rectangle to hang a
-  menu under, but nothing answers it yet: the explorer's bands do not set
-  `RBBS_USECHEVRON`, and what the machine puts up when one is pressed — a
-  menu, a floating strip of the buttons, and where — has not been measured.
-  The library half is deliberately landed without it: a `»` that appears at
-  the right width and does nothing is an honest half, a `»` that puts up a
-  menu we designed ourselves is a wrong whole.
+- [ ] **A popup drawn on somebody else's pixels.** The chevron's menu draws a
+  clipped, greyed `Ct` at the right edge of one row. It is not accelerator
+  text of the menu's own — those items carry no tab — and it is not the Edit
+  menu's `&Undo\tCtrl+Z`: changing that string does not move it. It looks
+  like a popup window being handed a surface with something else's pixels
+  still on it, which would be the library's rather than that menu's. Whoever
+  takes it starts from those two things being ruled out.
+
+- [x] **What comes out of a chevron.** Done: the band draws one when it is
+  narrower than `cxIdeal` and reserves the room for it, sends
+  `RBN_CHEVRONPUSHED` with the rectangle, and the explorer answers with the
+  buttons that do not fit. Measured off the machine; docs/testing.md has the
+  glyph, the placement and what the popup contains.
 
 - [ ] **The chevron's staircase.** A band that can hide what does not fit has
   one floor here — its handle, its name and the chevron — where the machine

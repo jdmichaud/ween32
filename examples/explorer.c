@@ -93,6 +93,7 @@ enum {
     IDM_LINEUP,
     IDM_CHOOSE_COLUMNS,
     IDM_CUSTOMIZE_FOLDER,
+    IDM_CUSTOMIZE_TOOLBAR,
     IDM_HOME,
     IDM_REFRESH,
     /* Favorites */
@@ -3688,6 +3689,95 @@ static void toolbar_drop(int id)
     }
 }
 
+/* What the chevron puts up when the toolbar is too narrow for all of it.
+ *
+ * The library draws the chevron and says it was pressed; what comes out of it
+ * is the application's, because only the application knows what is in the
+ * band. Copied from the machine rather than designed -- My Computer narrowed
+ * until its toolbar wore one, in docs/testing.md:
+ *
+ *   the buttons that do not fit, with their icons and their names, disabled
+ *   ones still greyed and a drop-down keeping its arrow; then a separator and
+ *   Customize. The toolbar's own separators are *not* carried over.
+ *
+ * The names are the shell's. Four of these buttons carry no label on the bar
+ * -- Move To, Copy To, Delete and Undo are a picture each -- and the machine
+ * still names them in the menu, so the names live here rather than being read
+ * off the buttons. */
+static const char *chevron_name(int id)
+{
+    switch (id) {
+    case IDM_BACK: return "&Back";
+    case IDM_FORWARD: return "&Forward";
+    case IDM_UP: return "&Up One Level";
+    case IDM_SEARCH: return "&Search";
+    case IDM_FOLDERS: return "F&olders";
+    case IDM_HISTORY: return "&History";
+    case IDM_MOVETO: return "&Move To";
+    case IDM_COPYTO: return "&Copy To";
+    case IDM_DELETE: return "&Delete";
+    case IDM_UNDO: return "&Undo";
+    case IDM_VIEWS: return "&Views";
+    default: return NULL;
+    }
+}
+
+static void chevron_menu(const RECT *chevron)
+{
+    RECT client, r;
+    POINT pt;
+    HMENU m;
+    UINT cmd;
+    int count, hidden = 0;
+
+    GetClientRect(g_toolbar, &client);
+    count = (int)SendMessageA(g_toolbar, TB_BUTTONCOUNT, 0, 0);
+    m = CreatePopupMenu();
+    if (!m)
+        return;
+    for (int i = 0; i < count; i++) {
+        TBBUTTON b;
+        const char *name;
+        UINT flags = MF_STRING;
+        if (!SendMessageA(g_toolbar, TB_GETBUTTON, (WPARAM)i, (LPARAM)&b))
+            continue;
+        if (b.fsStyle & TBSTYLE_SEP)
+            continue; /* the machine carries none of these over */
+        SendMessageA(g_toolbar, TB_GETITEMRECT, (WPARAM)i, (LPARAM)&r);
+        if (r.right <= client.right)
+            continue; /* this one fits, so it is not hidden */
+        name = chevron_name(b.idCommand);
+        if (!name)
+            continue;
+        if (!(b.fsState & TBSTATE_ENABLED))
+            flags |= MF_GRAYED;
+        if (b.fsState & TBSTATE_CHECKED)
+            flags |= MF_CHECKED;
+        AppendMenuA(m, flags, (UINT)b.idCommand, name);
+        hidden++;
+    }
+    if (hidden) {
+        AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+        /* Greyed, and the machine's is not. The item is here because the
+         * machine's menu has it and a menu missing an item is the wrong
+         * shape; it is grey because the Customize Toolbar box does not exist
+         * here, and an item that looks live and does nothing is worse than
+         * one that says so. See the ROADMAP. */
+        AppendMenuA(m, MF_STRING | MF_GRAYED, IDM_CUSTOMIZE_TOOLBAR,
+                    "&Customize...");
+        /* under the chevron and hard against the band's bottom, which is
+         * where the machine's comes out */
+        pt.x = chevron->left;
+        pt.y = chevron->bottom;
+        ClientToScreen(g_rebar, &pt);
+        cmd = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_RETURNCMD, pt.x, pt.y, 0,
+                             g_main, NULL);
+        if (cmd)
+            SendMessageA(g_main, WM_COMMAND, MAKEWPARAM((WORD)cmd, 0), 0);
+    }
+    DestroyMenu(m);
+}
+
 /* What the tip on a toolbar button says. Only the buttons that are a picture
  * and nothing else have one — a button showing its own label needs no tip, and
  * the machine gives it none. The words are the machine's. */
@@ -5272,12 +5362,24 @@ static void build_bands(HWND w)
     bi.cyMinChild = 22;
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
 
-    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
-    bi.fStyle = RBBS_BREAK;
+    /* The toolbar's band asks for a chevron, and says how wide its child
+     * would like to be so the band knows when it is too narrow for it: the
+     * right edge of the last button, which is what the bar comes to when
+     * nothing is cut off. Without RBBIM_IDEALSIZE a band has nothing to be
+     * too narrow *for* and never wears one. */
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE | RBBIM_IDEALSIZE;
+    bi.fStyle = RBBS_BREAK | RBBS_USECHEVRON;
     bi.hwndChild = g_toolbar;
     bi.cyMinChild = 22;
+    bi.cxIdeal = 0;
+    {
+        int last = (int)SendMessageA(g_toolbar, TB_BUTTONCOUNT, 0, 0) - 1;
+        RECT r;
+        if (last >= 0 &&
+            SendMessageA(g_toolbar, TB_GETITEMRECT, (WPARAM)last, (LPARAM)&r))
+            bi.cxIdeal = (UINT)r.right;
+    }
     SendMessageA(g_rebar, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
-
     bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE | RBBIM_TEXT;
     bi.fStyle = RBBS_BREAK;
     bi.hwndChild = g_addrband;
@@ -5529,6 +5631,10 @@ static LRESULT CALLBACK explorer_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
          * window round it, which is the win32 division of the work. */
         if (nm->code == RBN_HEIGHTCHANGE) {
             layout(w);
+            return 0;
+        }
+        if (nm->code == RBN_CHEVRONPUSHED) {
+            chevron_menu(&((const NMREBARCHEVRON *)lp)->rc);
             return 0;
         }
         if (nm->code == TVN_SELCHANGEDA) {

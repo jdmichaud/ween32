@@ -2212,6 +2212,9 @@ typedef struct tagTBBUTTONINFOA {
  * be asked for by. */
 #define TB_COMMANDTOINDEX (WM_USER + 25)
 #define TB_BUTTONCOUNT (WM_USER + 24)
+/* What the button at a place is, for an application that has to decide which
+ * of its buttons a chevron must carry. */
+#define TB_GETBUTTON (WM_USER + 23)
 #define TB_AUTOSIZE (WM_USER + 33)
 
 /* The arrow beside a drop-down button was pressed: show the menu. */

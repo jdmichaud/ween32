@@ -830,6 +830,23 @@ int main(void)
         CHECK(GetCapture() != cr,
               "a chevron is not a handle: it takes no capture and drags "
               "nothing");
+
+        /* And the band keeps the room for it. Without that the band draws its
+         * arrows and the child paints straight over them -- which is what it
+         * did: the chevron was there and invisible, and it took a photograph
+         * of a narrowed explorer to see it. The machine reserves the same
+         * room; its squeezed toolbar stops before the arrows. */
+        {
+            RECT cr2;
+            POINT edge;
+            GetWindowRect(cc, &cr2);
+            edge.x = cr2.right;
+            edge.y = cr2.top;
+            ScreenToClient(cr, &edge);
+            CHECK(edge.x <= g_chevrect.left,
+                  "the band's control ends before the chevron rather than "
+                  "running under it");
+        }
         DestroyWindow(cw);
     }
 

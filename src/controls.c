@@ -8246,6 +8246,26 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case TB_BUTTONCOUNT:
         tb = toolbar_of(wnd);
         return tb ? tb->count : 0;
+    case TB_GETBUTTON: {
+        /* What the button at a place is: an application walking a bar it did
+         * not build -- or one deciding which of its buttons a chevron has to
+         * carry -- has no other way to ask. iBitmap, iString and the state
+         * flags are handed back as they went in; dwData is not kept here and
+         * comes back zero, which is what a bar that was never given any has.
+         */
+        TBBUTTON *out = (TBBUTTON *)lp;
+        int i = (int)wp;
+        tb = toolbar_of(wnd);
+        if (!tb || !out || i < 0 || i >= tb->count)
+            return FALSE;
+        memset(out, 0, sizeof(*out));
+        out->iBitmap = tb->btn[i].image;
+        out->idCommand = tb->btn[i].id;
+        out->fsState = (BYTE)tb->btn[i].state;
+        out->fsStyle = (BYTE)tb->btn[i].style;
+        out->iString = (INT_PTR)tb->btn[i].text;
+        return TRUE;
+    }
     case TB_CHECKBUTTON:
     case TB_PRESSBUTTON:
     case TB_ENABLEBUTTON: {
@@ -8731,9 +8751,18 @@ static void rebar_layout(HWND wnd, ween_rebar *rb)
             /* the last on the row takes whatever is left of the width */
             b->w = (j == i + n - 1) ? cr.right - x : (b->cx ? b->cx : share);
             x += b->w;
-            if (b->child)
+            /* A band wearing a chevron keeps the room for it: the child is
+             * narrowed by the chevron's width so the two do not land on the
+             * same pixels. Without that the band draws its `»` and the child
+             * paints straight over it, which is what it did -- the chevron
+             * was there and invisible. The machine reserves the same room:
+             * its squeezed toolbar ends before the arrows, it does not run
+             * under them. */
+            if (b->child) {
+                int chev = rb_chevron_w(f, b, edge);
                 MoveWindow(b->child, b->x + content, y + edge,
-                           b->w - content - edge, b->h - edge, TRUE);
+                           b->w - content - edge - chev, b->h - edge, TRUE);
+            }
         }
         y += row_h ? edge + row_h : 0; /* a row of hidden bands takes none */
         i += n;
