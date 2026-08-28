@@ -49,6 +49,10 @@ typedef intptr_t LONG_PTR;
 typedef uintptr_t UINT_PTR;
 typedef UINT_PTR DWORD_PTR;
 typedef UINT_PTR ULONG_PTR;
+typedef UINT *PUINT;
+/* A colour palette. ween32 draws in true colour and has no palettes, but a
+ * property sheet's header names one, so the type has to exist to be named. */
+typedef struct ween_palette *HPALETTE;
 /* A count of bytes, which is as wide as a pointer -- not as wide as a DWORD.
  * MEMORYSTATUS is declared with these, and declaring them DWORD put every
  * field after the second one four bytes short of where win32 has it. */
@@ -699,10 +703,26 @@ typedef struct tagTVITEMA {
     int cchTextMax, iImage, iSelectedImage, cChildren;
     LPARAM lParam;
 } TVITEMA;
+/* win32 carries an unnamed union of the extended item and the plain one, so
+ * `item` is at the same place either way and the struct is the size of the
+ * larger. TVITEMEXA is TVITEMA with iIntegral after it -- the height of a row
+ * in whole items, which ween32 does not vary. */
+typedef struct tagTVITEMEXA {
+    UINT mask;
+    HTREEITEM hItem;
+    UINT state, stateMask;
+    LPSTR pszText;
+    int cchTextMax, iImage, iSelectedImage, cChildren;
+    LPARAM lParam;
+    int iIntegral;
+} TVITEMEXA;
 typedef struct tagTVINSERTSTRUCTA {
     HTREEITEM hParent;
     HTREEITEM hInsertAfter;
-    TVITEMA item;
+    __extension__ union {
+        TVITEMEXA itemex;
+        TVITEMA item;
+    };
 } TVINSERTSTRUCTA;
 
 typedef struct tagTVHITTESTINFO {
@@ -801,6 +821,8 @@ typedef struct {
     LPARAM lParam;
     int iImage;
     int iOrder;
+    UINT type;      /* a filter header's kind, which ween32 does not draw */
+    void *pvFilter; /* and the filter itself */
 } HDITEMA, *LPHDITEMA;
 #define LVCF_TEXT 0x0004
 #define LVM_FIRST 0x1000
@@ -868,6 +890,10 @@ typedef struct tagLVCOLUMNA {
     LPSTR pszText;
     int cchTextMax, iSubItem, iImage, iOrder;
 } LVCOLUMNA;
+/* The four after lParam are win32's and were missing here, which made every
+ * LVITEMA short of the one an application fills in. iIndent is acted on by
+ * nothing yet; the group fields belong to list-view groups, which ween32 has
+ * not got. Named, taken, and listed in the ROADMAP as unread. */
 typedef struct tagLVITEMA {
     UINT mask;
     int iItem, iSubItem;
@@ -875,6 +901,10 @@ typedef struct tagLVITEMA {
     LPSTR pszText;
     int cchTextMax, iImage;
     LPARAM lParam;
+    int iIndent;
+    int iGroupId;
+    UINT cColumns;
+    PUINT puColumns;
 } LVITEMA;
 #define ListView_SetItemState(w, i, data, mask)                                \
     do {                                                                       \
@@ -960,17 +990,44 @@ typedef struct tagPROPSHEETPAGEA {
 } PROPSHEETPAGEA, *LPPROPSHEETPAGEA;
 typedef const PROPSHEETPAGEA *LPCPROPSHEETPAGEA;
 
+/* Five of these fields are unions on win32 -- an icon or the name of one, a
+ * page number or the name of a page, and so on -- and were single members
+ * here. That is not only three missing fields at the end: a union of a UINT
+ * and a pointer is eight bytes and eight-aligned, so nStartPage sat at 44
+ * here and at 48 on win32, and everything after it was out too.
+ *
+ * `__extension__` because an unnamed union is C11 and this builds as C99
+ * with -pedantic; win32's own header does the same thing through its
+ * __C89_NAMELESS. Naming them would move the fields an application writes. */
 typedef struct tagPROPSHEETHEADERA {
     DWORD dwSize;
     DWORD dwFlags;
     HWND hwndParent;
     HINSTANCE hInstance;
-    HICON hIcon;
+    __extension__ union {
+        HICON hIcon;
+        LPCSTR pszIcon;
+    };
     LPCSTR pszCaption;
     UINT nPages;
-    UINT nStartPage;
-    LPCPROPSHEETPAGEA ppsp;
+    __extension__ union {
+        UINT nStartPage;
+        LPCSTR pStartPage;
+    };
+    __extension__ union {
+        LPCPROPSHEETPAGEA ppsp;
+        HPROPSHEETPAGE *phpage;
+    };
     void *pfnCallback;
+    __extension__ union {
+        HBITMAP hbmWatermark;
+        LPCSTR pszbmWatermark;
+    };
+    HPALETTE hplWatermark;
+    __extension__ union {
+        HBITMAP hbmHeader;
+        LPCSTR pszbmHeader;
+    };
 } PROPSHEETHEADERA, *LPPROPSHEETHEADERA;
 typedef const PROPSHEETHEADERA *LPCPROPSHEETHEADERA;
 
@@ -1767,6 +1824,9 @@ typedef struct tagOFNA {
     LPARAM lCustData;
     void *lpfnHook;
     LPCSTR lpTemplateName;
+    void *pvReserved;
+    DWORD dwReserved;
+    DWORD FlagsEx;
 } OPENFILENAMEA, *LPOPENFILENAMEA;
 
 #define OFN_READONLY 0x00000001
@@ -2142,9 +2202,17 @@ typedef struct tagTBBUTTONINFOA {
 
 /* The arrow beside a drop-down button was pressed: show the menu. */
 #define TBN_DROPDOWN (0U - 710U)
+/* The four after iItem are win32's. A drop-down notification only needs the
+ * item, which is why they were never here -- but the struct is what the
+ * application declares its handler against, so it has to be the whole one.
+ * ween32 fills in the item and leaves the rest as the caller left them. */
 typedef struct {
     NMHDR hdr;
     int iItem;
+    TBBUTTON tbButton;
+    int cchText;
+    LPSTR pszText;
+    RECT rcButton;
 } NMTOOLBAR;
 
 /* ---- rebar ----------------------------------------------------------------

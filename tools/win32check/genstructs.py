@@ -45,6 +45,21 @@ SKIP = {
     "BITMAP": "ween32's is the software surface, not GDI's DDB descriptor",
 }
 
+# Structs whose *size* is allowed to differ because win32's own definition
+# grows a tail behind a version guard that ween32 deliberately stops before.
+# Every field ween32 does declare is still checked, so this excuses the size
+# and nothing else -- a field in the wrong place still fails.
+SIZE_DIFFERS = {
+    "REBARBANDINFOA": "rcChevronLocation and uChevronState, NTDDI >= Vista",
+    "LVITEMA": "piColFmt and iGroup, NTDDI >= Vista",
+    "LVCOLUMNA": "cxMin, cxDefault and cxIdeal, NTDDI >= Vista",
+    "LVHITTESTINFO": "iGroup, NTDDI >= Vista",
+    "HDITEMA": "state, NTDDI >= Vista",
+    "TVITEMEXA": "uStateEx, hwnd and iExpandedImage from IE6, iReserved later",
+    "NMLVDISPINFOA": "it carries an LVITEMA, whose tail is guarded as above",
+    "TVINSERTSTRUCTA": "its union carries a TVITEMEXA, guarded as above",
+}
+
 
 def structs_of(body):
     """Every `typedef struct [tag] { ... } NAME[, *ALIAS...];` in declaration
@@ -57,8 +72,14 @@ def structs_of(body):
         name = names.split(",")[0].strip()
         if not re.fullmatch(r"[A-Za-z_]\w*", name):
             continue
+        # An unnamed union's members are all fields of the struct at the same
+        # offset, and offsetof reaches them by name, so they are read like any
+        # other. A *named* nested struct or union is not, and the struct is
+        # reported as unread rather than skipped quietly.
+        inner = re.sub(r"__extension__\s*", " ", inner)
+        inner = re.sub(r"union\s*\{([^{}]*)\}\s*;", r"\1;", inner)
         if "union" in inner or "struct" in inner:
-            out.append((name, None))  # nested: not read, and said so
+            out.append((name, None))
             continue
         fields = []
         for line in inner.split(";"):
@@ -111,8 +132,9 @@ def main():
             print('    printf("_Static_assert(offsetof(%s, %s) == %%zu, '
                   '\\"%s.%s\\");\\n", offsetof(%s, %s));'
                   % (name, f, name, f, name, f))
-        print('    printf("_Static_assert(sizeof(%s) == %%zu, '
-              '\\"sizeof %s\\");\\n", sizeof(%s));' % (name, name, name))
+        if name not in SIZE_DIFFERS:
+            print('    printf("_Static_assert(sizeof(%s) == %%zu, '
+                  '\\"sizeof %s\\");\\n", sizeof(%s));' % (name, name, name))
         checked += 1
     print('    puts("int main(void) { return 0; }");')
     print("    return 0;")
@@ -125,6 +147,10 @@ def main():
     if SKIP:
         print("/* %d skipped on purpose, and why, in genstructs.py: %s */"
               % (len(SKIP), ", ".join(sorted(SKIP))), file=sys.stderr)
+    print("/* %d compared field by field but not by size, win32's own tail "
+          "being version-guarded: %s */"
+          % (len(SIZE_DIFFERS), ", ".join(sorted(SIZE_DIFFERS))),
+          file=sys.stderr)
 
 
 main()

@@ -154,6 +154,11 @@ win32:
 	@python3 tools/win32check/genconsts.py > /tmp/ween32-consts.c
 	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-consts.exe \
 	   /tmp/ween32-consts.c && echo "  win32 constants agree"
+	@python3 tools/win32check/genstructs.py > /tmp/ween32-dump.c
+	@$(CC) -std=c99 -Iinclude -o /tmp/ween32-dump /tmp/ween32-dump.c
+	@/tmp/ween32-dump > /tmp/ween32-structs.c
+	@$(ZIG) cc -target x86_64-windows-gnu -std=c11 -o /tmp/ween32-structs.exe \
+	   /tmp/ween32-structs.c && echo "  win32 structs agree"
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
 	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1;; \

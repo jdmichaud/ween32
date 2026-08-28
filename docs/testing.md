@@ -849,12 +849,32 @@ win32 because no example used those fields. A program that sets `cxIdeal`
 compiles on Windows and not here, which is the one thing this library promises
 it will not do, and nothing in the suite or either gate said a word.
 
-A struct-shape checker is not the answer: ween32 implements a subset on
-purpose, so `_Static_assert(sizeof(X) == sizeof(X))` would fail on nearly
-everything and the exception list would be longer than the header. The answer
-is knowing the hole is there. When a struct is touched, read it beside win32's
-own field by field, to the end of the classic definition — not as far as the
-field being added.
+**That hole is closed.** I argued a struct-shape checker was impossible, and
+that argument was about the wrong set: a checker that asserts something about
+*every* type ween32 declares would drown in exceptions, but the set worth
+checking is the types an application fills in and hands over, and that is a
+list. `tools/win32check/genstructs.py` is that gate. Nothing in it is written
+by hand, because a hand-written offset drifts from the header it describes:
+it reads ween32.h for the structs and their fields in declaration order, emits
+a C program that includes **ween32.h** so the host compiler supplies our real
+offsets, and that program prints `_Static_assert`s which are compiled against
+the **real** windows.h. Three faults fail it, all three tried on purpose:
+
+| what was done to LVITEMA | what the gate said |
+| --- | --- |
+| a field removed | `offsetof(LVITEMA, iGroupId) == 48` |
+| `LPARAM lParam` made `int` | `offsetof(LVITEMA, iIndent) == 44` |
+| two fields swapped | `offsetof(LVITEMA, iImage) == 32` |
+
+The middle one is the reason the gate exists: a field of the wrong width reads
+perfectly, compiles on both sides, and moves every field after it.
+
+Offsets are asserted always; **sizes are asserted only where win32's own
+definition does not grow a tail behind a version guard**. Eight structs stop
+before such a tail deliberately — REBARBANDINFOA before the Vista chevron
+pair, LVITEMA before `piColFmt`, and so on — and each is named in the
+generator with the reason. That excuses the size and nothing else: a field in
+the wrong place still fails.
 
 It is the same shape as three other things that have caught us, all of them
 the instrument rather than the code:

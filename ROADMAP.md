@@ -100,6 +100,16 @@ that no application has asked for:
   *created* and when one is *pressed*; neither is here, because nothing has
   needed them. `WS_EX_NOPARENTNOTIFY` is honoured for the half that exists.
 
+- [ ] **Fields that are declared, stored and not acted on.** The offset gate
+  keeps every struct an application fills in the shape win32 gives it, which
+  means some fields exist to be named rather than to be read: `LVITEMA`'s
+  `iIndent` and its three group fields (ween32 has no list-view groups),
+  `HDITEMA`'s `type` and `pvFilter` (no filter headers), `OPENFILENAMEA`'s
+  three reserved fields, `NMTOOLBAR`'s `tbButton`, `cchText`, `pszText` and
+  `rcButton` (a drop-down notification fills in the item alone), and
+  `PROPSHEETHEADERA`'s watermark and header bitmaps. A field that cannot be
+  named is intolerable; one that is named, kept and listed here is unfinished.
+
 - [ ] **Four fields of `REBARBANDINFOA` that are taken and not read.** The
   struct is win32's shape to the end of the classic definition, and every
   field is stored and handed back by `RB_GETBANDINFOA`, but `cyChild`,
