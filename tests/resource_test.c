@@ -208,6 +208,13 @@ int main(void)
     CHECK(GetMenuStringA(file, IDM_EXIT, buf, sizeof buf, MF_BYCOMMAND) > 0 &&
               strcmp(buf, "E&xit") == 0,
           "an item is there under the id the script gave it");
+    /* And the row between them is a separator. `rc` writes one as an item
+     * with no text, no id and no flags -- the word SEPARATOR is nowhere in
+     * the file -- so a reader that does not recognise that shape puts an
+     * empty row in the menu instead of a groove, which is what Notepad's
+     * File menu showed. */
+    CHECK((ween_menu_item(file, 1)->flags & MF_SEPARATOR) != 0,
+          "the row between them is a separator, not an empty item");
 
     HACCEL accel = LoadAcceleratorsA(NULL, MAKEINTRESOURCEA(IDA_ACCEL));
     CHECK(accel != NULL, "the accelerator table loads");

@@ -364,6 +364,9 @@ HWND ween_treeview_tip(HWND w);
 
 int ween_menu_bar_height(const struct ween_wnd *w);
 int ween_menu_key(HWND top, unsigned vk, unsigned ch); /* Alt / Alt+letter */
+/* The menu bar's own keys -- Alt, F10, Alt+letter, and the arrows once it is
+ * armed -- answered for any window rather than only inside IsDialogMessage. */
+int ween_menu_keydown(HWND wnd, unsigned vk, LPARAM lp);
 int ween_menu_count(HMENU menu);
 ween_menuitem *ween_menu_item(HMENU menu, int i);
 void ween_menu_layout_bar(HMENU menu, const ween_strike *f, int width);

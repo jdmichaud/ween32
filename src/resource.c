@@ -218,9 +218,14 @@ static const unsigned char *menu_level(HMENU into, const unsigned char *p,
                 p = menu_level(sub, p, end, depth + 1);
             }
         } else {
-            /* A separator has no text and no id; win32 spells it in the
-             * flags and AppendMenu wants MF_SEPARATOR. */
+            /* A separator is an item with no text, no id and no flags --
+             * which is all `rc` writes for MENUITEM SEPARATOR, the name
+             * being nowhere in the file. AppendMenu wants MF_SEPARATOR, and
+             * without it the line came through as an empty row: a gap in
+             * the menu with no groove drawn in it. */
             unsigned mf = flags & ~(unsigned)MFR_END;
+            if (!chars && !id)
+                mf |= MF_SEPARATOR;
             AppendMenuA(into, mf, (UINT_PTR)id, chars ? text : NULL);
         }
         if (flags & MFR_END)

@@ -366,6 +366,48 @@ int main(void)
         CHECK(IsDialogMessageA(w, &msg), "Alt is taken by the menu bar");
     }
 
+    /* And a program that never calls IsDialogMessage -- Notepad does not,
+     * having a menu bar and nothing to tab between -- still gets its menus,
+     * because on Windows this is the window procedure's work. The same keys
+     * go to DefWindowProc, which is where they arrive when a message loop
+     * dispatches them.
+     *
+     * DefWindowProc answers WM_KEYDOWN with nought whatever happens, so what
+     * is checked is the effect: Alt and F opens the File menu -- the session
+     * runs inside that call and the Escape waiting for it ends the session
+     * again -- and the underlines a menu reached by key brings out are what
+     * says the keys got there. */
+    {
+        ween_event k;
+        LPARAM alt_f = (LPARAM)((1L << 29) | ((LPARAM)'F' << 16));
+        memset(&k, 0, sizeof(k));
+        k.kind = WEEN_EV_KEY;
+        k.vk = VK_ESCAPE;
+        ween_headless_inject(k);
+        ween_menu_cues = 0;
+        DefWindowProcA(w, WM_KEYDOWN, 'F', alt_f);
+        CHECK(ween_menu_cues == 1,
+              "Alt and a letter reach the menus through DefWindowProc");
+        CHECK(w->menu_hot == -1, "and the bar is let go again afterwards");
+    }
+
+    {
+        /* Alt on its own arms the bar: the underlines come out and the next
+         * key belongs to the menus. Nothing is opened, so nothing has to be
+         * escaped from. */
+        CHECK(!ween_menu_armed(), "the bar is not armed to begin with");
+        DefWindowProcA(w, WM_KEYDOWN, VK_MENU, 0);
+        CHECK(ween_menu_armed(), "Alt alone arms it, through DefWindowProc");
+        {
+            ween_event k;
+            memset(&k, 0, sizeof(k));
+            k.kind = WEEN_EV_KEY;
+            k.vk = VK_ESCAPE;
+            ween_headless_inject(k);
+            DefWindowProcA(w, WM_KEYDOWN, VK_ESCAPE, 0);
+        }
+    }
+
     /* The window is wearing the bar, so destroying the window destroys it:
      * that is win32's rule, and destroying it here as well would be a double
      * free there as much as here. */

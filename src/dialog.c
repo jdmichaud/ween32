@@ -447,33 +447,19 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     int alt = (msg->lParam & (1L << 29)) != 0;
 
     /* Alt on its own, or F10, opens the window's menu bar; Alt+letter opens
-     * the drop-down that letter marks. The bar gets first refusal, because a
-     * control's mnemonic and a menu's can be the same letter and win32 gives
-     * the menu that key while Alt is down. */
+     * the drop-down that letter marks; once the bar is armed the arrows walk
+     * it. All of that belongs to the window rather than to this helper --
+     * a program with a menu bar and no dialog navigation never calls
+     * IsDialogMessage and must still have its menus -- so it lives in
+     * ween_menu_keydown, which DefWindowProc calls too. The bar gets first
+     * refusal here because a control's mnemonic and a menu's can be the same
+     * letter, and win32 gives the menu that key while Alt is down. */
     HWND top = ween_top_level(dlg);
-    if (msg->wParam == VK_MENU || msg->wParam == VK_F10) {
-        /* Through the window, not straight to the menu: WM_SYSCOMMAND with
-         * SC_KEYMENU is how win32 asks, and an application whose menu is a
-         * band of its own answers it rather than the frame. */
-        if (SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, 0) == 0)
-            return TRUE;
-    }
-    /* With the bar armed — Alt pressed and waiting — the arrows walk it,
-     * Down opens what they are on, Escape puts the underlines away, and a
-     * letter on its own opens the drop-down it marks. */
-    if (!alt && ween_menu_armed()) {
-        unsigned ch2 = (unsigned)(msg->lParam >> 16) & 0xff;
-        unsigned key2 = ch2 ? ch2 : (unsigned)msg->wParam;
-        if (ween_menu_armed_key(top, (unsigned)msg->wParam))
-            return TRUE;
-        if (ween_menu_key(top, 0, key2))
-            return TRUE;
-    }
+    if (ween_menu_keydown(top, (unsigned)msg->wParam, msg->lParam))
+        return TRUE;
     if (alt) {
         unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
         unsigned key = ch ? ch : (unsigned)msg->wParam;
-        if (SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, (LPARAM)key) == 0)
-            return TRUE;
         HWND target = ween_mnemonic_target(dlg, key);
         if (target) {
             dlg_focus(target);

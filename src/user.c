@@ -3079,9 +3079,54 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
 
 /* ---- DefWindowProc --------------------------------------------------------- */
 
+/* The keys the menu bar answers rather than whatever has the keyboard: Alt
+ * or F10 arms it, Alt and a letter opens the drop-down that letter marks, and
+ * once it is armed the arrows walk it and Escape puts it away. Answers 1 when
+ * the menus took the key.
+ *
+ * Asked through WM_SYSCOMMAND with SC_KEYMENU rather than of the menu
+ * directly, because an application whose menu is not the frame's -- a shell
+ * keeps its bar in a rebar band -- answers that message itself.
+ *
+ * Both the message loop's helper and the window procedure come here, which is
+ * the point: on Windows this is DefWindowProc's work, through WM_SYSKEYDOWN
+ * and WM_SYSCHAR, so a program with a menu bar and nothing else gets it for
+ * nothing. It used to live in IsDialogMessage alone, and a program that never
+ * calls that -- Notepad does not -- could not open its own File menu. */
+int ween_menu_keydown(HWND wnd, unsigned vk, LPARAM lp)
+{
+    HWND top = ween_top_level(wnd);
+    /* the backend puts Alt in bit 29, where win32 keeps the context code,
+     * and the character the key would type in the high word */
+    int alt = (lp & (1L << 29)) != 0;
+    unsigned ch = (unsigned)(lp >> 16) & 0xff;
+    unsigned key = ch ? ch : vk;
+    if (!top)
+        return 0;
+    if (vk == VK_MENU || vk == VK_F10)
+        return SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, 0) == 0;
+    if (!alt && ween_menu_armed()) {
+        if (ween_menu_armed_key(top, vk))
+            return 1;
+        if (ween_menu_key(top, 0, key))
+            return 1;
+    }
+    if (alt)
+        return SendMessageA(top, WM_SYSCOMMAND, SC_KEYMENU, (LPARAM)key) == 0;
+    return 0;
+}
+
 LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_KEYDOWN:
+        /* Alt, F10 and Alt+letter belong to the menu bar wherever they are
+         * pressed, which is why they are answered here rather than by
+         * whatever has the keyboard. A window with no menu takes none of
+         * them and the key goes on as before. */
+        if (ween_menu_keydown(wnd, (unsigned)wp, lp))
+            return 0;
+        return 0;
     case WM_TIMER:
         /* The repeat behind a held scroll-bar arrow. Windows runs this on a
          * timer of its own that the application never sees; here it arrives
