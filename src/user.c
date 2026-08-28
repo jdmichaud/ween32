@@ -974,9 +974,17 @@ BOOL ShowWindow(HWND wnd, int cmd)
         ween_set_active(wnd);
         /* The keyboard goes to it unless it is already inside it: a dialog
          * that put the caret in one of its fields while it was still hidden
-         * keeps it there when it comes up. */
+         * keeps it there when it comes up.
+         *
+         * Through SetFocus rather than by assignment, so that the window
+         * hears WM_SETFOCUS -- which is where a program puts the keyboard
+         * where it really wants it. Notepad's whole answer to that message is
+         * `SetFocus(hwndEdit)`, and until this it was never sent: the program
+         * came up with the caret nowhere and typing went into the void until
+         * something was clicked. Every program written to win32 assumes the
+         * window it shows has the keyboard, because on Windows it does. */
         if (!g_focus || ween_top_level(g_focus) != wnd)
-            g_focus = wnd;
+            SetFocus(wnd);
     }
     ween_damage_all(wnd);
     return was;

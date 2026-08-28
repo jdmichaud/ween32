@@ -31,6 +31,28 @@ static int g_failures = 0;
 
 static int g_got_click = 0;
 static int g_got_create = 0;
+static int g_focus_msgs = 0;
+
+#define ID_FIELD 77
+
+/* A window shaped like a real program's: it makes a field and hands it the
+ * keyboard when it is told it has it, which is what Notepad does and what
+ * every program with one control in it does. */
+static LRESULT CALLBACK focus_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE:
+        CreateWindowA("EDIT", "", WS_CHILD | WS_VISIBLE, 0, 0, 100, 20, hwnd,
+                      (HMENU)(UINT_PTR)ID_FIELD, NULL, NULL);
+        return 0;
+    case WM_SETFOCUS:
+        g_focus_msgs++;
+        SetFocus(GetDlgItem(hwnd, ID_FIELD));
+        return 0;
+    default:
+        return DefWindowProcA(hwnd, msg, wp, lp);
+    }
+}
 
 static LRESULT CALLBACK test_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -81,6 +103,13 @@ int main(void)
     wc.lpszClassName = "weentest";
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     CHECK(RegisterClassA(&wc) != 0, "RegisterClassA succeeds");
+    {
+        WNDCLASSA fc;
+        memset(&fc, 0, sizeof fc);
+        fc.lpfnWndProc = focus_proc;
+        fc.lpszClassName = "weenfocus";
+        RegisterClassA(&fc);
+    }
 
     /* Click the OK button: its client rect is at (BTN_X,BTN_Y); the window's
      * client area starts at (frame, frame+caption) in window coordinates. */
@@ -299,6 +328,31 @@ int main(void)
         CHECK(GetActiveWindow() == palette,
               "showing it the ordinary way does make it the active one");
         DestroyWindow(palette);
+    }
+
+    {
+        /* And a window shown is a window told: the whole of a win32 program's
+         * answer to WM_SETFOCUS is usually to put the keyboard where it
+         * really wants it -- Notepad's is `SetFocus(hwndEdit)` -- and it is
+         * never called if showing a window only moves a variable. Before
+         * this, a program came up with the caret nowhere and what was typed
+         * went into the void until something was clicked. */
+        HWND shown = CreateWindowExA(0, "weenfocus", "shown",
+                                     WS_OVERLAPPEDWINDOW, 0, 0, 200, 120, NULL,
+                                     NULL, NULL, NULL);
+        g_focus_msgs = 0;
+        ShowWindow(shown, SW_SHOWDEFAULT);
+        CHECK(g_focus_msgs == 1, "showing a window sends it WM_SETFOCUS");
+        CHECK(GetFocus() == GetDlgItem(shown, ID_FIELD),
+              "so a program answering it puts the keyboard in its own field");
+        SendMessageA(GetFocus(), WM_CHAR, (WPARAM)'x', 0);
+        {
+            char what[16] = "";
+            GetWindowTextA(GetDlgItem(shown, ID_FIELD), what, sizeof what);
+            CHECK(strcmp(what, "x") == 0,
+                  "and typing lands in it without anything being clicked");
+        }
+        DestroyWindow(shown);
     }
 
     {
