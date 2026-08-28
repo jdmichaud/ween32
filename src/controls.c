@@ -803,12 +803,34 @@ typedef struct {
     int left_margin, right_margin; /* -1 until the app says otherwise */
     int caret, anchor;
     int caret_on;
+    /* Whether what is in the field has been edited since the program last
+     * said otherwise. A program asks with EM_GETMODIFY to know whether to
+     * offer to save. */
+    int modified;
+    int limit; /* the most characters it will hold, 0 for no limit */
+    /* One step of undo, which is what an edit control keeps: the whole text
+     * as it was before the last change, and where the caret was in it.
+     * Undoing is itself undoable, since the swap puts the other one here. */
+    char *undo;
+    int undo_caret;
+    int first_visible; /* the top line of a multiline field, once scrolled */
 } ween_edit;
 
 /* Win2000's default caret blink rate, the one Control Panel's slider sits at
  * in the middle of; win32 apps read it with GetCaretBlinkTime. */
 #define WEEN_CARET_BLINK_MS 530
 #define WEEN_CARET_TIMER 0x57454549 /* an id an app is unlikely to also pick */
+
+/* The field owns the text it is keeping for an undo, so it cannot be freed
+ * with a plain free() the way a struct owning nothing else is. */
+static void edit_ctl_free(void *p)
+{
+    ween_edit *e = p;
+    if (!e)
+        return;
+    free(e->undo);
+    free(e);
+}
 
 static ween_edit *edit_state(HWND w)
 {
@@ -817,8 +839,64 @@ static ween_edit *edit_state(HWND w)
         if (e) /* no margin of its own until the application says */
             e->left_margin = e->right_margin = -1;
         w->ctl = e;
+        w->ctl_free = edit_ctl_free;
     }
     return w->ctl;
+}
+
+/* ---- lines -----------------------------------------------------------
+ *
+ * A multiline field is text with breaks in it, and every question a program
+ * asks about it -- how many lines, which line an offset is on, where a line
+ * starts, how long it is -- is answered from those breaks. A break is CRLF
+ * as the machine writes it, and LF alone as everything else does; both count
+ * as one.
+ */
+
+/* Where the nth line starts, in characters from the beginning. A line past
+ * the end answers with the end. */
+static int edit_line_start(const char *text, int line)
+{
+    int at = 0;
+    while (line > 0 && text[at]) {
+        const char *nl = strchr(text + at, '\n');
+        if (!nl)
+            return (int)strlen(text);
+        at = (int)(nl - text) + 1;
+        line--;
+    }
+    return at;
+}
+
+/* Which line an offset falls on. */
+static int edit_line_from_char(const char *text, int at)
+{
+    int line = 0;
+    for (int i = 0; i < at && text[i]; i++)
+        if (text[i] == '\n')
+            line++;
+    return line;
+}
+
+/* How many lines there are: one more than the breaks, and never none -- an
+ * empty field has one line, which is what EM_GETLINECOUNT answers. */
+static int edit_line_count(const char *text)
+{
+    int n = 1;
+    for (const char *p = text; *p; p++)
+        if (*p == '\n')
+            n++;
+    return n;
+}
+
+/* The length of the line starting at `start`, not counting its break. */
+static int edit_line_length(const char *text, int start)
+{
+    const char *nl = strchr(text + start, '\n');
+    int end = nl ? (int)(nl - text) : (int)strlen(text);
+    if (end > start && text[end - 1] == '\r')
+        end--;
+    return end - start;
 }
 
 static void edit_range(const ween_edit *e, int *from, int *to)
@@ -855,6 +933,9 @@ static int edit_margin(HWND wnd)
 }
 
 /* The character index nearest an x offset within the text. */
+/* Which character a point falls on, counted from the start of the line that
+ * point is on. One line or many: a single-line field is the y that never
+ * leaves the first line. */
 static int edit_index_at(HWND wnd, int x)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
@@ -870,6 +951,46 @@ static int edit_index_at(HWND wnd, int x)
         }
     }
     return best;
+}
+
+/* How tall a line of this field is. */
+static int edit_line_height(HWND wnd)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    return f ? f->ascent - f->descent : 13;
+}
+
+/* Where a point lands in a field of many lines: the line under y, and the
+ * character under x within it. */
+static int edit_index_at_point(HWND wnd, int x, int y)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    ween_edit *e = edit_state(wnd);
+    int line, start, n, best, bestd, inset;
+    if (!f)
+        return 0;
+    if (!(wnd->style & ES_MULTILINE))
+        return edit_index_at(wnd, x);
+    inset = ween_border_width(wnd) ? 1 : 0;
+    line = (y - inset) / edit_line_height(wnd);
+    if (line < 0)
+        line = 0;
+    line += e ? e->first_visible : 0;
+    if (line >= edit_line_count(wnd->text))
+        line = edit_line_count(wnd->text) - 1;
+    start = edit_line_start(wnd->text, line);
+    n = edit_line_length(wnd->text, start);
+    best = 0;
+    bestd = 1 << 30;
+    for (int i = 0; i <= n; i++) {
+        int pen = ween_strike_pen(f, wnd->text + start, i);
+        int d = pen > x ? pen - x : x - pen;
+        if (d < bestd) {
+            bestd = d;
+            best = i;
+        }
+    }
+    return start + best;
 }
 
 static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
@@ -930,22 +1051,32 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     {
         ween_edit *e = edit_state(wnd);
         int from = 0, to = 0, focused = ween_focus_get() == wnd;
+        RECT cr;
+        GetClientRect(wnd, &cr);
         if (e && focused)
             edit_range(e, &from, &to);
+        /* A scrolled field starts at its top visible line, and stops at the
+         * bottom of itself rather than drawing on past it. */
+        if (multi && e && e->first_visible > 0)
+            p = wnd->text + edit_line_start(wnd->text, e->first_visible);
         while (*p) {
+            if (multi && ty + line > cr.bottom - inset)
+                break;
             const char *nl = strchr(p, '\n');
             int n = nl ? (int)(nl - p) : (int)strlen(p);
             if (n && p[n - 1] == '\r')
                 n--;
             if (f) {
-                /* the selected run sits on a highlight bar, in its colour */
+                /* the selected run sits on a highlight bar, in its colour --
+                 * on every line it crosses, since a selection in a field of
+                 * many lines is one run through the whole text */
                 int off = (int)(p - wnd->text);
                 int a = from - off, b = to - off;
                 if (a < 0)
                     a = 0;
                 if (b > n)
                     b = n;
-                if (multi || a >= b) {
+                if (a >= b) {
                     ween_strike_draw(f, &top->surface, ox + tx, oy + ty, p, n,
                                      ink);
                 } else {
@@ -969,20 +1100,52 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 
     /* the caret: a one-pixel bar where the next character will go, on for
-     * half of each blink period */
-    if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && !multi) {
+     * half of each blink period -- and in a field of many lines, on the line
+     * it is on rather than always the first */
+    if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
         ween_edit *e = edit_state(wnd);
         if (e && e->caret_on) {
-            int cx = tx + ween_strike_pen(f, wnd->text, e->caret);
-            ween_surface_vline(&top->surface, ox + cx, oy + inset, line,
-                               WEEN_BLACK);
+            int row = multi ? edit_line_from_char(wnd->text, e->caret) : 0;
+            int start = multi ? edit_line_start(wnd->text, row) : 0;
+            int cx = tx + ween_strike_pen(f, wnd->text + start,
+                                          e->caret - start);
+            int cy = inset + (row - (multi && e ? e->first_visible : 0)) * line;
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            if (cy >= inset && (!multi || cy + line <= cr.bottom - inset))
+                ween_surface_vline(&top->surface, ox + cx, oy + cy, line,
+                                   WEEN_BLACK);
         }
     }
 }
 
 /* The parent hears about every edit the same way. */
+/* Keep what is in the field, so that the change about to be made can be
+ * taken back. One step is what an edit control keeps, and undoing swaps the
+ * two, so undo undoes itself. */
+static void edit_remember(HWND wnd, ween_edit *e)
+{
+    char *copy;
+    if (!e)
+        return;
+    copy = malloc(strlen(wnd->text) + 1);
+    if (!copy)
+        return; /* out of memory loses the undo, not the edit */
+    strcpy(copy, wnd->text);
+    free(e->undo);
+    e->undo = copy;
+    e->undo_caret = e->caret;
+}
+
+/* Every path that changes the text ends here, which is where the field
+ * remembers that it has been edited: a program asks with EM_GETMODIFY to
+ * know whether to offer to save, and it must not matter which way the text
+ * was changed. */
 static void edit_changed(HWND wnd)
 {
+    ween_edit *e = edit_state(wnd);
+    if (e)
+        e->modified = 1;
     if (wnd->parent)
         SendMessageA(wnd->parent, WM_COMMAND,
                      MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
@@ -1056,9 +1219,52 @@ static void edit_insert(HWND wnd, ween_edit *e, const char *text)
 
 /* Typing or moving the caret makes it solid again and restarts the blink, so
  * it never vanishes just as you are looking for it — what win32 does. */
+/* How many whole lines the field shows at once -- at least one, since a field
+ * too short for its font still has a line in it and something to scroll. */
+static int edit_visible_lines(HWND wnd)
+{
+    RECT r;
+    int inset = ween_border_width(wnd) ? 1 : 0;
+    int line = edit_line_height(wnd);
+    int rows;
+    GetClientRect(wnd, &r);
+    rows = line > 0 ? (r.bottom - r.top - 2 * inset) / line : 0;
+    return rows > 0 ? rows : 1;
+}
+
+/* The top line, kept where the caret is in view, and whether it moved. A
+ * field of one line has nowhere to scroll to: this is the vertical half of
+ * what an edit does, and the sideways half waits for a field that scrolls
+ * that way. */
+static int edit_scroll_into_view(HWND wnd, ween_edit *e)
+{
+    int rows, row, top;
+    if (!e || !(wnd->style & ES_MULTILINE))
+        return 0;
+    rows = edit_visible_lines(wnd);
+    row = edit_line_from_char(wnd->text, e->caret);
+    top = e->first_visible;
+    if (row < top)
+        top = row;
+    else if (row > top + rows - 1)
+        top = row - rows + 1;
+    if (top < 0)
+        top = 0;
+    if (top == e->first_visible)
+        return 0;
+    e->first_visible = top;
+    return 1;
+}
+
 static void edit_show_caret(HWND wnd, ween_edit *e)
 {
-    if (!e || ween_focus_get() != wnd)
+    if (!e)
+        return;
+    /* Every move of the caret brings it back into view, which is why typing
+     * at the bottom of a long note goes on being visible. */
+    if (edit_scroll_into_view(wnd, e))
+        InvalidateRect(wnd, NULL, FALSE);
+    if (ween_focus_get() != wnd)
         return;
     e->caret_on = 1;
     SetTimer(wnd, WEEN_CARET_TIMER, WEEN_CARET_BLINK_MS, NULL);
@@ -1087,6 +1293,146 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
+    case EM_GETSEL: {
+        int from = 0, to = 0;
+        if (e)
+            edit_range(e, &from, &to);
+        if (wp)
+            *(DWORD *)wp = (DWORD)from;
+        if (lp)
+            *(DWORD *)lp = (DWORD)to;
+        return (LRESULT)MAKELONG(from, to);
+    }
+    case EM_REPLACESEL: {
+        const char *text = (const char *)lp;
+        if (!e || !text || (wnd->style & (WS_DISABLED | ES_READONLY)))
+            return 0;
+        /* wParam says whether the program wants this undoable; it is the
+         * only place win32 lets a program say so. */
+        if (wp)
+            edit_remember(wnd, e);
+        edit_delete_selection(wnd, e);
+        edit_insert(wnd, e, text);
+        edit_changed(wnd);
+        edit_show_caret(wnd, e);
+        InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case EM_GETLINECOUNT:
+        return edit_line_count(wnd->text);
+    case EM_LINEINDEX:
+        /* -1 means the line the caret is on, which is what a program asking
+         * "where am I" passes. */
+        return edit_line_start(wnd->text,
+                               (int)wp < 0 && e
+                                   ? edit_line_from_char(wnd->text, e->caret)
+                                   : (int)wp);
+    case EM_LINEFROMCHAR:
+        return edit_line_from_char(wnd->text,
+                                   (int)wp < 0 && e ? e->caret : (int)wp);
+    case EM_LINELENGTH: {
+        /* The argument is a character offset, not a line: the length wanted
+         * is that of the line the offset is on. -1 is the caret's line, and
+         * for a selection spanning lines win32 answers differently again --
+         * this answers the caret's line, which is what a program asking
+         * about one line means by it. */
+        int at = (int)wp;
+        if (at < 0)
+            at = e ? e->caret : 0;
+        return edit_line_length(wnd->text,
+                                edit_line_start(wnd->text,
+                                                edit_line_from_char(wnd->text,
+                                                                    at)));
+    }
+    case EM_GETLINE: {
+        /* The buffer's first word is how much room it has, which is the one
+         * place win32 puts a length in the buffer rather than a parameter.
+         * The line comes back unterminated, and the answer is how much of it
+         * was copied. */
+        char *out = (char *)lp;
+        int start, n, room;
+        if (!out)
+            return 0;
+        room = (int)*(WORD *)out;
+        start = edit_line_start(wnd->text, (int)wp);
+        n = edit_line_length(wnd->text, start);
+        if (n > room)
+            n = room;
+        memcpy(out, wnd->text + start, (size_t)n);
+        return n;
+    }
+    case EM_GETMODIFY:
+        return e ? e->modified : 0;
+    case EM_SETMODIFY:
+        if (e)
+            e->modified = wp != 0;
+        return 0;
+    case EM_LIMITTEXT:
+        if (e)
+            e->limit = (int)wp;
+        return 0;
+    case EM_CANUNDO:
+        return e && e->undo ? TRUE : FALSE;
+    case EM_EMPTYUNDOBUFFER:
+        if (e) {
+            free(e->undo);
+            e->undo = NULL;
+        }
+        return 0;
+    case EM_UNDO: {
+        char *was;
+        int caret;
+        if (!e || !e->undo)
+            return FALSE;
+        /* Swap: what is in the field becomes the undo, so a second undo puts
+         * it back -- which is what an edit control does. */
+        was = e->undo;
+        caret = e->undo_caret;
+        e->undo = NULL;
+        edit_remember(wnd, e);
+        if (!ween_wnd_set_text(wnd, was)) {
+            free(was);
+            return FALSE;
+        }
+        free(was);
+        e->caret = e->anchor = caret > (int)strlen(wnd->text)
+                                   ? (int)strlen(wnd->text)
+                                   : caret;
+        e->modified = 1;
+        edit_changed(wnd);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case EM_SCROLLCARET:
+        edit_show_caret(wnd, e);
+        return 0;
+    case EM_LINESCROLL: {
+        /* lParam lines down, wParam characters across. A single-line field
+         * refuses, as it does on Windows; the sideways half is ignored until
+         * a field scrolls that way, and says so here rather than pretending
+         * to have done it. */
+        int top, last;
+        if (!e || !(wnd->style & ES_MULTILINE))
+            return FALSE;
+        top = e->first_visible + (int)lp;
+        last = edit_line_count(wnd->text) - 1;
+        if (top > last)
+            top = last;
+        if (top < 0)
+            top = 0;
+        if (top != e->first_visible) {
+            e->first_visible = top;
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return TRUE;
+    }
+    case EM_GETFIRSTVISIBLELINE:
+        return e ? e->first_visible : 0;
+    case EM_GETHANDLE:
+        /* The text itself. On Windows this is a memory handle a program
+         * locks; here the text is a plain buffer and the handle is the
+         * buffer, which is what LocalLock of it would hand back anyway. */
+        return (LRESULT)(uintptr_t)wnd->text;
     case WM_GETDLGCODE:
         /* A field keeps a selection, which is how a dialog knows to select
          * what is in it when it hands it the focus: the size in the
@@ -1106,7 +1452,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         SetFocus(wnd);
         if (f && e) {
-            e->caret = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            e->caret = edit_index_at_point(wnd, GET_X_LPARAM(lp) - edit_margin(wnd),
+                                           GET_Y_LPARAM(lp));
             e->anchor = e->caret; /* a fresh click starts a new selection */
             edit_show_caret(wnd, e);
             SetCapture(wnd);
@@ -1123,7 +1470,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_MOUSEMOVE:
         if (GetCapture() == wnd && e) {
-            int at = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            int at = edit_index_at_point(wnd, GET_X_LPARAM(lp) - edit_margin(wnd),
+                                         GET_Y_LPARAM(lp));
             if (at != e->caret) {
                 e->caret = at; /* drag extends from the anchor */
                 InvalidateRect(wnd, NULL, FALSE);
@@ -1136,7 +1484,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_LBUTTONDBLCLK:
         if (e && !(wnd->style & WS_DISABLED)) {
-            e->caret = edit_index_at(wnd, GET_X_LPARAM(lp) - edit_margin(wnd));
+            e->caret = edit_index_at_point(wnd, GET_X_LPARAM(lp) - edit_margin(wnd),
+                                           GET_Y_LPARAM(lp));
             edit_select_word(wnd, e);
             edit_show_caret(wnd, e);
             InvalidateRect(wnd, NULL, FALSE);
@@ -1214,14 +1563,49 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         if (!e)
             return 0;
+        /* Return in a field of many lines is a line of its own, written the
+         * way Windows writes one: a carriage return and a line feed, which
+         * is what a program reading the text back expects to find. In a
+         * single-line field it is not typing at all -- it presses the
+         * dialog's default button, and the dialog manager has already had
+         * its chance at it. */
+        if (ch == '\r' || ch == '\n') {
+            if (!(wnd->style & ES_MULTILINE))
+                return 0;
+            edit_remember(wnd, e);
+            edit_delete_selection(wnd, e);
+            edit_insert(wnd, e, "\r\n");
+            edit_show_caret(wnd, e);
+            edit_changed(wnd);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         if (ch == '\b') { /* backspace takes the selection, or one character */
+            edit_remember(wnd, e);
             if (!edit_delete_selection(wnd, e) && e->caret > 0) {
-                memmove(wnd->text + e->caret - 1, wnd->text + e->caret,
+                /* a line break is two characters and goes as one */
+                int back = (e->caret >= 2 && wnd->text[e->caret - 1] == '\n' &&
+                            wnd->text[e->caret - 2] == '\r')
+                               ? 2
+                               : 1;
+                memmove(wnd->text + e->caret - back, wnd->text + e->caret,
                         (size_t)(len - e->caret) + 1);
-                e->caret--;
+                e->caret -= back;
                 e->anchor = e->caret;
             }
         } else if ((unsigned char)ch >= ' ') {
+            int from, to;
+            edit_range(e, &from, &to);
+            /* What the field will hold, if the program said: the run being
+             * replaced makes room for what is typed over it. */
+            if (e->limit && len - (to - from) + 1 > e->limit) {
+                if (wnd->parent)
+                    SendMessageA(wnd->parent, WM_COMMAND,
+                                 MAKEWPARAM((WORD)wnd->id, EN_MAXTEXT),
+                                 (LPARAM)wnd);
+                return 0;
+            }
+            edit_remember(wnd, e);
             edit_delete_selection(wnd, e);
             len = (int)strlen(wnd->text);
             if (!ween_wnd_reserve_text(wnd, len + 1))
@@ -1265,30 +1649,78 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 break;
             }
         }
+        int multi = (wnd->style & ES_MULTILINE) != 0;
         switch (wp) {
         case VK_LEFT:
-            if (e->caret > 0)
+            /* a line break is one place, not two */
+            if (e->caret >= 2 && wnd->text[e->caret - 1] == '\n' &&
+                wnd->text[e->caret - 2] == '\r')
+                e->caret -= 2;
+            else if (e->caret > 0)
                 e->caret--;
             break;
         case VK_RIGHT:
-            if (e->caret < len)
+            if (e->caret + 1 < len && wnd->text[e->caret] == '\r' &&
+                wnd->text[e->caret + 1] == '\n')
+                e->caret += 2;
+            else if (e->caret < len)
                 e->caret++;
             break;
+        case VK_UP:
+        case VK_DOWN: {
+            /* the same many characters along, on the line above or below.
+             * A single-line field has neither, and says so by handing the
+             * key back -- which is how a dialog gets to move the focus. */
+            int row, want, to, start, n;
+            if (!multi)
+                return DefWindowProcA(wnd, msg, wp, lp);
+            row = edit_line_from_char(wnd->text, e->caret);
+            want = e->caret - edit_line_start(wnd->text, row);
+            to = wp == VK_UP ? row - 1 : row + 1;
+            if (to < 0 || to >= edit_line_count(wnd->text))
+                break;
+            start = edit_line_start(wnd->text, to);
+            n = edit_line_length(wnd->text, start);
+            e->caret = start + (want > n ? n : want);
+            break;
+        }
         case VK_HOME:
-            e->caret = 0;
+            /* the start of the line, or of the whole text with Control --
+             * which is what a field of many lines does and a single-line one
+             * cannot tell apart */
+            e->caret = multi && !ctrl
+                           ? edit_line_start(wnd->text,
+                                             edit_line_from_char(wnd->text,
+                                                                 e->caret))
+                           : 0;
             break;
         case VK_END:
-            e->caret = len;
+            if (multi && !ctrl) {
+                int start = edit_line_start(
+                    wnd->text, edit_line_from_char(wnd->text, e->caret));
+                e->caret = start + edit_line_length(wnd->text, start);
+            } else {
+                e->caret = len;
+            }
             break;
-        case VK_DELETE:
+        case VK_DELETE: {
+            int back;
             if (wnd->style & (WS_DISABLED | ES_READONLY))
                 return 0;
+            edit_remember(wnd, e);
+            /* forward over a line break takes both of its characters */
+            back = (e->caret + 1 < len && wnd->text[e->caret] == '\r' &&
+                    wnd->text[e->caret + 1] == '\n')
+                       ? 2
+                       : 1;
             if (!edit_delete_selection(wnd, e) && e->caret < len)
-                memmove(wnd->text + e->caret, wnd->text + e->caret + 1,
-                        (size_t)(len - e->caret));
+                memmove(wnd->text + e->caret, wnd->text + e->caret + back,
+                        (size_t)(len - e->caret - back) + 1);
             e->anchor = e->caret;
+            edit_changed(wnd);
             moved = 0;
             break;
+        }
         default:
             return DefWindowProcA(wnd, msg, wp, lp);
         }
@@ -1299,8 +1731,11 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_SETTEXT:
+        /* New text, read from the top: the caret goes to the beginning and
+         * the view with it, which is where a program that has just loaded a
+         * file expects to be looking. */
         if (e)
-            e->caret = e->anchor = 0;
+            e->caret = e->anchor = e->first_visible = 0;
         InvalidateRect(wnd, NULL, FALSE);
         return DefWindowProcA(wnd, msg, wp, lp);
     default:

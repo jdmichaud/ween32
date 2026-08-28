@@ -202,6 +202,7 @@ typedef struct tagCREATESTRUCTA {
 
 #define LOWORD(l) ((WORD)(((UINT_PTR)(l)) & 0xffff))
 #define HIWORD(l) ((WORD)((((UINT_PTR)(l)) >> 16) & 0xffff))
+#define MAKELONG(a, b) ((LONG)(DWORD)(((WORD)(a)) | ((DWORD)((WORD)(b))) << 16))
 #define MAKELPARAM(a, b) ((LPARAM)(DWORD)(((WORD)(a)) | ((DWORD)((WORD)(b))) << 16))
 #define MAKEWPARAM(a, b) ((WPARAM)(DWORD)(((WORD)(a)) | ((DWORD)((WORD)(b))) << 16))
 #define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
@@ -542,10 +543,29 @@ typedef struct {
 #define EN_SETFOCUS 0x0100
 #define EN_KILLFOCUS 0x0200
 #define EN_CHANGE 0x0300
+#define EN_MAXTEXT 0x0501
 #define EN_UPDATE 0x0400
 /* Select a run of the text: wParam is where it starts, lParam where it ends,
  * and -1 for the end means all of it. */
+#define EM_GETSEL 0x00B0
 #define EM_SETSEL 0x00B1
+#define EM_LINESCROLL 0x00B6
+#define EM_SCROLLCARET 0x00B7
+#define EM_GETMODIFY 0x00B8
+#define EM_SETMODIFY 0x00B9
+#define EM_GETLINECOUNT 0x00BA
+#define EM_LINEINDEX 0x00BB
+#define EM_GETHANDLE 0x00BD
+#define EM_LINELENGTH 0x00C1
+#define EM_REPLACESEL 0x00C2
+#define EM_GETLINE 0x00C4
+#define EM_LIMITTEXT 0x00C5
+#define EM_CANUNDO 0x00C6
+#define EM_UNDO 0x00C7
+#define EM_LINEFROMCHAR 0x00C9
+#define EM_EMPTYUNDOBUFFER 0x00CD
+#define EM_GETFIRSTVISIBLELINE 0x00CE
+#define EM_SETLIMITTEXT EM_LIMITTEXT
 /* What an edit leaves before and after its text. It works one out from the
  * font by default; a control that puts an edit inside itself says otherwise,
  * which is how a combo box lines its field up with what it draws beside it. */
