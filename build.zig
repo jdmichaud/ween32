@@ -19,28 +19,9 @@ pub fn build(b: *std.Build) void {
     // unoptimised, which is the difference between a pencil that follows the
     // pointer and one that lags a tenth of a second behind it.
     // `-Doptimize=Debug` still asks for the other thing.
-    // Which member of the optimize enum means "as fast as it goes" is spelled
-    // differently in different Zig versions — `ReleaseFast` in one,
-    // `release_fast` in the next — and the type info the enum answers with has
-    // changed shape too. So the name is looked for rather than written down:
-    // whichever member says "fast" is the one.
-    const fast: std.builtin.OptimizeMode = comptime blk: {
-        const info = @typeInfo(std.builtin.OptimizeMode).@"enum";
-        const names: []const [:0]const u8 =
-            if (@hasField(@TypeOf(info), "field_names")) info.field_names else nb: {
-                var out: [info.fields.len][:0]const u8 = undefined;
-                for (info.fields, 0..) |f, i| out[i] = f.name;
-                const frozen = out;
-                break :nb &frozen;
-            };
-        for (names) |name| {
-            var lower: [name.len]u8 = undefined;
-            for (name, 0..) |c, i| lower[i] = std.ascii.toLower(c);
-            if (std.mem.indexOf(u8, &lower, "fast") != null)
-                break :blk std.meta.stringToEnum(std.builtin.OptimizeMode, name).?;
-        }
-        break :blk @enumFromInt(0); // Debug, if nothing says fast
-    };
+    // Which member means "as fast as it goes" is asked for by name rather
+    // than written down; optimizeNamed below says why it cannot be.
+    const fast = optimizeNamed("fast");
 
     const optimize = b.option(std.builtin.OptimizeMode, "optimize",
         "Prioritize performance, safety, or binary size") orelse fast;
@@ -118,6 +99,34 @@ pub fn build(b: *std.Build) void {
 
     mod.linkLibrary(lib);
     addExamples(b, mod, target, optimize);
+}
+
+/// The member of the optimize enum that means what you asked for, found by
+/// name rather than written down: `ReleaseFast` in one Zig, `release_fast` in
+/// the next, and the type info the enum answers with has changed shape as
+/// well. Ask for "fast", "safe" or "small" and a rename you never see cannot
+/// break the build.
+///
+/// A program building against this package wants it too -- notepad's default
+/// is ReleaseSafe -- so it is public rather than a local in build().
+pub fn optimizeNamed(comptime want: []const u8) std.builtin.OptimizeMode {
+    return comptime blk: {
+        const info = @typeInfo(std.builtin.OptimizeMode).@"enum";
+        const names: []const [:0]const u8 =
+            if (@hasField(@TypeOf(info), "field_names")) info.field_names else nb: {
+                var out: [info.fields.len][:0]const u8 = undefined;
+                for (info.fields, 0..) |f, i| out[i] = f.name;
+                const frozen = out;
+                break :nb &frozen;
+            };
+        for (names) |name| {
+            var lower: [name.len]u8 = undefined;
+            for (name, 0..) |c, i| lower[i] = std.ascii.toLower(c);
+            if (std.mem.indexOf(u8, &lower, want) != null)
+                break :blk std.meta.stringToEnum(std.builtin.OptimizeMode, name).?;
+        }
+        break :blk @enumFromInt(0); // Debug, if nothing carries that name
+    };
 }
 
 /// What to compile, and where its includes come from.
