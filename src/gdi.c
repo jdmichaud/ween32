@@ -548,7 +548,15 @@ int DrawTextA(HDC dc, LPCSTR text, int len, LPRECT rect, UINT format)
         ween_strike_text_extent(f, text, len) > rect->right - rect->left) {
         int avail = rect->right - rect->left;
         int dots = ween_strike_text_extent(f, "...", 3);
-        int take = len;
+        /* The loop below only ever counts down from here and stops at zero,
+         * so what it starts at is what bounds the copy: at most 508 after the
+         * clamp, and the four bytes of "..." after that land on 508..511,
+         * which is the last of cut. The `> 0` is not dead code but the lower
+         * bound written where it can be seen -- gcc at -O1 under -fsanitize=
+         * undefined loses track of len being positive and reads the copy as
+         * one of negative length. It proves it at -O0, -O1 and -O2 without
+         * the sanitizer, and at -O2 with it; only that one build says so. */
+        int take = len > 0 ? len : 0;
         while (take > 0 &&
                ween_strike_text_extent(f, text, take) + dots > avail)
             take--;
