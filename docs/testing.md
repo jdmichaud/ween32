@@ -201,6 +201,65 @@ in and the pixel of white above its first row are measured against a Windows
 item, and its header's text sitting six in rather than eight, against the same
 machine's list. See the ROADMAP for what was measured.
 
+### Where the checkouts live, and what that costs
+
+`/home/jd/ween32/ween32` and `/home/jd/ween32/notepad` are **sshfs mounts** --
+`jedi@10.0.2.2:/home/jedi/projects/...` -- and every worktree beside them is
+ext4. `stat -f -c %T <path>` says `fuse` for the first two and `ext2/ext3`
+for the rest, and `mount | grep ween32` shows the pair. Nobody knew this for
+most of a day, and it explains a fault nobody could otherwise have found.
+
+**Observed, and reproducible.** A copy step whose *source* is on the mount
+produces an **empty result, with no error**: `installHeadersDirectory` over
+one hands a consumer an `-I` at a directory with nothing in it, so a C
+program built against the package fails on `'windows.h' file not found`
+while every listing shows the header exactly where it should be. The
+controlled pair, same Zig, same build.zig, same relative-path form, no
+symlink either side:
+
+| dependency at | filesystem | headers staged | host build |
+| --- | --- | --- | --- |
+| `../ween32` | sshfs | **0 files** | fails |
+| `../ween32-localcopy` (`cp -r` of it) | ext4 | 10 files | succeeds |
+
+To run it again: point notepad's `build.zig.zon` at each in turn, take
+`addHeaders` back out of its build.zig so the build depends on the copy,
+`rm -rf .zig-cache`, and read the staged directory out of the compile line --
+`zig build --verbose | grep -o '\-I \.zig-cache[^ ]*'`, then `ls` what it
+names.
+
+**What is *not* the mechanism**, so nobody spends the hour I nearly did:
+`readdir` over this mount is fine. A C program calling it gets `d_type=8`
+(`DT_REG`) for all eight headers, exactly as on ext4, so this is not the
+usual `DT_UNKNOWN` fuse story. What goes wrong is inside the copy; the
+symptom is what is written down here, not a cause.
+
+**Reading is fine, and that is what makes it dangerous.** The library's own C
+sources compile out of the mount without complaint, and `zig rc` reads a
+script from it and writes its `.res` into the cache -- alice built both
+targets in jd's own checkout, which is itself on the mount. So most of a
+build works, and the one part that fails is silent.
+
+**Suspected on the same mechanism, and not tested**: `b.installArtifact`
+copying into a `zig-out` that lives on the mount; `addWriteFiles` and
+`addCopyDirectory` with a source on it; anything else that stages a
+*directory* rather than naming a path. None of these has been observed
+failing -- they are here because they are the same shape, and if you check
+one, please write down which way it went.
+
+**Two other things this probably explains**, both reported by alice in the
+checkout on the mount and neither yet tied to it by experiment: `make`
+printing *"Clock skew detected"* on nearly every run, and `zig build` in the
+same tree twice giving `error: PermissionDenied` unless `.zig-cache` is
+cleared between them -- the trap already written down for paint. A network
+filesystem with its own idea of timestamps would produce the first, and a
+cache directory it does not lock the way a local one does could produce the
+second. Both are guesses until somebody runs the pair test on them.
+
+**What to do about it**: prefer pointing at a path over copying out of one.
+`ween32.addHeaders(dep, exe)` exists for exactly this reason -- a path is
+read where it stands, and reading over the mount was never the problem.
+
 ### A machine of your own
 
 The Windows 2000 the captures come from is a program with a socket, not a
