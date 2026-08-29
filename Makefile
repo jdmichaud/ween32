@@ -148,6 +148,12 @@ ZIGWIN = $(ZIG) cc -target x86_64-windows-gnu -std=c99 -Iinclude
 # than failed when the one on PATH is older.
 ZIG ?= zig
 ZIG_NEEDS = 0.17
+# Where zig keeps its build cache. Not in the tree: this repository is often
+# a network mount, and zig's cache does not survive one -- the first build
+# passes and every one after it dies with `error: PermissionDenied` on a
+# rename it expects to be atomic. Off the mount it is fine, so it goes off the
+# mount. Override it if /tmp is small.
+ZIG_CACHE ?= /tmp/ween32-zig-cache
 
 # The same source both ways, and both of them built. The Windows half is what
 # this target was written for; the host half is here because build.zig keeps
@@ -179,9 +185,9 @@ win32:
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
 	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu \
-	         --cache-dir .zig-cache-win --prefix zig-out-win || exit 1; \
+	         --cache-dir $(ZIG_CACHE)-win --prefix zig-out-win || exit 1; \
 	      echo "  ween32 examples/paint (zig)"; \
-	      $(ZIG) build paint || exit 1;; \
+	      $(ZIG) build paint --cache-dir $(ZIG_CACHE) || exit 1;; \
 	   *) echo "  win32 examples/paint: needs zig $(ZIG_NEEDS), skipped";; \
 	 esac
 
