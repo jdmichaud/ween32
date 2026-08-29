@@ -144,6 +144,28 @@ static int caret_of(HWND w)
  * tests made are still standing on it, so a scan of all of it finds their
  * borders: the first draft measured 215 and 96 for two cases that differ by
  * three, which is a number with nothing to do with the question. */
+/* How much of the control's right-hand strip is scrollbar. The trough is a
+ * dither, so half its pixels are white -- counting "non-white columns" finds
+ * nothing, which is what the first attempt did. Face-coloured pixels in the
+ * strip is the count that separates a bar from a blank client. */
+static int bar_pixels(HWND ctl)
+{
+    RECT c;
+    POINT o = {0, 0};
+    InvalidateRect(ctl, NULL, TRUE);
+    ween_flush_paint();
+    const ween_surface *s = ween_headless_surface();
+    int n = 0, w = ween_scroll_metric();
+    if (!s || !GetClientRect(ctl, &c) || !ClientToScreen(ctl, &o))
+        return 0;
+    for (int x = o.x + c.right - w; x < o.x + c.right && x < s->w; x++)
+        for (int y = o.y; y < o.y + c.bottom && y < s->h; y++)
+            if ((s->px[(size_t)y * s->w + x] & 0xffffff) ==
+                WEEN_RGBX(212, 208, 200))
+                n++;
+    return n;
+}
+
 static int caret_rows(HWND ctl, HWND host)
 {
     RECT c;
@@ -2167,6 +2189,81 @@ int main(void)
               "a set that lands on no characters still changes the line the "
               "caret is on");
         DestroyWindow(host2);
+    }
+
+    /* ---- more text than fits puts the bar up, and the style with it ----
+     *
+     * jd, of WordPad: *"when you reach the end of the editor zone no
+     * scrollbar appears and you cannot write any more"*.
+     *
+     * **The second half of that is not what happens here and it matters.**
+     * Driven with sixty lines in a hundred-pixel box, the text is not
+     * refused: WM_GETTEXTLENGTH goes 530 -> 531 on a typed character, and
+     * EM_SCROLLCARET lands on first-visible 54 of 61. It scrolls correctly
+     * and then shows nothing, so what jd sees is **the caret below the
+     * visible rows with no bar to say so** -- typing that lands invisibly.
+     *
+     * **The control puts the style up itself**, which is measured rather
+     * than assumed and is why the two readings we had looked contradictory:
+     *
+     *     reference/probe/window.txt   550081C4   an empty document
+     *     Sam, overflowing             552081C4   the same control, full
+     *     difference                   0x00200000, WS_VSCROLL, alone
+     *
+     * Both true, of different moments. WordPad creates it without the style
+     * (src/main.zig:959) and riched20 adds it. Neither file was wrong;
+     * neither said *when*.
+     */
+    {
+        HWND host3 = CreateWindowExA(0, "weenrich", "h3", WS_POPUP | WS_VISIBLE,
+                                     0, 0, 300, 200, NULL, NULL, NULL, NULL);
+        /* WordPad's own word, and the point is what is *not* in it. */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                     ES_AUTOVSCROLL | ES_WANTRETURN,
+                                 0, 0, 280, 100, host3, NULL, NULL, NULL);
+        char big[4000];
+        int n = 0;
+        for (int i = 0; i < 60; i++)
+            n += sprintf(big + n, "line %d\r\n", i);
+
+        CHECK(bar_pixels(t) == 0, "an editor that fits has no scrollbar");
+
+        SendMessageA(t, WM_SETTEXT, 0, (LPARAM)big);
+        CHECK((GetWindowLongA(t, GWL_STYLE) & WS_VSCROLL) != 0,
+              "text past the bottom puts WS_VSCROLL on the control itself, "
+              "which is what riched20 does rather than what its creator "
+              "asked for");
+        CHECK(bar_pixels(t) > 0, "and the bar is drawn");
+
+        /* The text is not refused, which is the half of jd's sentence that
+         * is not a defect here. */
+        int len = (int)SendMessageA(t, WM_GETTEXTLENGTH, 0, 0);
+        SendMessageA(t, EM_SETSEL, len, len);
+        SendMessageA(t, WM_CHAR, 'Z', 1);
+        CHECK((int)SendMessageA(t, WM_GETTEXTLENGTH, 0, 0) == len + 1,
+              "and a character typed past the last visible line still lands");
+
+        /* The third state, and it is measured rather than assumed from the
+         * symmetry: a document that overflowed and was then emptied reads
+         * 550081C4 again on the machine. */
+        SendMessageA(t, WM_SETTEXT, 0, (LPARAM) "short");
+        CHECK((GetWindowLongA(t, GWL_STYLE) & WS_VSCROLL) == 0,
+              "and emptying it takes the style back off, which the machine "
+              "does too");
+        CHECK(bar_pixels(t) == 0, "and the bar with it");
+
+        /* But a bar its creator asked for is not the control's to remove:
+         * every machine reading is of an editor created without the style. */
+        HWND asked = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                     WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                         ES_MULTILINE,
+                                     0, 100, 280, 60, host3, NULL, NULL, NULL);
+        SendMessageA(asked, WM_SETTEXT, 0, (LPARAM) "short");
+        CHECK((GetWindowLongA(asked, GWL_STYLE) & WS_VSCROLL) != 0,
+              "while a WS_VSCROLL the program asked for survives a document "
+              "that does not need it");
+        DestroyWindow(host3);
     }
 
     if (g_failures) {

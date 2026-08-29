@@ -180,6 +180,7 @@ typedef struct {
      * -- so this is worked out while the lines are, and the lines are worked
      * out again when it changes, since the bar takes width from them. */
     int bar_on;
+    int bar_ours; /* WS_VSCROLL is up because this control put it up */
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
@@ -911,8 +912,50 @@ static void rich_relines(HWND wnd, ween_rich *e)
         return;
     e->bar_on = 0;
     rich_relines_once(wnd, e);
-    if (!(wnd->style & WS_VSCROLL) || (wnd->style & ES_DISABLENOSCROLL))
+    if (wnd->style & ES_DISABLENOSCROLL)
         return;
+    /* **The control puts WS_VSCROLL up itself when the text overflows**, and
+     * that is measured rather than inferred. Two readings of the machine's
+     * editor looked for a while like they contradicted each other:
+     *
+     *     reference/probe/window.txt   550081C4   an empty document
+     *     Sam, the same box full       552081C4
+     *     the difference               0x00200000, WS_VSCROLL, and nothing
+     *                                  else -- WS_HSCROLL is set in neither
+     *
+     * They do not contradict. WordPad creates the editor **without** the
+     * style (wordpad's src/main.zig:959, from its own style word) and
+     * riched20 adds it. Both files were right and neither said *when*.
+     *
+     * Without this the control scrolled perfectly well and drew no bar: jd
+     * reported it as *"no scrollbar appears and you cannot write any more"*,
+     * and the second half is what a caret below the last visible row looks
+     * like from outside -- the characters were landing.
+     *
+     * **And it comes back off**, which is the third state and was measured
+     * too rather than assumed from the symmetry:
+     *
+     *     empty                      550081C4
+     *     overflowing                552081C4   WS_VSCROLL added
+     *     overflowed, then emptied   550081C4   WS_VSCROLL removed
+     *
+     * **Only the bit this control raised is cleared.** A program that asked
+     * for WS_VSCROLL at CreateWindow keeps it: every reading above is of
+     * WordPad's editor, which is created *without* the style, so what is
+     * measured is a control managing a bit it put up itself. Whether
+     * riched20 also takes down one its creator asked for is a fourth state
+     * and nobody has looked, so this does not touch it.
+     */
+    if (!(wnd->style & WS_VSCROLL)) {
+        if (e->lines <= rich_visible_lines(wnd))
+            return;
+        wnd->style |= WS_VSCROLL;
+        e->bar_ours = 1;
+    } else if (e->bar_ours && e->lines <= rich_visible_lines(wnd)) {
+        wnd->style &= ~(DWORD)WS_VSCROLL;
+        e->bar_ours = 0;
+        return;
+    }
     was = e->bar_on;
     e->bar_on = e->lines > rich_visible_lines(wnd);
     if (e->bar_on != was)
