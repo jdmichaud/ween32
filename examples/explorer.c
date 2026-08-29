@@ -2638,73 +2638,73 @@ static void fo_set_icon(HWND dlg, int id, int which)
  * lower; it draws it where the machine does now, so the compensation is
  * gone and the rectangles are the real ones. */
 static const fo_place g_fo_general_at[] = {
-    { IDC_FO_G1, 12, 12, 341, 62 },
-    { IDC_FO_WEB_DESKTOP, 65, 30, 278, 13 },
-    { IDC_FO_CLASSIC_DESKTOP, 65, 48, 278, 13 },
-    { IDC_FO_G2, 14, 87, 339, 60 },
-    { IDC_FO_WEB_FOLDERS, 65, 105, 278, 13 },
-    { IDC_FO_CLASSIC_FOLDERS, 65, 123, 278, 13 },
-    { IDC_FO_G3, 14, 159, 339, 62 },
-    { IDC_FO_SAME_WINDOW, 65, 178, 278, 13 },
-    { IDC_FO_OWN_WINDOW, 65, 196, 278, 13 },
-    { IDC_FO_G4, 14, 232, 339, 98 },
-    { IDC_FO_SINGLE, 65, 251, 261, 13 },
-    { IDC_FO_UNDERLINE_ALWAYS, 84, 269, 258, 13 },
-    { IDC_FO_UNDERLINE_POINT, 84, 287, 258, 13 },
-    { IDC_FO_DOUBLE, 65, 305, 278, 13 },
-    { IDC_FO_DEFAULTS, 245, 342, 108, 23 },
-    { IDC_FO_I1, 24, 30, 32, 32 },
-    { IDC_FO_I2, 24, 105, 32, 32 },
-    { IDC_FO_I3, 24, 178, 32, 32 },
-    { IDC_FO_I4, 24, 251, 32, 32 },
+    { IDC_FO_G1, 9, 11, 341, 62 },
+    { IDC_FO_WEB_DESKTOP, 62, 29, 278, 13 },
+    { IDC_FO_CLASSIC_DESKTOP, 62, 47, 278, 13 },
+    { IDC_FO_G2, 11, 86, 339, 60 },
+    { IDC_FO_WEB_FOLDERS, 62, 104, 278, 13 },
+    { IDC_FO_CLASSIC_FOLDERS, 62, 122, 278, 13 },
+    { IDC_FO_G3, 11, 158, 339, 62 },
+    { IDC_FO_SAME_WINDOW, 62, 177, 278, 13 },
+    { IDC_FO_OWN_WINDOW, 62, 195, 278, 13 },
+    { IDC_FO_G4, 11, 231, 339, 98 },
+    { IDC_FO_SINGLE, 62, 250, 261, 13 },
+    { IDC_FO_UNDERLINE_ALWAYS, 81, 268, 258, 13 },
+    { IDC_FO_UNDERLINE_POINT, 81, 286, 258, 13 },
+    { IDC_FO_DOUBLE, 62, 304, 278, 13 },
+    { IDC_FO_DEFAULTS, 242, 341, 108, 23 },
+    { IDC_FO_I1, 21, 29, 32, 32 },
+    { IDC_FO_I2, 21, 104, 32, 32 },
+    { IDC_FO_I3, 21, 177, 32, 32 },
+    { IDC_FO_I4, 21, 250, 32, 32 },
 };
 
 /* The View page, the same way. */
 static const fo_place g_fo_view_at[] = {
-    { IDC_FO_VG1, 18, 9, 330, 89 },
-    { IDC_FO_VS1, 93, 34, 245, 14 },
-    { IDC_FO_LIKE, 93, 58, 113, 24 },
-    { IDC_FO_RESET_ALL, 221, 58, 113, 24 },
-    { IDC_FO_VS2, 18, 115, 120, 14 },
-    { IDC_FO_ADVANCED, 18, 131, 330, 195 },
-    { IDC_FO_VDEFAULTS, 243, 342, 105, 23 },
-    { IDC_FO_I5, 33, 35, 32, 32 },
+    { IDC_FO_VG1, 15, 8, 330, 89 },
+    { IDC_FO_VS1, 90, 33, 245, 14 },
+    { IDC_FO_LIKE, 90, 57, 113, 24 },
+    { IDC_FO_RESET_ALL, 218, 57, 113, 24 },
+    { IDC_FO_VS2, 15, 114, 120, 14 },
+    { IDC_FO_ADVANCED, 15, 130, 330, 195 },
+    { IDC_FO_VDEFAULTS, 240, 341, 105, 23 },
+    { IDC_FO_I5, 30, 34, 32, 32 },
 };
 
 /* The File Types page, measured off the machine's own: its list, the two
  * buttons beside it, the group below and what is in it. */
 static const fo_place g_fo_types_at[] = {
-    { IDC_FO_TS1, 14, 12, 120, 14 },
-    { IDC_FO_TYPES, 14, 30, 335, 135 },
-    { IDC_FO_NEW, 192, 177, 75, 23 },
-    { IDC_FO_DELETE, 273, 177, 75, 23 },
-    { IDC_FO_DETAILS, 14, 222, 335, 141 },
-    { IDC_FO_TS2, 24, 246, 60, 14 },
-    { IDC_FO_TS3, 98, 245, 16, 16 },
-    { IDC_FO_OPENS, 127, 246, 190, 14 },
-    { IDC_FO_CHANGE, 263, 242, 75, 24 },
-    { IDC_FO_DETAIL_TEXT, 24, 277, 316, 40 },
-    { IDC_FO_TYPE_ADVANCED, 263, 328, 75, 24 },
+    { IDC_FO_TS1, 11, 11, 120, 14 },
+    { IDC_FO_TYPES, 11, 29, 335, 135 },
+    { IDC_FO_NEW, 189, 176, 75, 23 },
+    { IDC_FO_DELETE, 270, 176, 75, 23 },
+    { IDC_FO_DETAILS, 11, 221, 335, 141 },
+    { IDC_FO_TS2, 21, 245, 60, 14 },
+    { IDC_FO_TS3, 95, 244, 16, 16 },
+    { IDC_FO_OPENS, 124, 245, 190, 14 },
+    { IDC_FO_CHANGE, 260, 241, 75, 24 },
+    { IDC_FO_DETAIL_TEXT, 21, 276, 316, 40 },
+    { IDC_FO_TYPE_ADVANCED, 260, 327, 75, 24 },
 };
 
 /* The Offline Files page. */
 static const fo_place g_fo_offline_at[] = {
-    { IDC_FO_I6, 14, 12, 32, 32 },
-    { IDC_FO_OS1, 56, 12, 285, 42 },
-    { IDC_FO_OFF_ENABLE, 24, 71, 250, 16 },
-    { IDC_FO_OFF_SYNC, 24, 97, 250, 16 },
-    { IDC_FO_OFF_REMIND, 24, 123, 250, 16 },
-    { IDC_FO_OS2, 41, 149, 145, 14 },
-    { IDC_FO_OFF_MINUTES, 201, 146, 53, 20 },
-    { IDC_FO_OFF_SPIN, 237, 149, 15, 15 },
-    { IDC_FO_OS3, 261, 149, 50, 14 },
-    { IDC_FO_OFF_SHORTCUT, 24, 178, 285, 16 },
-    { IDC_FO_OS4, 24, 206, 300, 14 },
-    { IDC_FO_OFF_SPACE, 29, 232, 152, 37 },
-    { IDC_FO_OS5, 192, 237, 120, 14 },
-    { IDC_FO_OFF_DELETE, 77, 282, 84, 23 },
-    { IDC_FO_OFF_VIEW, 168, 282, 84, 23 },
-    { IDC_FO_OFF_ADVANCED, 258, 282, 84, 23 },
+    { IDC_FO_I6, 11, 11, 32, 32 },
+    { IDC_FO_OS1, 53, 11, 285, 42 },
+    { IDC_FO_OFF_ENABLE, 21, 70, 250, 16 },
+    { IDC_FO_OFF_SYNC, 21, 96, 250, 16 },
+    { IDC_FO_OFF_REMIND, 21, 122, 250, 16 },
+    { IDC_FO_OS2, 38, 148, 145, 14 },
+    { IDC_FO_OFF_MINUTES, 198, 145, 53, 20 },
+    { IDC_FO_OFF_SPIN, 234, 148, 15, 15 },
+    { IDC_FO_OS3, 258, 148, 50, 14 },
+    { IDC_FO_OFF_SHORTCUT, 21, 177, 285, 16 },
+    { IDC_FO_OS4, 21, 205, 300, 14 },
+    { IDC_FO_OFF_SPACE, 26, 231, 152, 37 },
+    { IDC_FO_OS5, 189, 236, 120, 14 },
+    { IDC_FO_OFF_DELETE, 74, 281, 84, 23 },
+    { IDC_FO_OFF_VIEW, 165, 281, 84, 23 },
+    { IDC_FO_OFF_ADVANCED, 255, 281, 84, 23 },
 };
 
 /* ---- the General page ---- */
@@ -3216,8 +3216,8 @@ static void folder_options(HWND owner)
     ITEM(SS_ICON, 14, 38, 21, 20, IDC_FO_I2, ATOM_STATIC, "");
     ITEM(SS_ICON, 14, 64, 21, 20, IDC_FO_I3, ATOM_STATIC, "");
     ITEM(SS_ICON, 14, 90, 21, 20, IDC_FO_I4, ATOM_STATIC, "");
-    build_dialog_template(t_gen, sizeof(t_gen), WS_CHILD | DS_SETFONT, 243,
-                          232, "", items, n);
+    build_dialog_template(t_gen, sizeof(t_gen), WS_CHILD | DS_SETFONT, 240,
+                          230, "", items, n);
 
     /* ---- View ---- */
     n = 0;
@@ -3237,8 +3237,8 @@ static void folder_options(HWND owner)
     items[n - 1].exstyle = WS_EX_CLIENTEDGE;
     PUSH(160, 199, 79, 14, IDC_FO_VDEFAULTS, "R&estore Defaults");
     ITEM(SS_ICON, 14, 12, 21, 20, IDC_FO_I5, ATOM_STATIC, "");
-    build_dialog_template(t_view, sizeof(t_view), WS_CHILD | DS_SETFONT, 243,
-                          232, "", items, n);
+    build_dialog_template(t_view, sizeof(t_view), WS_CHILD | DS_SETFONT, 240,
+                          230, "", items, n);
 
     /* ---- File Types ---- */
     n = 0;
@@ -3261,8 +3261,8 @@ static void folder_options(HWND owner)
     PUSH(174, 145, 58, 14, IDC_FO_CHANGE, "&Change...");
     LABEL(14, 166, 218, 26, IDC_FO_DETAIL_TEXT, "");
     PUSH(174, 189, 58, 14, IDC_FO_TYPE_ADVANCED, "Ad&vanced");
-    build_dialog_template(t_types, sizeof(t_types), WS_CHILD | DS_SETFONT, 243,
-                          232, "", items, n);
+    build_dialog_template(t_types, sizeof(t_types), WS_CHILD | DS_SETFONT, 240,
+                          230, "", items, n);
 
     /* ---- Offline Files ---- */
     n = 0;
@@ -3297,7 +3297,7 @@ static void folder_options(HWND owner)
     PUSH(108, 165, 48, 14, IDC_FO_OFF_VIEW, "&View Files");
     PUSH(168, 165, 48, 14, IDC_FO_OFF_ADVANCED, "Ad&vanced");
     ITEM(SS_ICON, 14, 7, 21, 20, IDC_FO_I6, ATOM_STATIC, "");
-    build_dialog_template(t_off, sizeof(t_off), WS_CHILD | DS_SETFONT, 243, 232,
+    build_dialog_template(t_off, sizeof(t_off), WS_CHILD | DS_SETFONT, 240, 230,
                           "", items, n);
 #undef LABEL
 #undef PUSH
@@ -3626,8 +3626,13 @@ static void show_properties(HWND owner)
     /* The shell's own face, not the older dialog one: a Properties page is set
      * in Tahoma where Folder Options is set in MS Sans Serif, and the sheet
      * around it follows its page. */
-    build_dialog_template_font(page, sizeof(page), WS_CHILD | DS_SETFONT, 230,
-                               217, "", items, n, "MS Shell Dlg 2", 8);
+    /* 227x215 units, which is 341x349 pixels. **Derived from the machine's
+     * sheet rather than measured on its page**: the capture is 367x443, the
+     * frame around a page is now the machine's, and those two fix the page.
+     * It was 230x217 -- three and two more -- which is the same excess the
+     * Folder Options pages carried, because it is the same frame error. */
+    build_dialog_template_font(page, sizeof(page), WS_CHILD | DS_SETFONT, 227,
+                               215, "", items, n, "MS Shell Dlg 2", 8);
 
     memset(pages, 0, sizeof(pages));
     pages[0].dwSize = sizeof(pages[0]);

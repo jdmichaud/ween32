@@ -7264,11 +7264,17 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         ween_surface_hline(s, l, b, rr - l + 1, WEEN_DKSHADOW);
         ween_surface_vline(s, rr, t, b - t + 1, WEEN_DKSHADOW);
         ween_surface_hline(s, l, t, rr - l + 1, WEEN_FACE);
-        ween_surface_vline(s, l, t, b - t + 1, WEEN_FACE);
         ween_surface_hline(s, l + 1, b - 1, rr - l - 1, WEEN_SHADOW);
         ween_surface_vline(s, rr - 1, t + 1, b - t - 1, WEEN_SHADOW);
         ween_surface_hline(s, l + 1, t + 1, rr - l - 1, WEEN_WHITE);
-        ween_surface_vline(s, l + 1, t + 1, b - t - 1, WEEN_WHITE);
+        /* **The left edge's white sits on the control's own column**, where
+         * the top's sits one below its face line. Measured against
+         * `captures-sam/folderopt.png`: at the tab control's left the machine
+         * has white at x = 0 of the control and we had face there and white
+         * at 1, so the whole body was a column wide. The other three sides
+         * match to the pixel, which is what says this is the left edge and
+         * not the rectangle. */
+        ween_surface_vline(s, l, t + 1, b - t - 1, WEEN_WHITE);
     }
 
     /* right to left, so each tab's dark edge covers the next one's white.

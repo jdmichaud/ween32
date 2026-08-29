@@ -3818,6 +3818,11 @@ static void gb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     int lh = label_height(wnd);
     int tw = f ? ween_strike_text_extent(f, wnd->text, (int)strlen(wnd->text)) : 0;
 
+    if (getenv("WEEN32_GBPROBE") && wnd->text[0]) {
+        RECT wr; GetWindowRect(wnd, &wr);
+        fprintf(stderr, "gb \"%s\" window %ld,%ld %ldx%ld\n", wnd->text,
+            (long)wr.left,(long)wr.top,(long)(wr.right-wr.left),(long)(wr.bottom-wr.top));
+    }
     frame.top += lh / 2 - 1;
     DrawEdge(dc, &frame, EDGE_ETCHED, BF_RECT);
 
