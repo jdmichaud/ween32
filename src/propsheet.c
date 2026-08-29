@@ -518,8 +518,9 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
          *
          * The hidden ones are parked **one slot past the last visible**, both
          * at the same place, which is where the machine has them: Apply and
-         * Help are both at 648, which is 359 + 81 and one past the client's
-         * own right edge. They are out of sight either way; putting them
+         * Help are both at client 440, which is Cancel's 359 plus a slot of
+         * 81, in a client 440 wide -- one past its own right edge. (Spec
+         * §8.6 lists all four at window coordinates, where that x reads 648.) They are out of sight either way; putting them
          * where the machine puts them costs nothing and means a program that
          * asks a hidden button where it is gets the machine's answer. */
         {
