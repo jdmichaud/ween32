@@ -25,6 +25,7 @@ pub const DWORD = u32;
 pub const LONG = i32;
 pub const UINT = c_uint;
 pub const WPARAM = usize;
+pub const LONG_PTR = isize;
 pub const LPARAM = isize;
 pub const LRESULT = isize;
 pub const INT_PTR = isize;
@@ -371,6 +372,11 @@ pub extern fn GetFileSize(file: HANDLE, high: ?*u32) callconv(.c) u32;
 pub extern fn CloseHandle(h: HANDLE) callconv(.c) BOOL;
 pub extern fn GetWindowLongA(wnd: HWND, index: c_int) callconv(.c) LONG;
 pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) callconv(.c) LONG;
+pub extern fn GetWindowLongPtrA(wnd: HWND, index: c_int) callconv(.c) LONG_PTR;
+pub extern fn SetWindowLongPtrA(wnd: HWND, index: c_int, value: LONG_PTR) callconv(.c) LONG_PTR;
+/// Subclassing: keep what SetWindowLongPtrA(GWLP_WNDPROC) handed back and
+/// call it for everything the new procedure does not want.
+pub extern fn CallWindowProcA(proc: WNDPROC, wnd: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv(.c) LRESULT;
 pub extern fn TrackMouseEvent(track: *TRACKMOUSEEVENT) callconv(.c) BOOL;
 pub extern fn GetKeyState(vk: c_int) callconv(.c) SHORT;
 pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) callconv(.c) UINT_PTR;
@@ -1345,6 +1351,8 @@ pub const WEEN32_HAS_ACCELERATORS = 1;
 pub const WEEN32_HAS_IMAGELIST = 1;
 pub const WEEN32_HAS_CLIPBOARD = 1;
 pub const WEEN32_HAS_CURSORS = 1;
+pub const GWL_WNDPROC = (-4);
+pub const GWLP_WNDPROC = (-4);
 pub const GWL_STYLE = (-16);
 pub const GWL_EXSTYLE = (-20);
 pub const GWL_ID = (-12);
