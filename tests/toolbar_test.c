@@ -970,6 +970,68 @@ int main(void)
         DestroyWindow(cw);
     }
 
+    /* The check pattern behind a button that is on has the **button's** phase
+     * and not the surface's. bob measured two checked buttons in two programs
+     * on the machine -- WordPad's Align Left at window (464,77) and
+     * explorer's Folders at (209,49) -- whose windows disagree in parity, and
+     * found the same picture in both when it is held against the button's own
+     * rectangle: the dither starts at (2,2) with a **face** pixel and the
+     * first white one is at (3,2).
+     *
+     * ween32 took its phase from the surface, so it could fit one program or
+     * the other and never both. And no other origin could have settled it:
+     * the window, the bar and the toolbar all differ by an *even* offset in
+     * both programs, so they share a parity and swapping between them cannot
+     * move a two-by-two checkerboard. */
+    {
+        static const DWORD dstyle[2] = { TBSTYLE_FLAT, 0 };
+        for (int k = 0; k < 2; k++) {
+            HWND host = CreateWindowA("weentb", "", WS_OVERLAPPEDWINDOW,
+                                      /* an odd left and an even one, so a
+                                       * surface-relative phase cannot pass
+                                       * both halves of this test */
+                                      k ? 40 : 41, 0, 240, 90, NULL, NULL,
+                                      NULL, NULL);
+            HWND cb = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                      WS_CHILD | WS_VISIBLE | dstyle[k], 0, 0,
+                                      200, 30, host, (HMENU)(UINT_PTR)97, NULL,
+                                      NULL);
+            TBBUTTON cbn;
+            RECT ir;
+            const ween_surface *ps3;
+            int ox, oy, edge;
+            memset(&cbn, 0, sizeof(cbn));
+            cbn.iBitmap = 0;
+            cbn.idCommand = 801;
+            cbn.fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;
+            cbn.fsStyle = TBSTYLE_CHECK;
+            SendMessageA(cb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            SendMessageA(cb, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+            SendMessageA(cb, TB_ADDBUTTONSA, 1, (LPARAM)&cbn);
+            ShowWindow(host, SW_SHOWNORMAL);
+            InvalidateRect(host, NULL, TRUE);
+            ween_flush_paint();
+            ps3 = ween_headless_surface();
+            SendMessageA(cb, TB_GETITEMRECT, 0, (LPARAM)&ir);
+            ween_client_origin(cb, &ox, &oy);
+            /* the rect the edge is drawn in: a flat bar's starts a pixel in */
+            edge = ox + (int)ir.left + (k == 0 ? 1 : 0);
+            if (ps3) {
+                ween_color face = ps3->px[(size_t)(oy + ir.top + 2) * ps3->w +
+                                          edge + 2];
+                ween_color lit = ps3->px[(size_t)(oy + ir.top + 2) * ps3->w +
+                                         edge + 3];
+                CHECK((face & 0xffffff) == (WEEN_FACE & 0xffffff),
+                      k == 0 ? "a flat bar's dither starts on face at two in"
+                             : "and a classic bar's does too");
+                CHECK((lit & 0xffffff) == (WEEN_WHITE & 0xffffff),
+                      k == 0 ? "and its first white pixel is at three"
+                             : "and so is the classic bar's");
+            }
+            DestroyWindow(host);
+        }
+    }
+
     /* A separator's etched line belongs to a flat bar and not to a classic
      * one. WordPad's Standard bar is classic and has four separators; the
      * machine leaves plain face where each one is, while the shell's flat bar

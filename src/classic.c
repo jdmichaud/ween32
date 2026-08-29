@@ -553,12 +553,37 @@ void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h)
  * like a scroll bar's track but on the opposite parity, so the two cannot
  * share one routine: which pixels are white is fixed by where they are on
  * the surface, not by where the patch starts. */
-void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h)
+/* The check pattern behind a button that is on.
+ *
+ * **Its phase is the button's, not the surface's.** Measured on the machine
+ * by bob, on two checked buttons in two programs:
+ *
+ *     WordPad  Align Left  button at window (464,77)  first white (467,79)
+ *     explorer Folders     button at window (209,49)  first white (212,51)
+ *
+ * Those windows disagree in parity -- one even, one odd -- so no single phase
+ * taken from the surface fits both, which is what ween32 had. Held against
+ * each button's own rectangle they are the same picture: the dither starts at
+ * (2,2) with a **face** pixel and the first white one is at (3,2).
+ *
+ * And the reason the obvious alternatives could not have settled it: every
+ * origin on offer -- the window, the bar, the toolbar -- differs by an *even*
+ * offset in both programs, so all of them have the same parity within a
+ * program and swapping between them can never move a two-by-two checkerboard.
+ * Only the button's own corner can. */
+void ween_classic_check_dither_at(ween_surface *s, int x, int y, int w, int h,
+                                  int ox, int oy)
 {
     for (int py = y; py < y + h; py++)
         for (int px = x; px < x + w; px++)
             ween_surface_pixel(s, px, py,
-                               ((px + py) & 1) ? WEEN_WHITE : WEEN_FACE);
+                               (((px - ox) + (py - oy)) & 1) ? WEEN_WHITE
+                                                             : WEEN_FACE);
+}
+
+void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h)
+{
+    ween_classic_check_dither_at(s, x, y, w, h, 0, 0);
 }
 
 /* ---- the pictures a message box puts beside its message -------------------

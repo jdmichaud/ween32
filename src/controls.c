@@ -7914,8 +7914,8 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * rectangle — they sit side by side rather than overlapping, as
              * the flat ones do. */
             if (checked && !held)
-                ween_classic_check_dither(&top->surface, bx + 2, by + 2,
-                                          b->w - 4, h - 4);
+                ween_classic_check_dither_at(&top->surface, bx + 2, by + 2,
+                                             b->w - 4, h - 4, bx, by);
             ween_classic_edge(&top->surface, bx, by, b->w, h,
                               (checked || held) ? EDGE_SUNKEN : EDGE_RAISED,
                               BF_RECT | BF_SOFT, NULL);
@@ -7924,8 +7924,11 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
              * hot edge it starts a pixel in, so two buttons side by side
              * share the boundary rather than doubling it. */
             if (checked && !held)
-                ween_classic_check_dither(&top->surface, bx + 3, by + 2,
-                                          b->w - 4, h - 4);
+                /* the origin is the rect the *edge* occupies, which on a
+                 * flat bar starts a pixel in so that two buttons side by
+                 * side share the boundary rather than doubling it */
+                ween_classic_check_dither_at(&top->surface, bx + 3, by + 2,
+                                             b->w - 4, h - 4, bx + 1, by);
             /* A pixel wider than the hot edge: this one closes on the far
              * side of the boundary it shares with the next button, where the
              * hot edge stops short of it. Both are measured. */

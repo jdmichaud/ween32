@@ -132,6 +132,8 @@ void ween_classic_check_flat(ween_surface *s, int x, int y, int on);
 /* Scroll-bar parts: the dithered track, and one arrow button (dir: 0 up,
  * 1 down, 2 left, 3 right). */
 void ween_classic_check_dither(ween_surface *s, int x, int y, int w, int h);
+void ween_classic_check_dither_at(ween_surface *s, int x, int y, int w, int h,
+                                  int ox, int oy);
 void ween_classic_scroll_track(ween_surface *s, int x, int y, int w, int h);
 void ween_classic_sizegrip(ween_surface *s, int x1, int y1);
 void ween_classic_sizegrip_size(ween_surface *s, int x1, int y1, int size,
