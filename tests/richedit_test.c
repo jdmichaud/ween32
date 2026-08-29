@@ -2399,6 +2399,52 @@ int main(void)
         DestroyWindow(host4);
     }
 
+    /* ---- arming a format closes the typed run before it ----------------
+     *
+     * **Measured, and the machine is the only reason this is here.** Sam's
+     * undoprobe: bold with *nothing selected*, then type -- the arming takes,
+     * it pushes no undo step, and one undo takes back the typing and leaves
+     * the text that was there before.
+     *
+     *     machine   type abc, arm bold, type XY, undo   -> "abc"
+     *     ours      the same, before this                -> ""
+     *
+     * The arming recorded nothing, correctly, and also failed to *close* the
+     * run typed before it -- so the X joined the step that began at "a" and
+     * one undo swallowed the lot. **Second missing boundary of the same
+     * kind**, after WM_SETTEXT. */
+    {
+        HWND host5 = CreateWindowExA(0, "weenrich", "h5", WS_POPUP | WS_VISIBLE,
+                                     0, 0, 300, 200, NULL, NULL, NULL, NULL);
+        HWND t = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 280, 100, host5, NULL, NULL, NULL);
+        CHARFORMATA cf;
+        char buf[64];
+        int i;
+        SetFocus(t);
+        for (i = 0; i < 3; i++)
+            SendMessageA(t, WM_CHAR, (WPARAM)('a' + i), 1);
+        /* Nothing selected, so this arms rather than applies -- and nothing
+         * may look at the selection in between, which is what discards an
+         * armed format on the machine. */
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(t, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        SendMessageA(t, WM_CHAR, 'X', 1);
+        SendMessageA(t, WM_CHAR, 'Y', 1);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, "abcXY"), "an armed format lets the typing through");
+        SendMessageA(t, EM_UNDO, 0, 0);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, "abc"),
+              "and one undo takes back only what was typed after the arming, "
+              "because arming closes the run before it");
+        DestroyWindow(host5);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

@@ -3138,6 +3138,22 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 e->insert_armed = 1;
             }
             rfmt_apply(&e->insert, cf);
+            /* **And it closes an open typed run, though it records
+             * nothing.** Arming pushes no undo step -- measured, Sam's
+             * `undoprobe.txt`: bold with nothing selected, then type, and one
+             * undo takes back the typing and leaves the text. But leaving the
+             * run *open* means the character typed next joins the step before
+             * the arming, so that one undo took back everything typed since:
+             *
+             *     machine   type abc, arm bold, type XY, undo  -> "abc"
+             *     ours      the same                           -> ""
+             *
+             * **This is the second boundary the coalescing was missing**, the
+             * first being WM_SETTEXT. A rule that groups has to say what
+             * ungroups, and the answer keeps being "anything the user did on
+             * purpose", whether or not it left a record. */
+            if (e->undos > 0)
+                e->undo[e->undos - 1].typing = 0;
             /* **And the line the caret is on may have just changed height.**
              * The text does not change, so this branch used to return here --
              * but an empty line takes its height from what would be typed on
