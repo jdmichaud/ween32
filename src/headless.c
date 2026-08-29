@@ -8,20 +8,44 @@
 
 #include "ween_internal.h"
 
-#define MAX_INJECT 256
-
-static ween_event g_events[MAX_INJECT];
-static int g_ev_head = 0, g_ev_tail = 0;
+/* The injected event queue. **It was a fixed ring of 256 that dropped
+ * silently once it filled**, and `inject_script` pushes an entire script
+ * before the message loop runs — so any script asking for more than 255
+ * events got 255 of them, with no error, no warning and a zero exit status.
+ *
+ * What that cost: **no instrument in either repository could put more than
+ * three lines of text into an editor.** jd reported that WordPad stops
+ * accepting text and that no scrollbar appears; the second half is real, and
+ * the first was partly this — a harness quietly delivering a quarter of what
+ * it was asked. Measured before it was changed, by typing the same words at
+ * six lengths and reading how far down the ink reached:
+ *
+ *      chars    63  127  255  511  1023  2047
+ *      rows     16   29   42   42    42    42
+ *
+ * It grows instead. A dropped event is not a thing this can afford to be
+ * quiet about: **every check written on top of the harness inherits its
+ * silence**, and a script that types less than it says will fail or pass for
+ * a reason nobody can see from the result. */
+static ween_event *g_events;
+static int g_ev_cap, g_ev_head, g_ev_tail;
 static char g_bmp_path[256];
 static ween_surface g_last; /* shallow copy of the last presented surface */
 
 void ween_headless_inject(ween_event ev)
 {
-    int next = (g_ev_tail + 1) % MAX_INJECT;
-    if (next == g_ev_head)
-        return;
-    g_events[g_ev_tail] = ev;
-    g_ev_tail = next;
+    if (g_ev_tail == g_ev_cap) {
+        int cap = g_ev_cap ? g_ev_cap * 2 : 256;
+        ween_event *grown = realloc(g_events, (size_t)cap * sizeof(*grown));
+        if (!grown) {
+            /* Loud, and fatal. The alternative is the bug this replaced. */
+            fprintf(stderr, "ween32: cannot hold %d injected events\n", cap);
+            abort();
+        }
+        g_events = grown;
+        g_ev_cap = cap;
+    }
+    g_events[g_ev_tail++] = ev;
 }
 
 void ween_headless_set_bmp_path(const char *path)
@@ -373,8 +397,12 @@ static ween_event hl_next_event(void *win, int timeout_ms)
         ev.kind = WEEN_EV_END; /* script exhausted: end the message loop */
         return ev;
     }
-    ev = g_events[g_ev_head];
-    g_ev_head = (g_ev_head + 1) % MAX_INJECT;
+    ev = g_events[g_ev_head++];
+    /* Drained: start again at the front rather than walk off the end. Tests
+     * inject and consume in turn, so this is the common case, not the rare
+     * one. */
+    if (g_ev_head == g_ev_tail)
+        g_ev_head = g_ev_tail = 0;
     /* Injected pointer coordinates are window coordinates, as a real one's
      * are, and come back through the same mapping — through the letterbox of
      * the window the event names, which is not always the one the pump
