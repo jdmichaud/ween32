@@ -563,16 +563,36 @@ What is left there is **32 pixels in the two disabled option buttons'
 insides**, where the machine leaves the circle unfilled and draws its
 highlight and ours does not.
 
-```sh
-# View > Choose Columns — the 330x313 frame is the dialog. Opened by key, so
-# the mnemonics are underlined, which is how the capture has them.
-WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/cc%d.bmp \
-  WEEN32_SCRIPT="w:300 k:18 w:200 t:vc w:800" ./examples/explorer /tmp/many
+View > Choose Columns. Opened by key, so the mnemonics are underlined, which
+is how the capture has them. `pickshot.py` takes the frame whose size is the
+reference's own, so neither of these has to name an index:
 
-# Tools > Folder Options — the 384x469 frame is the sheet; the tabs are at
-# y 42, at x 30 / 75 / 135 / 205
-WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/fo%d.bmp \
-  WEEN32_SCRIPT="w:300 k:18 w:200 t:to w:900" ./examples/explorer /tmp/many
+```console
+$ WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/cc%d.bmp \
+  WEEN32_SCRIPT="w:300 k:18 w:200 t:vc w:800" ./examples/explorer /tmp/many \
+    >/dev/null 2>&1; \
+  tools/refcapture/pickshot.py '/tmp/cc*.bmp' \
+    tools/refcapture/columns-machine.png /tmp/cc.png && \
+  PXDIFF_REF=tools/refcapture/columns-machine.png PXDIFF_OUR=/tmp/cc.png \
+  tools/refcapture/pxdiff.py | head -2
+reference (330, 313)   ween32 (330, 313)
+differing pixels: 1106 of 103290 (1.1%)
+```
+
+Tools > Folder Options; its tabs are at y 42, at x 30 / 75 / 135 / 205. **The
+sheet is 386x468** — this said 384x469 until 2026-08-29, wrong in both
+directions, and nothing noticed because no recipe here diffed anything:
+
+```console
+$ WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/fo%d.bmp \
+  WEEN32_SCRIPT="w:300 k:18 w:200 t:to w:900" ./examples/explorer /tmp/many \
+    >/dev/null 2>&1; \
+  tools/refcapture/pickshot.py '/tmp/fo*.bmp' \
+    tools/refcapture/folderopts-machine.png /tmp/fo.png && \
+  PXDIFF_REF=tools/refcapture/folderopts-machine.png PXDIFF_OUR=/tmp/fo.png \
+  tools/refcapture/pxdiff.py | head -2
+reference (386, 468)   ween32 (386, 468)
+differing pixels: 656 of 180648 (0.4%)
 ```
 
 Both are driven from the keyboard in a script: the menus by their mnemonics,
@@ -754,6 +774,18 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
   WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:300 k:113 w:600" \
   ./examples/explorer
 ```
+
+**This one stays prose and cannot become a `console` block**, and the reason
+is worth knowing before somebody tries: **there is nothing to diff it
+against.** The rename box has no reference capture, and it is not a window of
+its own either — the run leaves eleven frames and every one of them is the
+explorer's own 654x544, so `pickshot.py` has nothing to pick. The list above
+is a set of *relations* measured against the machine by hand — two pixels
+left, twelve wider, as tall as the row — and **relations of that kind cannot
+be checked from this repository at all**: "ours is the same to the pixel" is
+a claim about a comparison somebody made once, on a machine, and nothing here
+can re-make it. It wants a capture, and until it has one it is the one thing
+in this section that is believed rather than checked.
 
 A 100x26 strip around the box, ours against the machine's, differs by
 **113 pixels of 2600** — every one of them in the seven columns of the file's

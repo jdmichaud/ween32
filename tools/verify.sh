@@ -112,17 +112,13 @@ count "wine menu" "$R/menu-reference.png" "$tmp/m.png" 4162
 # The explorer's dialogs, each driven from the keyboard by the script that
 # opens it. The shot wanted is the last one of the reference's own size --
 # every one of these leaves several behind.
+# The frame a run meant, out of the several it left behind. This was ten lines
+# of python inside this function, which meant every recipe in docs/testing.md
+# either duplicated it or could not be run -- and one of them could not be run
+# and nobody noticed for as long as it had existed. It is a script now and the
+# recipes call the same one this does.
 shot() { # glob reference out
-    python3 - "$1" "$2" "$3" <<'PY'
-import glob, re, sys
-from PIL import Image
-want = Image.open(sys.argv[2]).size
-fs = sorted(glob.glob(sys.argv[1]),
-            key=lambda s: int(re.search(r'(\d+)\.bmp$', s).group(1)))
-d = [f for f in fs if Image.open(f).size == want]
-if d:
-    Image.open(d[-1]).convert('RGB').save(sys.argv[3])
-PY
+    "$R/pickshot.py" "$1" "$2" "$3" >/dev/null 2>&1
 }
 
 explorer() { # name reference expected script [env...]
