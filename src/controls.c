@@ -155,13 +155,12 @@ void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
  * children, so it needs the same hit-testing the class does. `at` is the
  * offset along the bar; the result is the new position. */
 
-typedef struct {
-    int pos, min, max, page;
-    int line; /* what an arrow click scrolls by */
-} ween_sbstate;
+/* ween_sbstate, and the four functions that act on one, are in
+ * ween_internal.h: the rich edit is a control in a file of its own and
+ * hit-tests its bar the same way. */
 
 /* The last position that still shows a full page — win32's nMax - nPage + 1. */
-static int sb_maxpos(const ween_sbstate *st)
+int ween_sb_maxpos(const ween_sbstate *st)
 {
     int m = st->page > 0 ? st->max - st->page + 1 : st->max;
     return m < st->min ? st->min : m;
@@ -170,7 +169,7 @@ static int sb_maxpos(const ween_sbstate *st)
 static void sb_thumb(int len, const ween_sbstate *st, int *tpos, int *tsize)
 {
     int sz = ween_scroll_metric();
-    int track = len - 2 * sz, span = sb_maxpos(st) - st->min;
+    int track = len - 2 * sz, span = ween_sb_maxpos(st) - st->min;
     *tsize = sz;
     if (st->page > 0 && st->max > st->min) {
         *tsize = MulDiv(st->page, track, st->max - st->min + 1);
@@ -188,7 +187,7 @@ static void sb_thumb(int len, const ween_sbstate *st, int *tpos, int *tsize)
 #define WEEN_SCROLL_REPEAT_DELAY 50
 #define WEEN_SB_TIMER WEEN_SB_TIMER_ID /* shared with the window's own bars */
 
-static int sb_click(int at, int len, const ween_sbstate *st, int *grab)
+int ween_sb_click(int at, int len, const ween_sbstate *st, int *grab)
 {
     int sz = ween_scroll_metric(), tpos, tsize;
     int page = st->page > 0 ? st->page : 1;
@@ -208,19 +207,19 @@ static int sb_click(int at, int len, const ween_sbstate *st, int *grab)
 }
 
 /* Where a drag has moved the thumb to. */
-static int sb_drag(int at, int len, const ween_sbstate *st, int grab)
+int ween_sb_drag(int at, int len, const ween_sbstate *st, int grab)
 {
     int sz = ween_scroll_metric(), tpos, tsize, track;
     sb_thumb(len, st, &tpos, &tsize);
     track = len - 2 * sz - tsize;
     if (track <= 0)
         return st->pos;
-    return st->min + MulDiv(at - grab - sz, sb_maxpos(st) - st->min, track);
+    return st->min + MulDiv(at - grab - sz, ween_sb_maxpos(st) - st->min, track);
 }
 
-static int sb_clamp(int pos, const ween_sbstate *st)
+int ween_sb_clamp(int pos, const ween_sbstate *st)
 {
-    int max = sb_maxpos(st);
+    int max = ween_sb_maxpos(st);
     if (pos < st->min)
         pos = st->min;
     if (pos > max)
@@ -295,7 +294,7 @@ void ween_wnd_sb_paint(struct ween_wnd *w)
         st = wnd_sbstate(w, vert);
         ween_draw_scrollbar(&top->surface, ox + r.left, oy + r.top,
                             r.right - r.left, r.bottom - r.top, vert,
-                            !w->sb[vert].disabled && sb_maxpos(&st) > st.min,
+                            !w->sb[vert].disabled && ween_sb_maxpos(&st) > st.min,
                             st.pos, st.page, st.min, st.max);
     }
     if (ween_wnd_sb_shown(w, 0) && ween_wnd_sb_shown(w, 1)) {
@@ -336,7 +335,7 @@ static void wnd_sb_notify(struct ween_wnd *w, int vert, int code)
 static void wnd_sb_set(struct ween_wnd *w, int vert, int pos, int code)
 {
     ween_sbstate st = wnd_sbstate(w, vert);
-    pos = sb_clamp(pos, &st);
+    pos = ween_sb_clamp(pos, &st);
     if (pos != w->sb[vert].pos) {
         w->sb[vert].pos = pos;
         InvalidateRect(w, NULL, FALSE);
@@ -382,7 +381,7 @@ int ween_wnd_sb_mouse(struct ween_wnd *w, UINT msg, int x, int y)
 
     switch (msg) {
     case WM_LBUTTONDOWN: {
-        int grab, pos = sb_click(at, len, &st, &grab), code;
+        int grab, pos = ween_sb_click(at, len, &st, &grab), code;
         g_sb_track = w;
         g_sb_track_vert = vert;
         SetCapture(w);
@@ -403,7 +402,7 @@ int ween_wnd_sb_mouse(struct ween_wnd *w, UINT msg, int x, int y)
     }
     case WM_MOUSEMOVE:
         if (w->sb[vert].grab >= 0)
-            wnd_sb_set(w, vert, sb_drag(at, len, &st, w->sb[vert].grab),
+            wnd_sb_set(w, vert, ween_sb_drag(at, len, &st, w->sb[vert].grab),
                        SB_THUMBTRACK);
         return 1;
     case WM_LBUTTONUP:
@@ -481,7 +480,7 @@ int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw)
         if (info->fMask & SIF_POS)
             wnd->scroll_pos = info->nPos;
         st = scroll_state(wnd);
-        wnd->scroll_pos = sb_clamp(wnd->scroll_pos, &st);
+        wnd->scroll_pos = ween_sb_clamp(wnd->scroll_pos, &st);
         if (redraw)
             InvalidateRect(wnd, NULL, FALSE);
         return wnd->scroll_pos;
@@ -496,7 +495,7 @@ int SetScrollInfo(HWND wnd, int bar, const SCROLLINFO *info, BOOL redraw)
         wnd->sb[i].pos = info->nPos;
     {
         ween_sbstate st = wnd_sbstate(wnd, i);
-        wnd->sb[i].pos = sb_clamp(wnd->sb[i].pos, &st);
+        wnd->sb[i].pos = ween_sb_clamp(wnd->sb[i].pos, &st);
     }
     if (redraw)
         InvalidateRect(wnd, NULL, FALSE);
@@ -645,7 +644,7 @@ static void scroll_repeat(HWND wnd, const ween_sbstate *st)
     else
         pos += step;
     scroll_set(wnd, pos, wnd->sb_repeat);
-    if (wnd->scroll_pos == sb_clamp(pos, st) && pos != wnd->scroll_pos) {
+    if (wnd->scroll_pos == ween_sb_clamp(pos, st) && pos != wnd->scroll_pos) {
         KillTimer(wnd, WEEN_SB_TIMER);
         wnd->sb_repeat = 0;
     }
@@ -654,7 +653,7 @@ static void scroll_repeat(HWND wnd, const ween_sbstate *st)
 static void scroll_set(HWND wnd, int pos, int code)
 {
     ween_sbstate st = scroll_state(wnd);
-    pos = sb_clamp(pos, &st);
+    pos = ween_sb_clamp(pos, &st);
     if (pos != wnd->scroll_pos) {
         wnd->scroll_pos = pos;
         InvalidateRect(wnd, NULL, FALSE);
@@ -716,7 +715,7 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONDOWN: {
         int grab, pos, code;
         SetFocus(wnd);
-        pos = sb_click(at, len, &st, &grab);
+        pos = ween_sb_click(at, len, &st, &grab);
         if (grab >= 0) {
             SetCapture(wnd);
             wnd->drag_offset = grab;
@@ -742,7 +741,7 @@ static LRESULT scrollbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_MOUSEMOVE:
         if (GetCapture() == wnd && !wnd->sb_repeat)
-            scroll_set(wnd, sb_drag(at, len, &st, wnd->drag_offset),
+            scroll_set(wnd, ween_sb_drag(at, len, &st, wnd->drag_offset),
                        SB_THUMBTRACK);
         return 0;
     case WM_LBUTTONUP:
@@ -817,10 +816,8 @@ typedef struct {
     int sb_grab; /* where in the scroll bar's thumb a drag took hold, or -1 */
 } ween_edit;
 
-/* Win2000's default caret blink rate, the one Control Panel's slider sits at
- * in the middle of; win32 apps read it with GetCaretBlinkTime. */
-#define WEEN_CARET_BLINK_MS 530
-#define WEEN_CARET_TIMER 0x57454549 /* an id an app is unlikely to also pick */
+/* The blink is in ween_internal.h: both text controls run the same timer at
+ * the same rate. */
 
 /* The field owns the text it is keeping for an undo, so it cannot be freed
  * with a plain free() the way a struct owning nothing else is. */
@@ -858,7 +855,7 @@ static ween_edit *edit_state(HWND w)
 
 /* Where the nth line starts, in characters from the beginning. A line past
  * the end answers with the end. */
-static int edit_line_start(const char *text, int line)
+int ween_text_line_start(const char *text, int line)
 {
     int at = 0;
     while (line > 0 && text[at]) {
@@ -872,7 +869,7 @@ static int edit_line_start(const char *text, int line)
 }
 
 /* Which line an offset falls on. */
-static int edit_line_from_char(const char *text, int at)
+int ween_text_line_from_char(const char *text, int at)
 {
     int line = 0;
     for (int i = 0; i < at && text[i]; i++)
@@ -883,7 +880,7 @@ static int edit_line_from_char(const char *text, int at)
 
 /* How many lines there are: one more than the breaks, and never none -- an
  * empty field has one line, which is what EM_GETLINECOUNT answers. */
-static int edit_line_count(const char *text)
+int ween_text_line_count(const char *text)
 {
     int n = 1;
     for (const char *p = text; *p; p++)
@@ -893,7 +890,7 @@ static int edit_line_count(const char *text)
 }
 
 /* The length of the line starting at `start`, not counting its break. */
-static int edit_line_length(const char *text, int start)
+int ween_text_line_length(const char *text, int start)
 {
     const char *nl = strchr(text + start, '\n');
     int end = nl ? (int)(nl - text) : (int)strlen(text);
@@ -1011,10 +1008,10 @@ static int edit_index_at_point(HWND wnd, int x, int y)
     if (line < 0)
         line = 0;
     line += e ? e->first_visible : 0;
-    if (line >= edit_line_count(wnd->text))
-        line = edit_line_count(wnd->text) - 1;
-    start = edit_line_start(wnd->text, line);
-    n = edit_line_length(wnd->text, start);
+    if (line >= ween_text_line_count(wnd->text))
+        line = ween_text_line_count(wnd->text) - 1;
+    start = ween_text_line_start(wnd->text, line);
+    n = ween_text_line_length(wnd->text, start);
     best = 0;
     bestd = 1 << 30;
     for (int i = 0; i <= n; i++) {
@@ -1046,7 +1043,7 @@ static ween_sbstate edit_sbstate(HWND wnd)
     ween_sbstate st;
     st.pos = e ? e->first_visible : 0;
     st.min = 0;
-    st.max = edit_line_count(wnd->text) - 1;
+    st.max = ween_text_line_count(wnd->text) - 1;
     st.page = edit_visible_lines(wnd);
     st.line = 1;
     return st;
@@ -1113,7 +1110,7 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         /* A scrolled field starts at its top visible line, and stops at the
          * bottom of itself rather than drawing on past it. */
         if (multi && e && e->first_visible > 0)
-            p = wnd->text + edit_line_start(wnd->text, e->first_visible);
+            p = wnd->text + ween_text_line_start(wnd->text, e->first_visible);
         while (*p) {
             if (multi && ty + line > cr.bottom - inset)
                 break;
@@ -1160,8 +1157,8 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (f && ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
         ween_edit *e = edit_state(wnd);
         if (e && e->caret_on) {
-            int row = multi ? edit_line_from_char(wnd->text, e->caret) : 0;
-            int start = multi ? edit_line_start(wnd->text, row) : 0;
+            int row = multi ? ween_text_line_from_char(wnd->text, e->caret) : 0;
+            int start = multi ? ween_text_line_start(wnd->text, row) : 0;
             int cx = tx + ween_strike_pen(f, wnd->text + start,
                                           e->caret - start);
             int cy = inset + (row - (multi && e ? e->first_visible : 0)) * line;
@@ -1180,7 +1177,7 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (sb) {
         ween_sbstate st = edit_sbstate(wnd);
         ween_draw_scrollbar(&top->surface, ox + r.right - sb, oy, sb,
-                            r.bottom - r.top, 1, sb_maxpos(&st) > st.min,
+                            r.bottom - r.top, 1, ween_sb_maxpos(&st) > st.min,
                             st.pos, st.page, st.min, st.max);
     }
 }
@@ -1295,7 +1292,7 @@ static int edit_scroll_into_view(HWND wnd, ween_edit *e)
     if (!e || !(wnd->style & ES_MULTILINE))
         return 0;
     rows = edit_visible_lines(wnd);
-    row = edit_line_from_char(wnd->text, e->caret);
+    row = ween_text_line_from_char(wnd->text, e->caret);
     top = e->first_visible;
     if (row < top)
         top = row;
@@ -1372,16 +1369,16 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case EM_GETLINECOUNT:
-        return edit_line_count(wnd->text);
+        return ween_text_line_count(wnd->text);
     case EM_LINEINDEX:
         /* -1 means the line the caret is on, which is what a program asking
          * "where am I" passes. */
-        return edit_line_start(wnd->text,
+        return ween_text_line_start(wnd->text,
                                (int)wp < 0 && e
-                                   ? edit_line_from_char(wnd->text, e->caret)
+                                   ? ween_text_line_from_char(wnd->text, e->caret)
                                    : (int)wp);
     case EM_LINEFROMCHAR:
-        return edit_line_from_char(wnd->text,
+        return ween_text_line_from_char(wnd->text,
                                    (int)wp < 0 && e ? e->caret : (int)wp);
     case EM_LINELENGTH: {
         /* The argument is a character offset, not a line: the length wanted
@@ -1392,9 +1389,9 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int at = (int)wp;
         if (at < 0)
             at = e ? e->caret : 0;
-        return edit_line_length(wnd->text,
-                                edit_line_start(wnd->text,
-                                                edit_line_from_char(wnd->text,
+        return ween_text_line_length(wnd->text,
+                                ween_text_line_start(wnd->text,
+                                                ween_text_line_from_char(wnd->text,
                                                                     at)));
     }
     case EM_GETLINE: {
@@ -1407,8 +1404,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!out)
             return 0;
         room = (int)*(WORD *)out;
-        start = edit_line_start(wnd->text, (int)wp);
-        n = edit_line_length(wnd->text, start);
+        start = ween_text_line_start(wnd->text, (int)wp);
+        n = ween_text_line_length(wnd->text, start);
         if (n > room)
             n = room;
         memcpy(out, wnd->text + start, (size_t)n);
@@ -1468,7 +1465,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!e || !(wnd->style & ES_MULTILINE))
             return FALSE;
         top = e->first_visible + (int)lp;
-        last = edit_line_count(wnd->text) - 1;
+        last = ween_text_line_count(wnd->text) - 1;
         if (top > last)
             top = last;
         if (top < 0)
@@ -1512,7 +1509,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int grab, pos;
             GetClientRect(wnd, &cr);
             SetFocus(wnd);
-            pos = sb_click(GET_Y_LPARAM(lp), cr.bottom - cr.top, &st, &grab);
+            pos = ween_sb_click(GET_Y_LPARAM(lp), cr.bottom - cr.top, &st, &grab);
             /* A click in the track is a screenful less one line, not a whole
              * screenful: the line that was at the bottom is at the top
              * afterwards, so the eye keeps its place. Measured on the
@@ -1530,7 +1527,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 SetCapture(wnd);
                 e->sb_grab = grab;
             }
-            e->first_visible = sb_clamp(pos, &st);
+            e->first_visible = ween_sb_clamp(pos, &st);
             /* The parent hears that the user worked the bar, which is what
              * EN_VSCROLL is for; the wheel and the caret are not it. */
             if (wnd->parent)
@@ -1563,7 +1560,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             RECT cr;
             ween_sbstate st = edit_sbstate(wnd);
             GetClientRect(wnd, &cr);
-            int top = sb_clamp(sb_drag(GET_Y_LPARAM(lp), cr.bottom - cr.top,
+            int top = ween_sb_clamp(ween_sb_drag(GET_Y_LPARAM(lp), cr.bottom - cr.top,
                                        &st, e->sb_grab),
                                &st);
             if (top != e->first_visible) {
@@ -1594,7 +1591,7 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (e && (wnd->style & ES_MULTILINE)) {
             ween_sbstate st = edit_sbstate(wnd);
             int delta = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
-            int top = sb_clamp(e->first_visible - delta * 3, &st);
+            int top = ween_sb_clamp(e->first_visible - delta * 3, &st);
             if (top != e->first_visible) {
                 e->first_visible = top;
                 InvalidateRect(wnd, NULL, FALSE);
@@ -1793,13 +1790,13 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int row, want, to, start, n;
             if (!multi)
                 return DefWindowProcA(wnd, msg, wp, lp);
-            row = edit_line_from_char(wnd->text, e->caret);
-            want = e->caret - edit_line_start(wnd->text, row);
+            row = ween_text_line_from_char(wnd->text, e->caret);
+            want = e->caret - ween_text_line_start(wnd->text, row);
             to = wp == VK_UP ? row - 1 : row + 1;
-            if (to < 0 || to >= edit_line_count(wnd->text))
+            if (to < 0 || to >= ween_text_line_count(wnd->text))
                 break;
-            start = edit_line_start(wnd->text, to);
-            n = edit_line_length(wnd->text, start);
+            start = ween_text_line_start(wnd->text, to);
+            n = ween_text_line_length(wnd->text, start);
             e->caret = start + (want > n ? n : want);
             break;
         }
@@ -1808,16 +1805,16 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
              * which is what a field of many lines does and a single-line one
              * cannot tell apart */
             e->caret = multi && !ctrl
-                           ? edit_line_start(wnd->text,
-                                             edit_line_from_char(wnd->text,
+                           ? ween_text_line_start(wnd->text,
+                                             ween_text_line_from_char(wnd->text,
                                                                  e->caret))
                            : 0;
             break;
         case VK_END:
             if (multi && !ctrl) {
-                int start = edit_line_start(
-                    wnd->text, edit_line_from_char(wnd->text, e->caret));
-                e->caret = start + edit_line_length(wnd->text, start);
+                int start = ween_text_line_start(
+                    wnd->text, ween_text_line_from_char(wnd->text, e->caret));
+                e->caret = start + ween_text_line_length(wnd->text, start);
             } else {
                 e->caret = len;
             }
@@ -2172,12 +2169,12 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int visible = cr.bottom / (ih ? ih : 1);
             int bar = lb_bar_h(wnd, cr.bottom);
             ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
-            int grab, pos = sb_click(GET_Y_LPARAM(lp), bar, &st, &grab);
+            int grab, pos = ween_sb_click(GET_Y_LPARAM(lp), bar, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
                 wnd->drag_offset = grab;
             }
-            it->top = sb_clamp(pos, &st);
+            it->top = ween_sb_clamp(pos, &st);
             InvalidateRect(wnd, NULL, FALSE);
             return 0;
         }
@@ -2201,7 +2198,7 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (it) {
             int visible = cr.bottom / (ih ? ih : 1);
             ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
-            it->top = sb_clamp(it->top - delta * 3, &st);
+            it->top = ween_sb_clamp(it->top - delta * 3, &st);
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
@@ -2215,7 +2212,7 @@ static LRESULT listbox_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (it) {
                 int visible = cr.bottom / (ih ? ih : 1);
                 ween_sbstate st = { it->top, 0, it->count - 1, visible, 1 };
-                it->top = sb_clamp(sb_drag(GET_Y_LPARAM(lp),
+                it->top = ween_sb_clamp(ween_sb_drag(GET_Y_LPARAM(lp),
                                            lb_bar_h(wnd, cr.bottom), &st,
                                            wnd->drag_offset),
                                    &st);
@@ -3067,8 +3064,8 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 {
                     ween_sbstate st = { it->top, 0, it->count - 1, rows, 1 };
                     int grab;
-                    int pos = sb_click(sy, combo_bar_h(wnd), &st, &grab);
-                    it->top = sb_clamp(pos, &st);
+                    int pos = ween_sb_click(sy, combo_bar_h(wnd), &st, &grab);
+                    it->top = ween_sb_clamp(pos, &st);
                     combo_damage(wnd);
                     SetCapture(wnd);
                 }
@@ -4079,19 +4076,19 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             hbar = t->content_w > view_w;
             if (hbar && GET_Y_LPARAM(lp) >= cr.bottom - sb) {
                 ween_sbstate st = { t->scroll_x, 0, t->content_w - 1, view_w, 8 };
-                pos = sb_click(GET_X_LPARAM(lp), view_w, &st, &grab);
+                pos = ween_sb_click(GET_X_LPARAM(lp), view_w, &st, &grab);
                 if (grab >= 0) {
                     SetCapture(wnd);
                     wnd->drag_offset = grab;
                     wnd->drag_vertical = 0;
                 }
-                t->scroll_x = sb_clamp(pos, &st);
+                t->scroll_x = ween_sb_clamp(pos, &st);
                 InvalidateRect(wnd, NULL, FALSE);
                 return 0;
             }
             if (vbar && GET_X_LPARAM(lp) >= cr.right - sb) {
                 ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
-                pos = sb_click(GET_Y_LPARAM(lp), view_h, &st, &grab);
+                pos = ween_sb_click(GET_Y_LPARAM(lp), view_h, &st, &grab);
                 /* A tree pages by a screenful *less one row*: the row that
                  * was last whole is the row at the top afterwards. Measured
                  * on the machine's explorer -- client 208..490, rows sixteen
@@ -4116,7 +4113,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     wnd->drag_offset = grab;
                     wnd->drag_vertical = 1;
                 }
-                t->scroll_row = sb_clamp(pos, &st);
+                t->scroll_row = ween_sb_clamp(pos, &st);
                 InvalidateRect(wnd, NULL, FALSE);
                 return 0;
             }
@@ -4155,7 +4152,7 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int view_h = cr.bottom - (t->content_w > cr.right ? sb2 : 0);
             int visible = view_h / WEEN_TV_ITEM_H;
             ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
-            t->scroll_row = sb_clamp(t->scroll_row - delta * lines, &st);
+            t->scroll_row = ween_sb_clamp(t->scroll_row - delta * lines, &st);
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
@@ -4170,15 +4167,15 @@ static LRESULT treeview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 int view_h = cr.bottom - (t->content_w > cr.right ? sb2 : 0);
                 int visible = view_h / WEEN_TV_ITEM_H;
                 ween_sbstate st = { t->scroll_row, 0, t->rows - 1, visible, 1 };
-                t->scroll_row = sb_clamp(
-                    sb_drag(GET_Y_LPARAM(lp), view_h, &st, wnd->drag_offset), &st);
+                t->scroll_row = ween_sb_clamp(
+                    ween_sb_drag(GET_Y_LPARAM(lp), view_h, &st, wnd->drag_offset), &st);
                 InvalidateRect(wnd, NULL, FALSE);
             } else if (t) {
                 int view_w = cr.right -
                              (t->rows * WEEN_TV_ITEM_H > cr.bottom ? sb2 : 0);
                 ween_sbstate st = { t->scroll_x, 0, t->content_w - 1, view_w, 8 };
-                t->scroll_x = sb_clamp(
-                    sb_drag(GET_X_LPARAM(lp), view_w, &st, wnd->drag_offset), &st);
+                t->scroll_x = ween_sb_clamp(
+                    ween_sb_drag(GET_X_LPARAM(lp), view_w, &st, wnd->drag_offset), &st);
                 InvalidateRect(wnd, NULL, FALSE);
             }
             return 0;
@@ -5905,7 +5902,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g.vbar && mx >= g.view_w) {
             int grab;
             ween_sbstate st = lv_sbstate(wnd, l);
-            int pos = sb_click(my, g.view_h, &st, &grab);
+            int pos = ween_sb_click(my, g.view_h, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
                 wnd->drag_offset = grab;
@@ -5919,13 +5916,13 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int grab;
             ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1, g.view_w,
                                 lv_item_h(wnd, l) };
-            int pos = sb_click(mx, g.view_w, &st, &grab);
+            int pos = ween_sb_click(mx, g.view_w, &st, &grab);
             if (grab >= 0) {
                 SetCapture(wnd);
                 wnd->drag_offset = grab;
                 wnd->drag_vertical = 0;
             }
-            l->scroll_x = sb_clamp(pos, &st);
+            l->scroll_x = ween_sb_clamp(pos, &st);
             InvalidateRect(wnd, NULL, FALSE);
             return 0;
         }
@@ -6233,14 +6230,14 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             ween_lv_layout g = lv_layout(wnd, l);
             if (wnd->drag_vertical) {
                 ween_sbstate st = lv_sbstate(wnd, l);
-                lv_scroll_to(wnd, l, sb_drag(GET_Y_LPARAM(lp), g.view_h, &st,
+                lv_scroll_to(wnd, l, ween_sb_drag(GET_Y_LPARAM(lp), g.view_h, &st,
                                              wnd->drag_offset));
             } else if (g.hbar) {
                 ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1,
                                     g.view_w, lv_item_h(wnd, l) };
-                int pos = sb_drag(GET_X_LPARAM(lp), g.view_w, &st,
+                int pos = ween_sb_drag(GET_X_LPARAM(lp), g.view_w, &st,
                                   wnd->drag_offset);
-                pos = sb_clamp(pos, &st);
+                pos = ween_sb_clamp(pos, &st);
                 if (pos != l->scroll_x) {
                     l->scroll_x = pos;
                     InvalidateRect(wnd, NULL, FALSE);
@@ -7534,6 +7531,13 @@ void ween_register_controls(void)
     wc.lpszClassName = REBARCLASSNAMEA;
     RegisterClassA(&wc);
 
+    /* The rich edit, which is its own file: a second text control rather
+     * than a widened EDIT. On Windows its class comes from riched20.dll and
+     * a program loads that before it makes one; here there are no DLLs, so
+     * the class is registered with the rest and the LoadLibrary the program
+     * still writes finds nothing to do. */
+    ween_register_richedit();
+
     /* The controls that draw their own bars inside their client area. A
      * window's non-client bars must stay off them, or an edit with
      * WS_VSCROLL would come out with two. */
@@ -7543,6 +7547,8 @@ void ween_register_controls(void)
     ween_class_owns_scroll(WC_COMBOBOXEXA);
     ween_class_owns_scroll(WC_TREEVIEWA);
     ween_class_owns_scroll(WC_LISTVIEWA);
+    ween_class_owns_scroll(RICHEDIT_CLASSA);
+    ween_class_owns_scroll(RICHEDIT_CLASS10A);
 }
 
 

@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **546 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **903 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -1006,6 +1006,40 @@ The rounding is confirmed twice over on the way: `MulDiv` rounds a half away
 from zero, and the fields prove it inside these very boxes — Find's at unit
 47 lands on 71 rather than 70, Replace's tick box at unit 5 on 8 rather than
 7.
+
+### The two text controls, held against each other
+
+`tests/richedit_test.c` asks the rich edit the questions `tests/edit_test.c`
+asks the EDIT, in the same words. That is not duplication for its own sake:
+the two controls keep their text in different places on purpose — an EDIT in
+the window's own text, a rich edit in a document of its own that will grow
+runs and paragraphs — and everything above the text is meant to be
+identical. A backspace over a line break taking both characters, Home being
+the line's start and Control-Home the document's, Down stopping at the end
+of a shorter line, the anchor that Shift extends from and a plain arrow
+drops: each is written twice because only a test can keep two
+implementations agreeing.
+
+Three things it checks that the EDIT's cannot:
+
+- **The line table against the shared line functions.** The rich edit draws
+  from a table of its own — every line's start, length, top and height, built
+  in one pass — because a line's height stops being one number the moment a
+  run carries a size. `ween_text_line_*` in controls.c is what answers the
+  messages. On a text with both kinds of break, an empty line in the middle
+  and one at the end, walking down it with the arrow has to land on the same
+  line starts the functions give.
+- **The event mask.** A rich edit tells its parent nothing until
+  `EM_SETEVENTMASK`, where an EDIT sends EN_CHANGE whether or not anybody
+  asked. Both halves are checked: silence before, EN_UPDATE and EN_CHANGE
+  after.
+- **Where the two disagree and nobody has measured which is right.** When
+  the line below is too short for the caret's column, Windows is said to
+  remember the column and come back to it; neither control here does. The
+  test asserts that the *two agree with each other* rather than what they
+  agree on, so the day it is measured on the machine — a long line, a short
+  one, a long one, two presses of Down in Notepad — both change together or
+  the test fails. It is on the ROADMAP as its own item.
 
 ### The option button's column, settled by asking Windows
 

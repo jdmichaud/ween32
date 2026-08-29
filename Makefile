@@ -12,7 +12,7 @@ CFLAGS  += -std=c99 -Wall -Wextra -Werror -pedantic -Wundef -Iinclude
 X11     ?= 1
 
 OBJS = src/surface.o src/classic.o src/font.o src/marlett.o src/fonts.o src/propsheet.o \
-       src/file.o src/kernel.o src/shell.o src/shellart.o src/cursorart.o src/gdi.o src/draw.o src/comdlg.o src/printing.o src/menu.o src/imagelist.o src/user.o src/dialog.o src/registry.o src/resource.o src/resource_none.o src/winmain.o src/controls.o src/headless.o src/x11.o
+       src/file.o src/kernel.o src/shell.o src/shellart.o src/cursorart.o src/gdi.o src/draw.o src/comdlg.o src/printing.o src/menu.o src/imagelist.o src/user.o src/richedit.o src/dialog.o src/registry.o src/resource.o src/resource_none.o src/winmain.o src/controls.o src/headless.o src/x11.o
 
 LIBS =
 ifeq ($(X11),1)
@@ -30,7 +30,8 @@ TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
         tests/image_test tests/geometry_test tests/views_test \
         tests/toolbar_test tests/draw_test tests/popup_test \
         tests/propsheet_test tests/comdlg_test tests/resource_test \
-        tests/edit_test tests/registry_test tests/kernel_test
+        tests/edit_test tests/registry_test tests/kernel_test \
+        tests/richedit_test
 
 EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
            examples/explorer
@@ -93,6 +94,9 @@ tests/resource_test: tests/resource_test.c libween32.a
 
 tests/edit_test: tests/edit_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/edit_test.c libween32.a $(LIBS)
+
+tests/richedit_test: tests/richedit_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/richedit_test.c libween32.a $(LIBS)
 
 tests/registry_test: tests/registry_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/registry_test.c libween32.a $(LIBS)

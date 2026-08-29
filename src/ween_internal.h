@@ -570,6 +570,44 @@ int ween_x11_probe_dpi(void);
  * frame. */
 int ween_border_width(const struct ween_wnd *w);
 void ween_paint_border(struct ween_wnd *w);
+/* ---- what a text control and a view share -------------------------------
+ *
+ * A list box, a tree, an edit or a rich edit owns its scroll bars rather
+ * than hosting SCROLLBAR children, so each hit-tests its own with these.
+ * `at` is the offset along the bar and the answer is the new position.
+ *
+ * The line functions are the other half. What a line is -- where it starts,
+ * how long it is, which line an offset is on, with CRLF and a bare LF both
+ * counting as one break -- is the same question for both text controls, and
+ * it is where off-by-ones live, so there is one set of them rather than two
+ * that can drift apart. The rich edit keeps a line table of its own for
+ * drawing, built in one pass instead of a scan from the top per line, and
+ * uses these to answer the messages that ask about a line; its test checks
+ * the two against each other.
+ */
+typedef struct {
+    int pos, min, max, page;
+    int line; /* what an arrow click scrolls by */
+} ween_sbstate;
+int ween_sb_maxpos(const ween_sbstate *st);
+int ween_sb_click(int at, int len, const ween_sbstate *st, int *grab);
+int ween_sb_drag(int at, int len, const ween_sbstate *st, int grab);
+int ween_sb_clamp(int pos, const ween_sbstate *st);
+int ween_text_line_start(const char *text, int line);
+int ween_text_line_from_char(const char *text, int at);
+int ween_text_line_count(const char *text);
+int ween_text_line_length(const char *text, int start);
+
+/* Win2000's default caret blink rate, the one Control Panel's slider sits at
+ * in the middle of; win32 apps read it with GetCaretBlinkTime. Both text
+ * controls blink on the same timer id, which an application is unlikely to
+ * pick for one of its own. */
+#define WEEN_CARET_BLINK_MS 530
+#define WEEN_CARET_TIMER 0x57454549
+
+/* The rich edit's class, registered beside the other controls. */
+void ween_register_richedit(void);
+
 int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);

@@ -142,7 +142,8 @@ def main():
     print('#include "ween32.h"')
     print("int main(void) {")
     for line in ('#include <windows.h>', '#include <commctrl.h>',
-                 '#include <commdlg.h>', '#include <stddef.h>'):
+                 '#include <commdlg.h>', '#include <richedit.h>',
+                 '#include <stddef.h>'):
         print('    puts("%s");' % line)
     checked, unread = 0, []
     for name, fields in structs_of(body):

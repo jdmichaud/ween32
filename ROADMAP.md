@@ -45,6 +45,15 @@ that no application has asked for:
   way to ask what else is there. A box offering four faces would be worse
   than none.
 
+- [ ] **What a text control does with the column, when the line below is
+  too short for it.** Windows is said to remember where the caret was
+  aiming, so that Down over a short line and Down again comes back to the
+  column it started in. Neither ween32 control does: both recompute the
+  column from where the caret actually is. `tests/richedit_test.c` checks
+  that the two agree rather than what they agree on, so this can be measured
+  on the machine -- a long line, a short one, a long one, and two presses of
+  Down in Notepad -- and put into both at once.
+
 - [ ] **Where a property sheet puts its page.** The machine's puts it at
   (13, 51) from the sheet's window origin and makes it 360x374; ween32's is
   at (10, 50) and 365x377, and its tab control is at (8, 29) where the
@@ -265,6 +274,27 @@ directory, picks the row nearest the size a caption wears and with the most
 colours in it, and reads that `RT_ICON` with the same decoder a `.ico` file
 goes through. `DrawIconEx` draws the size it is asked for, so the one 32x32
 image a script usually carries becomes the sixteen a caption wants.
+
+**The rich edit, in plain text** — `RICHEDIT_CLASS`, a second text control
+rather than a widened EDIT, because the two differ from the first character:
+an EDIT keeps one string in the window's text and draws it in one font, and a
+rich edit keeps a document. What is there is the plain-text half WordPad's
+editor stands on: the class (both the riched20 name and the one Rich Edit 1.0
+answered to), its own storage behind WM_SETTEXT/WM_GETTEXT, a line table
+rebuilt in one pass, typing, the arrows, Home and End and the pages, the
+selection in the EDIT's terms and in a `CHARRANGE`, `EM_GETSELTEXT` and
+`EM_GETTEXTRANGE`, one step of undo, the modified flag, `EM_EXLIMITTEXT`, the
+vertical bar with the machine's own paging rule, ES_MULTILINE, ES_WANTRETURN
+and ES_NOHIDESEL. The event mask is the one place it is meant to differ from
+the EDIT: a rich edit says nothing to its parent until `EM_SETEVENTMASK` asks
+it to, where an EDIT sends EN_CHANGE whether or not anybody wanted it.
+
+What it has not got is what makes it rich: runs carrying a `CHARFORMAT`,
+paragraphs carrying a `PARAFORMAT`, wrapping, and RTF through
+`EM_STREAMIN`/`EM_STREAMOUT`. Those are the next four pieces of WordPad's
+plan. `tests/richedit_test.c` asks it the same questions
+`tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot
+come to disagree about a behaviour they share.
 
 **Find and Replace** — `FindTextA` and `ReplaceTextA`, modeless as win32 has
 them: the call puts the box up and answers with its window, and every press

@@ -22,6 +22,12 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <windowsx.h>
+/* The rich edit's own header, so that a program asking for RICHEDIT_CLASS
+ * needs no include of its own on either side. On Windows the class comes
+ * from riched20.dll, which a program loads with LoadLibrary before it makes
+ * one; here the class is registered with the rest and the call is a
+ * no-op that still has to be written, so the same source builds. */
+#include <richedit.h>
 #else
 
 #include <stddef.h>
@@ -608,6 +614,50 @@ typedef struct {
 #define EM_SETMARGINS 0x00D3
 #define EC_LEFTMARGIN 0x0001
 #define EC_RIGHTMARGIN 0x0002
+
+/* ---- the rich edit (riched20) --------------------------------------------
+ *
+ * A second text control, not a widened EDIT: its text carries formatting per
+ * run of characters and per paragraph, which the EDIT's plain buffer cannot
+ * hold. What is here is the plain-text half -- the class, the selection in
+ * the terms the rich edit states it in, and the mask that decides which
+ * notifications reach the parent, which is nothing until a program asks.
+ *
+ * The window class is riched20.dll's on Windows and this library's here, so
+ * a program that loads the DLL before it makes one goes on working: the load
+ * is what Windows needs and the registration is what this needs. */
+#define RICHEDIT_CLASSA "RichEdit20A"
+#define RICHEDIT_CLASS10A "RICHEDIT"
+#define EM_CANPASTE (WM_USER + 50)
+#define EM_EXGETSEL (WM_USER + 52)
+#define EM_EXLIMITTEXT (WM_USER + 53)
+#define EM_EXSETSEL (WM_USER + 55)
+#define EM_GETEVENTMASK (WM_USER + 59)
+#define EM_GETSELTEXT (WM_USER + 62)
+#define EM_SETEVENTMASK (WM_USER + 69)
+#define EM_GETTEXTRANGE (WM_USER + 75)
+#define EM_SETUNDOLIMIT (WM_USER + 82)
+/* Which notifications the control is allowed to send. A rich edit starts
+ * with none of them, where an EDIT sends EN_CHANGE whether or not anybody
+ * wanted it -- so a program that wants to hear about a change has to say so.
+ */
+#define ENM_NONE 0x00000000
+#define ENM_CHANGE 0x00000001
+#define ENM_UPDATE 0x00000002
+#define ENM_SCROLL 0x00000004
+#define ENM_SELCHANGE 0x00080000
+#define EN_SELCHANGE 0x0702
+/* A range of characters, which is how a rich edit says where the selection
+ * is: two offsets rather than an EDIT's packed pair, so a document longer
+ * than sixty-five thousand characters can still be talked about. */
+typedef struct _charrange {
+    LONG cpMin;
+    LONG cpMax;
+} CHARRANGE;
+typedef struct _textrange {
+    CHARRANGE chrg;
+    LPSTR lpstrText;
+} TEXTRANGEA;
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"
@@ -3192,6 +3242,8 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define TOOLBARCLASSNAME TOOLBARCLASSNAMEA
 #define REBARCLASSNAME REBARCLASSNAMEA
 #define TRACKBAR_CLASS TRACKBAR_CLASSA
+#define RICHEDIT_CLASS RICHEDIT_CLASSA
+#define TEXTRANGE TEXTRANGEA
 #define PROGRESS_CLASS PROGRESS_CLASSA
 #define SB_SETTEXT SB_SETTEXTA
 #define SB_GETTEXT SB_GETTEXTA

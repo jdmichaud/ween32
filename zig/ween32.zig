@@ -739,9 +739,39 @@ pub const EN_UPDATE = 0x0400;
 pub const EN_ENTER = 0x1300;
 pub const EN_ESCAPE = 0x1301;
 pub const EM_SETSEL = 0x00B1;
+pub const EM_GETSEL = 0x00B0;
 pub const EM_SETMARGINS = 0x00D3;
 pub const EC_LEFTMARGIN = 0x0001;
 pub const EC_RIGHTMARGIN = 0x0002;
+
+// The rich edit. Its class comes from riched20.dll on Windows and from this
+// library everywhere else, and the name is the ANSI one either way: WordPad
+// asks for RICHEDIT_CLASS, which is the W name only in a UNICODE build.
+pub const RICHEDIT_CLASSA = "RichEdit20A";
+pub const RICHEDIT_CLASS10A = "RICHEDIT";
+pub const EM_CANPASTE = (WM_USER + 50);
+pub const EM_EXGETSEL = (WM_USER + 52);
+pub const EM_EXLIMITTEXT = (WM_USER + 53);
+pub const EM_EXSETSEL = (WM_USER + 55);
+pub const EM_GETEVENTMASK = (WM_USER + 59);
+pub const EM_GETSELTEXT = (WM_USER + 62);
+pub const EM_SETEVENTMASK = (WM_USER + 69);
+pub const EM_GETTEXTRANGE = (WM_USER + 75);
+pub const EM_SETUNDOLIMIT = (WM_USER + 82);
+pub const ENM_NONE = 0x00000000;
+pub const ENM_CHANGE = 0x00000001;
+pub const ENM_UPDATE = 0x00000002;
+pub const ENM_SCROLL = 0x00000004;
+pub const ENM_SELCHANGE = 0x00080000;
+pub const EN_SELCHANGE = 0x0702;
+pub const CHARRANGE = extern struct {
+    cpMin: LONG = 0,
+    cpMax: LONG = 0,
+};
+pub const TEXTRANGEA = extern struct {
+    chrg: CHARRANGE = .{},
+    lpstrText: ?LPSTR = null,
+};
 pub const TBS_AUTOTICKS = 0x0001;
 pub const TBS_VERT = 0x0002;
 pub const TBS_HORZ = 0x0000;
