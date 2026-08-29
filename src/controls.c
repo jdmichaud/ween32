@@ -2852,9 +2852,20 @@ static HWND combo_edit(HWND wnd)
         return NULL;
     GetClientRect(wnd, &cr);
     if (!it->edit) {
-        it->edit = CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE, 2, 1,
-                                   cr.right - btn - 3, cr.bottom - 2, wnd,
-                                   NULL, NULL, NULL);
+        /* **Three in and three down, and six shorter than the box.** §8.5's
+         * probe reads the machine's: a combo at 309,254 152x111 with its
+         * `Edit` at 312,257 146x15 -- (3,3) in the box's own frame, and a
+         * field six shorter than the box it sits in. Ours was at (2,1) and
+         * two shorter, which put every character two rows above the
+         * machine's.
+         *
+         * **And it carries id 1001**, which is what win32 gives it and what
+         * §4 and §8.5 both read. A program that wants the field -- to hold a
+         * font name that can be typed, which is what §4's first combo is --
+         * asks `GetDlgItem(combo, 1001)` for it, and got nothing here. */
+        it->edit = CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE, 3, 3,
+                                   cr.right - btn - 3, cr.bottom - 6, wnd,
+                                   (HMENU)(UINT_PTR)1001, NULL, NULL);
         if (it->edit) {
             /* the field starts in the box's own face, not the system one:
              * the box may have been given a font before it was asked for a
@@ -2868,13 +2879,15 @@ static HWND combo_edit(HWND wnd)
                 it->edit, GWLP_WNDPROC, (LONG_PTR)combo_field_proc);
         }
     }
-    /* One row down and one shorter than the field: what the box draws then
-     * lands exactly where the combo's own painting used to put it, which is
-     * where the machine has it. */
+    /* **Three down and six shorter than the box**, which is where §8.5's
+     * probe reads the machine's: a combo at 309,254 152x111 with its `Edit`
+     * at 312,257 146x15. This used to be put where the combo's *own* painting
+     * had been putting the text, and that painting was two rows low -- so the
+     * field inherited the error from the thing it replaced. */
     x = combo_edit_x(wnd, it);
     if (it->edit)
-        MoveWindow(it->edit, x, WEEN_COMBO_TEXT_Y, cr.right - btn - x - 1,
-                   cr.bottom - 1 - WEEN_COMBO_TEXT_Y, FALSE);
+        MoveWindow(it->edit, x, 1, cr.right - btn - x - 1, cr.bottom - 2,
+                   FALSE);
     return it->edit;
 }
 

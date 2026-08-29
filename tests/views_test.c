@@ -727,6 +727,34 @@ int main(void)
         HWND field = (HWND)(INT_PTR)SendMessageA(cb, CBEM_GETEDITCONTROL, 0, 0);
         char got[64];
         CHECK(field != NULL, "an editable combo box keeps a field");
+        /* **And the field is a child with id 1001**, which is what win32
+         * gives it and what a program asks for by name. WordPad's font combo
+         * can be typed into, and §4 and §8.5 of its specification both read
+         * an `Edit` id 1001 inside a `CBS_DROPDOWN` -- that is how the two
+         * were told apart from `CBS_DROPDOWNLIST`, which has no such child.
+         * Ours had one and gave it no id, so `GetDlgItem` answered nothing. */
+        CHECK(GetDlgItem(cb, 1001) == field,
+              "and it is a child with id 1001, which is how a program finds "
+              "it");
+        CHECK(GetDlgItem(list_only, 1001) == NULL,
+              "while a list-only combo has no field to find");
+        {
+            /* Three in and three down from the box's own corner, and six
+             * shorter than it. §8.5's probe reads the machine's: a combo at
+             * 309,254 152x111 with its Edit at 312,257 146x15. Ours used to
+             * put the field where the box's own painting had been putting
+             * the text, and that painting was two rows low -- so the field
+             * inherited the error from the thing it replaced, and every
+             * character in WordPad's font combo sat two rows under the
+             * machine's. */
+            RECT bx, fx;
+            GetWindowRect(cb, &bx);
+            GetWindowRect(field, &fx);
+            CHECK(fx.left - bx.left == 3 && fx.top - bx.top == 3,
+                  "the field sits three in and three down from the box");
+            CHECK((fx.bottom - fx.top) == (bx.bottom - bx.top) - 6,
+                  "and is six shorter than it");
+        }
         CHECK(SendMessageA(list_only, CBEM_GETEDITCONTROL, 0, 0) == 0,
               "and a list-only one does not");
         SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "one");
