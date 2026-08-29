@@ -120,8 +120,14 @@ typedef struct {
     int modified;
     int limit;    /* the most characters it will hold, 0 for no limit */
     DWORD events; /* which notifications the program asked for */
-    char *undo;   /* one step, as an edit control keeps */
-    int undo_caret;
+    /* **A stack, because a rich edit's undo is one and an EDIT's is not.**
+     * This kept a single string and swapped it, which is exactly right for
+     * the EDIT in src/controls.c and wrong here: the second EM_UNDO put
+     * back what the first took, for ever, and EM_CANUNDO answered TRUE for
+     * ever with it. jd reported it as Undo not working. */
+    char **undo;
+    int *undo_caret;
+    int undos, undo_cap;
     int first_visible; /* the top line drawn */
     int sb_grab;       /* where in the thumb a drag took hold, or -1 */
     /* The last double click, so that a press close to it in time and place
@@ -207,13 +213,15 @@ typedef struct {
     int fmt_set;
 } ween_rich;
 
+static void rich_undo_clear(ween_rich *e);
+
 static void rich_free(void *p)
 {
     ween_rich *e = p;
     if (!e)
         return;
     free(e->text);
-    free(e->undo);
+    rich_undo_clear(e);
     free(e->line);
     free(e->run);
     free(e->para);
@@ -1058,15 +1066,49 @@ static void rich_range(const ween_rich *e, int *from, int *to)
 
 /* Keep what is there, so that the change about to be made can be taken back.
  * One step is what a text control keeps, and undoing swaps the two. */
+static void rich_undo_clear(ween_rich *e)
+{
+    while (e->undos > 0)
+        free(e->undo[--e->undos]);
+    free(e->undo);
+    free(e->undo_caret);
+    e->undo = NULL;
+    e->undo_caret = NULL;
+    e->undo_cap = 0;
+}
+
 static void rich_remember(ween_rich *e)
 {
-    char *copy = malloc((size_t)e->len + 1);
+    char *copy;
+    if (e->undos >= e->undo_cap) {
+        int cap = e->undo_cap ? e->undo_cap * 2 : 16;
+        char **g = realloc(e->undo, (size_t)cap * sizeof *g);
+        int *c;
+        if (!g)
+            return; /* out of memory loses the undo, not the edit */
+        e->undo = g;
+        c = realloc(e->undo_caret, (size_t)cap * sizeof *c);
+        if (!c)
+            return;
+        e->undo_caret = c;
+        e->undo_cap = cap;
+    }
+    copy = malloc((size_t)e->len + 1);
     if (!copy)
-        return; /* out of memory loses the undo, not the edit */
+        return;
     memcpy(copy, e->text, (size_t)e->len + 1);
-    free(e->undo);
-    e->undo = copy;
-    e->undo_caret = e->caret;
+    /* **The depth is ours and is not measured.** riched20 keeps many steps
+     * and this keeps them all; what nobody has read off the machine is how
+     * many it keeps before it forgets, so no limit is invented here.
+     *
+     * **Nor is grouping.** Each edit is one step, so typing six characters
+     * takes six undos. Real WordPad may take a typed run back in one -- that
+     * is the obvious next question and it wants a reading rather than a
+     * guess: type a word into the machine's editor and count the EM_UNDOs
+     * back to empty. */
+    e->undo[e->undos] = copy;
+    e->undo_caret[e->undos] = e->caret;
+    e->undos++;
 }
 
 /* The parent hears, if it asked to. */
@@ -2771,18 +2813,21 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case EM_GETEVENTMASK:
         return (LRESULT)e->events;
     case EM_CANUNDO:
-        return e->undo ? TRUE : FALSE;
+        return e->undos > 0 ? TRUE : FALSE;
     case EM_EMPTYUNDOBUFFER:
-        free(e->undo);
-        e->undo = NULL;
+        rich_undo_clear(e);
         return 0;
     case EM_UNDO: {
-        char *was = e->undo;
-        int caret = e->undo_caret;
-        if (!was)
+        char *was;
+        int caret;
+        if (e->undos <= 0)
             return FALSE;
-        e->undo = NULL;
-        rich_remember(e); /* the swap: undoing is itself undoable */
+        was = e->undo[--e->undos];
+        caret = e->undo_caret[e->undos];
+        /* **Undoing is no longer itself undoable**, which is what made the
+         * second undo redo the first. Putting the current text back on the
+         * stack here is a redo, and riched20 has a separate EM_REDO for
+         * that -- one message doing both is the toggle jd reported. */
         if (!rich_set_text(wnd, e, was)) {
             free(was);
             return FALSE;

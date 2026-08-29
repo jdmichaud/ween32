@@ -538,9 +538,27 @@ int main(void)
     CHECK(SendMessageA(re, EM_CANUNDO, 0, 0) != 0, "the last change can be undone");
     SendMessageA(re, EM_UNDO, 0, 0);
     CHECK(strcmp(text_of(re), "before") == 0, "and undoing it puts back what was");
+    /* **This asserted the opposite until jd reported Undo as broken**, on
+     * the stated grounds that it is what "an edit control does" -- which is
+     * true of the EDIT and was never read off a rich edit. A reading of one
+     * control is not evidence about the other; that is the same mistake as
+     * the EDIT's `EM_POSFROMCHAR` -1 being written into a rich edit's
+     * oracle, and it stood here longer.
+     *
+     * A second undo now goes *further back*, to whatever this test did
+     * before -- which is why what is asserted is that it does **not** return
+     * to "before!", rather than a particular string. A stack's contents
+     * depend on everything above it in the file, and an assertion that
+     * names one is an assertion about the test rather than the control.
+     *
+     * **The direction is jd's report and the depth is not measured.** Nobody
+     * has counted riched20's undo steps on the machine, or asked whether a
+     * typed run comes back in one; both are recorded in src/richedit.c as
+     * open rather than settled here. */
     SendMessageA(re, EM_UNDO, 0, 0);
-    CHECK(strcmp(text_of(re), "before!") == 0,
-          "and undoing again puts back the undo, as an edit control does");
+    CHECK(strcmp(text_of(re), "before!") != 0,
+          "and undoing again does not put it back -- a rich edit's undo is "
+          "a stack, not the EDIT's swap");
     SendMessageA(re, EM_EMPTYUNDOBUFFER, 0, 0);
     CHECK(SendMessageA(re, EM_CANUNDO, 0, 0) == 0,
           "a program can throw the step away");
@@ -2328,6 +2346,60 @@ int main(void)
               "while a WS_VSCROLL the program asked for survives a document "
               "that does not need it");
         DestroyWindow(host3);
+    }
+
+    /* ---- undo goes back, and keeps going back ---------------------------
+     *
+     * **A rich edit's undo is a stack; an EDIT's is a swap.** ween32's rich
+     * edit had the EDIT's -- `rich_remember` kept one string and `EM_UNDO`
+     * put the current one in its place, so the second undo *redid* the
+     * first. Driven before the fix, six characters typed one at a time:
+     *
+     *     undo 1  "abcde"      undo 2  "abcdef"      undo 3  "abcde"
+     *     EM_CANUNDO answered 1 for ever
+     *
+     * jd found it as *"Undo"* being broken; the audit called it partial; it
+     * is a one-slot toggle, which is worse than no undo because it looks
+     * like undo.
+     *
+     * **What is measured here is that it walks back and stops.** Whether
+     * riched20 groups a typed run into one step is *not* measured -- real
+     * WordPad may undo a whole word where this undoes a letter -- and that
+     * is recorded in the code rather than guessed at.
+     */
+    {
+        HWND host4 = CreateWindowExA(0, "weenrich", "h4", WS_POPUP | WS_VISIBLE,
+                                     0, 0, 300, 200, NULL, NULL, NULL, NULL);
+        HWND t = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 280, 100, host4, NULL, NULL, NULL);
+        char buf[64];
+        int i;
+        SetFocus(t);
+        for (i = 0; i < 6; i++)
+            SendMessageA(t, WM_CHAR, (WPARAM)('a' + i), 1);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, "abcdef"), "six characters typed");
+
+        SendMessageA(t, EM_UNDO, 0, 0);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, "abcde"), "one undo takes the last one back");
+        SendMessageA(t, EM_UNDO, 0, 0);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, "abcd"),
+              "and the second goes further back rather than putting it "
+              "again, which is what a swap does");
+        for (i = 0; i < 10; i++)
+            SendMessageA(t, EM_UNDO, 0, 0);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, ""), "undoing everything empties the document");
+        CHECK(!SendMessageA(t, EM_CANUNDO, 0, 0),
+              "and then there is nothing left to undo, which a swap could "
+              "never say");
+        SendMessageA(t, EM_UNDO, 0, 0);
+        GetWindowTextA(t, buf, sizeof buf);
+        CHECK(!strcmp(buf, ""), "an undo with nothing to undo changes nothing");
+        DestroyWindow(host4);
     }
 
     if (g_failures) {
