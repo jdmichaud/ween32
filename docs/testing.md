@@ -1248,9 +1248,24 @@ uniform ramp from the caption's left edge would take its first step at pixel
 not a straight interpolation, and shifting ours by one or two does not fix it
 either: the best whole-pixel shift still leaves 190 columns out.
 
-Nobody should fit a curve to this. What it wants is the machine's own ramp
-read off a capture at two widths — 654 and 768 — because the shape at the
-start is what differs and one width cannot show whether it scales.
+**The machine's own ramp is now in the repository at three more widths** —
+`tools/refcapture/caption-400-machine.png`, `-500-`, `-654-`, each the top 30
+rows of a WordPad frame sized with `SetWindowPos` from inside the guest — so
+the next attempt needs no machine. What they say:
+
+- the ramp has **157 steps in R, 167 in G and 135 in B at every width**: the
+  colour is walked, not the pixels;
+- it **ends 55 pixels before the client's right edge** at every width, which
+  is the room the three caption buttons take;
+- and it **starts about eighteen pixels in**, not at the caption's left edge:
+  the first step lands at 21, 21, 22, 23 and 24 for widths 400, 500, 654, 768
+  and 900, where a ramp from the edge would put it at 3, 4, 5, 5 and 6.
+
+A ramp offset by eighteen and floored fits 52% to 73% of the columns across
+those widths, against 8% for the naive one, and the rest are still ±1. So the
+offset is real and the rounding is still not ours. What is left to find is one
+rule, not five numbers — and the three captures are enough to test a candidate
+without booting anything.
 
 ### The toolbar, asked rather than looked at
 
