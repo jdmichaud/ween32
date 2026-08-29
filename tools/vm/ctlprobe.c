@@ -670,6 +670,98 @@ static void rebarband(HWND parent)
     emit(buf);
 }
 
+/* Where a classic button's picture goes inside it.
+ *
+ * ween32 puts it at `bx + 1 + (w - 1 - 16) / 2` -- four in, for a button of
+ * 23 -- and calls that centring in the machine's name. WordPad's nineteen
+ * pictures land three columns right of the machine's, so the machine's inset
+ * is one or two and it is not a centring. One or two is not a difference to
+ * fit, so: a solid black 16x16 image, whose every column is ink, in a button
+ * whose rectangle is reported beside it. The capture then says the inset with
+ * no arithmetic at all.
+ */
+static void imageinset(HWND parent)
+{
+    static const struct { const char *what; DWORD extra; int y; } bars[2] = {
+        { "flat", TBSTYLE_FLAT, 330 },
+        { "classic", 0, 355 },
+    };
+    unsigned char bits[16 * 16 * 4];
+    HBITMAP bm;
+    int k, j;
+
+    for (j = 0; j < 16 * 16 * 4; j++)
+        bits[j] = 0; /* black, and opaque: every column of it is ink */
+    bm = CreateBitmap(16, 16, 1, 32, bits);
+
+    for (k = 0; k < 2; k++) {
+        TBBUTTON b;
+        HWND tb;
+        HIMAGELIST il;
+        RECT r;
+
+        memset(&b, 0, sizeof b);
+        b.iBitmap = 0;
+        b.idCommand = 700 + k;
+        b.fsState = TBSTATE_ENABLED;
+        b.fsStyle = TBSTYLE_BUTTON;
+        tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                             WS_CHILD | WS_VISIBLE | CCS_NODIVIDER |
+                             CCS_NORESIZE | CCS_NOPARENTALIGN | bars[k].extra,
+                             0, bars[k].y, 200, 24, parent,
+                             (HMENU)(UINT_PTR)(390 + k), NULL, NULL);
+        SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        SendMessageA(tb, TB_SETBITMAPSIZE, 0, MAKELPARAM(16, 16));
+        SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+        il = ImageList_Create(16, 16, ILC_COLOR32, 1, 1);
+        ImageList_Add(il, bm, NULL);
+        SendMessageA(tb, TB_SETIMAGELIST, 0, (LPARAM)il);
+        SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+        r.left = r.top = r.right = r.bottom = 0;
+        SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+        wsprintfA(buf,
+                  "  %-7s bar at window y=%d: button %ld,%ld %ldx%ld\r\n",
+                  bars[k].what, bars[k].y, r.left, r.top, r.right - r.left,
+                  r.bottom - r.top);
+        emit(buf);
+    }
+    emit("== a solid 16x16 image in a 23x22 button; read the inset off the capture ==\r\n");
+}
+
+/* Where a status bar puts its text, as its height changes.
+ *
+ * ween32 has one formula and it cannot serve both the cases we have checked:
+ * with it, Paint's 23-tall bar lands on the machine's row and WordPad's
+ * 18-tall bar lands one above; without it, WordPad is right and Paint is 467
+ * pixels wrong. So the rule depends on the height in a way the formula does
+ * not capture, and four heights with the same string in each will say how.
+ */
+static void statusheights(HWND parent)
+{
+    static const int heights[4] = { 18, 20, 23, 26 };
+    int j, y = 380;
+    emit("== status bars of four heights, same string ==\r\n");
+    for (j = 0; j < 4; j++) {
+        static const int one[1] = { 180 };
+        HWND sb;
+        RECT r;
+        sb = CreateWindowExA(0, STATUSCLASSNAMEA, NULL,
+                             WS_CHILD | WS_VISIBLE | CCS_NORESIZE |
+                             CCS_NOPARENTALIGN,
+                             0, y, 200, heights[j], parent,
+                             (HMENU)(UINT_PTR)(400 + j), NULL, NULL);
+        SendMessageA(sb, SB_SETPARTS, 1, (LPARAM)one);
+        SendMessageA(sb, SB_SETTEXTA, 0 | SBT_NOBORDERS, (LPARAM)"Hg");
+        r.left = r.top = r.right = r.bottom = 0;
+        SendMessageA(sb, SB_GETRECT, 0, (LPARAM)&r);
+        wsprintfA(buf, "  %2d tall at window y=%3d: part %ld,%ld %ldx%ld\r\n",
+                  heights[j], y, r.left, r.top, r.right - r.left,
+                  r.bottom - r.top);
+        emit(buf);
+        y += heights[j] + 4;
+    }
+}
+
 static char *arg(int want, char *line, int cap)
 {
     char *p = GetCommandLineA();
@@ -1193,7 +1285,7 @@ static void probe_main(void)
                         /* 300 tall, not 230: the two state bars go below the
                          * measuring one and a control off the client is a
                          * control that was never drawn. */
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 420,
+                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 590,
                         NULL, NULL, wc.hInstance, NULL);
 
     /* The same font the dialogs use, because a control's size is measured in
@@ -1222,6 +1314,8 @@ static void probe_main(void)
     barstates(w);
     statusbar(w);
     rebarband(w);
+    imageinset(w);
+    statusheights(w);
     CloseHandle(out_file);
 
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {
