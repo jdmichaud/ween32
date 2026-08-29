@@ -53,6 +53,8 @@ pub const HMENU = ?*anyopaque;
 pub const HANDLE = ?*anyopaque;
 pub const HACCEL = ?*anyopaque;
 pub const HIMAGELIST = ?*anyopaque;
+pub const HPALETTE = ?*anyopaque;
+pub const HPROPSHEETPAGE = ?*anyopaque;
 
 pub const POINT = extern struct { x: LONG, y: LONG };
 pub const RECT = extern struct { left: LONG, top: LONG, right: LONG, bottom: LONG };
@@ -235,6 +237,104 @@ pub const DLGITEMTEMPLATE = extern struct {
     cx: i16,
     cy: i16,
     id: WORD,
+};
+
+// ---- the property sheet ---------------------------------------------------
+//
+// A tabbed dialog: one page per tab, each page a dialog of its own, and the
+// sheet's own frame and buttons around them. `examples/explorer`'s Folder
+// Options and Properties are two, and WordPad's View > Options is a third.
+//
+// The C header has had this since before there was a Zig module, and the
+// module had none of it -- so a Zig program could create a tab control and
+// nothing that drives one. That absence is the shape the binding gate cannot
+// report: it checks that what the module *says* agrees with the header, and a
+// name the module never mentions is a name it never disagrees with.
+
+/// One page. `pResource` is the dialog template it is built from and
+/// `pfnDlgProc` the procedure that runs it, exactly as a modal dialog's are;
+/// `pszTitle` is the tab's own label when PSP_USETITLE is set, which is how
+/// five pages built from one template come to have five different tabs.
+pub const PROPSHEETPAGEA = extern struct {
+    dwSize: DWORD = @sizeOf(PROPSHEETPAGEA),
+    dwFlags: DWORD = 0,
+    hInstance: HINSTANCE = null,
+    pResource: ?*const DLGTEMPLATE = null,
+    hIcon: HICON = null,
+    pszTitle: ?LPCSTR = null,
+    pfnDlgProc: ?DLGPROC = null,
+    lParam: LPARAM = 0,
+    pfnCallback: ?*anyopaque = null,
+    pcRefParent: ?*UINT = null,
+};
+
+/// **Five of the sheet's members are unions on win32**, and the C header says
+/// why that matters: a union of a UINT and a pointer is eight bytes and
+/// eight-aligned, so a `nStartPage` declared as a bare UINT sits at 44 where
+/// win32 has it at 48, and every field after it is out too.
+///
+/// Zig has no anonymous struct member, so each union is a named type here.
+/// **The names are ween32's** -- win32 does not name these, its header being
+/// C11 where ours is C99 -- and each carries win32's own member names inside,
+/// so a caller writes the member the documentation names.
+pub const PROPSHEETHEADERA_ICON = extern union {
+    hIcon: HICON,
+    pszIcon: LPCSTR,
+};
+/// A page number, or the name of a page: PSH_USEPSTARTPAGE picks the second.
+///
+/// **The field that holds this is called `pStartPage` and not `nStartPage`**,
+/// which reads oddly and is deliberate. `tools/zigbind/genstructs.py` checks
+/// each field's width against `sizeof` of the C member of the *same name*, and
+/// of these two -- the same eight bytes between them -- only `pStartPage`
+/// answers 8. So the page to open on is written
+///
+///     .pStartPage = .{ .nStartPage = 0 }
+///
+/// and the arrangement that reads better is the one that could be silently
+/// wrong. The other four unions hold two pointers each, so either name would
+/// have passed and they take the one win32's documentation leads with.
+pub const PROPSHEETHEADERA_STARTPAGE = extern union {
+    nStartPage: UINT,
+    pStartPage: LPCSTR,
+};
+/// An array of pages, or an array of handles to them: PSH_PROPSHEETPAGE picks
+/// the first.
+pub const PROPSHEETHEADERA_PAGES = extern union {
+    ppsp: ?[*]const PROPSHEETPAGEA,
+    phpage: ?[*]HPROPSHEETPAGE,
+};
+pub const PROPSHEETHEADERA_WATERMARK = extern union {
+    hbmWatermark: ?HBITMAP,
+    pszbmWatermark: LPCSTR,
+};
+pub const PROPSHEETHEADERA_HEADER = extern union {
+    hbmHeader: ?HBITMAP,
+    pszbmHeader: LPCSTR,
+};
+
+/// The sheet itself: its frame, its caption, and the pages it is made of.
+pub const PROPSHEETHEADERA = extern struct {
+    dwSize: DWORD = @sizeOf(PROPSHEETHEADERA),
+    dwFlags: DWORD = 0,
+    hwndParent: ?HWND = null,
+    hInstance: HINSTANCE = null,
+    hIcon: PROPSHEETHEADERA_ICON = .{ .hIcon = null },
+    pszCaption: ?LPCSTR = null,
+    nPages: UINT = 0,
+    pStartPage: PROPSHEETHEADERA_STARTPAGE = .{ .nStartPage = 0 },
+    ppsp: PROPSHEETHEADERA_PAGES = .{ .ppsp = null },
+    pfnCallback: ?*anyopaque = null,
+    hbmWatermark: PROPSHEETHEADERA_WATERMARK = .{ .hbmWatermark = null },
+    hplWatermark: HPALETTE = null,
+    hbmHeader: PROPSHEETHEADERA_HEADER = .{ .hbmHeader = null },
+};
+
+/// What a page is told through WM_NOTIFY -- PSN_SETACTIVE when it comes up,
+/// PSN_APPLY when OK or Apply is pressed, PSN_RESET when Cancel is.
+pub const PSHNOTIFY = extern struct {
+    hdr: NMHDR,
+    lParam: LPARAM,
 };
 
 // ---- macros --------------------------------------------------------------
@@ -541,6 +641,11 @@ pub extern fn ImageList_Destroy(il: HIMAGELIST) callconv(.c) BOOL;
 pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) callconv(.c) c_int;
 pub extern fn ImageList_AddMasked(il: HIMAGELIST, image: HBITMAP, transparent: COLORREF) callconv(.c) c_int;
 pub extern fn ImageList_Draw(il: HIMAGELIST, index: c_int, dc: HDC, x: c_int, y: c_int, style: UINT) callconv(.c) BOOL;
+
+/// Put a property sheet up and do not return until it is answered: greater
+/// than zero if OK or Apply was pressed, zero if it was cancelled, -1 if it
+/// could not be made.
+pub extern fn PropertySheetA(header: *const PROPSHEETHEADERA) callconv(.c) INT_PTR;
 
 // ---- GDI: contexts, objects and text ------------------------------------
 
@@ -1078,6 +1183,46 @@ pub const TCM_ADJUSTRECT = (TCM_FIRST + 40);
 pub const TCIF_TEXT = 0x0001;
 pub const TCIF_IMAGE = 0x0002;
 pub const TCN_SELCHANGE = (0 - 551);
+
+// The property sheet's, from include/ween32.h. A page's flags, then the
+// sheet's, then what a page is told and what it says back.
+pub const PSP_DEFAULT = 0x0000;
+pub const PSP_DLGINDIRECT = 0x0001;
+pub const PSP_USEHICON = 0x0002;
+pub const PSP_USEICONID = 0x0004;
+pub const PSP_USETITLE = 0x0008;
+pub const PSP_HASHELP = 0x0020;
+pub const PSP_PREMATURE = 0x0400;
+pub const PSH_DEFAULT = 0x00000000;
+pub const PSH_PROPTITLE = 0x00000001;
+pub const PSH_USEHICON = 0x00000002;
+pub const PSH_USEICONID = 0x00000004;
+pub const PSH_PROPSHEETPAGE = 0x00000008;
+pub const PSH_USEPSTARTPAGE = 0x00000040;
+pub const PSH_NOAPPLYNOW = 0x00000080;
+pub const PSH_USECALLBACK = 0x00000100;
+pub const PSH_HASHELP = 0x00000200;
+pub const PSH_MODELESS = 0x00000400;
+pub const PSH_NOCONTEXTHELP = 0x02000000;
+pub const PSN_FIRST = (0 - 200);
+pub const PSN_SETACTIVE = (PSN_FIRST - 0);
+pub const PSN_KILLACTIVE = (PSN_FIRST - 1);
+pub const PSN_APPLY = (PSN_FIRST - 2);
+pub const PSN_RESET = (PSN_FIRST - 3);
+pub const PSN_HELP = (PSN_FIRST - 5);
+pub const PSN_QUERYCANCEL = (PSN_FIRST - 9);
+pub const PSNRET_NOERROR = 0;
+pub const PSNRET_INVALID = 1;
+pub const PSNRET_INVALID_NOCHANGEPAGE = 2;
+pub const PSM_SETCURSEL = (WM_USER + 101);
+pub const PSM_CHANGED = (WM_USER + 104);
+pub const PSM_CANCELTOCLOSE = (WM_USER + 107);
+pub const PSM_UNCHANGED = (WM_USER + 109);
+pub const PSM_APPLY = (WM_USER + 110);
+pub const PSM_GETTABCONTROL = (WM_USER + 116);
+pub const PSM_GETCURRENTPAGEHWND = (WM_USER + 118);
+/// The Apply button's id, which is comctl32's own.
+pub const IDD_APPLYNOW = 0x3021;
 pub const TVN_SELCHANGEDA = (0 - 402);
 pub const TVN_ITEMEXPANDINGA = (0 - 405);
 pub const TVN_ITEMEXPANDEDA = (0 - 406);
