@@ -775,6 +775,207 @@ static void dump_rtf(HWND re, const char *what)
     emit("\r\n");
 }
 
+/* ---- paragraphs ----------------------------------------------------------
+ *
+ * The other half of a rich edit's model, and the same kind of question: what
+ * a command does to a paragraph a selection only touches, what the control
+ * answers over two that differ, and what a new paragraph inherits. Each one
+ * decides a data structure rather than a pixel. */
+
+static void paraformat_of(HWND re, int from, int to, const char *what)
+{
+    PARAFORMAT pf;
+    CHARRANGE cr;
+    cr.cpMin = from;
+    cr.cpMax = to;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&pf, 0, sizeof pf);
+    pf.cbSize = sizeof pf;
+    SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+    wsprintfA(buf,
+              "  %-30s %2d..%-2d mask %08lx  align %s  indent %ld right %ld "
+              "offset %ld  tabs %d\r\n",
+              what, from, to, pf.dwMask,
+              (pf.dwMask & PFM_ALIGNMENT)
+                  ? (pf.wAlignment == PFA_LEFT     ? "left"
+                     : pf.wAlignment == PFA_RIGHT  ? "right"
+                     : pf.wAlignment == PFA_CENTER ? "centre"
+                                                   : "other")
+                  : "MIXED",
+              pf.dxStartIndent, pf.dxRightIndent, pf.dxOffset,
+              (int)pf.cTabCount);
+    emit(buf);
+}
+
+static void set_align(HWND re, int from, int to, WORD how)
+{
+    PARAFORMAT pf;
+    CHARRANGE cr;
+    cr.cpMin = from;
+    cr.cpMax = to;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&pf, 0, sizeof pf);
+    pf.cbSize = sizeof pf;
+    pf.dwMask = PFM_ALIGNMENT;
+    pf.wAlignment = how;
+    SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+}
+
+static void paragraphs(HWND parent, HFONT font)
+{
+    HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                              WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                  ES_AUTOVSCROLL,
+                              10, 120, 300, 100, parent, NULL, NULL, NULL);
+    CHARRANGE cr;
+    DWORD from = 0, to = 0;
+    if (!re) {
+        wsprintfA(buf, "  no rich edit: %lu\r\n", GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+
+    /* Three paragraphs. "one" 0..3, break 3..5, "two" 5..8, break 8..10,
+     * "three" 10..15, and no break at the end. */
+    SetWindowTextA(re, "one\r\ntwo\r\nthree");
+    emit("== paragraphs ==\r\n");
+    paraformat_of(re, 0, 15, "a fresh control, all of it");
+
+    /* A selection touching the middle of the second paragraph only. If a
+     * command formats the whole paragraph, the first and last characters of
+     * it come back centred too. */
+    set_align(re, 6, 7, PFA_CENTER);
+    paraformat_of(re, 5, 6, "first character of the second");
+    paraformat_of(re, 7, 8, "last character of it");
+    paraformat_of(re, 0, 1, "the paragraph before");
+    paraformat_of(re, 10, 11, "and the one after");
+    paraformat_of(re, 0, 15, "across all three");
+
+    /* A selection that ends exactly on a paragraph's first character: does
+     * the paragraph it only touches take the command? */
+    SetWindowTextA(re, "one\r\ntwo\r\nthree");
+    set_align(re, 0, 5, PFA_RIGHT);
+    paraformat_of(re, 0, 1, "0..5 set: the first paragraph");
+    paraformat_of(re, 5, 6, "0..5 set: the second");
+
+    /* What a new paragraph inherits: type a return in the middle of a
+     * centred one. */
+    SetWindowTextA(re, "alpha beta");
+    set_align(re, 0, 10, PFA_CENTER);
+    cr.cpMin = cr.cpMax = 5;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    SetFocus(re);
+    SendMessageA(re, WM_CHAR, (WPARAM)'\r', 0);
+    paraformat_of(re, 0, 1, "after a return: the first half");
+    paraformat_of(re, 8, 9, "after a return: the second");
+
+    /* And what survives the break being taken out again: two paragraphs
+     * with different alignments, then a backspace at the start of the
+     * second. Through WM_KEYDOWN, because a rich edit does not take a
+     * backspace as a character the way an EDIT does -- the first run of this
+     * sent WM_CHAR '\b' and the text came back unchanged, which is a probe
+     * measuring nothing and saying nothing about it. */
+    SetWindowTextA(re, "left\r\nright");
+    set_align(re, 0, 4, PFA_LEFT);
+    set_align(re, 6, 11, PFA_RIGHT);
+    cr.cpMin = cr.cpMax = 5;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    SetFocus(re);
+    SendMessageA(re, WM_KEYDOWN, VK_BACK, 0);
+    SendMessageA(re, WM_CHAR, (WPARAM)'\b', 0);
+    {
+        char text[64] = "";
+        GetWindowTextA(re, text, sizeof text);
+        wsprintfA(buf, "  after joining them the text is \"%s\"\r\n", text);
+        emit(buf);
+    }
+    paraformat_of(re, 0, 9, "the joined paragraph");
+
+    /* The selection's own corners: what a backwards CHARRANGE does, and
+     * where the caret ends up. */
+    SetWindowTextA(re, "abcdefghij");
+    cr.cpMin = 7;
+    cr.cpMax = 3;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&cr, 0, sizeof cr);
+    SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+    wsprintfA(buf, "  a backwards CHARRANGE 7..3 comes back %ld..%ld\r\n",
+              cr.cpMin, cr.cpMax);
+    emit(buf);
+    SendMessageA(re, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+    wsprintfA(buf, "  and EM_GETSEL says %lu..%lu\r\n", from, to);
+    emit(buf);
+    cr.cpMin = 0;
+    cr.cpMax = 0;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    {
+        char sel[32] = "?";
+        int n = (int)SendMessageA(re, EM_GETSELTEXT, 0, (LPARAM)sel);
+        wsprintfA(buf, "  EM_GETSELTEXT of nothing answers %d, \"%s\"\r\n", n,
+                  sel);
+        emit(buf);
+    }
+
+    /* How a paragraph mark is *stored*, which decides every offset a program
+     * computes. Rich Edit 2.0 is said to keep a CRLF as a single CR; if it
+     * does, the text handed back is one byte shorter per break than the text
+     * that was set, and a selection across a break says so too. */
+    SetWindowTextA(re, "one\r\ntwo");
+    {
+        char back[64] = "";
+        int n = (int)SendMessageA(re, WM_GETTEXT, (WPARAM)sizeof back,
+                                  (LPARAM)back);
+        int len = (int)SendMessageA(re, WM_GETTEXTLENGTH, 0, 0);
+        int i;
+        wsprintfA(buf, "  set 8 bytes; WM_GETTEXTLENGTH %d, WM_GETTEXT %d, "
+                       "bytes:",
+                  len, n);
+        emit(buf);
+        for (i = 0; i < n && i < 16; i++) {
+            wsprintfA(buf, " %02x", (unsigned char)back[i]);
+            emit(buf);
+        }
+        emit("\r\n");
+    }
+    {
+        char sel[32] = "";
+        int n;
+        cr.cpMin = 2;
+        cr.cpMax = 6;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        n = (int)SendMessageA(re, EM_GETSELTEXT, 0, (LPARAM)sel);
+        wsprintfA(buf, "  EM_GETSELTEXT of 2..6 answers %d, bytes:", n);
+        emit(buf);
+        {
+            int i;
+            for (i = 0; i < n && i < 16; i++) {
+                wsprintfA(buf, " %02x", (unsigned char)sel[i]);
+                emit(buf);
+            }
+        }
+        emit("\r\n");
+        SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+        wsprintfA(buf, "  and the selection comes back %ld..%ld\r\n", cr.cpMin,
+                  cr.cpMax);
+        emit(buf);
+    }
+
+    /* Where the paragraphs are, as the control counts lines: a text with no
+     * break at the end, and one with. */
+    SetWindowTextA(re, "one\r\ntwo");
+    wsprintfA(buf, "  \"one\\r\\ntwo\"    lines %ld\r\n",
+              SendMessageA(re, EM_GETLINECOUNT, 0, 0));
+    emit(buf);
+    SetWindowTextA(re, "one\r\ntwo\r\n");
+    wsprintfA(buf, "  \"one\\r\\ntwo\\r\\n\" lines %ld  and EM_LINEINDEX 2 is %ld\r\n",
+              SendMessageA(re, EM_GETLINECOUNT, 0, 0),
+              SendMessageA(re, EM_LINEINDEX, 2, 0));
+    emit(buf);
+
+    DestroyWindow(re);
+}
+
 /* Down twice over a line too short for the column the caret started in,
  * asked of both text controls -- because what Windows does with a remembered
  * column is the same question for each and neither of ween32's does it. */
@@ -929,6 +1130,7 @@ static void richedit(HWND parent, HFONT font)
          "   caret actually is on 28.)\r\n");
     column_walk(parent, font, "RichEdit20A", 1);
     column_walk(parent, font, "EDIT", 0);
+    paragraphs(parent, font);
 
     DestroyWindow(re);
 }

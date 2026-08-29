@@ -708,6 +708,40 @@ typedef struct _textrange {
 #define CFE_PROTECTED 0x00000010
 #define CFE_LINK 0x00000020
 #define CFE_AUTOCOLOR 0x40000000
+/* ---- paragraph formatting -------------------------------------------------
+ *
+ * The other half of the model: what a paragraph carries, as opposed to what
+ * a run of characters does. Set over a selection it applies to every
+ * paragraph the selection touches, whole -- a rich edit has no notion of
+ * half a paragraph being centred -- and read back over several that differ
+ * it clears the mask bit of whatever is not the same throughout, exactly as
+ * a CHARFORMAT does. Measured on the machine; see docs/testing.md. */
+#define EM_GETPARAFORMAT (WM_USER + 61)
+#define EM_SETPARAFORMAT (WM_USER + 71)
+#define PFM_STARTINDENT 0x00000001
+#define PFM_RIGHTINDENT 0x00000002
+#define PFM_OFFSET 0x00000004
+#define PFM_ALIGNMENT 0x00000008
+#define PFM_TABSTOPS 0x00000010
+#define PFM_NUMBERING 0x00000020
+#define PFM_OFFSETINDENT 0x80000000
+#define PFA_LEFT 1
+#define PFA_RIGHT 2
+#define PFA_CENTER 3
+#define MAX_TAB_STOPS 32
+typedef struct _paraformat {
+    UINT cbSize;
+    DWORD dwMask;
+    WORD wNumbering;
+    WORD wReserved;
+    LONG dxStartIndent;
+    LONG dxRightIndent;
+    LONG dxOffset;
+    WORD wAlignment;
+    SHORT cTabCount;
+    LONG rgxTabs[MAX_TAB_STOPS];
+} PARAFORMAT;
+
 /* What EN_SELCHANGE carries: where the selection is now, and what kind of
  * thing is in it, which is how a format bar knows to grey what cannot apply. */
 #define SEL_EMPTY 0x0000

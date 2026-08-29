@@ -87,6 +87,29 @@ struct rich_run {
     ween_rfmt fmt;
 };
 
+/* ---- paragraphs ----------------------------------------------------------
+ *
+ * Kept the same way the runs are, and maintained by the same two events: a
+ * mark put in splits a paragraph, and both halves carry what the whole one
+ * carried; a mark taken out joins two, and what survives is the *first*
+ * one's. Both are the machine's -- typing a return in a centred paragraph
+ * gives two centred ones, and a backspace over the mark between a left and a
+ * right paragraph leaves one that is left. */
+typedef struct {
+    WORD numbering;
+    WORD alignment;    /* PFA_LEFT, PFA_RIGHT, PFA_CENTER */
+    LONG start_indent; /* twips */
+    LONG right_indent;
+    LONG offset; /* the first line's, against the rest */
+    SHORT tabs;
+    LONG tab[MAX_TAB_STOPS];
+} ween_pfmt;
+
+struct rich_para {
+    int start;
+    ween_pfmt fmt;
+};
+
 typedef struct {
     char *text;
     int len, cap;
@@ -112,6 +135,8 @@ typedef struct {
     int lines, line_cap;
     struct rich_run *run;
     int runs, run_cap;
+    struct rich_para *para;
+    int paras, para_cap;
     /* What the next character typed will carry. A rich edit takes it from
      * the character *before* the caret -- an X typed at the end of a bold
      * run comes out bold -- unless a program has just set a format on an
@@ -132,10 +157,12 @@ static void rich_free(void *p)
     free(e->undo);
     free(e->line);
     free(e->run);
+    free(e->para);
     free(e);
 }
 
 static void runs_reset(HWND wnd, ween_rich *e);
+static void paras_reset(ween_rich *e);
 
 static ween_rich *rich_state(HWND w)
 {
@@ -148,8 +175,10 @@ static ween_rich *rich_state(HWND w)
         }
         w->ctl = e;
         w->ctl_free = rich_free;
-        if (e)
+        if (e) {
             runs_reset(w, e);
+            paras_reset(e);
+        }
     }
     return w->ctl;
 }
@@ -188,6 +217,14 @@ static void face_copy(char *out, const char *in)
  * What the screen shows is pixels, so a height converts through the dpi --
  * 165 twips is eleven pixels at 96, which is the face a fresh control is
  * lettered in. */
+/* Twips to pixels for a distance, which may be nothing or may be negative --
+ * unlike a font's height, which is at least one pixel. */
+static int rfmt_px_twips(LONG twips)
+{
+    int dpi = ween_render_dpi();
+    return (int)((twips * dpi + (twips < 0 ? -720 : 720)) / 1440);
+}
+
 static int rfmt_px(LONG twips)
 {
     int px = (int)((twips * ween_render_dpi() + 720) / 1440);
@@ -451,6 +488,184 @@ static void runs_get(ween_rich *e, int from, int to, CHARFORMATA *cf)
     face_copy(cf->szFaceName, a->face);
 }
 
+/* ---- the paragraphs' own array ------------------------------------------- */
+
+static int paras_reserve(ween_rich *e, int n)
+{
+    struct rich_para *grown;
+    int cap = e->para_cap ? e->para_cap : 8;
+    if (n <= e->para_cap)
+        return 1;
+    while (cap < n)
+        cap *= 2;
+    grown = realloc(e->para, (size_t)cap * sizeof *grown);
+    if (!grown)
+        return 0;
+    e->para = grown;
+    e->para_cap = cap;
+    return 1;
+}
+
+static void pfmt_default(ween_pfmt *f)
+{
+    memset(f, 0, sizeof *f);
+    f->alignment = PFA_LEFT; /* which is what a fresh control answers */
+}
+
+/* One paragraph per mark, all in the default. */
+static void paras_reset(ween_rich *e)
+{
+    int i, n = 1;
+    for (i = 0; i < e->len; i++)
+        if (e->text[i] == '\r')
+            n++;
+    if (!paras_reserve(e, n))
+        return;
+    e->paras = 0;
+    pfmt_default(&e->para[0].fmt);
+    e->para[0].start = 0;
+    e->paras = 1;
+    for (i = 0; i < e->len; i++)
+        if (e->text[i] == '\r') {
+            e->para[e->paras].start = i + 1;
+            pfmt_default(&e->para[e->paras].fmt);
+            e->paras++;
+        }
+}
+
+static int para_at(const ween_rich *e, int at)
+{
+    int lo = 0, hi = e->paras - 1;
+    while (lo < hi) {
+        int mid = (lo + hi + 1) / 2;
+        if (e->para[mid].start <= at)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    return lo < 0 ? 0 : lo;
+}
+
+/* Text put in: the paragraphs after it move along, and a mark among what was
+ * put in splits the paragraph it landed in -- every piece carrying what that
+ * one carried. */
+static void paras_insert(ween_rich *e, int at, int n, const char *text)
+{
+    int i, marks = 0, k;
+    for (i = 0; i < n; i++)
+        if (text[i] == '\r')
+            marks++;
+    for (i = 1; i < e->paras; i++)
+        if (e->para[i].start > at)
+            e->para[i].start += n;
+    if (!marks)
+        return;
+    if (!paras_reserve(e, e->paras + marks))
+        return;
+    k = para_at(e, at);
+    memmove(&e->para[k + 1 + marks], &e->para[k + 1],
+            (size_t)(e->paras - k - 1) * sizeof *e->para);
+    e->paras += marks;
+    marks = 0;
+    for (i = 0; i < n; i++)
+        if (text[i] == '\r') {
+            marks++;
+            e->para[k + marks].fmt = e->para[k].fmt;
+            e->para[k + marks].start = at + i + 1;
+        }
+}
+
+/* Text taken out: a paragraph whose mark went with it is gone, and what is
+ * left of the two it joined carries the first one's formatting. */
+static void paras_delete(ween_rich *e, int from, int to)
+{
+    int i, out = 1;
+    for (i = 1; i < e->paras; i++) {
+        int start = e->para[i].start;
+        if (start > from && start <= to)
+            continue; /* its mark was inside what went */
+        if (start > to)
+            start -= to - from;
+        e->para[out].fmt = e->para[i].fmt;
+        e->para[out].start = start;
+        out++;
+    }
+    e->paras = out;
+}
+
+static void pfmt_apply(ween_pfmt *f, const PARAFORMAT *pf)
+{
+    DWORD m = pf->dwMask;
+    if (m & PFM_ALIGNMENT)
+        f->alignment = pf->wAlignment;
+    if (m & PFM_NUMBERING)
+        f->numbering = pf->wNumbering;
+    if (m & PFM_STARTINDENT)
+        f->start_indent = pf->dxStartIndent;
+    if (m & PFM_OFFSETINDENT)
+        f->start_indent += pf->dxStartIndent; /* a step, not a place */
+    if (m & PFM_RIGHTINDENT)
+        f->right_indent = pf->dxRightIndent;
+    if (m & PFM_OFFSET)
+        f->offset = pf->dxOffset;
+    if (m & PFM_TABSTOPS) {
+        int i, n = pf->cTabCount;
+        if (n > MAX_TAB_STOPS)
+            n = MAX_TAB_STOPS;
+        if (n < 0)
+            n = 0;
+        f->tabs = (SHORT)n;
+        for (i = 0; i < n; i++)
+            f->tab[i] = pf->rgxTabs[i];
+    }
+}
+
+/* Every paragraph the range touches, whole. A rich edit has no notion of
+ * half a paragraph being centred, which the machine shows by centring the
+ * whole of one when a single character of it was selected. */
+static void paras_set(ween_rich *e, int from, int to, const PARAFORMAT *pf)
+{
+    int i, first = para_at(e, from), last = para_at(e, to > from ? to - 1 : to);
+    for (i = first; i <= last && i < e->paras; i++)
+        pfmt_apply(&e->para[i].fmt, pf);
+}
+
+static void paras_get(ween_rich *e, int from, int to, PARAFORMAT *pf)
+{
+    int i, first = para_at(e, from), last = para_at(e, to > from ? to - 1 : to);
+    const ween_pfmt *a = &e->para[last].fmt;
+    DWORD mask = PFM_STARTINDENT | PFM_RIGHTINDENT | PFM_OFFSET |
+                 PFM_ALIGNMENT | PFM_TABSTOPS | PFM_NUMBERING;
+    for (i = first; i < last && i + 1 < e->paras; i++) {
+        const ween_pfmt *p = &e->para[i].fmt;
+        const ween_pfmt *b = &e->para[i + 1].fmt;
+        if (p->alignment != b->alignment)
+            mask &= ~(DWORD)PFM_ALIGNMENT;
+        if (p->numbering != b->numbering)
+            mask &= ~(DWORD)PFM_NUMBERING;
+        if (p->start_indent != b->start_indent)
+            mask &= ~(DWORD)PFM_STARTINDENT;
+        if (p->right_indent != b->right_indent)
+            mask &= ~(DWORD)PFM_RIGHTINDENT;
+        if (p->offset != b->offset)
+            mask &= ~(DWORD)PFM_OFFSET;
+        if (p->tabs != b->tabs ||
+            memcmp(p->tab, b->tab, sizeof p->tab) != 0)
+            mask &= ~(DWORD)PFM_TABSTOPS;
+    }
+    /* The machine answers a fresh control with these two set as well, and a
+     * program that reads the mask rather than the fields sees the same
+     * thing either way. */
+    pf->dwMask = mask | PFM_OFFSETINDENT | 0x00010000 /* PFM_RTLPARA */;
+    pf->wNumbering = a->numbering;
+    pf->wAlignment = a->alignment;
+    pf->dxStartIndent = a->start_indent;
+    pf->dxRightIndent = a->right_indent;
+    pf->dxOffset = a->offset;
+    pf->cTabCount = a->tabs;
+    memcpy(pf->rgxTabs, a->tab, sizeof pf->rgxTabs);
+}
+
 /* ---- the line table ------------------------------------------------------
  *
  * One pass over the text. A break is CRLF or a bare LF and counts as one
@@ -501,11 +716,9 @@ static void rich_relines(HWND wnd, ween_rich *e)
         return;
     for (;;) {
         int start = at, len, height, ascent = 0;
-        while (at < e->len && e->text[at] != '\n')
+        while (at < e->len && e->text[at] != '\r')
             at++;
-        len = at - start;
-        if (len && e->text[start + len - 1] == '\r')
-            len--; /* the break is not part of the line */
+        len = at - start; /* the mark is not part of the line */
         height = rich_line_extent(wnd, e, start, len, &ascent);
         if (n >= e->line_cap) {
             int cap = e->line_cap ? e->line_cap * 2 : 32;
@@ -525,7 +738,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
         n++;
         if (at >= e->len)
             break;
-        at++; /* past the '\n' */
+        at++; /* past the mark */
     }
     e->lines = n;
 }
@@ -622,6 +835,7 @@ static int rich_delete_range(HWND wnd, ween_rich *e, int from, int to)
     e->len -= to - from;
     e->caret = e->anchor = from;
     runs_delete(e, from, to);
+    paras_delete(e, from, to);
     rich_relines(wnd, e);
     return 1;
 }
@@ -631,6 +845,41 @@ static int rich_delete_selection(HWND wnd, ween_rich *e)
     int from, to;
     rich_range(e, &from, &to);
     return rich_delete_range(wnd, e, from, to);
+}
+
+/* ---- what a paragraph mark is -------------------------------------------
+ *
+ * One carriage return, and not the two characters that were handed in. Rich
+ * Edit 2.0 keeps a CRLF as a single CR and every offset it states -- a
+ * selection, EM_LINEINDEX, EM_GETSELTEXT -- is in that numbering, while
+ * WM_GETTEXT hands the text back with the CRLF a program expects. The
+ * machine says so plainly: set "one\r\ntwo" and WM_GETTEXT answers eight
+ * bytes ending "6f 6e 65 0d 0a 74 77 6f", but EM_GETSELTEXT of 2..6 answers
+ * four -- "65 0d 74 77", an "e", one carriage return, and "tw". And
+ * "one\r\ntwo\r\n" is three lines whose last begins at 8, which only counts
+ * if each break is one character.
+ *
+ * It matters more than it looks: a program that finds an offset in the text
+ * it read and hands it back to the control has to mean the same character on
+ * both sides, or the same source behaves differently on Windows and here.
+ * That is the whole promise.
+ */
+static int rich_copy_in(char *out, const char *in, int n)
+{
+    int i = 0, o = 0;
+    while (i < n) {
+        if (in[i] == '\r' && i + 1 < n && in[i + 1] == '\n') {
+            out[o++] = '\r';
+            i += 2;
+        } else if (in[i] == '\n') {
+            out[o++] = '\r'; /* a bare line feed is a paragraph mark too */
+            i++;
+        } else {
+            out[o++] = in[i++];
+        }
+    }
+    out[o] = 0;
+    return o;
 }
 
 /* What the next characters will carry: what a program armed with a set on an
@@ -650,8 +899,18 @@ static void rich_insert(HWND wnd, ween_rich *e, const char *text)
 {
     int n = (int)strlen(text), at = e->caret;
     ween_rfmt f;
+    char *converted = NULL;
     if (!n)
         return;
+    /* Whatever comes in -- typed, pasted, or handed over by EM_REPLACESEL --
+     * is stored with one carriage return per paragraph mark. */
+    if (strchr(text, '\n')) {
+        converted = malloc((size_t)n + 1);
+        if (!converted)
+            return;
+        n = rich_copy_in(converted, text, n);
+        text = converted;
+    }
     if (e->limit && e->len + n > e->limit) {
         n = e->limit - e->len;
         if (n <= 0) {
@@ -669,8 +928,10 @@ static void rich_insert(HWND wnd, ween_rich *e, const char *text)
     e->caret += n;
     e->anchor = e->caret;
     runs_insert(e, at, n, &f);
+    paras_insert(e, at, n, text);
     e->insert_armed = 0; /* it armed one insertion, not every one after it */
     rich_relines(wnd, e);
+    free(converted);
 }
 
 static int rich_set_text(HWND wnd, ween_rich *e, const char *text)
@@ -679,14 +940,16 @@ static int rich_set_text(HWND wnd, ween_rich *e, const char *text)
     if (!rich_reserve(e, n))
         return 0;
     if (n)
-        memcpy(e->text, text, (size_t)n);
+        n = rich_copy_in(e->text, text, n);
     e->text[n] = 0;
     e->len = n;
     e->caret = e->anchor = 0;
     e->first_visible = 0;
     /* Text given whole is text without formatting: one run again, in the
-     * control's own face. RTF arrives through EM_STREAMIN and not here. */
+     * control's own face, and its paragraphs in the default. RTF arrives
+     * through EM_STREAMIN and not here. */
     runs_reset(wnd, e);
+    paras_reset(e);
     e->insert_armed = 0;
     rich_relines(wnd, e);
     return 1;
@@ -792,6 +1055,33 @@ static int rich_x_of(ween_rich *e, int row, int col)
     return x;
 }
 
+/* Where a line's text begins, in client pixels: its paragraph's indents, and
+ * then whatever its alignment does with what is left. A twip is a twentieth
+ * of a point, so an indent converts through the dpi the way a size does.
+ *
+ * The first line of a paragraph gets the offset as well as the indent, which
+ * is what makes a hanging indent hang. With no wrapping yet every line is a
+ * first line; when 4a wraps them this is where the difference goes. */
+static int rich_line_left(HWND wnd, ween_rich *e, int row)
+{
+    int inset = rich_inset(wnd), sb = rich_bar(wnd);
+    const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
+    int left = inset + rfmt_px_twips(pf->start_indent) +
+               rfmt_px_twips(pf->offset);
+    RECT cr;
+    int right, width;
+    if (pf->alignment == PFA_LEFT || !pf->alignment)
+        return left;
+    GetClientRect(wnd, &cr);
+    right = cr.right - sb - inset - rfmt_px_twips(pf->right_indent);
+    width = rich_x_of(e, row, e->line[row].len);
+    if (pf->alignment == PFA_RIGHT)
+        return right - width;
+    if (pf->alignment == PFA_CENTER)
+        return left + (right - left - width) / 2;
+    return left;
+}
+
 /* How far along its line the caret stands. */
 static int rich_caret_x(HWND wnd, ween_rich *e)
 {
@@ -834,7 +1124,8 @@ static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
         row = e->first_visible;
     if (row >= e->lines)
         row = e->lines - 1;
-    return rich_index_at_x(wnd, e, row, x);
+    return rich_index_at_x(wnd, e, row, x - rich_line_left(wnd, e, row) +
+                                            rich_inset(wnd));
 }
 
 /* Bring the caret into view, scrolling by lines the way win32 does. */
@@ -891,7 +1182,7 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     for (row = e->first_visible; row < e->lines; row++) {
         int y = inset + e->line[row].top - e->line[e->first_visible].top;
-        int x = inset;
+        int x = rich_line_left(wnd, e, row);
         int at = e->line[row].start, end = at + e->line[row].len;
         int i = run_at(e, at);
         if ((wnd->style & ES_MULTILINE) &&
@@ -950,7 +1241,8 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && e->caret_on) {
         int crow = rich_line_of(e, e->caret);
         int cy = inset + e->line[crow].top - e->line[e->first_visible].top;
-        int cx = inset + rich_x_of(e, crow, e->caret - e->line[crow].start);
+        int cx = rich_line_left(wnd, e, crow) +
+                 rich_x_of(e, crow, e->caret - e->line[crow].start);
         if (cy >= inset && cy + e->line[crow].height <= cr.bottom - inset)
             ween_surface_vline(&top->surface, ox + cx, oy + cy,
                                e->line[crow].height, WEEN_BLACK);
@@ -990,19 +1282,32 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
     case WM_GETTEXT: {
+        /* Out the way a program expects it: a carriage return and a line
+         * feed for every paragraph mark, however it is stored. */
         char *out = (char *)lp;
-        int room = (int)wp;
-        int n = e->len;
+        int room = (int)wp, i, o = 0;
         if (!out || room <= 0)
             return 0;
-        if (n > room - 1)
-            n = room - 1;
-        memcpy(out, e->text, (size_t)n);
-        out[n] = 0;
+        for (i = 0; i < e->len && o < room - 1; i++) {
+            if (e->text[i] == '\r') {
+                if (o + 2 > room - 1)
+                    break;
+                out[o++] = '\r';
+                out[o++] = '\n';
+            } else {
+                out[o++] = e->text[i];
+            }
+        }
+        out[o] = 0;
+        return o;
+    }
+    case WM_GETTEXTLENGTH: {
+        int i, n = e->len;
+        for (i = 0; i < e->len; i++)
+            if (e->text[i] == '\r')
+                n++; /* the line feed that comes back with it */
         return n;
     }
-    case WM_GETTEXTLENGTH:
-        return e->len;
 
     /* ---- the selection, in both the EDIT's terms and the rich edit's ---- */
     case EM_SETSEL: {
@@ -1096,33 +1401,37 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 
     /* ---- what a program asks about lines ---- */
+    /* ---- what a program asks about lines ----
+     *
+     * From the control's own table, not from the shared ween_text_line_*:
+     * those count a CRLF as one break and this control has not got a CRLF to
+     * count. Sharing them was right while the two controls kept their text
+     * the same way; the machine's rich edit does not, so the answers come
+     * from where the lines actually are. */
     case EM_GETLINECOUNT:
-        return ween_text_line_count(e->text);
-    case EM_LINEINDEX:
-        return ween_text_line_start(
-            e->text,
-            (int)wp < 0 ? ween_text_line_from_char(e->text, e->caret) : (int)wp);
+        return e->lines;
+    case EM_LINEINDEX: {
+        int row = (int)wp < 0 ? rich_line_of(e, e->caret) : (int)wp;
+        if (row < 0 || row >= e->lines)
+            return -1;
+        return e->line[row].start;
+    }
     case EM_LINEFROMCHAR:
-        return ween_text_line_from_char(e->text,
-                                        (int)wp < 0 ? e->caret : (int)wp);
+        return rich_line_of(e, (int)wp < 0 ? e->caret : (int)wp);
     case EM_LINELENGTH: {
         int at = (int)wp < 0 ? e->caret : (int)wp;
-        return ween_text_line_length(
-            e->text,
-            ween_text_line_start(e->text,
-                                 ween_text_line_from_char(e->text, at)));
+        return e->line[rich_line_of(e, at)].len;
     }
     case EM_GETLINE: {
         char *out = (char *)lp;
-        int start, n, room;
-        if (!out)
+        int row = (int)wp, n, room;
+        if (!out || row < 0 || row >= e->lines)
             return 0;
         room = (int)*(WORD *)out;
-        start = ween_text_line_start(e->text, (int)wp);
-        n = ween_text_line_length(e->text, start);
+        n = e->line[row].len;
         if (n > room)
             n = room;
-        memcpy(out, e->text + start, (size_t)n);
+        memcpy(out, e->text + e->line[row].start, (size_t)n);
         return n;
     }
     case EM_GETFIRSTVISIBLELINE:
@@ -1206,7 +1515,8 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (at > e->len)
             at = e->len;
         row = rich_line_of(e, at);
-        pt->x = rich_inset(wnd) + rich_x_of(e, row, at - e->line[row].start);
+        pt->x = rich_line_left(wnd, e, row) +
+                rich_x_of(e, row, at - e->line[row].start);
         pt->y = rich_inset(wnd) + e->line[row].top -
                 e->line[e->first_visible].top;
         return 0;
@@ -1279,6 +1589,28 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         runs_get(e, from, to, cf);
         return (LRESULT)cf->dwEffects;
+    }
+
+    case EM_SETPARAFORMAT: {
+        const PARAFORMAT *pf = (const PARAFORMAT *)lp;
+        int from, to;
+        if (!pf)
+            return FALSE;
+        rich_range(e, &from, &to);
+        paras_set(e, from, to, pf);
+        rich_relines(wnd, e);
+        rich_notify(wnd, EN_CHANGE, ENM_CHANGE);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case EM_GETPARAFORMAT: {
+        PARAFORMAT *pf = (PARAFORMAT *)lp;
+        int from, to;
+        if (!pf)
+            return 0;
+        rich_range(e, &from, &to);
+        paras_get(e, from, to, pf);
+        return (LRESULT)pf->dwMask;
     }
 
     case WM_GETDLGCODE:
@@ -1494,17 +1826,11 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 return 0;
             rich_remember(e);
             rich_delete_selection(wnd, e);
-            rich_insert(wnd, e, "\r\n");
+            rich_insert(wnd, e, "\r"); /* one character, as it is stored */
         } else if (ch == '\b') {
             rich_remember(e);
-            if (!rich_delete_selection(wnd, e) && e->caret > 0) {
-                /* a line break is two characters and goes as one */
-                int back = (e->caret >= 2 && e->text[e->caret - 1] == '\n' &&
-                            e->text[e->caret - 2] == '\r')
-                               ? 2
-                               : 1;
-                rich_delete_range(wnd, e, e->caret - back, e->caret);
-            }
+            if (!rich_delete_selection(wnd, e) && e->caret > 0)
+                rich_delete_range(wnd, e, e->caret - 1, e->caret);
         } else if ((unsigned char)ch >= ' ') {
             char one[2];
             int from, to;
@@ -1557,17 +1883,12 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         switch (wp) {
         case VK_LEFT:
-            if (e->caret >= 2 && e->text[e->caret - 1] == '\n' &&
-                e->text[e->caret - 2] == '\r')
-                e->caret -= 2; /* a line break is one place, not two */
-            else if (e->caret > 0)
+            /* One place, since a paragraph mark is one character here. */
+            if (e->caret > 0)
                 e->caret--;
             break;
         case VK_RIGHT:
-            if (e->caret + 1 < e->len && e->text[e->caret] == '\r' &&
-                e->text[e->caret + 1] == '\n')
-                e->caret += 2;
-            else if (e->caret < e->len)
+            if (e->caret < e->len)
                 e->caret++;
             break;
         case VK_UP:
@@ -1623,16 +1944,11 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             break;
         case VK_DELETE: {
-            int back;
             if (wnd->style & (WS_DISABLED | ES_READONLY))
                 return 0;
             rich_remember(e);
-            back = (e->caret + 1 < e->len && e->text[e->caret] == '\r' &&
-                    e->text[e->caret + 1] == '\n')
-                       ? 2
-                       : 1;
             if (!rich_delete_selection(wnd, e) && e->caret < e->len)
-                rich_delete_range(wnd, e, e->caret, e->caret + back);
+                rich_delete_range(wnd, e, e->caret, e->caret + 1);
             rich_changed(wnd, e);
             moved = 0;
             break;

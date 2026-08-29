@@ -141,52 +141,89 @@ int main(void)
 
     /* ---- lines: the same questions edit_test.c asks the EDIT ---- */
 
+    /* Every offset below is in the control's own numbering, where a
+     * paragraph mark is one carriage return -- so the second line of
+     * "one\r\ntwo\r\nthree" begins at 4 and not at 5. The machine says the
+     * same: "one\r\ntwo\r\n" is three lines and the last begins at 8. */
     CHECK(SendMessageA(re, EM_GETLINECOUNT, 0, 0) == 3,
-          "three lines, counted by the breaks between them");
+          "three lines, counted by the marks between them");
     CHECK(SendMessageA(re, EM_LINEINDEX, 0, 0) == 0, "the first starts at nought");
-    CHECK(SendMessageA(re, EM_LINEINDEX, 1, 0) == 5,
-          "and the second past the first's break, both characters of it");
-    CHECK(SendMessageA(re, EM_LINEINDEX, 2, 0) == 10, "and the third past that");
-    CHECK(SendMessageA(re, EM_LINEFROMCHAR, 6, 0) == 1,
+    CHECK(SendMessageA(re, EM_LINEINDEX, 1, 0) == 4,
+          "and the second one past the first's mark, which is one character");
+    CHECK(SendMessageA(re, EM_LINEINDEX, 2, 0) == 8, "and the third past that");
+    CHECK(SendMessageA(re, EM_LINEFROMCHAR, 5, 0) == 1,
           "an offset says which line it is on");
-    CHECK(SendMessageA(re, EM_LINELENGTH, 6, 0) == 3,
-          "and the line it is on is three characters, break not counted");
-    CHECK(SendMessageA(re, EM_LINELENGTH, 12, 0) == 5,
-          "the last line has no break and is measured to the end");
+    CHECK(SendMessageA(re, EM_LINELENGTH, 5, 0) == 3,
+          "and the line it is on is three characters, mark not counted");
+    CHECK(SendMessageA(re, EM_LINELENGTH, 9, 0) == 5,
+          "the last line has no mark and is measured to the end");
     {
         char buf[32];
         *(WORD *)buf = (WORD)sizeof buf;
         int n = (int)SendMessageA(re, EM_GETLINE, 1, (LPARAM)buf);
         CHECK(n == 3 && memcmp(buf, "two", 3) == 0,
-              "a line comes back by number, without its break");
+              "a line comes back by number, without its mark");
+    }
+    {
+        /* And the machine's own case, offsets and all. */
+        SetWindowTextA(re, "one\r\ntwo\r\n");
+        CHECK(SendMessageA(re, EM_GETLINECOUNT, 0, 0) == 3 &&
+                  SendMessageA(re, EM_LINEINDEX, 2, 0) == 8,
+              "a text ending in a mark has an empty line after it, beginning "
+              "where the machine says: 8");
+        CHECK(GetWindowTextLengthA(re) == 10,
+              "while the length a program is told is the one it handed in, "
+              "with both characters of every mark");
+        {
+            char back[32] = "";
+            GetWindowTextA(re, back, sizeof back);
+            CHECK(strcmp(back, "one\r\ntwo\r\n") == 0,
+                  "and so is the text, however the control keeps it");
+        }
+        {
+            char sel[32] = "";
+            CHARRANGE cr;
+            int n;
+            cr.cpMin = 2;
+            cr.cpMax = 6;
+            SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+            n = (int)SendMessageA(re, EM_GETSELTEXT, 0, (LPARAM)sel);
+            CHECK(n == 4 && memcmp(sel, "e\rtw", 4) == 0,
+                  "a range handed out is the control's own bytes: four for "
+                  "2..6, with one carriage return in them -- which is what "
+                  "the machine answers");
+        }
+        SetWindowTextA(re, "one\r\ntwo\r\nthree");
     }
 
-    /* The control draws from a line table of its own and answers these
-     * messages from the shared line functions, so the two have to agree
-     * about every line of a text with both kinds of break in it, an empty
-     * line in the middle and one at the end. Moving down a line at a time is
-     * what walks the table; EM_LINEFROMCHAR is what reads the functions. */
+    /* The line table is the control's own answer to where a line begins,
+     * and the shared ween_text_line_* are not it: those count a CRLF as one
+     * break and this control keeps a single carriage return, so the two
+     * disagree by one per mark and only one of them is riched20's. Walking
+     * down the lines with the arrow has to land on the table's own starts. */
     {
         static const char mixed[] = "alpha\r\n\r\nbeta\ngamma\r\n";
+        static const int starts[] = { 0, 6, 7, 12, 18 };
         int lines, i, agreed = 1;
         SetWindowTextA(re, mixed);
         lines = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0);
-        CHECK(lines == ween_text_line_count(mixed),
-              "the control counts the lines of a mixed text as the shared "
-              "line functions do");
+        CHECK(lines == 5,
+              "a text with both kinds of break, an empty line in the middle "
+              "and one at the end is five lines");
         SendMessageA(re, EM_SETSEL, 0, 0);
         for (i = 0; i < lines; i++) {
             int at = caret_of(re);
             if ((int)SendMessageA(re, EM_LINEFROMCHAR, at, 0) != i)
                 agreed = 0;
-            if (at != ween_text_line_start(mixed, i))
+            if (at != starts[i])
                 agreed = 0;
             key(re, VK_DOWN, 0, 0);
             key(re, VK_HOME, 0, 0);
         }
         CHECK(agreed,
-              "and walking down it with the arrow lands on the same line "
-              "starts the shared functions give");
+              "and walking down it with the arrow lands on each line's start "
+              "in the control's own numbering, a bare line feed counting as "
+              "a mark like a CRLF");
     }
 
     /* ---- typing ---- */
@@ -198,31 +235,37 @@ int main(void)
     SendMessageA(re, WM_CHAR, (WPARAM)'\r', 0);
     typed(re, "world");
     CHECK(strcmp(text_of(re), "hello\r\nworld") == 0,
-          "Return is a line break, written as the two characters Windows "
-          "writes");
+          "Return makes a paragraph, which comes back out as the two "
+          "characters a program expects");
+    CHECK(SendMessageA(re, EM_LINEINDEX, 1, 0) == 6,
+          "and is one character where the control counts: the second line "
+          "begins at 6, not 7");
     SendMessageA(re, WM_CHAR, (WPARAM)'\b', 0);
     CHECK(strcmp(text_of(re), "hello\r\nworl") == 0,
           "backspace takes one character");
-    SendMessageA(re, EM_SETSEL, 7, 7);
+    SendMessageA(re, EM_SETSEL, 6, 6); /* just after the mark */
     SendMessageA(re, WM_CHAR, (WPARAM)'\b', 0);
     CHECK(strcmp(text_of(re), "helloworl") == 0,
-          "and a line break goes as one thing, not as two");
+          "and one backspace takes the mark, there being one of it");
 
     /* ---- where the arrows go ---- */
 
+    /* Lines at 0, 15 and 21 in the control's numbering: fourteen characters
+     * and a mark, five and a mark, fifteen. */
     SetWindowTextA(re, "long line here\r\nshort\r\nlong line again");
-    SendMessageA(re, EM_SETSEL, 12, 12); /* column 12 of the first line */
+    SendMessageA(re, EM_SETSEL, 12, 12); /* twelve characters into line one */
     key(re, VK_DOWN, 0, 0);
-    CHECK(caret_of(re) == 21,
-          "down a line stops at the end of a line too short for the column");
+    CHECK(caret_of(re) == 20,
+          "down a line stops at the end of a line too short to reach the "
+          "place the caret set out from");
     key(re, VK_HOME, 0, 0);
-    CHECK(caret_of(re) == 16, "Home is the start of the line");
+    CHECK(caret_of(re) == 15, "Home is the start of the line");
     key(re, VK_END, 0, 0);
-    CHECK(caret_of(re) == 21, "End is the end of it");
+    CHECK(caret_of(re) == 20, "End is the end of it");
     key(re, VK_HOME, 0, 1);
     CHECK(caret_of(re) == 0, "Control and Home is the start of the document");
     key(re, VK_END, 0, 1);
-    CHECK(caret_of(re) == 38, "Control and End the end of it");
+    CHECK(caret_of(re) == 36, "Control and End the end of it");
 
     /* Where a walk up and down the lines comes out, which is the one
      * behaviour the two controls are *meant* to differ in -- and the
@@ -700,6 +743,149 @@ int main(void)
         CHECK(g_selchange == 1 && g_seltyp == SEL_EMPTY,
               "and an empty one says so");
         SendMessageA(re, EM_SETEVENTMASK, 0, ENM_CHANGE | ENM_UPDATE);
+    }
+
+    /* ---- paragraphs ----
+     *
+     * Every rule here is riched20's own answer to tools/vm/ctlprobe.c. The
+     * offsets are the control's, where a mark is one character: "one\r\ntwo
+     * \r\nthree" is 0..3, 4..7 and 8..13. */
+
+    {
+        PARAFORMAT pf;
+        SetWindowTextA(re, "one\r\ntwo\r\nthree");
+        SendMessageA(re, EM_SETSEL, 0, 13);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK((pf.dwMask & PFM_ALIGNMENT) && pf.wAlignment == PFA_LEFT,
+              "a fresh control's paragraphs are ranged left");
+        CHECK(pf.dxStartIndent == 0 && pf.dxRightIndent == 0 &&
+                  pf.dxOffset == 0 && pf.cTabCount == 0,
+              "with no indents and no tab stops");
+
+        /* One character of the second paragraph selected, and the whole
+         * paragraph takes the alignment -- while its neighbours do not. */
+        SendMessageA(re, EM_SETSEL, 5, 6);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_CENTER;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        SendMessageA(re, EM_SETSEL, 4, 5);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER,
+              "setting an alignment over one character of a paragraph "
+              "centres the whole of it: its first character");
+        SendMessageA(re, EM_SETSEL, 6, 7);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER, "and its last");
+        SendMessageA(re, EM_SETSEL, 0, 1);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_LEFT, "the paragraph before is untouched");
+        SendMessageA(re, EM_SETSEL, 8, 9);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_LEFT, "and so is the one after");
+        SendMessageA(re, EM_SETSEL, 0, 13);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(!(pf.dwMask & PFM_ALIGNMENT),
+              "read across three that do not agree, the alignment bit is "
+              "cleared in the mask, as a CHARFORMAT's is");
+
+        /* A selection reaching into the next paragraph takes it whole. */
+        SetWindowTextA(re, "one\r\ntwo\r\nthree");
+        SendMessageA(re, EM_SETSEL, 0, 5);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_RIGHT;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        SendMessageA(re, EM_SETSEL, 0, 1);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_RIGHT, "a range over two takes the first");
+        SendMessageA(re, EM_SETSEL, 6, 7);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_RIGHT,
+              "and the second, of which it touched one character");
+        SendMessageA(re, EM_SETSEL, 9, 10);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_LEFT, "and not the third, which it did not");
+    }
+
+    {
+        /* What a new paragraph inherits, and what survives a join. */
+        PARAFORMAT pf;
+        SetWindowTextA(re, "alpha beta");
+        SendMessageA(re, EM_SETSEL, 0, 10);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_CENTER;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        SendMessageA(re, EM_SETSEL, 5, 5);
+        SendMessageA(re, WM_CHAR, (WPARAM)'\r', 0);
+        SendMessageA(re, EM_SETSEL, 0, 1);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER,
+              "a paragraph split in two leaves the first half as it was");
+        SendMessageA(re, EM_SETSEL, 7, 8);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER, "and the second half carries it too");
+
+        SetWindowTextA(re, "left\r\nright");
+        SendMessageA(re, EM_SETSEL, 0, 4);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_LEFT;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        SendMessageA(re, EM_SETSEL, 5, 10);
+        pf.wAlignment = PFA_RIGHT;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        SendMessageA(re, EM_SETSEL, 5, 5); /* just past the mark */
+        SendMessageA(re, WM_CHAR, (WPARAM)'\b', 0);
+        CHECK(strcmp(text_of(re), "leftright") == 0,
+              "a backspace over the mark joins the two paragraphs");
+        SendMessageA(re, EM_SETSEL, 0, 9);
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK((pf.dwMask & PFM_ALIGNMENT) && pf.wAlignment == PFA_LEFT,
+              "and what is left is the first one's, not the second's");
+    }
+
+    {
+        /* And what the alignment and the indents do to the drawing, which
+         * EM_POSFROMCHAR is the way to see. */
+        PARAFORMAT pf;
+        POINTL flush, centred, indented, righted;
+        SetWindowTextA(re, "a line of words");
+        flush.x = flush.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&flush, 0);
+        SendMessageA(re, EM_SETSEL, 0, 15);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_CENTER;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        centred.x = centred.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&centred, 0);
+        CHECK(centred.x > flush.x,
+              "a centred paragraph starts further along than a flush one");
+        pf.wAlignment = PFA_RIGHT;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        righted.x = righted.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&righted, 0);
+        CHECK(righted.x > centred.x, "and a ranged-right one further still");
+        pf.wAlignment = PFA_LEFT;
+        pf.dwMask = PFM_ALIGNMENT | PFM_STARTINDENT;
+        pf.dxStartIndent = 1440; /* an inch, which is 96 pixels at 96 dpi */
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        indented.x = indented.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&indented, 0);
+        CHECK(indented.x == flush.x + 96,
+              "and an indent of a whole inch moves it ninety-six pixels at "
+              "ninety-six dots to the inch");
     }
 
     /* ---- what the dialog manager is told, and what the bar does ---- */

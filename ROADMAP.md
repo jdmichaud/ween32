@@ -294,9 +294,18 @@ italic, underline, strikeout, size, face and colour are drawn, each run in
 its own, on the line's own baseline; `EM_POSFROMCHAR` says where a character
 landed, and `EN_SELCHANGE` tells a format bar the caret has moved.
 
-What it has not got is paragraphs carrying a `PARAFORMAT`, wrapping, and RTF
-through `EM_STREAMIN`/`EM_STREAMOUT`. Those are the next three pieces of
-WordPad's plan. `tests/richedit_test.c` asks it the same questions
+**And the paragraphs**, which is the third piece: a paragraph mark is a
+single carriage return, as Rich Edit 2.0 keeps one, so every offset the
+control states counts it once while `WM_GETTEXT` hands the text back with the
+CRLF a program expects. `EM_SETPARAFORMAT` takes whole paragraphs -- every
+one the selection touches -- and `EM_GETPARAFORMAT` clears the mask bit of
+whatever differs across them; a paragraph split in two leaves both halves
+carrying what the whole one carried, and a join keeps the first one's.
+Alignment and the indents are drawn.
+
+What it has not got is wrapping, tab stops and RTF through
+`EM_STREAMIN`/`EM_STREAMOUT`. Those are the next two pieces of WordPad's
+plan. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot
 come to disagree about a behaviour they share.
 

@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **944 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **974 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -1075,6 +1075,62 @@ format bar's Bold button works with nothing selected.
 `EM_POSFROMCHAR` puts the rich edit's caret three pixels left of the EDIT's
 at the same offset: the EDIT has half an average character and the rich edit
 has none. Which is what ween32 does — see `edit_default_margin`.
+
+### What a paragraph mark is, and why every offset turns on it
+
+**Rich Edit 2.0 keeps a paragraph mark as a single carriage return.** Every
+offset it states -- a selection, `EM_LINEINDEX`, `EM_GETSELTEXT` -- is in that
+numbering, while `WM_GETTEXT` hands the text back with the CRLF a program
+handed in. `ctlprobe.c` shows both halves at once:
+
+```
+set "one\r\ntwo":  WM_GETTEXTLENGTH 8, WM_GETTEXT 8 bytes
+                    6f 6e 65 0d 0a 74 77 6f          "one" CR LF "two"
+EM_GETSELTEXT of 2..6 answers 4 bytes
+                    65 0d 74 77                      "e"   CR    "tw"
+"one\r\ntwo\r\n" is three lines and the last begins at 8
+```
+
+Eight bytes out, four bytes for the range 2..6, and a third line beginning at
+8 -- which only counts if each mark is one character. It matters more than it
+looks: a program that finds an offset in the text it read and hands it back
+to the control has to mean the same character on both sides, or the same
+source behaves differently on Windows and here, which is the whole promise.
+
+One consequence inside ween32: the rich edit stopped answering line questions
+from the shared `ween_text_line_*`. Those count a CRLF as one break and this
+control has not got a CRLF to count, so `EM_LINEINDEX` and its neighbours
+come from the control's own line table. Sharing them was right while both
+controls kept their text the same way; it stopped being right the moment the
+machine said otherwise.
+
+### What a paragraph carries, and what happens at its edges
+
+Four rules, all `ctlprobe.c`'s answers:
+
+- **A command takes whole paragraphs.** Centring one character of the middle
+  paragraph of three centres the whole of it and leaves its neighbours alone;
+  a selection reaching one character into the next paragraph takes that one
+  whole as well.
+- **Read across paragraphs that differ, the mask bit is cleared** -- the same
+  rule a `CHARFORMAT` follows. A fresh control answers mask `8001003f`, left,
+  no indents, no tab stops; across three that disagree it answers `80010037`.
+- **A paragraph split in two leaves both halves carrying what the whole one
+  carried.** A return typed in a centred paragraph gives two centred ones.
+- **A join keeps the first one's.** A backspace over the mark between a
+  left-ranged paragraph and a right-ranged one leaves a paragraph that is
+  ranged left.
+
+The last two are what say a paragraph's formatting lives with the mark rather
+than with the text around it, and they are why ween32 keeps a paragraph array
+beside the run array and maintains it with exactly those two events.
+
+Two things about paragraphs the probe has *not* been asked, marked so that
+nobody reads them as measured: where the values come from when
+`EM_GETPARAFORMAT` is read across paragraphs that differ (ween32 answers with
+the last one's, as it does for a character format), and whether a selection
+ending exactly on a paragraph's first character takes that paragraph. Both
+want a run of the probe when 4a next boots a machine.
 
 ### The runs, and what a test can see of them
 
