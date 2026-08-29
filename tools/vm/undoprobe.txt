@@ -1,0 +1,29 @@
+== grouping: "hello" typed a character at a time ==
+  after typing           text hello                  canundo 1  next-undo TYPING   0..3 bold (m003F e0001)
+                         text                        canundo 0  next-undo unknown  0..3 bold (m003F e0001)
+  -> 1 undo(s) to take five characters back
+
+== grouping: "ab cd", to see whether a space breaks the run ==
+  after typing           text ab cd                  canundo 1  next-undo TYPING   0..3 bold (m003F e0001)
+                         text                        canundo 0  next-undo unknown  0..3 bold (m003F e0001)
+
+== jd's case: bold 0..3, then type, then undo ==
+  the base, unbolded     text abcdef                 canundo 0  next-undo unknown  0..3 plain(m003F e0000)
+  after bolding 0..3     text abcdef                 canundo 1  next-undo unknown  0..3 bold (m003F e0001)
+  after typing XY        text abcdefXY               canundo 1  next-undo TYPING   0..3 bold (m003F e0001)
+                         text abcdef                 canundo 1  next-undo unknown  0..3 bold (m003F e0001)
+                         text abcdef                 canundo 0  next-undo unknown  0..3 plain(m003F e0000)
+
+  A row where the text shortens is an undo of the typing.
+  A row where 0..3 goes bold->plain is an undo of the style.
+  Whether the style comes back at all is the answer to jd's
+  report, and the ORDER is the answer to whether one step can
+  hold both.
+
+== depth: how many steps does it keep? ==
+  120 formatting changes, one step each
+  100 undo(s) before it would not undo further
+  0..3 is now plain(m003F e0000)
+  120 means it kept every step and the limit is higher.
+  Fewer is the depth, and the state left behind is what the
+  steps that fell off the bottom would have restored.
