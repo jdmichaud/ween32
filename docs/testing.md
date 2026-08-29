@@ -1222,6 +1222,36 @@ ween_surface_write_bmp(&((struct ween_wnd *)dlg)->surface, "/tmp/find-ours.bmp")
 circle's column and the field's first ink — so that neither can drift back
 without a test saying so.
 
+### The caption's ramp, on a window wider than the ones we had
+
+WordPad's frame is 768 wide where the explorer's is 654, and at that width
+the caption band differs from the machine by **6079 pixels of 14,592** while
+the menu band under it and the frame's own top rows differ by **0**. So it is
+the gradient alone, and it is not a colour: **340 of 768 columns are out by
+one, in one channel**, and every sampled pixel that differs differs by ±1.
+
+Taken apart along a caption row clear of the title and the icon, the two
+ramps agree about almost everything:
+
+| | machine | ours |
+| --- | --- | --- |
+| steps in R / G / B | 157 / 167 / 135 | **the same** |
+| the last four R steps | 693, 698, 702, 706 | **the same** |
+| the first R step | **23** | 21 |
+| the first B step | **24** | 22 |
+
+The span is right, the end is right, the number of steps is right; **ours
+starts two pixels early and the two converge**, so the offset runs 2, then 1,
+then 0 across the width (38 columns at 2, 78 at 1, 41 already together). A
+uniform ramp from the caption's left edge would take its first step at pixel
+4 or 5, and the machine takes it at 23 — so whatever it does at the start is
+not a straight interpolation, and shifting ours by one or two does not fix it
+either: the best whole-pixel shift still leaves 190 columns out.
+
+Nobody should fit a curve to this. What it wants is the machine's own ramp
+read off a capture at two widths — 654 and 768 — because the shape at the
+start is what differs and one width cannot show whether it scales.
+
 ### The toolbar, asked rather than looked at
 
 `tools/vm/ctlprobe.c` creates controls in its own process, so the messages
