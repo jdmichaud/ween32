@@ -132,6 +132,10 @@ static int g_dblclk = 0;  /* this press is the second of a pair */
 static MSG *g_queue;
 static int g_qcap = 0, g_qhead = 0, g_qtail = 0;
 static int g_quit = 0, g_quit_code = 0;
+/* Whether the quit came from a drained event queue rather than from the
+ * program or the user. **Only that one may be undone**: see
+ * `ween_unquit_scripted`. */
+static int g_quit_scripted = 0;
 
 static LRESULT button_proc(HWND, UINT, WPARAM, LPARAM);
 static LRESULT static_proc(HWND, UINT, WPARAM, LPARAM);
@@ -2245,7 +2249,33 @@ void PostQuitMessage(int code)
 {
     g_quit = 1;
     g_quit_code = code;
+    g_quit_scripted = 0; /* the program asked; injection must not undo it */
 }
+/* **A drained queue is not a finished application.**
+ *
+ * `WEEN_EV_END` arrives whenever the injected queue is empty, and it set
+ * `g_quit` for good. That is right for a front-loaded script -- every
+ * instrument we had injects the whole thing and then pumps once -- and wrong
+ * for anything that drives the program a gesture at a time, which is what a
+ * monkey does. bob measured it: three identical drags in one program gave
+ * `0..12`, then `0..0`, `0..0`. **The first drag drained the queue and every
+ * later one was delivered to a program that had already decided it was over**,
+ * so a monkey could exercise the handlers and say nothing about the route
+ * that reaches them.
+ *
+ * Injection undoes it. **Only the scripted one**: `PostQuitMessage` and the
+ * last window closing both set `g_quit` too, and undoing either of those
+ * would mean an injected event could cancel a real quit and keep a closed
+ * program alive. That is why this remembers which of the three it was rather
+ * than simply clearing the flag. */
+void ween_unquit_scripted(void)
+{
+    if (!g_quit_scripted)
+        return;
+    g_quit = 0;
+    g_quit_scripted = 0;
+}
+
 
 LRESULT SendMessageA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -3123,6 +3153,7 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
         break;
     case WEEN_EV_END:
         g_quit = 1;
+        g_quit_scripted = 1;
         break;
     case WEEN_EV_TIME: /* both are handled by the loop, before dispatch */
     case WEEN_EV_NONE:
@@ -3187,6 +3218,7 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
         ween_flush_paint();
         if (!g_tops || !ween_active_backend) {
             g_quit = 1; /* the last window closed and nothing can arrive now */
+            g_quit_scripted = 0;
             continue;
         }
         ween_event ev =

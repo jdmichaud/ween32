@@ -46,6 +46,9 @@ void ween_headless_inject(ween_event ev)
         g_ev_cap = cap;
     }
     g_events[g_ev_tail++] = ev;
+    /* Something is driving this program after its queue ran dry, so the
+     * `WEEN_EV_END` that emptying produced did not mean what it said. */
+    ween_unquit_scripted();
 }
 
 void ween_headless_set_bmp_path(const char *path)

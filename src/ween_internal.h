@@ -710,6 +710,12 @@ typedef enum {
     WEEN_EV_END /* event source exhausted (headless) / connection lost */
 } ween_ev_kind;
 
+/* Undo a quit that came from a drained injection queue, and **only** that
+ * one -- `PostQuitMessage` and the last window closing set the same flag and
+ * must survive. Called when an event is injected into a program whose queue
+ * had already run dry, which is what driving one a gesture at a time does. */
+void ween_unquit_scripted(void);
+
 #define WEEN_WIN_UNMANAGED 1u /* a menu: no decoration, no management */
 
 /* The pointer shapes a backend must know: the classic set, which the window
