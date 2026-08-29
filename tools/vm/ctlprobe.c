@@ -737,6 +737,64 @@ static void imageinset(HWND parent)
  * not capture, and four heights with the same string in each will say how.
  */
 static HFONT the_font;
+static HFONT the_status_font;
+
+/* How tall a button comes out, which is not the cy it was told.
+ *
+ * explorer's menu band asks for 19 and real comctl32 hands back 16, where
+ * ween32 hands back the 19 it was asked for -- and ween32's menu band matches
+ * the machine, so the height and the top inset are wrong together and come
+ * out right together. Neither can be moved without the other, and moving them
+ * needs the rule rather than the one case.
+ *
+ * Four heights asked for, in the menu band's own configuration and again with
+ * a plain image button, so the answer separates "the cy is ignored" from "the
+ * cy is a minimum" from "the cy is used unless the text needs more".
+ */
+static void buttonheights(HWND parent)
+{
+    static const int asked[4] = { 16, 19, 22, 26 };
+    int k, j;
+    emit("== button heights: told cy, given back ==\r\n");
+    for (k = 0; k < 2; k++) {
+        for (j = 0; j < 4; j++) {
+            TBBUTTON b;
+            HWND tb;
+            RECT r;
+            memset(&b, 0, sizeof b);
+            b.idCommand = 800 + k * 10 + j;
+            b.fsState = TBSTATE_ENABLED;
+            b.fsStyle = TBSTYLE_BUTTON;
+            if (k == 0) { /* a menu band's title: text, no image */
+                b.iBitmap = -1;
+                b.iString = (INT_PTR)"File";
+            } else { /* a plain image button */
+                b.iBitmap = 0;
+            }
+            tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                                 WS_CHILD | TBSTYLE_FLAT | CCS_NODIVIDER |
+                                 CCS_NORESIZE | CCS_NOPARENTALIGN |
+                                 (k == 0 ? TBSTYLE_LIST : 0),
+                                 0, 0, 200, 40, parent,
+                                 (HMENU)(UINT_PTR)(410 + k * 4 + j), NULL,
+                                 NULL);
+            SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            SendMessageA(tb, WM_SETFONT, (WPARAM)the_font, FALSE);
+            SendMessageA(tb, TB_SETBITMAPSIZE, 0, MAKELPARAM(16, 16));
+            if (k == 0)
+                SendMessageA(tb, TB_SETPADDING, 0, MAKELPARAM(16, 0));
+            SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, asked[j]));
+            SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+            r.left = r.top = r.right = r.bottom = 0;
+            SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+            wsprintfA(buf, "  %-10s cy=%2d -> y=%ld h=%ld w=%ld\r\n",
+                      k == 0 ? "menu band" : "image", asked[j], r.top,
+                      r.bottom - r.top, r.right - r.left);
+            emit(buf);
+            DestroyWindow(tb);
+        }
+    }
+}
 
 static void statusheights(HWND parent)
 {
@@ -757,7 +815,11 @@ static void statusheights(HWND parent)
          * out a row below the machine's own WordPad and Paint, by exactly the
          * one row a different font moves a line. Set it and the two are
          * comparable. */
-        SendMessageA(sb, WM_SETFONT, (WPARAM)the_font, TRUE);
+        /* A status bar's font is NONCLIENTMETRICS' *status* font, not its
+         * message font -- a separate field, and the one a real program's bar
+         * ends up with. With the message font every one of these four came
+         * out a row below the machine's own WordPad and Paint. */
+        SendMessageA(sb, WM_SETFONT, (WPARAM)the_status_font, TRUE);
         SendMessageA(sb, SB_SETPARTS, 1, (LPARAM)one);
         SendMessageA(sb, SB_SETTEXTA, 0 | SBT_NOBORDERS, (LPARAM)"Hg");
         r.left = r.top = r.right = r.bottom = 0;
@@ -1457,6 +1519,7 @@ static void probe_main(void)
     }
     font = CreateFontIndirectA(&ncm.lfMessageFont);
     the_font = font;
+    the_status_font = CreateFontIndirectA(&ncm.lfStatusFont);
     wsprintfA(buf, "== font ==\r\nmessage font \"%s\" height %ld weight %ld\r\n",
               ncm.lfMessageFont.lfFaceName, ncm.lfMessageFont.lfHeight,
               ncm.lfMessageFont.lfWeight);
@@ -1472,6 +1535,7 @@ static void probe_main(void)
     rebarband(w);
     imageinset(w);
     statusheights(w);
+    buttonheights(w);
     CloseHandle(out_file);
 
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {
