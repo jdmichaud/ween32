@@ -2149,6 +2149,15 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
 /* The faces this library can draw, and the point sizes their strikes hold.
  * Tahoma carries eight to sixteen pixels, which at 96 dpi is six points to
  * twelve; MS Sans Serif carries thirteen, sixteen and twenty. */
+/* **This is no longer the list of faces -- `src/fonts.c` is.** It was, and it
+ * happened to be right, which is worse than being wrong: two lists that agree
+ * today are two lists that disagree in a month. `EnumFontFamiliesA` now says
+ * which faces exist and this says only what sizes each of them carries, keyed
+ * by name so the two cannot drift out of step by position.
+ *
+ * A face the library reports and this does not name gets an **empty** size
+ * list rather than another face's sizes. An empty list is visible; the wrong
+ * face's sizes are not. */
 static const struct {
     const char *face;
     const int *sizes;
@@ -2184,6 +2193,8 @@ static const struct {
  * a branch nothing exercises is not a branch anybody has checked. */
 static const char *font_note(int face)
 {
+    if (face < 0)
+        face = 0; /* the note is about a kind of font, and both ours are one */
     return font_faces[face].screen
                ? "This is a screen font. The closest matching printer font "
                  "will be used for printing."
@@ -2214,12 +2225,16 @@ static struct {
     HFONT sample;
 } g_cf;
 
+/* Which row of sizes belongs to a face, or -1 for a face this table does not
+ * name. **-1 rather than 0**: falling back to the first row hands out MS Sans
+ * Serif's sizes for a face that is not it, and nothing about the box would
+ * look wrong. */
 static int cf_face_index(const char *face)
 {
     for (int i = 0; i < (int)(sizeof font_faces / sizeof font_faces[0]); i++)
         if (face && !strcmp(font_faces[i].face, face))
             return i;
-    return 0;
+    return -1;
 }
 
 /* What the three lists say, as a LOGFONT. */
@@ -2278,9 +2293,10 @@ static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         int face = 0, i;
         if (!cf)
             return TRUE;
-        for (i = 0; i < (int)(sizeof font_faces / sizeof font_faces[0]); i++)
+        /* The faces the library has, asked for rather than restated. */
+        for (i = 0; i < ween_font_family_count(); i++)
             SendDlgItemMessageA(dlg, CF_FACE, CB_ADDSTRING, 0,
-                                (LPARAM)font_faces[i].face);
+                                (LPARAM)ween_font_family(i));
         for (i = 0; i < (int)(sizeof font_styles / sizeof font_styles[0]); i++)
             SendDlgItemMessageA(dlg, CF_STYLE, CB_ADDSTRING, 0,
                                 (LPARAM)font_styles[i]);
@@ -2368,10 +2384,8 @@ static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                 char keep[16];
                 int i;
                 GetDlgItemTextA(dlg, CF_SIZE, keep, sizeof keep);
-                if (f < 0)
-                    f = 0;
                 SendDlgItemMessageA(dlg, CF_SIZE, CB_RESETCONTENT, 0, 0);
-                for (i = 0; i < font_faces[f].n; i++) {
+                for (i = 0; f >= 0 && i < font_faces[f].n; i++) {
                     char num[16];
                     sprintf(num, "%d", font_faces[f].sizes[i]);
                     SendDlgItemMessageA(dlg, CF_SIZE, CB_ADDSTRING, 0,
