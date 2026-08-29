@@ -2646,23 +2646,9 @@ Every entry says where it came from. `machine` means Windows 2000 through
 
 ### Measured to be **false** — do not assert these
 
-- **"`EM_POSFROMCHAR` agrees with where the caret is drawn."** It does not, at
-  the two positions a monkey will hit most:
-
-  ```
-  empty control, index 0      -> -1, -1
-  "abc\r\ndef", index 8 (len) -> -1, -1
-  ```
-
-  **The caret is drawn at both**, and the message answers -1. Asserted as
-  written, this fires on every empty document and after every append.
-  *(machine — **but of an `EDIT`, not a `RichEdit20W`**; whether riched20
-  agrees is unmeasured, and that is a reading somebody should take before
-  relying on either answer.)*
-
-- **"Distinct indices have distinct positions."** `"abc\r\ndef"` indices **3
-  and 4** — the `\r` and the `\n` — both answer `21,1`. A line break is two
-  characters at one place. *(machine, same caveat)*
+- **"Distinct indices have distinct positions."** In a rich edit, indices
+  **7 and 8** of `"abc\r\ndef"` both answer `x 21 y 16` — the last character
+  and the end of the text share a place. *(machine)*
 
 - **"After an insert of n the length rises by exactly n."** True until the
   text limit, where the insert is truncated and `EN_MAXTEXT` fires. The
@@ -2673,6 +2659,42 @@ Every entry says where it came from. `machine` means Windows 2000 through
   narrows the client by a scrollbar's width, which re-wraps **every line
   already in the document** — so an append at the end changes where the first
   line breaks. *(machine)*
+
+### The one that was on this list as *false* and is not
+
+**`EM_POSFROMCHAR` does agree with where the caret is drawn — in a rich
+edit.** This section said the opposite for several hours, and the correction
+is the most useful entry here.
+
+```
+EDIT         empty, index 0         -> -1
+             "abc\r\ndef", index 8   -> -1          (index == length)
+RICHEDIT20W  empty, index 0         -> x 1  y 0      written
+             "abc\r\ndef", index 8   -> x 21 y 16    written
+             index 9, past the end  -> x 21 y 16    written, clamped
+```
+
+**riched20 answers a real position at both places the EDIT refuses**,
+including the index the caret occupies after every append. *(machine, both
+controls in one run — `captures-sam/re1.txt`)*
+
+**The mistake was not the reading, it was carrying it across.** `ctlprobe`
+asked an **EDIT**; that answer was written into an oracle for a **rich edit**
+with a note saying riched20 was *unmeasured*. The note was true and the shape
+was wrong, because the two are **different calls sharing one name**:
+
+```
+EDIT      wParam = index          the point is the return value, or -1
+RICHEDIT  wParam = POINTL *out    lParam = index; the result is always 0
+```
+
+**A reading of one is not weak evidence about the other; it is none.** A
+signature that differs is the tell, and it is the same shape as reading
+`BringWindowToTop` off its name.
+
+They also break lines differently: for `"abc\r\ndef"` the EDIT puts indices 3
+and 4 both at the end of line 1, and riched20 puts index 3 at the end of line
+1 and index 4 at the **start of line 2**.
 
 ### Not measured — assert only as our own design, and say so
 
