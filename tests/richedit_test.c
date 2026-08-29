@@ -139,6 +139,38 @@ static int caret_of(HWND w)
     return (int)to;
 }
 
+/* The caret's height, off the surface, **inside the control and nowhere
+ * else**. The headless surface is the whole screen and the windows earlier
+ * tests made are still standing on it, so a scan of all of it finds their
+ * borders: the first draft measured 215 and 96 for two cases that differ by
+ * three, which is a number with nothing to do with the question. */
+static int caret_rows(HWND ctl, HWND host)
+{
+    RECT c;
+    POINT o = {0, 0};
+    InvalidateRect(host, NULL, TRUE);
+    ween_flush_paint();
+    const ween_surface *s = ween_headless_surface();
+    if (!s || !GetClientRect(ctl, &c) || !ClientToScreen(ctl, &o))
+        return 0;
+    int best = 0;
+    for (int x = o.x; x < o.x + c.right && x < s->w; x++) {
+        int run = 0;
+        for (int y = o.y; y < o.y + c.bottom && y < s->h; y++) {
+            if ((s->px[(size_t)y * s->w + x] & 0xffffff) == WEEN_RGBX(0, 0, 0))
+                run++;
+            else {
+                if (run > best)
+                    best = run;
+                run = 0;
+            }
+        }
+        if (run > best)
+            best = run;
+    }
+    return best;
+}
+
 int main(void)
 {
     setenv("WEEN32_HEADLESS", "1", 1);
@@ -2083,6 +2115,56 @@ int main(void)
                   "taking that of where it landed");
         }
         DestroyWindow(t);
+    }
+
+    /* ---- an empty document's line is as tall as what would be typed ----
+     *
+     * jd, of WordPad: *"the cursor seems smaller than the original"*. A new
+     * document has no characters, and an application sets its font on it
+     * before one exists -- which lands on an empty selection, arming the
+     * insert format and leaving every run alone. The line then had nothing
+     * to take a height from and fell back to the control's own face.
+     *
+     * Measured at 96 dpi: the machine's empty-document caret is 16 tall
+     * (captures-sam/caret-machine.png, rows 11..26) where ours was 13.
+     *
+     * **This is a drawn test because the fault is only visible drawn.** The
+     * control answers EM_POSFROMCHAR with y = 1 for character zero whatever
+     * the height is, so nothing a program can ask distinguishes the two --
+     * and one character of text hides it, which is why every reading anyone
+     * took had text under it.
+     */
+    {
+        /* The headless surface is one screen and `host` is the size of it, so
+         * a control made beside it is drawn under it and the scan below finds
+         * that window's ink instead -- 9 and 13 for two cases that differ by
+         * three, which is a pair of numbers about the wrong window. */
+        DestroyWindow(host);
+        HWND host2 = CreateWindowExA(0, "weenrich", "h2", WS_POPUP | WS_VISIBLE,
+                                     0, 0, 200, 100, NULL, NULL, NULL, NULL);
+        HWND t = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 180, 80, host2, NULL, NULL, NULL);
+        SetFocus(t);
+        int bare = caret_rows(t, host2);
+        CHECK(bare == 13,
+              "an empty document's caret is the control's own font tall");
+
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_FACE | CFM_SIZE;
+        cf.yHeight = 200; /* 10pt in twips, what WordPad sends */
+        strcpy(cf.szFaceName, "Arial");
+        SendMessageA(t, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+        int arial = caret_rows(t, host2);
+        CHECK(arial == 16,
+              "and Arial 10 on that empty document makes it sixteen, which "
+              "is the machine's");
+        CHECK(arial > bare,
+              "a set that lands on no characters still changes the line the "
+              "caret is on");
+        DestroyWindow(host2);
     }
 
     if (g_failures) {

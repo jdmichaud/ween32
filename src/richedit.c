@@ -729,10 +729,46 @@ static int rich_line_height(HWND wnd)
  * Where the runs sit *within* that height, when they differ, is not measured
  * yet: the baselines are lined up here, which is what every text engine
  * does, and 4a will have to ask the machine when it wraps. */
+static void rich_insert_fmt(ween_rich *e, ween_rfmt *out);
+
 static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
                             int *ascent)
 {
     int i = run_at(e, start), tall = 0, asc = 0;
+    /* **An empty line is as tall as what would be typed on it**, which is
+     * not the same as the run it sits in.
+     *
+     * jd: *"the cursor seems smaller than the original"*. A new document is
+     * empty, and WordPad sets Arial 10 on it with EM_SETCHARFORMAT before a
+     * character exists -- so the set lands on nothing selected, which arms
+     * the insert format and leaves every run alone. The line had no
+     * characters to take a height from and fell back to the control's own
+     * face, so the caret came out the GUI font's 13 where the machine's is
+     * 16. Measured both ways, empty document at 96 dpi:
+     *
+     *     machine, captures-sam/caret-machine.png    rows 11..26   16 tall
+     *     ours, before                               rows 135..147 13 tall
+     *
+     * Type one character and ours was already right -- the run existed by
+     * then. That is why it survived: **every reading anybody took of the
+     * caret had text under it.**
+     *
+     * rich_insert_fmt is the control's own answer to "what will the next
+     * character carry", armed format or the one before the caret, so this
+     * asks the question that is already asked when a character actually
+     * arrives rather than inventing a second rule.
+     */
+    if (len == 0 && start == e->caret) {
+        ween_rfmt next;
+        const ween_strike *f;
+        rich_insert_fmt(e, &next);
+        f = rfmt_strike(&next);
+        if (f) {
+            if (ascent)
+                *ascent = f->ascent;
+            return f->ascent - f->descent;
+        }
+    }
     for (;;) {
         const ween_strike *f = rfmt_strike(&e->run[i].fmt);
         int h = f ? f->ascent - f->descent : rich_line_height(wnd);
@@ -2819,6 +2855,16 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 e->insert_armed = 1;
             }
             rfmt_apply(&e->insert, cf);
+            /* **And the line the caret is on may have just changed height.**
+             * The text does not change, so this branch used to return here --
+             * but an empty line takes its height from what would be typed on
+             * it, which is what was just set. A new document is the whole of
+             * that case: WordPad sets Arial 10 before a character exists, and
+             * without this the caret stayed the control's own 13 against the
+             * machine's 16. Re-lining an unchanged text is the same walk the
+             * set would have done had anything been selected. */
+            rich_relines(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
             return TRUE;
         }
         rich_remember(e);
