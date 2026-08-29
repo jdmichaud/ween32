@@ -3396,34 +3396,34 @@ enum {
  * is a label at 14 and its value at 90, twenty-six apart, and a line rules
  * off each group of them. */
 static const fo_place g_prop_at[] = {
-    { IDC_PROP_ICON, 14, 12, 32, 32 },
-    { IDC_PROP_NAME, 87, 19, 246, 23 },
-    { IDC_PROP_RULE1, 14, 53, 318, 2 },
-    { IDC_PROP_L_TYPE, 14, 66, 76, 14 },
-    { IDC_PROP_TYPE, 90, 66, 160, 14 },
-    { IDC_PROP_L_OPENS, 14, 92, 76, 14 },
-    { IDC_PROP_APPICON, 87, 92, 16, 16 },
-    { IDC_PROP_OPENS, 90, 92, 160, 14 },
-    { IDC_PROP_CHANGE, 258, 89, 75, 23 },
-    { IDC_PROP_RULE2, 14, 118, 318, 2 },
-    { IDC_PROP_L_WHERE, 14, 131, 76, 14 },
-    { IDC_PROP_WHERE, 90, 131, 240, 14 },
-    { IDC_PROP_L_SIZE, 14, 157, 76, 14 },
-    { IDC_PROP_SIZE, 90, 157, 240, 14 },
-    { IDC_PROP_L_ONDISK, 14, 183, 76, 14 },
-    { IDC_PROP_ONDISK, 90, 183, 240, 14 },
-    { IDC_PROP_RULE3, 14, 209, 318, 2 },
-    { IDC_PROP_L_CREATED, 14, 222, 76, 14 },
-    { IDC_PROP_CREATED, 90, 222, 240, 14 },
-    { IDC_PROP_L_WHEN, 14, 248, 76, 14 },
-    { IDC_PROP_WHEN, 90, 248, 240, 14 },
-    { IDC_PROP_L_ACCESSED, 14, 274, 76, 14 },
-    { IDC_PROP_ACCESSED, 90, 274, 240, 14 },
-    { IDC_PROP_RULE4, 14, 300, 318, 2 },
-    { IDC_PROP_L_ATTRS, 14, 313, 76, 14 },
-    { IDC_PROP_READONLY, 87, 313, 76, 16 },
-    { IDC_PROP_HIDDEN, 167, 313, 76, 16 },
-    { IDC_PROP_ARCHIVE, 246, 313, 76, 16 },
+    { IDC_PROP_ICON, 11, 11, 32, 32 },
+    { IDC_PROP_NAME, 84, 18, 246, 23 },
+    { IDC_PROP_RULE1, 11, 52, 318, 2 },
+    { IDC_PROP_L_TYPE, 11, 65, 76, 14 },
+    { IDC_PROP_TYPE, 87, 65, 160, 14 },
+    { IDC_PROP_L_OPENS, 11, 91, 76, 14 },
+    { IDC_PROP_APPICON, 84, 91, 16, 16 },
+    { IDC_PROP_OPENS, 87, 91, 160, 14 },
+    { IDC_PROP_CHANGE, 255, 88, 75, 23 },
+    { IDC_PROP_RULE2, 11, 117, 318, 2 },
+    { IDC_PROP_L_WHERE, 11, 130, 76, 14 },
+    { IDC_PROP_WHERE, 87, 130, 240, 14 },
+    { IDC_PROP_L_SIZE, 11, 156, 76, 14 },
+    { IDC_PROP_SIZE, 87, 156, 240, 14 },
+    { IDC_PROP_L_ONDISK, 11, 182, 76, 14 },
+    { IDC_PROP_ONDISK, 87, 182, 240, 14 },
+    { IDC_PROP_RULE3, 11, 208, 318, 2 },
+    { IDC_PROP_L_CREATED, 11, 221, 76, 14 },
+    { IDC_PROP_CREATED, 87, 221, 240, 14 },
+    { IDC_PROP_L_WHEN, 11, 247, 76, 14 },
+    { IDC_PROP_WHEN, 87, 247, 240, 14 },
+    { IDC_PROP_L_ACCESSED, 11, 273, 76, 14 },
+    { IDC_PROP_ACCESSED, 87, 273, 240, 14 },
+    { IDC_PROP_RULE4, 11, 299, 318, 2 },
+    { IDC_PROP_L_ATTRS, 11, 312, 76, 14 },
+    { IDC_PROP_READONLY, 84, 312, 76, 16 },
+    { IDC_PROP_HIDDEN, 164, 312, 76, 16 },
+    { IDC_PROP_ARCHIVE, 243, 312, 76, 16 },
 };
 
 /* The row the sheet is about, and what its box said when it was put up: a
@@ -3506,7 +3506,7 @@ static INT_PTR CALLBACK prop_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                 if (icon)
                     SendMessageA(GetDlgItem(dlg, IDC_PROP_APPICON),
                                  STM_SETICON, (WPARAM)icon, 0);
-                MoveWindow(at, 112, 92, 160, 14, FALSE);
+                MoveWindow(at, 109, 91, 160, 14, FALSE);
             }
         } else {
             SetDlgItemTextA(dlg, IDC_PROP_OPENS, "Unknown application");
