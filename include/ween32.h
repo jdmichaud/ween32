@@ -440,6 +440,10 @@ HCURSOR SetCursor(HCURSOR cursor);
  * has no minimise or maximise box: the three do not share the strip. */
 #define WS_EX_CONTEXTHELP 0x00000400L
 #define WS_EX_STATICEDGE 0x00020000L
+/* A window that takes files dropped on it. ween32 has no drag and drop, so
+ * nothing acts on this yet -- but a program that accepts files says so when
+ * it creates its window, and WordPad's frame does. Named so it can be said. */
+#define WS_EX_ACCEPTFILES 0x00000010L
 /* A child that does not tell its parent when it comes and goes. */
 #define WS_EX_NOPARENTNOTIFY 0x00000004L
 

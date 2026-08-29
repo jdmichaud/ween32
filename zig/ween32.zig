@@ -380,6 +380,13 @@ pub extern fn SetCursor(cursor: HCURSOR) callconv(.c) HCURSOR;
 pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) callconv(.c) HCURSOR;
 pub extern fn DestroyCursor(cursor: HCURSOR) callconv(.c) BOOL;
 pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, cy: c_int, flags: UINT) callconv(.c) HANDLE;
+/// The menu and the accelerator table a program keeps in its resources.
+/// WordPad's frame is built from both, which is what put them here: the C
+/// header has had them since the .res reader landed and the Zig module had
+/// not, and a missing declaration here is a compile error in the application
+/// rather than a wrong answer -- which is the right way round.
+pub extern fn LoadMenuA(instance: ?HINSTANCE, name: LPCSTR) callconv(.c) ?HMENU;
+pub extern fn LoadAcceleratorsA(instance: ?HINSTANCE, name: LPCSTR) callconv(.c) ?HACCEL;
 pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) callconv(.c) c_int;
 
 pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) callconv(.c) BOOL;
@@ -669,6 +676,9 @@ pub const WS_EX_CONTROLPARENT = 0x00010000;
 pub const WS_EX_CONTEXTHELP = 0x00000400;
 pub const WS_EX_NOACTIVATE = 0x08000000;
 pub const WS_EX_STATICEDGE = 0x00020000;
+/// A window that takes files dropped on it. Nothing here acts on it yet;
+/// a program that accepts files still says so when it creates its window.
+pub const WS_EX_ACCEPTFILES = 0x00000010;
 pub const ES_LEFT = 0x0000;
 pub const ES_CENTER = 0x0001;
 pub const ES_RIGHT = 0x0002;
