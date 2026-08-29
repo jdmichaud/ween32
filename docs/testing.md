@@ -1392,6 +1392,59 @@ Four answers from the same boot, none of them a pixel:
   inches**, which is 8.5" of paper less its 1.25" left margin -- the paper's
   own right edge, not the ruler's end.
 
+### The Font box, counted
+
+`tools/refcapture/font-machine.png` is WordPad's own Font dialog on the
+machine, **437x344**, the whole window including its frame. Ours is rendered
+by driving WordPad headlessly and keeping the frame the dialog appears in:
+
+```sh
+cd wordpad && zig build
+WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/fb%d.bmp \
+  WEEN32_SCRIPT='w:200 a:79 w:200 k:70 w:600' ./zig-out/bin/wordpad
+# a %d in the path writes one file per frame, which is the only way to catch
+# a modal window; the 437x344 one is the dialog.
+```
+
+```
+differing pixels   32,050 of 150,328   21.3%
+  the three lists  28,416   ween32 has no CBS_SIMPLE
+  the note            954   the static is there and its text is not
+  everything else   2,680   of which 60 are the caption's bold title
+```
+
+**The 28,416 are one missing style bit.** The machine's Font, Font style and
+Size controls are `ComboBox` with **`CBS_SIMPLE`** -- `probe/font.txt` reads
+`50010B51`, `50010241`, `50010B51`, and `0x0001` is `CBS_SIMPLE` -- which
+draws an edit with its list **always open below it**. ween32's combo box
+treats every combo as a dropdown, so where the machine shows three lists of
+fonts, styles and sizes, ours shows three closed fields and dialog face. The
+Color and Script combos are `50010253`, `CBS_DROPDOWNLIST`, and those two ours
+draws correctly.
+
+**The 954 are the note** at the bottom -- *"This is an OpenType font. This
+same font will be used on both your printer and your screen."* -- which is
+static 1093 in the template. ween32 creates the static and never gives it
+text.
+
+**And 415 of the rest are state rather than drawing**: WordPad's box opens on
+Arial 10 and ours on MS Sans Serif 8, so the three fields hold different
+strings. That is the frame's call and the control's `CF_INITTOLOGFONTSTRUCT`
+handling, not the dialog's geometry.
+
+**The capture was wrong when it was first taken, and the way it was wrong is
+written in this file two sections up.** It was cropped by walking out from
+inside the dialog until the pixels stopped being the dialog's -- and **a
+dialog's frame has a white highlight in it**, so the walk stopped on the
+frame's own second row and cut two columns and two rows off the top and left.
+The corner check passed anyway: the truncated rectangle's corners are also
+`COLOR_3DFACE` and `COLOR_3DDKSHADOW`. What settles it is the *outside*: at
+any row through the dialog's middle the pixels left of it are the white of
+WordPad's client, and the dialog begins at the first `COLOR_3DFACE` after
+them. Corrected, it is 437x344 -- **exactly the size ween32 draws**, so the
+outer geometry agrees and the first version of this section would have
+reported a two-pixel disagreement that was mine.
+
 ### What a search does
 
 `EM_FINDTEXTEX`'s own answers, out of `ctlprobe.c`'s `finding` block, against
