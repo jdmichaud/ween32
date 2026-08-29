@@ -752,7 +752,7 @@ static int rich_wrap_width(HWND wnd, ween_rich *e)
 static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
                          int width)
 {
-    int i, x = 0, last_space = -1, run = run_at(e, start);
+    int i, x = 0, last_break = -1, run = run_at(e, start);
     const ween_strike *f;
     (void)wnd;
     if (width <= 0)
@@ -762,23 +762,31 @@ static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
         while (run + 1 < e->runs && e->run[run + 1].start <= at)
             run++;
         f = rfmt_strike(&e->run[run].fmt);
-        /* A tab that would land past the edge takes the line with it: in a
-         * control 116 wide, four tabs come out as two lines of two, since
-         * the third would have gone to 145. The tab itself starts the new
-         * line and advances from its left edge, which is what the machine's
-         * EM_POSFROMCHAR says -- 1, 49 on the first line and 1, 49, 97 on
-         * the second. */
-        if (e->text[at] == '\t')
+        /* A tab is a place the line may break, and it breaks *before* the
+         * tab where a space breaks after it -- so the tab begins the new
+         * line and the space stays on the old one. Both measured, in a
+         * control whose client is 116 wide:
+         *
+         *   "a b<tab><tab><tab>c"   [0,5] [5,2]
+         *   "xx<tab>yyyyyyyy..."    [0,2] [2,11] [13,14]
+         *
+         * The first breaks at the overflowing tab and not back at the space
+         * before it; the second breaks at the tab even though what overflows
+         * is a letter ten characters later. One rule fits both: the last
+         * opportunity at or before the character that does not fit. */
+        if (e->text[at] == '\t') {
+            last_break = i;
             x = rich_next_tab_stop(e, at, x);
-        else
+        } else {
             x += f ? ween_strike_char_advance(f, (unsigned char)e->text[at])
                    : 6;
+        }
         if (e->text[at] == ' ')
-            last_space = i;
+            last_break = i + 1; /* the space goes with this line */
         if (x > width) {
-            if (last_space >= 0)
-                return last_space + 1; /* the space goes with this line */
-            return i > 0 ? i : 1;      /* a word too long breaks anyway */
+            if (last_break > 0)
+                return last_break;
+            return i > 0 ? i : 1; /* a word too long breaks anyway */
         }
     }
     return para_len;
@@ -1072,10 +1080,20 @@ static char *rich_selected_text(ween_rich *e)
     return out;
 }
 
+/* What a double click takes, measured of riched20 on
+ * "cat_dog cat9 don't (cat)": clicking in "cat_dog" takes "cat", in "cat9"
+ * takes "cat9 ", in "don't" takes "don't " and in "(cat)" takes "cat". So a
+ * digit and an apostrophe are part of a word and **an underscore is not** --
+ * which is the opposite of what this counted before, inherited from the EDIT
+ * and never asked of the machine. The EDIT's own rule is different again and
+ * is measured now too; see is_word_char in controls.c.
+ *
+ * A byte above 127 is not measured either way, and stays outside a word here
+ * because that is what it did before. */
 static int rich_is_word_char(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || c == '_';
+           (c >= '0' && c <= '9') || c == '\'';
 }
 
 /* A double click takes the word under it, and the run of spaces if it landed
@@ -1091,6 +1109,13 @@ static void rich_select_word(ween_rich *e)
         while (from > 0 && rich_is_word_char(e->text[from - 1]))
             from--;
         while (to < e->len && rich_is_word_char(e->text[to]))
+            to++;
+        /* The trailing space goes with the word, as it does in an EDIT: the
+         * machine takes 8..13 for "cat9 " and 13..19 for "don't ", and
+         * 20..23 for the "cat" inside "(cat)", where a bracket follows and
+         * there is no space to take. Only one space stood after either word
+         * that was measured; a run of them is this control's own reading. */
+        while (to < e->len && e->text[to] == ' ')
             to++;
     } else {
         while (from > 0 && !rich_is_word_char(e->text[from - 1]) &&

@@ -1580,6 +1580,40 @@ static void finding(HWND parent, HFONT font)
         }
     }
 
+    /* The same double click of a plain EDIT, because ween32's two controls
+     * do not agree about an underscore and only one of them has ever been
+     * asked. */
+    {
+        HWND ed = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+                                  WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                      ES_AUTOVSCROLL,
+                                  320, 370, 300, 40, parent, NULL, NULL,
+                                  NULL);
+        static const int at[] = { 1, 9, 14, 21 };
+        int k;
+        if (ed) {
+            SendMessageA(ed, WM_SETFONT, (WPARAM)the_font, FALSE);
+            SetWindowTextA(ed, "cat_dog cat9 don't (cat)");
+            for (k = 0; k < 4; k++) {
+                DWORD from = 0, to = 0;
+                LRESULT pos = SendMessageA(ed, EM_POSFROMCHAR, (WPARAM)at[k],
+                                           0);
+                int x = (short)LOWORD(pos), y = (short)HIWORD(pos);
+                SendMessageA(ed, WM_LBUTTONDOWN, 0, MAKELPARAM(x + 1, y + 2));
+                SendMessageA(ed, WM_LBUTTONUP, 0, MAKELPARAM(x + 1, y + 2));
+                SendMessageA(ed, WM_LBUTTONDBLCLK, 0,
+                             MAKELPARAM(x + 1, y + 2));
+                SendMessageA(ed, WM_LBUTTONUP, 0, MAKELPARAM(x + 1, y + 2));
+                SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+                wsprintfA(buf, "  an EDIT double clicked on character %d "
+                               "takes %lu..%lu\r\n",
+                          at[k], from, to);
+                emit(buf);
+            }
+            DestroyWindow(ed);
+        }
+    }
+
     /* What a word is, for FR_WHOLEWORD: a stop, a hyphen, a digit, an
      * underscore. */
     SetWindowTextA(re, "cat cat. cat-o cat9 cat_ (cat)");
@@ -1806,6 +1840,7 @@ static void tabs(HWND parent, HFONT font)
     emit(buf);
     tab_row(re, "four tabs in a narrow one", 5);
     lines_of(re, "four tabs in a narrow one");
+    lines_of(re, "four tabs in a narrow one");
     {
         int i;
         for (i = 0; i < 5; i++) {
@@ -1816,6 +1851,29 @@ static void tabs(HWND parent, HFONT font)
             emit(buf);
         }
     }
+    /* Whether a tab is a place a line may break the way a space is. ween32
+     * breaks at the last space that fits and treats a tab as a break only
+     * when the tab's own stop is past the edge -- which the four tabs above
+     * cannot tell apart from any other rule, since they have no space in
+     * them.
+     *
+     * "a b<tab><tab><tab>c": the third tab would go to 145 in a client 116
+     * wide, so the line has to break. If the break goes to the tab, the
+     * second line starts at 5; if it goes to the last space that fits, it
+     * starts at 2, on the "b". */
+    SetWindowTextA(re, "a b\t\t\tc");
+    lines_of(re, "a space, then tabs past the edge");
+    /* And the other way about: a word too long to fit, with a tab before it
+     * and no space anywhere. If a tab is a break opportunity the line breaks
+     * after it, at 3; if it is not, the word breaks at the character that
+     * fits. */
+    SetWindowTextA(re, "xx\tyyyyyyyyyyyyyyyyyyyyyyyy");
+    lines_of(re, "a tab, then a word too long");
+    /* And a space and a tab together, to say which one wins when both fit:
+     * "aa bb<tab>cc dd" wide enough that the tab is not itself past the
+     * edge but the text after it is. */
+    SetWindowTextA(re, "aa bb\tcc dd ee ff");
+    lines_of(re, "spaces either side of a tab");
     DestroyWindow(re);
 }
 

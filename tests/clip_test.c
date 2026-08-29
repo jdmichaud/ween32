@@ -111,6 +111,44 @@ int main(void)
         SendMessageA(g_edit, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, 8));
     }
 
+    /* What a word *is*, against the machine's own EDIT. "cat_dog cat9 don't
+     * (cat)" in a real one, double clicked a character into each of the four
+     * runs, gives 0..8, 8..13, 13..19 and 19..24 -- every one of them a run
+     * between spaces with its trailing space, brackets and underscores and
+     * apostrophes all inside the word. Before this was measured ween32 split
+     * "cat_dog" nowhere but "(cat)" at both brackets. */
+    {
+        static const struct {
+            int at, from, to;
+            const char *what;
+        } cases[] = {
+            { 1, 0, 8, "an underscore is inside an EDIT's word" },
+            { 9, 8, 13, "so is a digit, with the trailing space" },
+            { 14, 13, 19, "so is an apostrophe" },
+            { 21, 19, 24, "and so are the brackets round a word" },
+        };
+        const char *text = "cat_dog cat9 don't (cat)";
+        const ween_strike *sf = ween_gui_font();
+        HWND ed = CreateWindowExA(0, "EDIT", text,
+                                  WS_CHILD | WS_VISIBLE | ES_LEFT, 10, 40,
+                                  260, 20, w, NULL, NULL, NULL);
+        int k;
+        /* The x of a character, the way the test above finds one: this
+         * control's EM_POSFROMCHAR answers nought for every index, which the
+         * machine's does not -- worth knowing and not fixed here. */
+        for (k = 0; ed && k < 4; k++) {
+            DWORD from = 0, to = 0;
+            int x = ween_strike_pen(sf, text, cases[k].at) + 3;
+            SendMessageA(ed, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, 8));
+            SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+            CHECK((int)from == cases[k].from && (int)to == cases[k].to,
+                  cases[k].what);
+        }
+        if (ed)
+            DestroyWindow(ed);
+        SetFocus(g_edit);
+    }
+
     /* What was selected is what Ctrl+C puts on the clipboard, which is how
      * the selection is checked without reaching inside the control. */
     key('C', 1);

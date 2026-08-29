@@ -1578,6 +1578,63 @@ int main(void)
         }
     }
 
+    {
+        /* What a double click takes, and where a line breaks round a tab --
+         * both riched20's own answers, and both were wrong here until they
+         * were asked.
+         *
+         * On "cat_dog cat9 don't (cat)" the machine gives 0..3, 8..13,
+         * 13..19 and 20..23: an underscore breaks a word, a digit and an
+         * apostrophe do not, and the trailing space comes with the word when
+         * there is one. ween32 counted the underscore in, inherited from the
+         * EDIT -- whose own rule turns out to be different again and is now
+         * measured in tests/clip_test.c. */
+        static const struct {
+            int at, from, to;
+            const char *what;
+        } words[] = {
+            { 1, 0, 3, "an underscore breaks a rich edit's word, where the "
+                       "EDIT keeps it" },
+            { 9, 8, 13, "a digit does not, and the trailing space comes too" },
+            { 14, 13, 19, "nor does an apostrophe" },
+            { 21, 20, 23, "and a bracket is not part of the word it is round" },
+        };
+        int k;
+        SetWindowTextA(re, "cat_dog cat9 don't (cat)");
+        SetFocus(re);
+        for (k = 0; k < 4; k++) {
+            POINTL p;
+            CHARRANGE cr;
+            p.x = p.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, words[k].at);
+            SendMessageA(re, WM_LBUTTONDBLCLK, 0, MAKELPARAM(p.x + 1, p.y + 2));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin == words[k].from && cr.cpMax == words[k].to,
+                  words[k].what);
+        }
+
+        /* And the wrapping. A tab is a break opportunity and it breaks
+         * *before* the tab, where a space breaks after it. Both in a control
+         * whose client is 116 wide, as the machine's were. */
+        {
+            HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                     WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                         ES_AUTOVSCROLL,
+                                     0, 0, 120, 60, host, NULL, NULL, NULL);
+            SetWindowTextA(t, "a b\t\t\tc");
+            CHECK(SendMessageA(t, EM_GETLINECOUNT, 0, 0) == 2 &&
+                      SendMessageA(t, EM_LINEINDEX, 1, 0) == 5,
+                  "a line with a space in it still breaks at the tab that "
+                  "does not fit, not back at the space");
+            SetWindowTextA(t, "xx\tyyyyyyyyyyyyyyyyyyyyyyyy");
+            CHECK(SendMessageA(t, EM_LINEINDEX, 1, 0) == 2,
+                  "and a word too long to fit breaks back at the tab before "
+                  "it rather than in the middle of itself");
+            DestroyWindow(t);
+        }
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

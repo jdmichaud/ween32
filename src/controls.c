@@ -1214,14 +1214,21 @@ static void edit_changed(HWND wnd)
                      MAKEWPARAM((WORD)wnd->id, EN_CHANGE), (LPARAM)wnd);
 }
 
-/* A word, for double-click selection: a run of letters and digits, or a run
- * of anything else. Windows takes the trailing space with the word; the edit
- * control's own rule is the same one Notepad uses. */
+/* A word, for double-click selection. Measured on the machine's own EDIT,
+ * with "cat_dog cat9 don't (cat)" in it: a click in any of the four takes
+ * the whole run -- "cat_dog ", "cat9 ", "don't " and "(cat)" -- so **the
+ * EDIT breaks on whitespace and on nothing else**, brackets and underscores
+ * and apostrophes included, and the trailing space goes with the word.
+ *
+ * This is not the rich edit's rule, which breaks on punctuation and keeps an
+ * apostrophe: see rich_is_word_char in richedit.c. The two controls really
+ * do differ, and both are measured now; before today this one counted an
+ * underscore in and split "(cat)" at the brackets, which the machine does
+ * not do. What a click on a *space* takes is still not measured, and stays
+ * as it was: the run of spaces. */
 static int is_word_char(char c)
 {
-    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z') || c == '_' ||
-           (unsigned char)c >= 0x80;
+    return c != ' ' && c != '\t' && c != '\r' && c != '\n';
 }
 
 static void edit_select_word(HWND wnd, ween_edit *e)
@@ -1239,12 +1246,10 @@ static void edit_select_word(HWND wnd, ween_edit *e)
             ;
         while (to < len && t[to] == ' ') /* the trailing space goes with it */
             to++;
-    } else { /* a run of whatever this is instead */
-        for (from = at; from > 0 && !is_word_char(t[from - 1]) &&
-                        t[from - 1] != ' ';
-             from--)
+    } else { /* a run of spaces, which is all that is left */
+        for (from = at; from > 0 && !is_word_char(t[from - 1]); from--)
             ;
-        for (to = at; to < len && !is_word_char(t[to]) && t[to] != ' '; to++)
+        for (to = at; to < len && !is_word_char(t[to]); to++)
             ;
     }
     e->anchor = from;
