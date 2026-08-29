@@ -3244,6 +3244,29 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
              * that word it takes whole words, and it keeps snapping even if
              * it comes back. Which is why this is a latch rather than a test
              * of where the pointer is now. */
+            /* **The latched word is from a press that may not have been
+             * this one.** `drag_word_from`/`drag_word_to` are set by the
+             * plain-click branch of WM_LBUTTONDOWN only; a double click, a
+             * triple click, a press in the selection bar and a press that
+             * begins a drag-and-drop all return before reaching it, so they
+             * leave whatever the previous drag left. The text can have
+             * changed since -- been emptied, even -- and then this snaps the
+             * selection to a boundary that no longer exists.
+             *
+             * Found by tests/monkey_test.c, shrunk to ten steps: a drag in a
+             * document that had been cleared produced `selection 0..2` with
+             * `len 0`, the 2 being a word boundary from an earlier drag on
+             * longer text. The line table was correct and the hit test was
+             * correct; only the latch was stale.
+             *
+             * Clamped where it is used rather than reset where it is set,
+             * because **the invariant is the selection's, not the latch's**:
+             * whichever press filled these in, a selection may not leave the
+             * text. */
+            if (e->drag_word_from > e->len)
+                e->drag_word_from = e->len;
+            if (e->drag_word_to > e->len)
+                e->drag_word_to = e->len;
             if (!e->drag_snapped &&
                 (at < e->drag_word_from || at > e->drag_word_to))
                 e->drag_snapped = 1;

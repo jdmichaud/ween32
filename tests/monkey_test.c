@@ -534,6 +534,12 @@ int main(int argc, char **argv)
              * shorter: resize small, fill, resize large. Fixed by
              * rich_clamp_scroll in src/richedit.c. */
             "resize:230:329,paste:299:333,resize:794:252",
+            /* a drag using a word boundary latched by an earlier press, in a
+             * document that had been cleared since: selection 0..2 with a
+             * length of 0. Fixed by clamping the latch in src/richedit.c. */
+            "resize:94:534,drag:615:791,click:278:528,drag:274:582,"
+            "replace:538:807,enter:161:310,drag:609:170,clear:542:12,"
+            "resize:300:936,drag:592:326",
         };
         /* **A gesture that reaches nothing looks exactly like a gesture that
          * found no bug.** The pointer ops go in as injected events now, and
