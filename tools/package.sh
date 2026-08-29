@@ -35,6 +35,15 @@
 # not that it passed.
 
 set -euo pipefail
+
+# **The cache is chosen with `ZIG_GLOBAL_CACHE_DIR`, not `--global-cache-dir`.**
+# The flag is not accepted by every zig that can build this: jd's release run
+# died on `error: unrecognized argument: --global-cache-dir` from `zig build`
+# where the same line had just passed here, which is a version difference
+# between two shells and not something this script can police. The environment
+# variable is honoured by `zig build` and `zig fetch` alike and has no
+# argument list to be rejected from -- so the gate stops depending on which
+# zig is first on somebody's PATH.
 cd "$(dirname "$0")/.."
 repo=$(pwd)
 
@@ -141,7 +150,7 @@ echo "  tarball $tarball"
 # the tree they are checking.
 cache=$(mktemp -d "${TMPDIR:-/tmp}/ween32-package-cache-XXXXXX")
 trap 'rm -rf "$cache"' EXIT
-hash=$(zig fetch --global-cache-dir "$cache" "$tarball" 2>/dev/null | tail -1)
+hash=$(ZIG_GLOBAL_CACHE_DIR="$cache" zig fetch "$tarball" 2>/dev/null | tail -1)
 [ -n "$hash" ] || { echo "error: zig fetch printed no hash" >&2; exit 1; }
 echo "  hash $hash"
 
@@ -293,8 +302,8 @@ EOF
 # cache is healthy. For a release gate that is the right way round -- a gate
 # that fails on somebody else's cache is one people learn to re-run rather
 # than read.
-if ( cd "$work" && zig build --global-cache-dir "$cache" \
-        > "$out/consumer-native.log" 2>&1 ); then
+if ( cd "$work" && ZIG_GLOBAL_CACHE_DIR="$cache" ZIG_LOCAL_CACHE_DIR="$work/.zig-cache" \
+        zig build > "$out/consumer-native.log" 2>&1 ); then
     echo "  ok      a consumer fetches the package and builds against the host"
 else
     echo "  FAILED  a consumer fetches the package and builds against the host"
@@ -370,7 +379,7 @@ trap 'kill $serve_pid 2>/dev/null; rm -f "$plant" "$serve_port_file"; rm -rf "$w
 rm -f "$plant"
 printf 'not tracked, must not be packaged\n' > "$plant"
 make_tarball "$out/again.tar.gz"
-again=$(zig fetch --global-cache-dir "$out/again-cache" "$out/again.tar.gz" \
+again=$(ZIG_GLOBAL_CACHE_DIR="$out/again-cache" zig fetch "$out/again.tar.gz" \
         2>/dev/null | tail -1)
 rm -f "$plant"
 trap 'kill $serve_pid 2>/dev/null; rm -f "$serve_port_file"; rm -rf "$work" "$cache"' EXIT
