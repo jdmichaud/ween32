@@ -713,6 +713,12 @@ pub extern fn BeginPaint(wnd: HWND, ps: *PAINTSTRUCT) callconv(.c) ?HDC;
 pub extern fn EndPaint(wnd: HWND, ps: *const PAINTSTRUCT) callconv(.c) BOOL;
 pub extern fn GetDC(wnd: ?HWND) callconv(.c) ?HDC;
 pub extern fn ReleaseDC(wnd: ?HWND, dc: HDC) callconv(.c) c_int;
+
+/// What the device is, in the units that matter for scaling. `LOGPIXELSX`
+/// answers the dots per inch, which is the only honest source for an inch:
+/// a program that writes 96 for one has written down the dpi it was measured
+/// at and called it a constant of the world.
+pub extern fn GetDeviceCaps(dc: ?HDC, index: c_int) callconv(.c) c_int;
 pub extern fn FillRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) BOOL;
 pub extern fn FrameRect(dc: HDC, rect: *const RECT, brush: HBRUSH) callconv(.c) c_int;
 pub extern fn DrawEdge(dc: HDC, rect: *RECT, edge: UINT, flags: UINT) callconv(.c) BOOL;
@@ -1788,6 +1794,10 @@ pub const MF_DEFAULT = 0x1000;
 pub const TPM_LEFTALIGN = 0x0000;
 pub const TPM_RIGHTBUTTON = 0x0002;
 pub const TPM_RETURNCMD = 0x0100;
+pub const LOGPIXELSX = 88;
+pub const LOGPIXELSY = 90;
+pub const HORZRES = 8;
+pub const VERTRES = 10;
 pub const SM_CXSCREEN = 0;
 pub const SM_CYSCREEN = 1;
 pub const SM_CYCAPTION = 4;
