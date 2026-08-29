@@ -8236,6 +8236,13 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         tb = toolbar_of(wnd);
         if (!tb)
             return -1;
+        /* Only a flat bar has a hot item. Told to make one hot, a classic bar
+         * refuses and TB_GETHOTITEM keeps saying -1 -- which is win32's answer
+         * and not an omission: every button on a classic bar wears its raised
+         * edge all the time, so there is nothing for hot to look like.
+         * Measured with tools/vm/ctlprobe.c on both styles at once. */
+        if (!(wnd->style & TBSTYLE_FLAT))
+            return -1;
         was = tb->hot;
         tb->keyed = 1; /* asked for, so it is the keyboard's, not the mouse's */
         toolbar_set_hot(wnd, tb, (int)wp);
@@ -8300,6 +8307,12 @@ static LRESULT toolbar_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             memset(b, 0, sizeof(*b));
             b->id = src[i].idCommand;
             b->image = src[i].iBitmap;
+            /* A separator's width lives in iBitmap, and win32 resolves the
+             * default into the field at add time rather than at paint time:
+             * add one with 0 and TB_GETBUTTON hands back 8. Measured with
+             * tools/vm/ctlprobe.c, which is also where the 8 came from. */
+            if ((src[i].fsStyle & TBSTYLE_SEP) && src[i].iBitmap <= 0)
+                b->image = WEEN_TB_SEP_W;
             b->style = src[i].fsStyle;
             b->state = src[i].fsState;
             b->text = src[i].iString ? dup_str((const char *)src[i].iString)

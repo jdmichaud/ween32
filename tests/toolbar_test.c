@@ -424,7 +424,56 @@ int main(void)
             CHECK(b3.left == r3.left + 12,
                   "and the twelve it grew by moves everything after it");
         }
+
+        /* What win32 hands back for a separator it filled the default into.
+         * comctl32 resolves it at add time, not at paint time: added with 0,
+         * TB_GETBUTTON says 8. Ours said 0, which is the number the app
+         * passed rather than the number the control is using. */
+        {
+            TBBUTTON g;
+            memset(&g, 0, sizeof(g));
+            SendMessageA(sb, TB_GETBUTTON, 1, (LPARAM)&g);
+            CHECK(g.iBitmap == 8,
+                  "a separator added with no width reports the eight it got");
+            memset(&g, 0, sizeof(g));
+            SendMessageA(sb, TB_GETBUTTON, 2, (LPARAM)&g);
+            CHECK(g.iBitmap == 14,
+                  "and one added with fourteen still reports fourteen");
+        }
         DestroyWindow(sb);
+    }
+
+    /* Only a flat bar has a hot item. A classic one refuses to take one, and
+     * TB_GETHOTITEM goes on saying -1 -- both measured on real comctl32 with
+     * tools/vm/ctlprobe.c, which set the hot item on one of each and asked.
+     * It is not an omission: every button on a classic bar wears its raised
+     * edge all the time, so there is nowhere for hot to show. */
+    {
+        static const DWORD flat[2] = { TBSTYLE_FLAT, 0 };
+        for (int k = 0; k < 2; k++) {
+            HWND hb = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                      WS_CHILD | WS_VISIBLE | flat[k], 0, 0,
+                                      200, 30, w, (HMENU)(UINT_PTR)(88 + k),
+                                      NULL, NULL);
+            TBBUTTON hbn[2];
+            memset(hbn, 0, sizeof(hbn));
+            SendMessageA(hb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            for (int i = 0; i < 2; i++) {
+                hbn[i].iBitmap = i;
+                hbn[i].idCommand = 601 + i;
+                hbn[i].fsState = TBSTATE_ENABLED;
+                hbn[i].fsStyle = TBSTYLE_BUTTON;
+            }
+            SendMessageA(hb, TB_ADDBUTTONSA, 2, (LPARAM)hbn);
+            SendMessageA(hb, TB_SETHOTITEM, 1, 0);
+            if (k == 0)
+                CHECK(SendMessageA(hb, TB_GETHOTITEM, 0, 0) == 1,
+                      "a flat bar takes the hot item it is given");
+            else
+                CHECK(SendMessageA(hb, TB_GETHOTITEM, 0, 0) == -1,
+                      "and a classic bar has not got one to give");
+            DestroyWindow(hb);
+        }
     }
 
     /* A rebar: the bands a shell's toolbars sit in, each a row with a gripper
