@@ -7272,11 +7272,21 @@ static void tab_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     }
 
     /* right to left, so each tab's dark edge covers the next one's white.
-     * The first tab starts three in, so the selected one — which is drawn two
-     * wider on each side — begins one pixel inside the control, which is
-     * where the machine's does. */
+     *
+     * **The first tab starts two in, so the selected one — drawn two wider on
+     * each side — begins flush with the control.** This said three, and said
+     * that the selected tab therefore began one pixel inside the control
+     * "which is where the machine's does". It is not. Measured against
+     * `captures-sam/folderopt.png`, each control's own origin as zero:
+     *
+     *     machine   tabs at 0, 53, 95, 155
+     *     ours      tabs at 1, 54, 96, 156
+     *
+     * Every tab, one pixel in. It looked right because the property sheet put
+     * the control one pixel left of where the machine puts it and the two
+     * cancelled, so four captures passed while both numbers were wrong. */
     for (int pass = 0; pass < 2; pass++) {
-        int l = 3;
+        int l = 2;
         for (int i = 0; it && i < it->count; i++) {
             int w = tab_width(f, it->item[i], min);
             int selected = i == sel;
@@ -7422,7 +7432,17 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
         /* the strip the tabs stand in, the two below it the body's edge
          * begins at, and the body's own raised edge */
-        int th = (f ? f->ascent - f->descent : 13) + 4 + 2 + 2, edge = 2;
+        /* **Measured, not fitted.** `probe.exe` over the machine's own
+         * property sheets reads the page's rectangle inside the tab control
+         * as 4 on three sides and 22 at the top, on both sheets anybody has
+         * asked:
+         *
+         *     Folder Options   tabs 9,29 368x400   page 13,51 360x374
+         *     WordPad Options  tabs 6,7  428x166   page 10,29 420x140
+         *
+         * -- 4 / 22 / 4 / 4 in each. The strip is the tab row plus the body's
+         * own edge, and the edge is 4 rather than 2. */
+        int th = (f ? f->ascent - f->descent : 13) + 4 + 2 + 2 + 1, edge = 4;
         if (!r)
             return 0;
         if (wp) { /* a page's rectangle -> the control that must hold it */

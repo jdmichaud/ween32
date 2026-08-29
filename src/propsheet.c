@@ -28,7 +28,12 @@
  * dialog manager: comctl32 sizes it to its largest page after the fact, and
  * so does this. Going through dialog units would round every edge to the
  * nearest one and a half pixels. */
-#define PS_TAB_X 5    /* client left to tab control */
+/* client left to tab control. **The machine's**: probe.exe reads the tab
+ * control at client 6,7 on both Folder Options and WordPad's Options. This
+ * was 5, which put ours a pixel left -- and cancelled the tab row being
+ * drawn a pixel right inside the control, so the sheet's captures passed
+ * with both numbers wrong. See tab_paint in controls.c. */
+#define PS_TAB_X 6
 #define PS_TAB_Y 7    /* client top to tab control */
 #define PS_RIGHT 6    /* tab control to client right */
 #define PS_BOTTOM 7   /* buttons to client bottom */
@@ -519,13 +524,19 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
         int tab_w, tab_h, strip, client_w, client_h, frame_w, frame_h, bx, by;
         /* A unit is wider than a pixel — six to four across and thirteen to
          * eight down — so a page's own edge falls half way through a pixel as
-         * often as not. What the sheet is built around is the whole pixels
-         * those units cover, and one more across, which is the margin the tab
-         * control keeps beside a page. The machine's sheets come out pixel
-         * for pixel that way, both this one and Folder Options. */
+         * often as not, and win32 rounds where a truncating divide does not.
+         *
+         * **There was a `+ 1` here and it was never a margin.** The comment
+         * called it "the margin the tab control keeps beside a page" and said
+         * the machine's sheets came out pixel for pixel that way; it was a
+         * fitted correction for truncating instead of rounding, with a reason
+         * invented for it afterwards. `MulDiv` is what win32 uses and it
+         * needs no correction: 280x86 units comes to 420x140, which is
+         * exactly what probe.exe reads off the machine's Options page, where
+         * the truncation-plus-one gave 421x139. */
         MapDialogRect(ps.sheet, &unit);
-        page.right = cx * unit.right / 4 + 1;
-        page.bottom = cy * unit.bottom / 8;
+        page.right = MulDiv(cx, unit.right, 4);
+        page.bottom = MulDiv(cy, unit.bottom, 8);
 
         /* what the tab control must be to hold a page that size */
         tab.left = 0;
