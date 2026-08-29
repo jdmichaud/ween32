@@ -51,6 +51,35 @@ cd "$work" || exit 1
 echo "  at $(git log --oneline -1 | cat)"
 echo
 
+# ---- the base --------------------------------------------------------------
+#
+# **First, because a stale base means none of the numbers below mean
+# anything.** They would all be true, and true about a tree nobody is going to
+# merge: a branch that forked before somebody else's work reverts it silently
+# when merged, and the report says nothing, because measuring the branch is
+# exactly what it did.
+#
+# This happened four times in one day. Three were branches sitting behind
+# master; the fourth was master moving under a branch that had just rebased,
+# which this cannot see -- it looks backwards from here and master moves
+# afterwards. `git merge --ff-only` is what catches that one, on the way in.
+#
+# Exits non-zero, because a report that should not be read should not be
+# reported.
+
+echo "== base =="
+behind=$(git rev-list --count HEAD..master 2>/dev/null || echo 0)
+if [ "$behind" = 0 ]; then
+    echo "  up to date with master"
+else
+    echo "  STALE: $behind commits behind master"
+    echo "         base $(git log --oneline -1 "$(git merge-base HEAD master)" | cat)"
+    echo "         rebase before reporting -- nothing measured here describes"
+    echo "         the tree that would result from merging this."
+    exit 1
+fi
+echo
+
 # ---- build and suite -------------------------------------------------------
 
 echo "== build =="
