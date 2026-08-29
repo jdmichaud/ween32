@@ -10,8 +10,11 @@ make clean && make
 make test
 ```
 
-Expect **1009 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **1013 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
+The number here is written by hand and so is wrong between the commit that
+adds a test and the commit that remembers this line; `tools/verify.sh` prints
+what the suite actually says, and that is the one to quote.
 
 Then the four things `make test` does not cover:
 
