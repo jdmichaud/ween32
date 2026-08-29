@@ -3355,6 +3355,11 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int shows_icon = !(wnd->ex_style & WS_EX_TOOLWINDOW) &&
                          (wnd->icon ||
                           ((wnd->style & WS_SYSMENU) && !wnd->is_dialog));
+        /* The room the icon takes, and the two columns past it where the
+         * ramp begins. The two are measured on a window that has an icon;
+         * whether a window that keeps the room without one of its own also
+         * keeps them is not, so it does not -- see the note in
+         * docs/testing.md, which says what to capture to settle it. */
         int icon_w = shows_icon ? ween_ncm(WEEN_NC_SMICON) +
                                       (wnd->icon ? ween_ncm(2) : 0)
                                 : 0;

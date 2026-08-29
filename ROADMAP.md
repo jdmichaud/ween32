@@ -632,7 +632,7 @@ PXDIFF_REF=tools/refcapture/menu-reference.png \
 PXDIFF_OUR=/tmp/menu_ween.png tools/refcapture/pxdiff.py   # the menu sampler
 ```
 
-The two samplers differ from their wine renders by 15749 of 298596 pixels and
+The two samplers differ from their wine renders by 14178 of 298596 pixels and
 4397 of 39200, and most of both is *deliberate*: where wine and a Windows 2000
 disagree, ween32 follows the machine. The newest hundred are the option
 buttons: wine draws the circle at its control's left edge and Windows draws

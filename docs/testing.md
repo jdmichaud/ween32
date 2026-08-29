@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **1006 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **1009 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -139,7 +139,7 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 15749 / 298596 — 5.3%
+tools/refcapture/pxdiff.py                  # expect 14178 / 298596 — 4.7%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
@@ -147,8 +147,8 @@ PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
   tools/refcapture/pxdiff.py                # expect 4397 / 39200 — 11.2%
 ```
 
-Most of both — 3170 of the menu's and 7835 of the sampler's — is one thing:
-the caption's gradient. Where it stops is measured off the machine, which
+Most of both — 3170 of the menu's and about 6300 of the sampler's — is one
+thing: the caption's gradient. Where it stops is measured off the machine, which
 holds its end colour two pixels before the leftmost caption button; wine
 stops one pixel before it. A window with nothing but a close box is where the
 two disagree, and every pixel of the ramp shifts by a step when its span
@@ -190,12 +190,15 @@ title, whose strike is wine's Tahoma Bold and not the machine's. Do not "fix"
 the bar by eye — measure it
 against a program that has a menu bar.
 
-The ramp itself is stepped in 16.16 with the step rounded down before it is
-accumulated, not divided per pixel. The two are the same everywhere except
-where a channel would land exactly on an integer — a quarter, a half and
-three quarters along — and there the dropped fraction leaves the machine's a
-shade below. All 305 pixels of Column Settings' gradient come out on the
-machine's with it, and three of them do not without it.
+The ramp itself is one division per pixel, a shade below wherever it lands
+exactly on a whole number — `start + (d * (end - start) - 1) / span` in whole
+numbers, with the start colour held across the icon's room and the two
+columns past it. That is the machine's, column for column at three widths;
+see "The caption's ramp, measured to the column" below, and
+`tests/caption_test.c`, which holds it against the captures. It replaced a
+step worked out once in 16.16 and added up, which agreed at 400 and 500 wide
+and drifted a column at 654 — the error grows with the span, and the
+sampler's caption is wider than any of the three.
 
 Thirty-six of the sampler's are the same thing in miniature: a scroll
 bar's up arrow. Wine draws it a row higher than the machine does, and the
@@ -1363,65 +1366,54 @@ ween_surface_write_bmp(&((struct ween_wnd *)dlg)->surface, "/tmp/find-ours.bmp")
 circle's column and the field's first ink — so that neither can drift back
 without a test saying so.
 
-### The caption's ramp, on a window wider than the ones we had
+### The caption's ramp, measured to the column
 
-WordPad's frame is 768 wide where the explorer's is 654, and at that width
-the caption band differs from the machine by **6079 pixels of 14,592** while
-the menu band under it and the frame's own top rows differ by **0**. So it is
-the gradient alone, and it is not a colour: **340 of 768 columns are out by
-one, in one channel**, and every sampled pixel that differs differs by ±1.
+**Solved.** The machine's ramp, at 400, 500 and 654 pixels wide, is:
 
-Taken apart along a caption row clear of the title and the icon, the two
-ramps agree about almost everything:
+- the start colour held across **the icon's room and the two columns past
+  it** — eighteen at 96 dpi, which is why a dialog, with no system-menu icon
+  at all, starts its ramp at the caption's own left edge;
+- then one division per pixel to **fifty-five before the client's right
+  edge**, which is the room the three caption buttons take;
+- and each channel, d columns along a span, is
 
-| | machine | ours |
-| --- | --- | --- |
-| steps in R / G / B | 157 / 167 / 135 | **the same** |
-| the last four R steps | 693, 698, 702, 706 | **the same** |
-| the first R step | **23** | 21 |
-| the first B step | **24** | 22 |
+```
+start + (d * (end - start) - 1) / span        in whole numbers
+```
 
-The span is right, the end is right, the number of steps is right; **ours
-starts two pixels early and the two converge**, so the offset runs 2, then 1,
-then 0 across the width (38 columns at 2, 78 at 1, 41 already together). A
-uniform ramp from the caption's left edge would take its first step at pixel
-4 or 5, and the machine takes it at 23 — so whatever it does at the start is
-not a straight interpolation, and shifting ours by one or two does not fix it
-either: the best whole-pixel shift still leaves 190 columns out.
+That is **every one of 1,371 columns across the three widths and all three
+channels**. The subtracted one is the whole finding: it changes nothing
+except where the division comes out exactly whole, and there the machine is a
+shade below. At 500 wide that is every 35th column, since 156 and 420 share
+twelve. The plain floor of the same division misses exactly those; a step
+worked out once in 16.16 and added up — which is what this library did —
+misses them too and then drifts, agreeing at 400 and 500 and losing a column
+by 654. The error grows with the span, which is why the sampler, whose
+caption is wider than any of the three, gained **1,571 pixels** from the
+change: 15,749 against its wine render before it and 14,178 after.
 
-**The machine's own ramp is now in the repository at three more widths** —
-`tools/refcapture/caption-400-machine.png`, `-500-`, `-654-`, each the top 30
-rows of a WordPad frame sized with `SetWindowPos` from inside the guest — so
-the next attempt needs no machine. What they say:
+`tests/caption_test.c` holds the ramp against all three captures, column for
+column, out of `tests/caption_rows.h` — which
+`tools/refcapture/caption_rows.py` writes from the PNGs, since the suite has
+no decoder and is not going to grow one for this.
 
-- the ramp has **157 steps in R, 167 in G and 135 in B at every width**: the
-  colour is walked, not the pixels;
-- it **ends 55 pixels before the client's right edge** at every width, which
-  is the room the three caption buttons take;
-- and it **starts about eighteen pixels in**, not at the caption's left edge:
-  the first step lands at 21, 21, 22, 23 and 24 for widths 400, 500, 654, 768
-  and 900, where a ramp from the edge would put it at 3, 4, 5, 5 and 6.
+**What moved and what did not.** Every comparison against the machine was
+re-measured: Properties **652**, Folder Options General **656**, View 1403,
+File Types 9711, Offline Files 1037, Column Settings **1106**, Find **83**,
+Replace **57** — all unchanged, because those windows' ramps were already on
+the machine's pixels at their widths. The two that moved are the wine
+renders, and toward the machine rather than away: the sampler 15749 →
+**14178**, the menu unchanged at 4397.
 
-**And the rule is nearly in hand.** Taken channel by channel rather than all
-three at once, the machine's ramp is the plain linear one with **its first
-nineteen pixels holding the start colour**:
+**One thing still not measured, and marked here rather than guessed**: a
+window that keeps the icon's room without an icon of its own — a system menu
+and nothing hung on it. The two columns past the icon are measured on a
+window that *has* one, so ween32 keeps them only there. Wine holds eighteen
+either way, and the menu sampler is 235 pixels closer to wine if we do the
+same, which is a reason to look but not a reason to change: the way to settle
+it is a capture of a captioned window with a system menu and no icon, at a
+width where the ramp is long enough to show the two columns.
 
-    value(i) = start + floor((i - 19) * (end - start) / (last - 19))
-
-which matches **627 of R's 706 columns, 622 of G's and 638 of B's** — about
-89% each, where the naive ramp from the caption's own left edge matches 8%.
-The nineteen is a constant and not a fraction of the width: it predicts the
-first step at 21, 22, 23, 24 and 25 for widths 400, 500, 654, 768 and 900,
-against the 21, 21, 22, 23 and 24 measured. And it is where the caption's
-**icon** ends — 16 pixels of icon from x 6, plus a column — which is a reason
-rather than a coincidence.
-
-What is left is the last tenth: the columns where floor is off by one. Try
-`MulDiv`'s rounding, or a fixed-point accumulator, against the four captures.
-
-**Whoever takes this should expect it to move every capture that has a
-caption in it** — which is most of them — so it wants its own task with every
-number re-measured, not a line slipped into another change.
 
 ### The toolbar, asked rather than looked at
 

@@ -174,6 +174,23 @@ void ween_classic_bevel(ween_surface *s, int x, int y, int w, int h, int sunken)
  * out. `icon_w` is the strip on the left held at the start colour (0 when the
  * window has no system menu); `buttons_w` the strip on the right held at the
  * end colour. */
+/* One channel of the caption's ramp, d columns into a span of `span`.
+ *
+ * The subtracted one is the whole finding: it changes nothing except where
+ * the division comes out exactly on a whole number, and there the machine is
+ * one shade below. A ramp that goes down rather than up is the mirror of it;
+ * the machine's inactive caption goes 128 to 192, so that case is symmetry
+ * rather than measurement, and is marked here as such. */
+static unsigned ramp_channel(int from, int to, int d, int span)
+{
+    long delta = (long)to - from;
+    if (span <= 0 || d <= 0 || delta == 0)
+        return (unsigned)from;
+    if (delta > 0)
+        return (unsigned)(from + (int)((delta * d - 1) / span));
+    return (unsigned)(from - (int)((-delta * d - 1) / span));
+}
+
 void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
                           int icon_w, int buttons_w, int active)
 {
@@ -193,9 +210,6 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
     if (x2 < x1)
         x2 = x1;
     span = x2 - x1;
-    long rs = span > 0 ? (long)(br - ar) * 65536 / span : 0;
-    long gs = span > 0 ? (long)(bg - ag) * 65536 / span : 0;
-    long bs = span > 0 ? (long)(bb - ab) * 65536 / span : 0;
     for (int i = x; i < x + w; i++) {
         ween_color c;
         if (i < x1 || span <= 0)
@@ -203,16 +217,21 @@ void ween_classic_caption(ween_surface *s, int x, int y, int w, int h,
         else if (i >= x2)
             c = right;
         else {
-            /* Stepped in 16.16, the step itself rounded down first — which is
-             * how the machine's ramp lands. It matters only where a channel
-             * would come out exactly on an integer: a quarter, a half and
-             * three quarters of the way along, where the dropped fraction
-             * leaves it a shade below, and the machine's is a shade below. */
+            /* One channel at a time, in whole numbers, and a shade below
+             * wherever the exact value lands on a whole one.
+             *
+             * The machine's own captions settle it: at 400, 500 and 654
+             * pixels wide, `start + (d * (end - start) - 1) / span` is every
+             * one of 1,530 columns across the three channels, where the
+             * plain floor of the same division misses fifteen of them and a
+             * step worked out once and added up misses far more. The columns
+             * it misses are exactly those where the division comes out
+             * whole -- every 35th at 500 wide, since 156 and 420 share 12 --
+             * and the machine is a shade below at every one. */
             int d = i - x1;
-            unsigned r = (unsigned)(ar + (int)((rs * (long)d) >> 16));
-            unsigned g = (unsigned)(ag + (int)((gs * (long)d) >> 16));
-            unsigned b = (unsigned)(ab + (int)((bs * (long)d) >> 16));
-            c = (r << 16) | (g << 8) | b;
+            c = (ramp_channel(ar, br, d, span) << 16) |
+                (ramp_channel(ag, bg, d, span) << 8) |
+                ramp_channel(ab, bb, d, span);
         }
         ween_surface_vline(s, i, y, h, c);
     }
