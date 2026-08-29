@@ -79,3 +79,19 @@ jobs:
               "$ex" -luser32 -lgdi32 -lcomctl32 -lshell32 \
               -o "$(basename "$ex" .c).exe"
           done
+
+      # The four gates the dual-compile contract actually rests on, which
+      # until now only ran when somebody remembered to run them: the constants
+      # agree with the real header, the structs agree field for field, the Zig
+      # binding agrees with the header, and paint builds both ways. `make
+      # win32` skips itself when zig is missing, and zig is installed above,
+      # so a skip here would be a lie -- the grep is what makes it fail rather
+      # than pass quietly.
+      - name: The four gates (make win32)
+        run: |
+          make win32 | tee /tmp/gates.txt
+          grep -q "win32 constants agree" /tmp/gates.txt
+          grep -q "win32 structs agree" /tmp/gates.txt
+          grep -q "zig binding agrees with the header" /tmp/gates.txt
+          grep -q "win32 examples/paint (zig)" /tmp/gates.txt
+          grep -q "ween32 examples/paint (zig)" /tmp/gates.txt

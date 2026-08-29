@@ -178,7 +178,8 @@ win32:
 	   && echo "  zig binding agrees with the header"
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
-	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1; \
+	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu \
+	         --cache-dir .zig-cache-win --prefix zig-out-win || exit 1; \
 	      echo "  ween32 examples/paint (zig)"; \
 	      $(ZIG) build paint || exit 1;; \
 	   *) echo "  win32 examples/paint: needs zig $(ZIG_NEEDS), skipped";; \

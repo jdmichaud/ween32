@@ -10,6 +10,8 @@ tests/*_test
 
 # build outputs (zig)
 zig-out/
+zig-out-win/
+.zig-cache-win/
 .zig-cache/
 zig-cache/
 *.pdb
