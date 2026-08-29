@@ -7256,6 +7256,58 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_KEYDOWN: {
+        /* **The arrows walk the tabs, and without this nothing but a mouse
+         * could.** A property sheet's pages are reached by its tab control and
+         * by nothing else, so a tab control with no keyboard means a sheet
+         * whose second page cannot be opened from a script at all -- five of
+         * WordPad's six Options pages were unreachable and therefore
+         * uncounted against the machine, which is how this came to be noticed.
+         *
+         * `ween_dialog_key` hands a control its own arrows when the focus is
+         * not in an option-button group ("not in a group: the control keeps
+         * its arrows"), so they arrive here without the dialog manager needing
+         * to know what a tab control is.
+         *
+         * The step is the same three lines a click does: move, repaint, and
+         * tell the parent, which is what a property sheet listens for.
+         *
+         * **Whether the ends wrap is not measured.** This stops at them. The
+         * stepping itself is structural -- a control with a keyboard has to
+         * move -- but nothing says what the machine's does at the last tab,
+         * and Ctrl+Tab is the gesture that cycles. */
+        int d = (wp == VK_LEFT || wp == VK_UP) ? -1
+              : (wp == VK_RIGHT || wp == VK_DOWN) ? 1 : 0;
+        int to;
+        if (!d)
+            return DefWindowProcA(wnd, msg, wp, lp);
+        it = items_of(wnd);
+        if (!it || it->count <= 0)
+            return 0;
+        to = it->cursel + d;
+        if (to >= 0 && to < it->count && to != it->cursel) {
+            it->cursel = to;
+            InvalidateRect(wnd, NULL, FALSE);
+            notify_parent(wnd, TCN_SELCHANGE);
+            /* **And the tabs keep the keyboard.** A property sheet moves the
+             * focus into the page it has just shown, which is measured and
+             * right *for a click* -- propsheet.c cites the machine for it.
+             * Nobody has measured it for an arrow, and an arrow is different
+             * in kind: the gesture has to be repeatable, or the second Right
+             * lands on the page and moves an option button instead of a tab,
+             * which is precisely what it did. That is not a subtle failure
+             * either -- it walks the tabs once and then quietly edits the
+             * document's settings.
+             *
+             * So the control takes the focus back after telling its parent.
+             * A click is untouched and keeps the behaviour that was measured;
+             * this is the keyboard's, and the argument for it is structural
+             * rather than measured, which is written down here rather than
+             * left to look like a reading of the machine. */
+            SetFocus(wnd);
+        }
+        return 0;
+    }
     case TCM_INSERTITEMA: {
         const TCITEMA *ti = (const TCITEMA *)lp;
         it = items_of(wnd);
