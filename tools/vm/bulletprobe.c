@@ -329,6 +329,62 @@ static void probe_main(void)
          "  an inch in. EM_POSFROMCHAR reports characters and a bullet is\r\n"
          "  not one, so do not read `both moved` as a contradiction.\r\n");
 
+
+    /* ---- the grid ------------------------------------------------------
+     *
+     * Dan measured ours across seven pairs and it is a clean two-term rule:
+     * `first = 11 + start`, `wrapped = start + offset`. **Two points of the
+     * machine's cannot confirm or refute that** -- they agree on one pair and
+     * disagree on another, and I could fit a model to either row and none to
+     * both. So the same seven are asked here, in one run rather than seven
+     * boots, and the answer is a table beside his rather than a theory.
+     *
+     * `x` is margin-relative: the control's own left inset is 1, subtracted
+     * here so the numbers line up with Dan's without either of us adjusting.
+     */
+    emit("\r\n== the grid: the same seven pairs Dan measured ours across ==\r\n");
+    emit("  start   offset   first line   wrapped\r\n");
+    {
+        static const int grid[][2] = {
+            {0, 0}, {0, 720}, {720, 0}, {720, -720},
+            {720, 720}, {1440, -720}, {0, 1440},
+        };
+        int g;
+        for (g = 0; g < (int)(sizeof grid / sizeof grid[0]); g++) {
+            PARAFORMAT pf;
+            POINTL first, p;
+            int at, wrap_x = -1;
+            select_at(re, p2_start);
+            memset(&pf, 0, sizeof pf);
+            pf.cbSize = sizeof pf;
+            pf.dwMask = PFM_STARTINDENT | PFM_OFFSET;
+            pf.dxStartIndent = grid[g][0];
+            pf.dxOffset = grid[g][1];
+            SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+            pump(200);
+            first.x = first.y = 0x7BAD;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&first, (LPARAM)p2_start);
+            for (at = p2_start + 1; at < n; at++) {
+                p.x = p.y = 0x7BAD;
+                SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, (LPARAM)at);
+                if (p.y != first.y) { wrap_x = (int)p.x; break; }
+            }
+            wsprintfA(buf, "  %-7d %-8d %-12d %d%s\r\n", grid[g][0],
+                      grid[g][1], (int)first.x - 1,
+                      wrap_x < 0 ? -1 : wrap_x - 1,
+                      wrap_x < 0 ? "   (did not wrap)" : "");
+            emit(buf);
+        }
+    }
+    emit("\r\n  and Dan's, ours, for comparison:\r\n"
+         "    0     0      11    0\r\n"
+         "    0     720    11    48\r\n"
+         "    720   0      59    48\r\n"
+         "    720   -720   59    0\r\n"
+         "    720   720    59    96\r\n"
+         "    1440  -720   107   48\r\n"
+         "    0     1440   11    96\r\n");
+
     CloseHandle(out_file);
     ExitProcess(0);
 }
