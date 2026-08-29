@@ -807,6 +807,21 @@ pub const TEXTRANGEA = extern struct {
     chrg: CHARRANGE = .{},
     lpstrText: ?LPSTR = null,
 };
+/// The flags EM_FINDTEXT takes in wParam, which are the Find box's own.
+pub const FR_DOWN = 0x00000001;
+pub const FR_WHOLEWORD = 0x00000002;
+pub const FR_MATCHCASE = 0x00000004;
+pub const EM_FINDTEXT = (WM_USER + 56);
+pub const EM_FINDTEXTEX = (WM_USER + 79);
+pub const FINDTEXTA = extern struct {
+    chrg: CHARRANGE = .{},
+    lpstrText: ?LPSTR = null,
+};
+pub const FINDTEXTEXA = extern struct {
+    chrg: CHARRANGE = .{},
+    lpstrText: ?LPSTR = null,
+    chrgText: CHARRANGE = .{},
+};
 pub const LF_FACESIZE = 32;
 pub const EM_GETCHARFORMAT = (WM_USER + 58);
 pub const EM_SETCHARFORMAT = (WM_USER + 68);

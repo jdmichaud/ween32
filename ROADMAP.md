@@ -315,7 +315,14 @@ the edge taking the line with it, and a click inside one landing at whichever
 end is nearer. Every number in `tests/richedit_test.c`'s tab block is
 `EM_POSFROMCHAR`'s own out of the machine.
 
-What it has not got is `EM_FINDTEXT` and the
+**And it searches.** `EM_FINDTEXT` and `EM_FINDTEXTEX` answer what riched20
+answers, row for row: the direction is `FR_DOWN` and not the order of the
+range, the whole match has to lie inside that range at both ends, backwards
+takes the nearest match behind rather than the first in the document, case is
+ignored unless asked, a word for `FR_WHOLEWORD` is letters and digits -- a
+digit is part of one and an underscore is not -- and a find moves nothing.
+
+What it has not got is the
 object side of a rich edit -- pictures and OLE, which WordPad's plan does not
 reach. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot

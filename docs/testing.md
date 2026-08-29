@@ -1198,6 +1198,65 @@ top byte of a stop -- its alignment and leader in Rich Edit 2.0's
 documentation -- does, since nothing here has set one. The position is taken
 and the rest dropped.
 
+### What a search does
+
+`EM_FINDTEXTEX`'s own answers, out of `ctlprobe.c`'s `finding` block, against
+"one cat two Cat three catalog cat." -- lower `cat` at 4, upper `Cat` at 12,
+`catalog` at 22, `cat.` at 30 -- and against
+"cat cat. cat-o cat9 cat_ (cat)":
+
+```
+flags 0, 0..-1, "cat"                    -> -1, range -1..-1
+0..-1 with neither flag nor order, "one" -> -1
+FR_DOWN, 0..-1                           ->  4, range 4..7
+FR_DOWN|FR_MATCHCASE, "Cat"              -> 12, range 12..15
+FR_DOWN|FR_WHOLEWORD, "cat"              ->  4   (not the one in "catalog")
+FR_DOWN, 4..-1                           ->  4   cpMin's own match counts
+FR_DOWN, 5..-1                           -> 12
+FR_DOWN, 0..6 (the match is 4..7)        -> -1   cpMax bounds the whole match
+FR_DOWN, 0..7                            ->  4
+34..0, no FR_DOWN                        -> 30
+34..0 with FR_DOWN set as well           -> -1
+20..0, backwards                         -> 12   the nearest behind, not the first
+backwards 20..13                         -> -1   the far end bounds it too
+backwards 20..12                         -> 12
+backwards 15..0                          -> 12   a match ending where it starts counts
+backwards 14..0                          ->  4
+forwards 30..-1                          -> 30
+forwards 31..-1                          -> -1
+"zebra" -> -1        the empty string -> -1        the selection is untouched
+whole word from 1, 5, 10, 16, 21         ->  4, 9, 20, 20, 26
+```
+
+- **The direction is `FR_DOWN`, not the order of the range.** A forward range
+  without the flag finds nothing at all -- not even a word at 0 -- and a
+  backward range with it finds nothing either.
+- **The whole match has to lie inside the range**, at both ends and in both
+  directions, and the end the search starts from counts as part of it.
+- **Backwards answers the nearest match behind**, which is what a Find box
+  pressing "Find Next" upwards needs.
+- **Case is ignored unless `FR_MATCHCASE`.**
+- **A word, for `FR_WHOLEWORD`, is letters and digits.** `cat9` is passed by
+  and `cat_` is taken, so an underscore is not part of a word and a digit is.
+  What a byte above 127 is has not been asked; ween32 takes it as not part of
+  one.
+- **A find moves nothing.** The selection is where it was afterwards, which
+  is why the frame can search and then decide what to select.
+- **The storage is what is searched**: `e\rt` is found across the break in
+  "one\r\ntwo" and `e\r\nt` is not, since a mark is one CR.
+
+Not asked, and taken the way the forward cases read: a `cpMin` of -1 going
+backwards, and a `cpMax` of -1 going backwards.
+
+**`FR_WHOLEWORD`'s boundaries are not the same as a double click's**, and the
+two live a few lines apart in `src/richedit.c`, so the difference is worth
+stating rather than tidying away. `rich_wholeword_char` counts letters and
+digits, which is measured above. `rich_is_word_char` -- what a double click
+takes -- counts an underscore in as well, which is **inherited from the
+EDIT's `is_word_char` and not measured of riched20**. `ctlprobe.c` now asks
+it, on "cat_dog cat9 don't (cat)"; until it answers, nobody should make the
+two agree on the grounds that they look alike.
+
 ### Where a line breaks, and what a document looks like written down
 
 **Wrapping**, measured in a control two hundred pixels wide:

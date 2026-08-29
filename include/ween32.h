@@ -680,6 +680,23 @@ typedef struct _textrange {
     LPSTR lpstrText;
 } TEXTRANGEA;
 
+/* Searching, which is the control's own since it is the thing that knows how
+ * the document is stored. The direction is FR_DOWN in the flags and not the
+ * order of the range -- measured, along with the rest of it, in
+ * docs/testing.md. EM_FINDTEXTEX fills chrgText in with what it found, and
+ * both answer the match's first character or -1. */
+#define EM_FINDTEXT (WM_USER + 56)
+#define EM_FINDTEXTEX (WM_USER + 79)
+typedef struct _findtext {
+    CHARRANGE chrg;
+    LPSTR lpstrText;
+} FINDTEXTA;
+typedef struct _findtextex {
+    CHARRANGE chrg;
+    LPSTR lpstrText;
+    CHARRANGE chrgText;
+} FINDTEXTEXA;
+
 /* ---- character formatting -------------------------------------------------
  *
  * The formatting a run of characters carries. dwMask is what the caller

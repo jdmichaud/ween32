@@ -1108,6 +1108,123 @@ static void rich_select_word(ween_rich *e)
 
 /* A rich edit's text starts one pixel inside its border, as an edit's does
  * in a strike font; see edit_margin in controls.c for the measurement. */
+/* ---- finding -------------------------------------------------------------
+ *
+ * All of this is riched20's, measured through EM_FINDTEXTEX in
+ * tools/vm/ctlprobe.c against "one cat two Cat three catalog cat." and
+ * "cat cat. cat-o cat9 cat_ (cat)":
+ *
+ *   - **The direction is FR_DOWN and not the order of the range.** 0..-1
+ *     without it answers -1 even for a word at 0; 34..0 *with* it answers -1
+ *     as well, since it goes forward from 34 in a document 34 long.
+ *   - **The whole match has to lie inside the range.** Forwards, 0..6 for a
+ *     match at 4..7 is -1 and 0..7 is 4. Backwards, 20..13 for a match at
+ *     12..15 is -1 and 20..12 is 12.
+ *   - **The end the search starts from counts.** Forwards from 30 finds the
+ *     match at 30 and from 31 does not; backwards from 15 finds the one that
+ *     ends at 15 and from 14 does not.
+ *   - **Backwards answers the nearest match behind**, not the first in the
+ *     document: 20..0 is 12, not 4.
+ *   - **Case is ignored unless FR_MATCHCASE.** Searching "cat" finds "Cat".
+ *   - **A word, for FR_WHOLEWORD, is letters and digits.** "cat" whole-word
+ *     skips "cat9" and takes "cat_", "cat.", "cat-o" and "(cat)" -- so a
+ *     digit is part of a word and an underscore is not. What a byte above
+ *     127 is has not been asked, and is taken here as not part of one.
+ *   - **The empty string is never found**, and -1 comes with chrgText set to
+ *     -1..-1 rather than left alone.
+ *   - **A find moves nothing**: the selection is where it was afterwards.
+ *   - And the document's own storage is what is searched, so a paragraph
+ *     mark is the single CR it is stored as: "e\rt" is found across the
+ *     break in "one\r\ntwo" and "e\r\nt" is not.
+ *
+ * Two readings of -1 going backwards are *not* measured, and are taken here
+ * the way the forward ones are: a cpMin of -1 starts at the end, and a
+ * cpMax of -1 stops at the start. Every backwards case that was asked had
+ * both ends written out.
+ */
+/* Note that this is *not* rich_is_word_char above, which is what a double
+ * click takes and which counts an underscore in. The two differ in exactly
+ * that character, and the difference is measured on this side and inherited
+ * from the EDIT on the other: whether a double click in a rich edit takes
+ * "cat_dog" whole has not been asked. ctlprobe.c now asks it. */
+static int rich_wholeword_char(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9');
+}
+
+static int rich_same(const char *a, const char *b, int n, int cased)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        unsigned char x = (unsigned char)a[i], y = (unsigned char)b[i];
+        if (!cased) {
+            if (x >= 'A' && x <= 'Z')
+                x = (unsigned char)(x - 'A' + 'a');
+            if (y >= 'A' && y <= 'Z')
+                y = (unsigned char)(y - 'A' + 'a');
+        }
+        if (x != y)
+            return 0;
+    }
+    return 1;
+}
+
+static int rich_match_at(ween_rich *e, int at, const char *what, int n,
+                         DWORD flags)
+{
+    if (!rich_same(e->text + at, what, n, (flags & FR_MATCHCASE) != 0))
+        return 0;
+    if (flags & FR_WHOLEWORD) {
+        if (at > 0 && rich_wholeword_char((unsigned char)e->text[at - 1]))
+            return 0;
+        if (at + n < e->len && rich_wholeword_char((unsigned char)e->text[at + n]))
+            return 0;
+    }
+    return 1;
+}
+
+static LRESULT rich_find(ween_rich *e, DWORD flags, const CHARRANGE *chrg,
+                         const char *what, CHARRANGE *found)
+{
+    int n = what ? (int)strlen(what) : 0, at;
+    int lo, hi;
+    if (found) {
+        found->cpMin = -1;
+        found->cpMax = -1;
+    }
+    if (!e || !n || !chrg)
+        return -1;
+    if (flags & FR_DOWN) {
+        lo = chrg->cpMin < 0 ? 0 : (int)chrg->cpMin;
+        hi = chrg->cpMax < 0 ? e->len : (int)chrg->cpMax;
+        if (hi > e->len)
+            hi = e->len;
+        for (at = lo; at >= 0 && at + n <= hi; at++)
+            if (rich_match_at(e, at, what, n, flags))
+                break;
+        if (at < 0 || at + n > hi)
+            return -1;
+    } else {
+        hi = chrg->cpMin < 0 ? e->len : (int)chrg->cpMin;
+        lo = chrg->cpMax < 0 ? 0 : (int)chrg->cpMax;
+        if (hi > e->len)
+            hi = e->len;
+        if (lo < 0)
+            lo = 0;
+        for (at = hi - n; at >= lo; at--)
+            if (rich_match_at(e, at, what, n, flags))
+                break;
+        if (at < lo)
+            return -1;
+    }
+    if (found) {
+        found->cpMin = at;
+        found->cpMax = at + n;
+    }
+    return at;
+}
+
 static int rich_inset(HWND wnd)
 {
     return ween_border_width(wnd) ? 1 : 0;
@@ -2128,6 +2245,19 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         memcpy(out, e->text + from, (size_t)(to - from));
         out[to - from] = 0;
         return to - from;
+    }
+    case EM_FINDTEXT: {
+        FINDTEXTA *ft = (FINDTEXTA *)lp;
+        if (!ft)
+            return -1;
+        return rich_find(e, (DWORD)wp, &ft->chrg, ft->lpstrText, NULL);
+    }
+    case EM_FINDTEXTEX: {
+        FINDTEXTEXA *ft = (FINDTEXTEXA *)lp;
+        if (!ft)
+            return -1;
+        return rich_find(e, (DWORD)wp, &ft->chrg, ft->lpstrText,
+                         &ft->chrgText);
     }
     case EM_GETTEXTRANGE: {
         TEXTRANGEA *tr = (TEXTRANGEA *)lp;

@@ -1252,6 +1252,7 @@ static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
 
 static void wrapping(HWND parent, HFONT font);
 static void tabs(HWND parent, HFONT font);
+static void finding(HWND parent, HFONT font);
 
 static void richedit(HWND parent, HFONT font)
 {
@@ -1349,6 +1350,7 @@ static void richedit(HWND parent, HFONT font)
     paragraphs(parent, font);
     wrapping(parent, font);
     tabs(parent, font);
+    finding(parent, font);
 
     DestroyWindow(re);
 }
@@ -1438,6 +1440,157 @@ static void set_tabs(HWND re, const LONG *tw, int n)
                   GetLastError());
         emit(buf);
     }
+}
+
+/* What EM_FINDTEXT does, since the frame's Find box will ask this control to
+ * search and searching is the control's job. Everything here is a number and
+ * a range the control answers with; nothing is a picture. */
+static void find_row(HWND re, const char *what, DWORD flags, int from, int to,
+                     const char *needle)
+{
+    FINDTEXTEXA ft;
+    LRESULT r;
+    memset(&ft, 0, sizeof ft);
+    ft.chrg.cpMin = from;
+    ft.chrg.cpMax = to;
+    ft.lpstrText = (LPSTR)needle;
+    ft.chrgText.cpMin = -2;
+    ft.chrgText.cpMax = -2;
+    r = SendMessageA(re, EM_FINDTEXTEX, (WPARAM)flags, (LPARAM)&ft);
+    wsprintfA(buf, "  %-40s -> %ld, range %ld..%ld\r\n", what, (long)r,
+              ft.chrgText.cpMin, ft.chrgText.cpMax);
+    emit(buf);
+}
+
+static void finding(HWND parent, HFONT font)
+{
+    HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                              WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                  ES_AUTOVSCROLL,
+                              10, 370, 300, 60, parent, NULL, NULL, NULL);
+    if (!re) {
+        wsprintfA(buf, "  no rich edit: %lu\r\n", GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+    emit("== finding ==\r\n");
+
+    /* "one cat two Cat three catalog cat." -- a lower match at 4, an upper
+     * at 12, one inside a longer word at 22, and a last one at 30 followed
+     * by a stop. */
+    SetWindowTextA(re, "one cat two Cat three catalog cat.");
+    emit("  text \"one cat two Cat three catalog cat.\", cat at 4, Cat at 12,"
+         " catalog at 22, cat. at 30\r\n");
+    find_row(re, "flags 0, 0..-1, \"cat\"", 0, 0, -1, "cat");
+    find_row(re, "FR_DOWN, 0..-1", FR_DOWN, 0, -1, "cat");
+    find_row(re, "FR_DOWN|FR_MATCHCASE, \"cat\"", FR_DOWN | FR_MATCHCASE, 0,
+             -1, "cat");
+    find_row(re, "FR_DOWN|FR_MATCHCASE, \"Cat\"", FR_DOWN | FR_MATCHCASE, 0,
+             -1, "Cat");
+    find_row(re, "FR_DOWN|FR_WHOLEWORD, \"cat\"", FR_DOWN | FR_WHOLEWORD, 0,
+             -1, "cat");
+    find_row(re, "FR_DOWN|FR_WHOLEWORD, \"catalog\"", FR_DOWN | FR_WHOLEWORD,
+             0, -1, "catalog");
+    /* Does a match that starts exactly at cpMin count, and does one that
+     * would run past cpMax? */
+    find_row(re, "FR_DOWN, 4..-1", FR_DOWN, 4, -1, "cat");
+    find_row(re, "FR_DOWN, 5..-1", FR_DOWN, 5, -1, "cat");
+    find_row(re, "FR_DOWN, 0..6 (the match is 4..7)", FR_DOWN, 0, 6, "cat");
+    find_row(re, "FR_DOWN, 0..7", FR_DOWN, 0, 7, "cat");
+    /* Backwards, which is what a cpMin above cpMax is said to mean. */
+    find_row(re, "34..0, no FR_DOWN", 0, 34, 0, "cat");
+    find_row(re, "0..-1 with neither flag nor order", 0, 0, -1, "one");
+    find_row(re, "34..0 with FR_DOWN set as well", FR_DOWN, 34, 0, "cat");
+    find_row(re, "20..0, backwards from the middle", 0, 20, 0, "cat");
+    /* Backwards, at its edges: does the range's far end bound the match
+     * going back the way cpMax bounds it going forward, and does a match
+     * that ends exactly where the search starts count? */
+    find_row(re, "backwards 20..13, the match is 4..7", 0, 20, 13, "cat");
+    find_row(re, "backwards 20..12", 0, 20, 12, "cat");
+    find_row(re, "backwards 15..0 (Cat is 12..15)", 0, 15, 0, "cat");
+    find_row(re, "backwards 14..0", 0, 14, 0, "cat");
+    find_row(re, "backwards 12..0", 0, 12, 0, "cat");
+    find_row(re, "forwards 0..-1 from 30 (cat. is 30..33)", FR_DOWN, 30, -1,
+             "cat");
+    find_row(re, "forwards 31..-1", FR_DOWN, 31, -1, "cat");
+    /* And whether a find moves the selection, which the frame will care
+     * about: the selection is put somewhere first and read back after. */
+    {
+        CHARRANGE cr;
+        cr.cpMin = 1;
+        cr.cpMax = 2;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        find_row(re, "with 1..2 selected", FR_DOWN, 0, -1, "cat");
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+        wsprintfA(buf, "  and the selection is still %ld..%ld\r\n", cr.cpMin,
+                  cr.cpMax);
+        emit(buf);
+    }
+
+    /* Nothing there, and nothing asked for. */
+    find_row(re, "FR_DOWN, \"zebra\"", FR_DOWN, 0, -1, "zebra");
+    find_row(re, "FR_DOWN, the empty string", FR_DOWN, 0, -1, "");
+    /* A search that crosses a paragraph mark: is the mark a CR to match, or
+     * the CRLF the program handed in? */
+    SetWindowTextA(re, "one\r\ntwo");
+    emit("  text \"one\\r\\ntwo\"\r\n");
+    find_row(re, "FR_DOWN, \"e\\rt\"", FR_DOWN, 0, -1, "e\rt");
+    find_row(re, "FR_DOWN, \"e\\r\\nt\"", FR_DOWN, 0, -1, "e\r\nt");
+    find_row(re, "FR_DOWN, \"one\"", FR_DOWN, 0, -1, "one");
+    find_row(re, "FR_DOWN, \"two\"", FR_DOWN, 0, -1, "two");
+    /* And what EM_FINDTEXT itself answers, which takes a FINDTEXTA and has
+     * no range to fill in. */
+    {
+        FINDTEXTA ft;
+        memset(&ft, 0, sizeof ft);
+        ft.chrg.cpMin = 0;
+        ft.chrg.cpMax = -1;
+        ft.lpstrText = (LPSTR) "two";
+        wsprintfA(buf, "  EM_FINDTEXT (not EX) \"two\" -> %ld\r\n",
+                  (long)SendMessageA(re, EM_FINDTEXT, FR_DOWN, (LPARAM)&ft));
+        emit(buf);
+    }
+    /* And what a *double click* takes, which is a different question with a
+     * confusingly similar answer: FR_WHOLEWORD's boundaries are measured
+     * above, and ween32's double click counts an underscore in because the
+     * EDIT does. Nobody has asked riched20. */
+    SetWindowTextA(re, "cat_dog cat9 don't (cat)");
+    emit("  text \"cat_dog cat9 don't (cat)\"\r\n");
+    {
+        static const int at[] = { 1, 9, 14, 21 };
+        int k;
+        for (k = 0; k < 4; k++) {
+            POINTL p;
+            CHARRANGE cr;
+            p.x = p.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, (LPARAM)at[k]);
+            SendMessageA(re, WM_LBUTTONDOWN, 0, MAKELPARAM(p.x + 1, p.y + 2));
+            SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(p.x + 1, p.y + 2));
+            SendMessageA(re, WM_LBUTTONDBLCLK, 0,
+                         MAKELPARAM(p.x + 1, p.y + 2));
+            SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(p.x + 1, p.y + 2));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+            wsprintfA(buf, "  a double click on character %d takes %ld..%ld"
+                           "\r\n",
+                      at[k], cr.cpMin, cr.cpMax);
+            emit(buf);
+        }
+    }
+
+    /* What a word is, for FR_WHOLEWORD: a stop, a hyphen, a digit, an
+     * underscore. */
+    SetWindowTextA(re, "cat cat. cat-o cat9 cat_ (cat)");
+    emit("  text \"cat cat. cat-o cat9 cat_ (cat)\", at 0, 4, 9, 15, 20, 26"
+         "\r\n");
+    find_row(re, "whole word from 1", FR_DOWN | FR_WHOLEWORD, 1, -1, "cat");
+    find_row(re, "whole word from 5", FR_DOWN | FR_WHOLEWORD, 5, -1, "cat");
+    find_row(re, "whole word from 10", FR_DOWN | FR_WHOLEWORD, 10, -1, "cat");
+    find_row(re, "whole word from 16", FR_DOWN | FR_WHOLEWORD, 16, -1, "cat");
+    find_row(re, "whole word from 21", FR_DOWN | FR_WHOLEWORD, 21, -1, "cat");
+    DestroyWindow(re);
 }
 
 static void tabs(HWND parent, HFONT font)

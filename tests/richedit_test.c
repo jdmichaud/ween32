@@ -1438,6 +1438,146 @@ int main(void)
         DestroyWindow(t);
     }
 
+    {
+        /* Finding, every row of it the machine's own answer through
+         * EM_FINDTEXTEX -- see docs/testing.md for the table this came
+         * from and ctlprobe.c's `finding` block for how it was asked. */
+        struct find_case {
+            const char *what;
+            DWORD flags;
+            int from, to;
+            const char *needle;
+            int want, wmin, wmax;
+        };
+        static const struct find_case ones[] = {
+            { "without FR_DOWN a forward range finds nothing", 0, 0, -1,
+              "cat", -1, -1, -1 },
+            { "and not even a word at the very start", 0, 0, -1, "one", -1,
+              -1, -1 },
+            { "FR_DOWN over the whole document", FR_DOWN, 0, -1, "cat", 4, 4,
+              7 },
+            { "case is ignored, so \"cat\" finds the lower one first",
+              FR_DOWN, 0, -1, "cat", 4, 4, 7 },
+            { "FR_MATCHCASE with \"Cat\" passes it and takes the upper",
+              FR_DOWN | FR_MATCHCASE, 0, -1, "Cat", 12, 12, 15 },
+            { "FR_WHOLEWORD does not take the \"cat\" inside \"catalog\"",
+              FR_DOWN | FR_WHOLEWORD, 0, -1, "cat", 4, 4, 7 },
+            { "and takes the whole word when the whole word is asked for",
+              FR_DOWN | FR_WHOLEWORD, 0, -1, "catalog", 22, 22, 29 },
+            { "a match starting exactly at cpMin counts", FR_DOWN, 4, -1,
+              "cat", 4, 4, 7 },
+            { "and one before it is passed by", FR_DOWN, 5, -1, "cat", 12,
+              12, 15 },
+            { "a match that would run past cpMax is not one", FR_DOWN, 0, 6,
+              "cat", -1, -1, -1 },
+            { "and the same range one longer is", FR_DOWN, 0, 7, "cat", 4, 4,
+              7 },
+            { "backwards from the end takes the last match", 0, 34, 0, "cat",
+              30, 30, 33 },
+            { "FR_DOWN from the end finds nothing, the flag deciding the "
+              "direction and not the order of the range",
+              FR_DOWN, 34, 0, "cat", -1, -1, -1 },
+            { "backwards answers the nearest match behind, not the first",
+              0, 20, 0, "cat", 12, 12, 15 },
+            { "backwards, a match starting before the far end is not one", 0,
+              20, 13, "cat", -1, -1, -1 },
+            { "and the same range one further out is", 0, 20, 12, "cat", 12,
+              12, 15 },
+            { "backwards, a match ending exactly where it starts counts", 0,
+              15, 0, "cat", 12, 12, 15 },
+            { "and one ending past it does not", 0, 14, 0, "cat", 4, 4, 7 },
+            { "forwards from 30 finds the one at 30", FR_DOWN, 30, -1, "cat",
+              30, 30, 33 },
+            { "and from 31 finds nothing", FR_DOWN, 31, -1, "cat", -1, -1,
+              -1 },
+            { "a word that is not there", FR_DOWN, 0, -1, "zebra", -1, -1,
+              -1 },
+            { "the empty string is never found", FR_DOWN, 0, -1, "", -1, -1,
+              -1 },
+        };
+        static const struct find_case marks[] = {
+            { "the mark is the single CR it is stored as", FR_DOWN, 0, -1,
+              "e\rt", 2, 2, 5 },
+            { "and the CRLF a program handed in is not in the document",
+              FR_DOWN, 0, -1, "e\r\nt", -1, -1, -1 },
+            { "the first paragraph", FR_DOWN, 0, -1, "one", 0, 0, 3 },
+            { "and the second, at the offset the storage gives it", FR_DOWN,
+              0, -1, "two", 4, 4, 7 },
+        };
+        static const struct find_case words[] = {
+            { "a stop ends a word", FR_DOWN | FR_WHOLEWORD, 1, -1, "cat", 4,
+              4, 7 },
+            { "so does a hyphen", FR_DOWN | FR_WHOLEWORD, 5, -1, "cat", 9, 9,
+              12 },
+            { "a digit does not -- \"cat9\" is passed by for \"cat_\"",
+              FR_DOWN | FR_WHOLEWORD, 10, -1, "cat", 20, 20, 23 },
+            { "which an underscore does", FR_DOWN | FR_WHOLEWORD, 16, -1,
+              "cat", 20, 20, 23 },
+            { "and a bracket", FR_DOWN | FR_WHOLEWORD, 21, -1, "cat", 26, 26,
+              29 },
+        };
+        struct {
+            const char *text;
+            const struct find_case *c;
+            int n;
+        } sets[3];
+        int k;
+        sets[0].text = "one cat two Cat three catalog cat.";
+        sets[0].c = ones;
+        sets[0].n = (int)(sizeof ones / sizeof ones[0]);
+        sets[1].text = "one\r\ntwo";
+        sets[1].c = marks;
+        sets[1].n = (int)(sizeof marks / sizeof marks[0]);
+        sets[2].text = "cat cat. cat-o cat9 cat_ (cat)";
+        sets[2].c = words;
+        sets[2].n = (int)(sizeof words / sizeof words[0]);
+        for (k = 0; k < 3; k++) {
+            int j;
+            SetWindowTextA(re, sets[k].text);
+            for (j = 0; j < sets[k].n; j++) {
+                const struct find_case *c = &sets[k].c[j];
+                FINDTEXTEXA ft;
+                LRESULT r;
+                memset(&ft, 0, sizeof ft);
+                ft.chrg.cpMin = c->from;
+                ft.chrg.cpMax = c->to;
+                ft.lpstrText = (LPSTR)c->needle;
+                ft.chrgText.cpMin = -2;
+                ft.chrgText.cpMax = -2;
+                r = SendMessageA(re, EM_FINDTEXTEX, c->flags, (LPARAM)&ft);
+                CHECK((int)r == c->want && ft.chrgText.cpMin == c->wmin &&
+                          ft.chrgText.cpMax == c->wmax,
+                      c->what);
+                if ((int)r != c->want || ft.chrgText.cpMin != c->wmin ||
+                    ft.chrgText.cpMax != c->wmax)
+                    printf("     wanted %d (%d..%d), got %d (%ld..%ld)\n",
+                           c->want, c->wmin, c->wmax, (int)r,
+                           (long)ft.chrgText.cpMin, (long)ft.chrgText.cpMax);
+            }
+        }
+        {
+            /* EM_FINDTEXT itself, which takes the shorter struct and has no
+             * range to fill in; and a find moving nothing, which the frame
+             * will lean on when it puts the selection where the match is. */
+            FINDTEXTA ft;
+            CHARRANGE cr;
+            memset(&ft, 0, sizeof ft);
+            ft.chrg.cpMin = 0;
+            ft.chrg.cpMax = -1;
+            ft.lpstrText = (LPSTR) "cat";
+            SetWindowTextA(re, "one cat two Cat three catalog cat.");
+            cr.cpMin = 1;
+            cr.cpMax = 2;
+            SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+            CHECK(SendMessageA(re, EM_FINDTEXT, FR_DOWN, (LPARAM)&ft) == 4,
+                  "EM_FINDTEXT answers the same first character");
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin == 1 && cr.cpMax == 2,
+                  "and a find moves nothing: the selection is where it was");
+        }
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
