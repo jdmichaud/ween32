@@ -45,6 +45,10 @@
   720     720      96           96
   1440    -720     107          48
   0       1440     96           96
+  0       60       11           4
+  0       120      11           8
+  0       165      11           11
+  0       240      16           16
 
   and Dan's, ours, for comparison:
     0     0      11    0
@@ -54,3 +58,27 @@
     720   720    59    96
     1440  -720   107   48
     0     1440   11    96
+
+== which rule is riched20's ==
+
+Two rules were proposed from the first seven pairs and both fit all of them:
+
+  bob's   first = offset > 0 ? start + offset : start + 11
+  Dan's   first = max(start + 11, start + offset)
+
+They part only where a positive offset is SMALLER than the bullet indent --
+under 11px, 165 twips -- and no pair among the seven has one. WordPad's own
+0.5" is 48px, so the machine's own usage cannot separate them either.
+
+The four pairs that do:
+
+  offset 60 (4px)    machine 11    ours 4
+  offset 120 (8px)   machine 11    ours 8
+  offset 165 (11px)  machine 11    ours 10
+  offset 240 (16px)  machine 16    ours 16
+
+riched20 gives 11, 11, 11, 16 -- Dan's rule. The bullet indent is a FLOOR on
+the first line, not a branch on the sign of the offset.
+
+The wrapped line is `start + offset` in both rules and on the machine, across
+all eleven pairs.

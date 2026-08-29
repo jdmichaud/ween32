@@ -345,9 +345,24 @@ static void probe_main(void)
     emit("\r\n== the grid: the same seven pairs Dan measured ours across ==\r\n");
     emit("  start   offset   first line   wrapped\r\n");
     {
+        /* The seven Dan measured ours across, then four that separate the
+         * two rules proposed from them. bob's is
+         * `offset > 0 ? start + offset : start + 11`; Dan's is
+         * `max(start + 11, start + offset)`. **They agree on every pair
+         * above** and disagree exactly where a positive offset is smaller
+         * than the bullet indent -- under 11px, which is 165 twips -- because
+         * no pair above has one. 60 and 120 twips are 4px and 8px:
+         *
+         *   bob's   first = 4  and 8
+         *   Dan's   first = 11 and 11
+         *
+         * 165 and 240 are the boundary and just past it, where both agree
+         * again, so a run that gets those wrong is measuring something else.
+         */
         static const int grid[][2] = {
             {0, 0}, {0, 720}, {720, 0}, {720, -720},
             {720, 720}, {1440, -720}, {0, 1440},
+            {0, 60}, {0, 120}, {0, 165}, {0, 240},
         };
         int g;
         for (g = 0; g < (int)(sizeof grid / sizeof grid[0]); g++) {
