@@ -179,6 +179,59 @@ echo "  Properties carries the day of the month in it and moves on its own."
 echo "  The explorer's own window needs a machine: docs/testing.md."
 echo
 
+# ---- the rename box, which is relations and not a reference -----------------
+#
+# **Every check above counts pixels against a stored picture, and this one
+# cannot.** The rename box is not a window of its own, so `pickshot.py` has
+# nothing to pick -- every frame the run leaves is the explorer's own 654x544
+# -- and a whole-frame count would drown seven pixels of box in a window's
+# worth of everything else. That is why docs/testing.md carried it in prose
+# for weeks and called it the one thing in its section that was *believed
+# rather than checked*.
+#
+# So it is checked as **relations**: two pixels left, twelve wider, as tall as
+# the row, and four more, none of which mentions a coordinate. The same
+# instrument reads them off the machine's captures and off ours, at whatever
+# size either window happens to be -- which is the comparison the prose
+# described and nothing could re-make.
+#
+# **The machine's own captures are run through it too.** They are the thing
+# the numbers came from, so if one of them is ever replaced by a capture taken
+# in a different state, this says so rather than quietly moving the target.
+renamebox() { # name row-capture box-capture
+    local out
+    if [ ! -f "$2" ] || [ ! -f "$3" ]; then
+        printf "  %-22s MISSING CAPTURE -- not measured\n" "$1"; return
+    fi
+    out=$("$R/renamebox.py" "$2" "$3" 2>&1)
+    if [ $? -eq 0 ]; then
+        printf "  %-22s %s\n" "$1" "$(printf '%s\n' "$out" | tail -1)"
+    else
+        printf "  %-22s FAILED: %s\n" "$1" \
+            "$(printf '%s\n' "$out" | grep -m1 'NO \|^no \|^the two')"
+    fi
+}
+echo "== the rename box =="
+renamebox "machine CONFIG.SYS" "$R/rename-config-row-machine.png" \
+    "$R/rename-config-box-machine.png"
+renamebox "machine Program Files" "$R/rename-pf-row-machine.png" \
+    "$R/rename-pf-box-machine.png"
+# Five downs picks CONFIG.SYS in the fixture's list; 113 is F2. The first run
+# stops with the row picked, so its highlight *is* the label rect.
+rm -f "$tmp"/rb*.bmp
+for phase in before after; do
+    key=""; [ "$phase" = after ] && key="k:113 "
+    WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+        WEEN32_BMP="$tmp/rb-$phase-%d.bmp" \
+        WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:300 ${key}w:600" \
+        ./examples/explorer >/dev/null 2>&1
+    last=$(ls "$tmp"/rb-$phase-*.bmp 2>/dev/null |
+           sed 's/.*-\([0-9]*\)\.bmp/\1 &/' | sort -n | tail -1 | cut -d' ' -f2)
+    [ -n "$last" ] && magick "$last" "$tmp/rb-$phase.png" 2>/dev/null
+done
+renamebox "ours" "$tmp/rb-before.png" "$tmp/rb-after.png"
+echo
+
 if [ "${FAST:-0}" = 1 ]; then
     echo "== FAST: the sanitizer and the gates were skipped =="
     exit 0

@@ -481,6 +481,24 @@ The one-name box settled two more:
 Every rectangle in both is measured off those, so a change that moves one
 shows up beside them:
 
+**`folderopts-machine.png` has a machine's settings inside it, and one of them
+is worth writing down before it costs somebody an afternoon.** A fresh capture
+of the same sheet, taken on 2026-08-29, is identical to it except for **183
+pixels**, all in the Web View group:
+
+```
+the stored reference    "Use Windows classic folders"   selected
+that machine            "Enable Web content in folders" selected
+```
+
+**That is a setting and not a rendering** — and it is not two pixels of radio
+dot, because the group's 32x32 illustration changes with the choice, which is
+comfortably large enough to read as a layout bug. The reference is not wrong;
+it simply records a machine as it was configured, and **a capture of a
+configurable dialog is a capture of somebody's configuration**. When a Folder
+Options count moves by something in the low hundreds, check the radio buttons
+against the reference before looking at the code.
+
 **Column Settings** differs by **1106 of 103290**, 1.1%. Its scroll bar is
 718 of that and is content, not drawing: the machine's shell offers some
 fifty columns where this example has eight, so its thumb is a fifteenth of
@@ -775,23 +793,55 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
   ./examples/explorer
 ```
 
-**This one stays prose and cannot become a `console` block**, and the reason
-is worth knowing before somebody tries: **there is nothing to diff it
-against.** The rename box has no reference capture, and it is not a window of
-its own either — the run leaves eleven frames and every one of them is the
-explorer's own 654x544, so `pickshot.py` has nothing to pick. The list above
-is a set of *relations* measured against the machine by hand — two pixels
-left, twelve wider, as tall as the row — and **relations of that kind cannot
-be checked from this repository at all**: "ours is the same to the pixel" is
-a claim about a comparison somebody made once, on a machine, and nothing here
-can re-make it. It wants a capture, and until it has one it is the one thing
-in this section that is believed rather than checked.
+**This one was prose for weeks, and the reason is worth keeping even though it
+has been fixed: there was nothing to diff it against.** The rename box is not
+a window of its own — the run leaves eleven frames and every one of them is
+the explorer's own 654x544, so `pickshot.py` has nothing to pick — and a
+whole-frame count would drown seven pixels of box in a window's worth of
+everything else. The list above is a set of *relations*, and the entry here
+used to say that relations of that kind could not be checked from this
+repository at all: *"ours is the same to the pixel" is a claim about a
+comparison somebody made once, on a machine, and nothing here can re-make it.*
 
-A 100x26 strip around the box, ours against the machine's, differs by
-**113 pixels of 2600** — every one of them in the seven columns of the file's
-icon at the left of the strip, which is the quantisation the whole fixture
-has. The box itself, its border, its white, its blue and its letters are
-identical.
+**What it wanted was not a picture but a way to make the comparison again.**
+Both now exist. `tools/refcapture/renamebox.py` takes two captures of the same
+rectangle — the row picked, then `F2` pressed — and reads the seven relations
+off them, none of which mentions a coordinate; so **the same instrument
+measures the machine's captures and ours**, at whatever size either window
+happens to be. `verify.sh` runs it on all three pairs on every branch:
+
+```
+== the rename box ==
+  machine CONFIG.SYS     all 7
+  machine Program Files  all 7
+  ours                   all 7
+```
+
+The machine's captures, taken on Windows 2000 on 2026-08-29, are
+`rename-config-{row,box}-machine.png` and `rename-pf-{row,box}-machine.png`.
+Both agree with the numbers written above them — an 81x17 box over a 69-wide
+label for `CONFIG.SYS`, 84 over 72 for `Program Files` — and **ours reads
+69x17, 81x17 and a 61x13 band, which is the machine's, exactly.**
+
+**The reference captures are run through the instrument too.** They are where
+the numbers came from, so if one is ever replaced by a capture taken in some
+other state the run says so, instead of quietly moving the target — which is
+what a stored PNG on its own would have let happen.
+
+**Finding the box has to come before finding the label**, which is the reverse
+of how the list above describes them. The natural order needs somewhere to
+start looking and the only landmark is the label, whose distance from the box
+is the very thing being measured. So the box is identified without it: a
+rectangle whose top and bottom edges are the same horizontal run, one row
+tall, **with a selection inside it**. The last clause is what makes it work on
+a whole frame — a button or a sunken pane is also a matched pair of runs, and
+neither has a highlight in it.
+
+An earlier note here recorded that a 100x26 strip around the box differed by
+**113 pixels of 2600**, all of them in the seven columns of the file's icon,
+which is the quantisation the whole fixture has. That count is still true and
+is now the less useful of the two numbers: it is dominated by an icon nobody
+is measuring, where the seven relations are about the box.
 
 The click that opens it is not the first one: the view waits out the
 double-click time after a press on the name already picked, because a second
@@ -2134,6 +2184,60 @@ render: **a capture is of a moment, and the moment includes where the keyboard
 was.** Before counting anything against a reference, ask how the reference was
 made and whether the script arrives the same way — and if the reference does
 not say, that is the thing to write down about it.
+
+### A capture made by clicking has the pointer in it
+
+The first machine capture of the rename box had its top border broken by seven
+pixels — `black black black white white white black white white white black`,
+which reads exactly like a gap in the art and was one sentence away from being
+written down as one.
+
+**It was the mouse.** The row had been picked by clicking it, the I-beam's top
+serif sits eight rows above the hotspot, and eight rows above the click is the
+row the box's border is drawn on. Moved to a corner and retaken, the border is
+one unbroken run from 15 to 95.
+
+This is the section above from the other end, one input device over. There the
+reference had a focus rectangle in it *because* it had been made by clicking;
+here it had a pointer in it for the same reason. **A pointer is not part of
+the program and it is not part of the render either**, so a capture with one
+in it cannot be compared with anything — and unlike a focus ring, which at
+least belongs to a control, this one lands wherever the last click was, which
+is to say wherever the interesting thing is. **Park the mouse in a corner
+before every capture**, and when a border, a rule or a glyph looks broken by a
+few pixels, check where the pointer was before believing it.
+
+### Counting a picture with a script is still counting the picture
+
+§8.6 says the five format pages of WordPad's Options sheet are one template.
+A count of the checkboxes on each said **four, four, three** — the Embedded
+page appearing to lack `Status bar` — and it was reported as §8.6 being wrong,
+with the words *"counted programmatically rather than by eye"* attached to it
+as though that settled what kind of claim it was.
+
+**It did not, because what the script counted was the capture.** Probing the
+live sheet found the fourth checkbox on the Embedded page at the same id, the
+same rect and the same dialog units as on every other page, differing by one
+bit:
+
+```
+"&Status bar"  1031  230,102  102x16  style 50010003   the other four pages
+"&Status bar"  1031  230,102  102x16  style 40010003   Embedded: no WS_VISIBLE
+```
+
+§8.6 was right. **A control that is not drawn still exists**, which is the
+same sentence as `PSH_NOAPPLYNOW`'s two buttons twenty lines up in
+`propsheet_test.c` — *the picture loses a button and the program does not* —
+and it was missed by somebody who had written that comment the same day.
+
+So: **"counted programmatically" says how carefully you looked, not what you
+looked at.** It is worth *less* than counting by eye when the two count the
+same thing, because it carries an authority it has not earned. The question
+that separates them is not *did a script do it* but **could this answer have
+come out differently if the thing were invisible rather than absent** — and
+if the answer is no, the instrument is the picture wearing a script's clothes.
+Ask the program: `GetDlgItem`, a probe, a window walk. Knowing the rule is not
+protection; reaching for the other instrument is.
 
 ### What a guess is reasoned from
 
