@@ -905,6 +905,30 @@ static void rich_relines_once(HWND wnd, ween_rich *e)
  * settles in two passes: measured without a bar, and again with one if the
  * text turned out not to fit. Adding the bar can only take width away, which
  * can only add lines, so the second answer stands. */
+/* **A re-wrap can shorten the document under a scroll position**, and the
+ * position is not part of the line table that gets rebuilt. Found by
+ * tests/monkey_test.c, which shrank it to three steps:
+ *
+ *     resize small, paste 60 characters, resize large
+ *     -> first visible line 3, of a document that is now 2 lines long
+ *
+ * jd's own sentence for it is *"the editor does not seem synchronised with
+ * the window size"*, and this is a third thing under that heading, after
+ * wordpad's formatting rectangle and this control's scrollbar style.
+ *
+ * **The sanitizer does not see it.** `e->line` is grown and never shrunk, so
+ * `e->line[3]` of a two-line document is stale data inside a live
+ * allocation -- a wrong number rather than a bad read. It is the shape alice
+ * described when she asked for an oracle: a monkey that only catches
+ * crashes would have run this sequence and reported nothing. */
+static void rich_clamp_scroll(ween_rich *e)
+{
+    if (e->first_visible >= e->lines)
+        e->first_visible = e->lines - 1;
+    if (e->first_visible < 0)
+        e->first_visible = 0;
+}
+
 static void rich_relines(HWND wnd, ween_rich *e)
 {
     int was;
@@ -912,8 +936,10 @@ static void rich_relines(HWND wnd, ween_rich *e)
         return;
     e->bar_on = 0;
     rich_relines_once(wnd, e);
-    if (wnd->style & ES_DISABLENOSCROLL)
+    if (wnd->style & ES_DISABLENOSCROLL) {
+        rich_clamp_scroll(e);
         return;
+    }
     /* **The control puts WS_VSCROLL up itself when the text overflows**, and
      * that is measured rather than inferred. Two readings of the machine's
      * editor looked for a while like they contradicted each other:
@@ -947,19 +973,23 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * and nobody has looked, so this does not touch it.
      */
     if (!(wnd->style & WS_VSCROLL)) {
-        if (e->lines <= rich_visible_lines(wnd))
+        if (e->lines <= rich_visible_lines(wnd)) {
+            rich_clamp_scroll(e);
             return;
+        }
         wnd->style |= WS_VSCROLL;
         e->bar_ours = 1;
     } else if (e->bar_ours && e->lines <= rich_visible_lines(wnd)) {
         wnd->style &= ~(DWORD)WS_VSCROLL;
         e->bar_ours = 0;
+        rich_clamp_scroll(e);
         return;
     }
     was = e->bar_on;
     e->bar_on = e->lines > rich_visible_lines(wnd);
     if (e->bar_on != was)
         rich_relines_once(wnd, e);
+    rich_clamp_scroll(e);
 }
 
 /* Which line an offset is on, from the table. */

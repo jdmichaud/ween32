@@ -31,6 +31,7 @@ TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
         tests/toolbar_test tests/draw_test tests/popup_test \
         tests/propsheet_test tests/comdlg_test tests/resource_test \
         tests/edit_test tests/registry_test tests/kernel_test \
+        tests/monkey_test \
         tests/richedit_test tests/richdrag_test tests/caption_test
 
 EXAMPLES = examples/dialog examples/calc examples/controls examples/menu \
@@ -61,6 +62,9 @@ examples/menu: examples/menu.c libween32.a
 
 examples/explorer: examples/explorer.c examples/fs.h libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/explorer.c libween32.a $(LIBS)
+
+tests/monkey_test: tests/monkey_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/monkey_test.c libween32.a $(LIBS)
 
 tests/render_test: tests/render_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/render_test.c libween32.a $(LIBS)
