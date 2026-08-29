@@ -73,6 +73,9 @@ enum {
     OP_CLICK,    /* a press and release somewhere in the client */
     OP_DRAG,     /* press, two moves, release: a selection by pointer */
     OP_RESIZE,   /* jd's "not synchronised with the window size" */
+    OP_BOLD,     /* jd: "if you change the style and type something" */
+    OP_ITALIC,
+    OP_SIZE,     /* a character size, which is a run change and not a text one */
     OP_N
 };
 
@@ -81,7 +84,8 @@ static const char *op_name(int op)
     static const char *n[] = { "type",  "enter", "paste", "back", "delete",
                                "select", "selall", "home", "end", "up",
                                "down",  "left",  "right", "replace", "clear",
-                               "click", "drag", "resize" };
+                               "click", "drag", "resize",
+                               "bold", "italic", "size" };
     return n[op];
 }
 
@@ -204,6 +208,31 @@ static void do_step(HWND re, const struct step *s)
         inject(WEEN_EV_MOUSE_MOVE, ox + x1, oy + y1);
         inject(WEEN_EV_MOUSE_UP, ox + x1, oy + y1);
         pump();
+        break;
+    }
+    /* **Formatting changes runs and not text**, which is the whole of jd's
+     * second Undo report: *"if you change the style and type something, only
+     * the style is undone."* A monkey that never sets a style cannot see
+     * it -- and this one could not, all evening. */
+    case OP_BOLD:
+    case OP_ITALIC: {
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = s->op == OP_BOLD ? CFM_BOLD : CFM_ITALIC;
+        cf.dwEffects = (s->a & 1)
+                           ? (s->op == OP_BOLD ? CFE_BOLD : CFE_ITALIC)
+                           : 0;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        break;
+    }
+    case OP_SIZE: {
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_SIZE;
+        cf.yHeight = (LONG)(8 + s->a % 20) * 20; /* points to twips */
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
         break;
     }
     case OP_RESIZE:
@@ -355,6 +384,87 @@ static const char *check_all(HWND re)
 
 static HWND g_host;
 
+/* **The document as a person sees it: its text, and what each character is
+ * drawn in.** The oracle up to now read the selection, the length and the
+ * line count -- none of which a formatting change touches -- so a monkey
+ * that styled text and undid it went green all evening. jd found it by
+ * hand instead: *"if you change the style and type something, only the
+ * style is undone."*
+ *
+ * Effects are sampled per character because that is what an undo has to
+ * restore. Comparing whole CHARFORMATs would compare fields nobody has
+ * measured. */
+struct doc {
+    char text[512];
+    unsigned char fx[512]; /* bold | italic | underline, per character */
+    int len;
+};
+
+/* **The control counts characters differently from the text it hands out.**
+ * A paragraph break is stored as one character and comes back through
+ * `GetWindowTextA` as `\r\n`, so the string is longer than the document.
+ * Indexing characters by `strlen` of that string walks off the end, and the
+ * control answers a query past the end with the *armed insert format* rather
+ * than refusing -- so a phantom character appears, carrying a format no undo
+ * ever recorded.
+ *
+ * **That cost me an evening's wrong conclusion.** The invariant reported "a
+ * formatting change could not be undone" on sequences where nothing was
+ * wrong: `EM_EXSETSEL 3..4` on a three-character document clamps to an empty
+ * selection, which *arms* a format instead of applying one, and the next
+ * read of the phantom index showed it. The program was right and the oracle
+ * was reading past the end of it.
+ *
+ * The length in the control's own numbering is what `EM_EXSETSEL` with a
+ * `cpMax` of -1 reports back -- ctl14.txt measured that it resolves the -1
+ * rather than storing it. */
+static int doc_length(HWND re)
+{
+    CHARRANGE all, keep;
+    memset(&keep, 0, sizeof keep);
+    SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&keep);
+    all.cpMin = 0;
+    all.cpMax = -1;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&all);
+    memset(&all, 0, sizeof all);
+    SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&all);
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
+    return (int)all.cpMax;
+}
+
+static void snap_doc(HWND re, struct doc *d)
+{
+    int i;
+    d->len = doc_length(re);
+    if (d->len > 511)
+        d->len = 511;
+    memset(d->text, 0, sizeof d->text);
+    memset(d->fx, 0, sizeof d->fx);
+    GetWindowTextA(re, d->text, (int)sizeof d->text);
+    for (i = 0; i < d->len; i++) {
+        CHARFORMATA cf;
+        CHARRANGE r;
+        r.cpMin = i;
+        r.cpMax = i + 1;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&r);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        d->fx[i] = (unsigned char)(((cf.dwEffects & CFE_BOLD) ? 1 : 0) |
+                                   ((cf.dwEffects & CFE_ITALIC) ? 2 : 0) |
+                                   ((cf.dwEffects & CFE_UNDERLINE) ? 4 : 0));
+    }
+}
+
+static int doc_same(const struct doc *a, const struct doc *b)
+{
+    if (a->len != b->len)
+        return 0;
+    if (memcmp(a->text, b->text, (size_t)a->len))
+        return 0;
+    return memcmp(a->fx, b->fx, (size_t)a->len) == 0;
+}
+
 
 static LRESULT CALLBACK host_proc(HWND h, UINT m, WPARAM w, LPARAM l)
 {
@@ -380,7 +490,62 @@ static int run_seq(const struct step *seq, int n, const char **why, int *at)
     SetFocus(re);
     for (i = 0; i < n; i++) {
         const char *bad;
-        do_step(re, &seq[i]);
+        int styling = seq[i].op == OP_BOLD || seq[i].op == OP_ITALIC ||
+                      seq[i].op == OP_SIZE;
+        /* **One edit, then one undo, is the identity -- formatting
+         * included.** That is jd's second Undo report stated as a rule: a
+         * style change that cannot be taken back is an edit the record does
+         * not hold.
+         *
+         * Only after formatting steps. It spends an undo and restores the
+         * state it measured, so doing it on every step would double the work
+         * and change what the rest of the sequence explores -- and the
+         * formatting ops are the ones no invariant covered. */
+        if (styling) {
+            struct doc was, now;
+            CHARRANGE keep;
+            memset(&keep, 0, sizeof keep);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&keep);
+            /* **Only a set over a real range**, which is the case Sam
+             * measured: bold 0..3, type, undo, undo. A set on an *empty*
+             * selection is the other thing EM_SETCHARFORMAT does -- it arms
+             * the format the next character will carry, changing no
+             * character and pushing no step -- and whether riched20 makes
+             * that undoable nobody has asked. Asserting it here cost me a
+             * false failure: the undo took back the typing instead, which
+             * looked like the formatting bug and was the invariant reaching
+             * past its evidence. */
+            if (keep.cpMin == keep.cpMax) {
+                do_step(re, &seq[i]);
+                bad = check_all(re);
+                if (bad) {
+                    *why = bad;
+                    *at = i;
+                    DestroyWindow(re);
+                    return 1;
+                }
+                continue;
+            }
+            snap_doc(re, &was);
+            SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
+            do_step(re, &seq[i]);
+            snap_doc(re, &now);
+            if (!doc_same(&was, &now)) { /* the step changed something */
+                SendMessageA(re, EM_UNDO, 0, 0);
+                snap_doc(re, &now);
+                if (!doc_same(&was, &now)) {
+                    *why = "a formatting change could not be undone";
+                    *at = i;
+                    DestroyWindow(re);
+                    return 1;
+                }
+                SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
+                do_step(re, &seq[i]); /* put it back and carry on */
+            }
+            SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
+        } else {
+            do_step(re, &seq[i]);
+        }
         bad = check_all(re);
         if (bad) {
             *why = bad;
