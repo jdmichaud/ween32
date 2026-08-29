@@ -75,11 +75,30 @@ echo
 
 echo "== captures =="
 R=$work/tools/refcapture
+# The two wine references are generated rather than committed -- .gitignore
+# says so, because ROADMAP has them made under Wine -- so a throwaway worktree
+# cannot contain them by construction. Borrowed from the main checkout when
+# they are missing here, and said out loud when they are borrowed: a number
+# measured against a file from somewhere else is still a number, but nobody
+# should have to guess where it came from.
+for gen in reference.png menu-reference.png; do
+    if [ ! -f "$R/$gen" ] && [ -f "$repo/tools/refcapture/$gen" ]; then
+        cp "$repo/tools/refcapture/$gen" "$R/$gen"
+        echo "  (borrowed $gen from the main checkout; it is not in the repository)"
+    fi
+done
+
 count() { # name reference our-png expected
-    if [ ! -f "$3" ]; then printf "  %-22s no render\n" "$1"; return; fi
+    if [ ! -f "$2" ]; then
+        printf "  %-22s MISSING REFERENCE -- not measured\n" "$1"; return
+    fi
+    if [ ! -f "$3" ]; then printf "  %-22s NOT RENDERED\n" "$1"; return; fi
     n=$(PXDIFF_REF="$2" PXDIFF_OUR="$3" "$R/pxdiff.py" 2>/dev/null |
         sed -n 's/.*differing pixels: \([0-9]*\) .*/\1/p')
-    printf "  %-22s %8s   was %s\n" "$1" "${n:-?}" "$4"
+    if [ -z "$n" ]; then
+        printf "  %-22s COULD NOT COUNT -- not measured\n" "$1"; return
+    fi
+    printf "  %-22s %8s   was %s\n" "$1" "$n" "$4"
 }
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=$tmp/s.bmp ./examples/controls >/dev/null 2>&1
