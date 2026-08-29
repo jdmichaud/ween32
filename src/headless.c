@@ -165,6 +165,7 @@ typedef struct {
     int unmanaged; /* placed by the application rather than by the manager */
     int x, y;      /* and, if it is, where it was placed */
     int shown;     /* on the screen: a window kept back writes no frame */
+    int raised;    /* when it was last put in front, counting from one */
 } hl_win;
 
 static hl_win g_wins[MAX_WINDOWS];
@@ -229,6 +230,23 @@ static void *hl_open(int x, int y, int w, int h, const char *title,
         return &g_wins[i];
     }
     return NULL;
+}
+
+/* The fake window system's stacking: a stamp rather than a list, because
+ * what a test needs to ask is "which of these two was put in front last",
+ * and a counter answers that without inventing an order for windows nobody
+ * has raised. */
+static int g_raise_clock;
+
+static void hl_raise(void *win)
+{
+    if (win)
+        ((hl_win *)win)->raised = ++g_raise_clock;
+}
+
+int ween_headless_window_raised(void *win)
+{
+    return win ? ((hl_win *)win)->raised : 0;
 }
 
 static void hl_show(void *win, int on)
@@ -387,6 +405,7 @@ const ween_backend *ween_backend_headless(void)
                                     .resize_is_answered = 0,
                                     .set_resizable = hl_set_resizable,
                                     .show = hl_show,
+                                    .raise = hl_raise,
                                     .set_cursor = hl_set_cursor,
                                     /* no screen: the classic desktop stands,
                                        so a render is the same everywhere */

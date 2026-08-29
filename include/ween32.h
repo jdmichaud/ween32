@@ -2727,6 +2727,17 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint);
 #define SWP_NOSIZE 0x0001
 #define SWP_NOMOVE 0x0002
 #define SWP_NOZORDER 0x0004
+/* Where SetWindowPos puts a window in the z-order. HWND_TOP is NULL, which is
+ * why a call that means to leave the order alone has to say SWP_NOZORDER
+ * rather than pass nothing. */
+#define HWND_TOP ((HWND)0)
+/* Which window GetWindow is being asked for. */
+#define GW_HWNDFIRST 0
+#define GW_HWNDLAST 1
+#define GW_HWNDNEXT 2
+#define GW_HWNDPREV 3
+#define GW_OWNER 4
+#define GW_CHILD 5
 #define SWP_NOREDRAW 0x0008
 #define SWP_NOACTIVATE 0x0010
 #define SWP_SHOWWINDOW 0x0040
@@ -2922,6 +2933,13 @@ BOOL GetCursorPos(POINT *pt);
 /* Which top-level window is active — the one a press with no window of its
  * own is measured against, and the one a dialog is put up over. */
 HWND GetActiveWindow(void);
+/* The z-order, which a program can ask about whether or not the screen agrees
+ * with it: GetTopWindow(NULL) is the frontmost top-level and GW_HWNDNEXT
+ * walks backwards from there. See ween_internal.h's `raise` for why the two
+ * can differ. */
+HWND GetTopWindow(HWND parent);
+HWND GetWindow(HWND wnd, UINT cmd);
+
 BOOL ScreenToClient(HWND wnd, POINT *pt);
 BOOL GetCursorPos(POINT *pt);
 

@@ -794,6 +794,16 @@ typedef struct {
      * beside itself, which is what a menu is, has to ask rather than assume.
      * May be NULL, and may fail; both leave *x and *y alone. */
     void (*origin)(void *win, int *x, int *y);
+    /* Ask the window system to put this window in front of the others.
+     *
+     * **It is a request and nothing here can promise it.** On X11 the window
+     * manager may reorder, refuse, or prevent a focus steal, and
+     * `_NET_ACTIVE_WINDOW` is advisory; so ween32's contract cannot be "this
+     * window is in front". It is *"this window is in front in ween32's own
+     * order, and the backend has been asked"* -- and a program can observe
+     * the first through GetWindow and EnumWindows whether or not the screen
+     * agrees. May be NULL, in which case only ween32's own order moves. */
+    void (*raise)(void *win);
     /* Blocks until the next event on any window; the event says which one.
      * timeout_ms < 0 waits indefinitely; otherwise it gives up after that
      * long and returns WEEN_EV_NONE, which is how a timer gets to run. */
@@ -837,6 +847,10 @@ void ween_headless_set_window_origin(int x, int y);
 void ween_headless_last_unmanaged_origin(int *x, int *y);
 int ween_headless_cursor(void *backend_win); /* the shape last asked for */
 int ween_headless_window_shown(void *backend_win); /* on the screen, or kept back */
+/* When this window was last raised, counting from one. Zero for a window
+ * never raised; the highest is the one the fake window system was asked for
+ * last, which is what a test asks about instead of looking at a screen. */
+int ween_headless_window_raised(void *backend_win);
 void ween_headless_set_bmp_path(const char *path); /* written on present */
 const ween_surface *ween_headless_surface(void);   /* last presented */
 

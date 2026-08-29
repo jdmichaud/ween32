@@ -553,6 +553,48 @@ int main(void)
         DestroyWindow(host);
     }
 
+    /* ---- z-order: what ween32 can promise ---- */
+    {
+        /* Before this existed a program could not put a window in front:
+         * SetWindowPos took its `after` argument and dropped it, and there
+         * was no GetWindow or GetTopWindow to ask with. The order below is
+         * ween32's own and is exact; what the screen shows is the window
+         * manager's, and the backend is asked rather than obeyed. */
+        WNDCLASSA wc;
+        HWND a, b;
+        memset(&wc, 0, sizeof wc);
+        wc.lpfnWndProc = DefWindowProcA;
+        wc.lpszClassName = "weenzorder";
+        wc.hbrBackground = (HBRUSH)(UINT_PTR)(COLOR_BTNFACE + 1);
+        RegisterClassA(&wc);
+        a = CreateWindowExA(0, "weenzorder", "a", WS_POPUP | WS_VISIBLE, 0, 0,
+                            80, 60, NULL, NULL, NULL, NULL);
+        b = CreateWindowExA(0, "weenzorder", "b", WS_POPUP | WS_VISIBLE, 20,
+                            20, 80, 60, NULL, NULL, NULL, NULL);
+        CHECK(a && b, "two top-level windows");
+        CHECK(GetTopWindow(NULL) == b, "the newer one starts in front");
+        CHECK(GetWindow(b, GW_HWNDNEXT) == a, "and the older is behind it");
+        CHECK(GetWindow(a, GW_HWNDNEXT) == NULL, "with nothing behind that");
+
+        SetWindowPos(a, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        CHECK(GetTopWindow(NULL) == a, "SetWindowPos honours HWND_TOP");
+        CHECK(GetWindow(a, GW_HWNDNEXT) == b, "with the other behind it");
+
+        /* The backend was asked, which is separate from ween32's own order
+         * having moved -- on X11 the first can happen without the second. */
+        CHECK(ween_headless_window_raised(ween_top_level(a)->backend_win) >
+                  ween_headless_window_raised(ween_top_level(b)->backend_win),
+              "and the window system was asked for it last");
+
+        SetWindowPos(b, HWND_TOP, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+        CHECK(GetTopWindow(NULL) == a,
+              "and SWP_NOZORDER leaves the order alone, which it could not "
+              "have meant before");
+        DestroyWindow(a);
+        DestroyWindow(b);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

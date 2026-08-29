@@ -1109,12 +1109,104 @@ BOOL MoveWindow(HWND wnd, int x, int y, int w, int h, BOOL repaint)
  * have to ask where it is first, because on a display with a window manager
  * the answer is where the manager put it, and moving it back there again
  * walks it across the screen by the width of its own frame. */
+/* ween32's own z-order: `g_tops` head first.
+ *
+ * **What the library can promise and what it cannot.** This order is exact
+ * and a program can read it back through GetTopWindow and GetWindow. What
+ * the screen shows is the window manager's business: on X11 a raise is a
+ * request that may be reordered or refused, so the backend is *asked* and
+ * never assumed to have obeyed. The two agreeing is the normal case and not
+ * a guarantee. */
+void ween_raise_top(struct ween_wnd *wnd)
+{
+    if (!wnd)
+        return;
+    for (struct ween_wnd **link = &g_tops; *link; link = &(*link)->next_top)
+        if (*link == wnd) {
+            *link = wnd->next_top;
+            break;
+        }
+    wnd->next_top = g_tops;
+    g_tops = wnd;
+    if (ween_active_backend && ween_active_backend->raise && wnd->backend_win)
+        ween_active_backend->raise(wnd->backend_win);
+}
+
+HWND GetTopWindow(HWND parent)
+{
+    /* NULL asks about the desktop, whose children are the top-levels. */
+    if (!parent)
+        return g_tops;
+    return parent->first_child;
+}
+
+HWND GetWindow(HWND wnd, UINT cmd)
+{
+    if (!wnd)
+        return NULL;
+    switch (cmd) {
+    case GW_CHILD:
+        return wnd->first_child;
+    case GW_OWNER:
+        return wnd->owner;
+    case GW_HWNDNEXT:
+    case GW_HWNDPREV:
+    case GW_HWNDFIRST:
+    case GW_HWNDLAST: {
+        /* A top-level's siblings are the other top-levels, in ween32's own
+         * order; a child's are its parent's children. */
+        struct ween_wnd *first =
+            wnd->parent ? wnd->parent->first_child : g_tops;
+        struct ween_wnd *t, *prev = NULL, *last = NULL;
+        if (cmd == GW_HWNDFIRST)
+            return first;
+        for (t = first; t; t = wnd->parent ? t->next_sibling : t->next_top) {
+            last = t;
+            if (t == wnd)
+                break;
+            prev = t;
+        }
+        if (cmd == GW_HWNDPREV)
+            return t == wnd ? prev : NULL;
+        if (cmd == GW_HWNDNEXT)
+            return t == wnd ? (wnd->parent ? wnd->next_sibling : wnd->next_top)
+                            : NULL;
+        for (t = first; t; t = wnd->parent ? t->next_sibling : t->next_top)
+            last = t;
+        return last;
+    }
+    default:
+        return NULL;
+    }
+}
+
 BOOL SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy,
                   UINT flags)
 {
-    (void)after; /* one window is in front of another here by its age */
     if (!wnd)
         return FALSE;
+    /* **`after` is honoured for HWND_TOP, and only for HWND_TOP.** It used
+     * to be dropped entirely, with a comment saying one window was in front
+     * of another by its age -- which was true, and was the whole reason an
+     * application could not raise a window.
+     *
+     * HWND_BOTTOM and a named window are **not** here, and their absence is
+     * deliberate: this argument is where raising and activating turn out to
+     * be told apart, and only HWND_TOP has been read off the machine. A
+     * symmetric guess at the rest would be three quarters of a parameter
+     * invented in the one place the whole design lives.
+     *
+     * HWND_TOP is NULL, so a caller meaning to leave the order alone says
+     * SWP_NOZORDER rather than passing nothing.
+     *
+     * **And this moves the z-order without activating**, which is not what
+     * the machine does for a plain HWND_TOP: it raises *and* activates
+     * unless SWP_NOACTIVATE. Activation is not built yet and this does not
+     * pretend to it. */
+    if (!(flags & SWP_NOZORDER) && !wnd->parent) {
+        if (after == HWND_TOP)
+            ween_raise_top(wnd);
+    }
     if (flags & SWP_NOMOVE) {
         x = wnd->x;
         y = wnd->y;
