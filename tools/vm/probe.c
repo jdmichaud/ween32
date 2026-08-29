@@ -7,11 +7,17 @@
  * Built for Windows 2000 with no C runtime at all -- mingw's CRT imports the
  * api-ms-win-crt-* stubs, which that version has never heard of:
  *
- *   zig cc -target x86-windows-gnu -nostdlib -Wl,--subsystem,console \
- *          -o probe.exe probe.c -lkernel32 -luser32
+ *   zig cc -target x86-windows-gnu -nostartfiles -nodefaultlibs \
+ *          -Wl,--subsystem,console -o probe.exe probe.c -lkernel32 \
+ *          -luser32 -lcomctl32
  *   tools/vm/pe2k.py probe.exe        # and its PE header says NT 4.0
+ *
+ * Not `-nostdlib`: a newer zig takes the headers away with the libraries, and
+ * windows.h is then not found at all. The two flags it stands for are the
+ * ones wanted here.
  */
 #include <windows.h>
+#include <commctrl.h>
 
 /* With no CRT, the two the compiler still calls for itself. */
 void *memset(void *d, int c, unsigned n)
@@ -60,20 +66,18 @@ static void dump(HWND w, int depth)
     emit(buf);
 }
 
-/* A status bar knows where its parts end and what is in them, and will say
- * so if asked -- which beats measuring the sunken edges off a screenshot. */
-static void status_parts(HWND w)
-{
-    int parts[16], n, i;
-    n = (int)SendMessageA(w, SB_GETPARTS, 16, (LPARAM)parts);
-    for (i = 0; i < n && i < 16; i++) {
-        char text[256];
-        text[0] = 0;
-        SendMessageA(w, SB_GETTEXTA, (WPARAM)i, (LPARAM)text);
-        wsprintfA(buf, "    part %d right=%d \"%s\"\r\n", i, parts[i], text);
-        emit(buf);
-    }
-}
+/* What this can and cannot ask across processes.
+ *
+ * Everything below reads a window through USER32 -- GetClassName,
+ * GetWindowRect, GetWindowLong, GetWindowText, and the menu calls -- and all
+ * of those are marshalled between processes by Windows itself. What is *not*
+ * safe is a control message that takes a pointer: SB_GETPARTS, SB_GETTEXT,
+ * TB_GETBUTTON, TB_GETITEMRECT and their kind hand the receiving process an
+ * address, and an address here means nothing there. This probe asked
+ * WordPad's status bar for its parts and Windows answered with "WORDPAD.exe
+ * has generated errors and will be closed" -- twice, once for the status bar
+ * and once for the toolbar. A control's insides are measured off the pixels
+ * instead, or by a program running inside that process. */
 
 static BOOL CALLBACK child(HWND w, LPARAM lp)
 {
@@ -81,8 +85,6 @@ static BOOL CALLBACK child(HWND w, LPARAM lp)
     cls[0] = 0;
     dump(w, (int)lp);
     GetClassNameA(w, cls, sizeof cls);
-    if (lstrcmpiA(cls, "msctls_statusbar32") == 0)
-        status_parts(w);
     return TRUE;
 }
 
