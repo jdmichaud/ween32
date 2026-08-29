@@ -5,16 +5,21 @@
  * window tree and its menu and writes the answer to a file on the share.
  *
  * Built for Windows 2000 with no C runtime at all -- mingw's CRT imports the
- * api-ms-win-crt-* stubs, which that version has never heard of:
+ * api-ms-win-crt-* stubs, which that version has never heard of. Compiling
+ * and linking are separate steps because the two need opposite things: the
+ * compiler wants the headers, and only the linker is to be told there is no
+ * runtime.
  *
- *   zig cc -target x86-windows-gnu -nostartfiles -nodefaultlibs \
- *          -Wl,--subsystem,console -o probe.exe probe.c -lkernel32 \
- *          -luser32 -lcomctl32
+ *   zig cc -target x86-windows-gnu -fno-sanitize=undefined -c \
+ *          -o probe.obj probe.c
+ *   zig cc -target x86-windows-gnu -nostdlib -Wl,--subsystem,console \
+ *          -Wl,--entry,mainCRTStartup -o probe.exe probe.obj \
+ *          -lkernel32 -luser32 -lcomctl32
  *   tools/vm/pe2k.py probe.exe        # and its PE header says NT 4.0
  *
- * Not `-nostdlib`: a newer zig takes the headers away with the libraries, and
- * windows.h is then not found at all. The two flags it stands for are the
- * ones wanted here.
+ * `-nostartfiles -nodefaultlibs` in one step was enough for an older zig and
+ * is not for this one: it links its own crt2.obj anyway and the two entry
+ * points below collide with it.
  */
 #include <windows.h>
 #include <commctrl.h>
@@ -35,6 +40,16 @@ void *memcpy(void *d, const void *s, unsigned n)
     while (n--)
         *a++ = *b++;
     return d;
+}
+
+/* And the stack guard, whose two symbols normally come from the CRT. A probe
+ * that has smashed its own stack has nothing true left to say, so the check
+ * stands and only the symbols are supplied. */
+void *__stack_chk_guard = (void *)0x0bad57ac;
+
+void __stack_chk_fail(void)
+{
+    ExitProcess(3);
 }
 
 static HANDLE out_file;
@@ -58,8 +73,13 @@ static void dump(HWND w, int depth)
     GetClassNameA(w, cls, sizeof cls);
     GetWindowTextA(w, txt, sizeof txt);
     GetWindowRect(w, &r);
-    wsprintfA(buf, "%s%08lX %-22s %4ld,%-4ld %4ldx%-4ld style=%08lX ex=%08lX id=%ld \"%s\"\r\n",
-              pad, (unsigned long)(UINT_PTR)w, cls,
+    /* The parent, because EnumChildWindows walks every descendant and hands
+     * them all back at one level: without this the tree reads as if a combo
+     * box inside a toolbar were a child of the frame. */
+    wsprintfA(buf, "%s%08lX parent=%08lX %-22s %4ld,%-4ld %4ldx%-4ld "
+                   "style=%08lX ex=%08lX id=%ld \"%s\"\r\n",
+              pad, (unsigned long)(UINT_PTR)w,
+              (unsigned long)(UINT_PTR)GetParent(w), cls,
               r.left, r.top, r.right - r.left, r.bottom - r.top,
               GetWindowLongA(w, GWL_STYLE), GetWindowLongA(w, GWL_EXSTYLE),
               GetWindowLongA(w, GWL_ID), txt);
