@@ -483,10 +483,28 @@ tabs are at y 38, at x 30 / 80 / 135 / 205; the 386x468 frame is the sheet:
 
 | page | differing | of 180648 | what is left |
 | --- | --- | --- | --- |
-| General | 1069 | 0.6% | the machine's own mouse pointer in the shot, the caption's bold title |
-| View | 1407 | 0.8% | the same two, the folder a heading wears, the scroll bar |
-| File Types | 9715 | 5.4% | the list's contents |
-| Offline Files | 1037 | 0.6% | the same two, and the arrows' bevel |
+| General | 656 | 0.4% | the caption's bold title and icon, and two disabled circles' insides |
+| View | 1403 | 0.8% | the title, the machine's pointer, the folder a heading wears, the scroll bar |
+| File Types | 9424 | 5.2% | the list's contents |
+| Offline Files | 735 | 0.4% | the title, and the arrows' bevel |
+
+**Three of those four captures were retaken without the pointer in them.**
+A screenshot has the mouse in it wherever the mouse was, and on General it
+was sitting over "Use Windows classic desktop", on File Types and Offline
+Files over the tab that had just been clicked. Each retake was checked
+against the capture it replaced before it replaced it: **285, 296 and 302
+differing pixels, every one of them inside a 17x25 box** — the arrow itself
+and nothing else. So the three counts fall by that much and no fact about
+either side changed. View keeps its pointer: that machine's Advanced settings
+are not this machine's, and a retake would have moved the page as well as the
+arrow.
+
+The pointer is worth a moment because it is the same trap as the caret. A
+capture is a photograph of a machine doing something, and what the machine
+was *being asked* to do is in the picture too: the pointer, a hot button
+under it, a caret half way through its blink, a tip that had time to come up.
+Park the pointer somewhere harmless, wait for the blink, and take the picture
+of the program rather than of the session.
 
 Only **File Types** cannot close: the machine's list is its own registry — a
 hundred extensions this example has never heard of — while ours is what
@@ -503,11 +521,26 @@ one the rest of this shell uses, and the machine's is its own — and the
 scroll bar, which is shorter here because the machine offers more settings
 below the ones it shows.
 
-Two things are in every one of these counts and in the Column Settings one:
-the caption's bold title — wine's Tahoma Bold is not the machine's, and its
-letters are a pixel wider — is about 300, and the
-machine's mouse pointer, which is in the screenshot and not in ours, another
-300 where it happens to sit.
+One thing is in every one of these counts and in the Column Settings one: the
+caption's bold title — wine's Tahoma Bold is not the machine's, and its
+letters are a pixel wider — which is about 300, and its icon another 93. The
+pointer used to be a second such tax and is now only in View's.
+
+What General had left past the caption was worth naming, and one of the two
+is now fixed. **142 pixels were a focus rectangle with no top and no bottom.**
+The rectangle goes round the label — the text's height with a pixel of margin,
+sixteen rows — and an option button in that page is thirteen tall, so the two
+rows it asked for outside itself were clipped away and what reached the page
+was two upright sides with nothing joining them. The machine draws that
+rectangle as the control's thirteen rows exactly, and Find's round "Down" as
+sixteen inside a control of twenty: the rule that gives both is the label's
+rectangle **clipped to the control**, which is what `bt_paint` does now, with
+both halves asserted in `tests/dlg_test.c`. General went 786 to **656** and no
+other capture moved a pixel.
+
+What is left there is **32 pixels in the two disabled option buttons'
+insides**, where the machine leaves the circle unfilled and draws its
+highlight and ours does not.
 
 ```sh
 # View > Choose Columns — the 330x313 frame is the dialog. Opened by key, so

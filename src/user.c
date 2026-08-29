@@ -3759,10 +3759,27 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
          * either. */
         struct ween_wnd *top = ween_top_level(wnd);
         int tw = label_width(wnd);
+        int fy = rtext.top - 1, fh = lh + 2;
         int ox, oy;
+        /* ...and it stops at the control's own edge. A label's rectangle is
+         * the text's height with a pixel round it, which is two rows more
+         * than a thirteen-pixel option button has got: asked for those rows
+         * the library drew them outside the control, where the page's own
+         * paint took them straight back and left the two upright sides of a
+         * rectangle with no top and no bottom -- 142 pixels of Folder
+         * Options General. The machine's rectangle round "Use Windows
+         * classic desktop" is the control's thirteen rows exactly, and the
+         * one round Find's "Down" is sixteen inside a control of twenty. One
+         * rule gives both: the label's rectangle, clipped to the control. */
+        if (fy < client.top) {
+            fh -= client.top - fy;
+            fy = client.top;
+        }
+        if (fy + fh > client.bottom)
+            fh = client.bottom - fy;
         ween_client_origin(wnd, &ox, &oy);
         ween_surface_focus_rect_in(&top->surface, ox + rtext.left - 1,
-                                   oy + rtext.top - 1, tw + 2, lh + 2,
+                                   oy + fy, tw + 2, fh,
                                    (ox + oy) & 1, WEEN_BLACK);
     }
 }

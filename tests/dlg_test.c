@@ -88,6 +88,94 @@ static INT_PTR CALLBACK fields_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
  * and sends EM_SETSEL to whatever says it keeps a selection. Paint's
  * Attributes box is the reason it was noticed: 120 typed over a width of 512
  * came out as 120512. */
+/* An option button's focus rectangle stops at the control's own edge.
+ *
+ * The rectangle goes round the *label*: its text's height with a pixel of
+ * margin, which is two rows more than a thirteen-pixel option button has got.
+ * Asked for those rows, the library drew a rectangle the control then clipped
+ * the top and the bottom off, and what reached the page was two upright sides
+ * with nothing joining them -- 142 pixels of Folder Options General against
+ * the machine, on the one button that had the keyboard.
+ *
+ * The machine draws that rectangle as the control's thirteen rows exactly,
+ * and the one round Find's "Down" as sixteen inside a control of twenty. One
+ * rule gives both: the label's rectangle, clipped to the control. Both halves
+ * are asserted here, because clipping always -- the whole client rectangle --
+ * would satisfy the first on its own and is not what the machine does.
+ *
+ * Eight dialog units is the thirteen pixels every option button in Folder
+ * Options has; thirteen units is twenty-one, taller than the label wants. */
+static int focus_rows(struct ween_wnd *top, HWND btn, int *first, int *last)
+{
+    RECT r;
+    int ox, oy, rows = 0;
+    *first = *last = -1;
+    GetClientRect(btn, &r);
+    ween_client_origin((struct ween_wnd *)btn, &ox, &oy);
+    /* Counted over the label, past the box and the gap before the text, and
+     * on rows the letters themselves do not reach: a row with a dozen dots
+     * evenly spread is the rectangle and nothing else. */
+    for (int y = oy - 2; y < oy + r.bottom + 2; y++) {
+        int ink = 0, touching = 0, was = 0;
+        for (int x = ox + 20; x < ox + 60; x++) {
+            int on = (top->surface.px[(size_t)y * top->surface.w + x] &
+                      0xffffff) == WEEN_BLACK;
+            ink += on;
+            touching += on && was;
+            was = on;
+        }
+        /* A rectangle's row is every other column and nothing else: forty
+         * columns give twenty dots with no two of them side by side, which
+         * is what tells it from a row of letters. */
+        if (ink >= 18 && !touching) {
+            rows++;
+            if (*first < 0)
+                *first = y - oy;
+            *last = y - oy;
+        }
+    }
+    return rows;
+}
+
+static void test_focus_rect_clipped(void)
+{
+    static const dlg_item items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+          10, 6, 180, 8, ID_EDIT1, ATOM_BUTTON, "Use Windows classic desktop",
+          NULL, 1 },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+          10, 20, 180, 13, ID_EDIT2, ATOM_BUTTON, "Use Windows classic desktop",
+          NULL, 1 },
+    };
+    static unsigned char tmpl[1024];
+    build_dialog_template(tmpl, sizeof(tmpl),
+                          WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 220,
+                          80, "Focus", items, 2);
+    HWND dlg = CreateDialogIndirectParamA(NULL, (LPCDLGTEMPLATEA)tmpl, NULL,
+                                          NULL, 0);
+    struct ween_wnd *top = ween_top_level((struct ween_wnd *)dlg);
+    HWND shortb = GetDlgItem(dlg, ID_EDIT1), tallb = GetDlgItem(dlg, ID_EDIT2);
+    RECT sr, tr;
+    int first, last;
+    GetClientRect(shortb, &sr);
+    GetClientRect(tallb, &tr);
+
+    SetFocus(shortb);
+    ween_flush_paint();
+    CHECK(sr.bottom == 13 && focus_rows(top, shortb, &first, &last) == 2 &&
+              first == 0 && last == sr.bottom - 1,
+          "a thirteen-pixel option button's focus rectangle is its own top "
+          "and bottom rows, the label's two extra clipped away");
+
+    SetFocus(tallb);
+    ween_flush_paint();
+    CHECK(tr.bottom == 21 && focus_rows(top, tallb, &first, &last) == 2 &&
+              last - first == 15,
+          "and on a taller one it stays the label's sixteen rows, as the "
+          "machine's Find box draws it");
+    DestroyWindow(dlg);
+}
+
 static void test_field_focus(void)
 {
     static const dlg_item items[] = {
@@ -235,6 +323,7 @@ int main(void)
     }
     CHECK(g_ok_clicks == 2, "clicking OK routed a second WM_COMMAND");
     test_field_focus();
+    test_focus_rect_clipped();
     test_focus_comes_back();
     (void)g_enter_clicks;
 
