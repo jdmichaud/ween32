@@ -252,6 +252,7 @@ extern int XStoreName(XDisplay *, XWindow, const char *);
 extern int XSelectInput(XDisplay *, XWindow, long);
 extern int XMapWindow(XDisplay *, XWindow);
 extern int XUnmapWindow(XDisplay *, XWindow);
+extern int XRaiseWindow(XDisplay *, XWindow);
 extern XGC *XCreateGC(XDisplay *, XWindow, unsigned long, void *);
 extern XImage *XCreateImage(XDisplay *, void *, unsigned, int, int, char *,
                             unsigned, unsigned, int, int);
@@ -770,6 +771,47 @@ static void x11_show(void *win, int on)
     XFlush(xw->dpy);
 }
 
+/* Ask the server to put this window above its siblings.
+ *
+ * **`XRaiseWindow` is a request and this cannot report whether it was
+ * granted.** A reparenting window manager owns the frame our window sits in,
+ * so the raise it receives is a hint it may reorder, ignore, or refuse under
+ * a focus-stealing-prevention policy; `_NET_ACTIVE_WINDOW` is advisory for
+ * the same reason. ween32's own order has already moved by the time this is
+ * called and stays exact whatever the server does with it -- see
+ * `ween_raise_top`.
+ *
+ * **No test in this repository runs on the X11 backend**, which is a fact
+ * about the harness rather than about what can be observed: `XQueryTree`
+ * answers "what order are these windows in" programmatically, which is the
+ * same question the headless recorder answers.
+ *
+ * So it has been observed, once, by hand, rather than left labelled
+ * untestable -- `xwininfo -root -tree` against two ween32 top-levels under
+ * i3, topmost first:
+ *
+ *     created, B newest          B, A
+ *     SetWindowPos(A, HWND_TOP)  A, B      the request was granted
+ *     SetWindowPos(B, HWND_TOP)  B, A      unchanged; B was already there
+ *
+ * The second line is the control: raising the window that is already on top
+ * moves nothing, which is what says the first line is a raise and not a
+ * coincidence of listing order.
+ *
+ * **A tiling manager may still legitimately refuse**, and i3 puts both
+ * windows at the same geometry so nothing is occluded either way -- the
+ * order changed without anything looking different. The contract stands as
+ * written: what moved for certain is ween32's own order, and the server was
+ * asked and on this machine agreed. */
+static void x11_raise(void *win)
+{
+    x11_win *xw = win;
+    if (!xw)
+        return;
+    XRaiseWindow(xw->dpy, xw->win);
+    XFlush(xw->dpy);
+}
+
 /* dx, dy are in the pixels the window is measured in, as everywhere else in
  * this interface: at 2x the window moves two screen pixels for each of them. */
 static void x11_move_by(void *win, int dx, int dy)
@@ -963,6 +1005,7 @@ const ween_backend *ween_backend_x11(void)
                                     .resize_is_answered = 1,
                                     .set_resizable = x11_set_resizable,
                                     .show = x11_show,
+                                    .raise = x11_raise,
                                     .set_cursor = x11_set_cursor,
                                     .no_activate = x11_no_activate,
                                     .set_owner = x11_set_owner,
