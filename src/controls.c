@@ -2153,6 +2153,23 @@ static int item_height(HWND w)
  * whatever the owner of an owner-drawn box said. The machine's plain box is
  * twenty-one and the one with pictures in it is twenty-two, and that is where
  * those two numbers come from. */
+/* A combo whose list is always open under its field, rather than a button
+ * that drops one: **CBS_SIMPLE**. The machine draws WordPad's Font, Font
+ * style and Size that way -- `probe/font.txt` reads `50010B51`, `50010241`,
+ * `50010B51`, and `0x0001` is the bit -- while its Color and Script are
+ * `50010253`, `CBS_DROPDOWNLIST`. So the distinction is measured, and the
+ * three that differ are the 28,416 pixels docs/testing.md counts against the
+ * Font box.
+ *
+ * It is a different control rather than a differently-drawn one: no button,
+ * the list is part of the box instead of a window that appears over other
+ * things, and the box keeps the height it was made with instead of shrinking
+ * to its field. */
+static int combo_simple(const struct ween_wnd *wnd)
+{
+    return (wnd->style & CBS_DROPDOWNLIST) == CBS_SIMPLE;
+}
+
 static int combo_closed_h(HWND wnd)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
@@ -2486,6 +2503,9 @@ static int combo_owner_drew(HWND wnd, HDC dc, const RECT *item, int which,
     return 1;
 }
 
+static void combo_items_draw(HWND cb, ween_surface *surface, int x, int y,
+                             int w);
+
 static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
@@ -2494,6 +2514,36 @@ static void combo_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     int btn = ween_scroll_metric(), ox, oy;
 
     ween_client_origin(wnd, &ox, &oy);
+    /* **A simple combo is two boxes and the face between them**: a field at
+     * the top with its list permanently under it, no button, and no border
+     * of the control's own -- see combo_simple. The field's own child edit
+     * draws what is in it; what is drawn here is the two sunken frames, the
+     * face they sit on, and the list's rows. */
+    if (combo_simple(wnd)) {
+        RECT cr, box;
+        int field = combo_closed_h(wnd);
+        GetClientRect(wnd, &cr);
+        FillRect(dc, &cr, GetSysColorBrush(COLOR_BTNFACE));
+        box = cr;
+        box.bottom = field;
+        DrawEdge(dc, &box, EDGE_SUNKEN, BF_RECT);
+        box.left += 2;
+        box.top += 2;
+        box.right -= 2;
+        box.bottom -= 2;
+        FillRect(dc, &box, GetSysColorBrush(COLOR_WINDOW));
+        box = cr;
+        box.top = field;
+        DrawEdge(dc, &box, EDGE_SUNKEN, BF_RECT);
+        box.left += 2;
+        box.top += 2;
+        box.right -= 2;
+        box.bottom -= 2;
+        FillRect(dc, &box, GetSysColorBrush(COLOR_WINDOW));
+        combo_items_draw(wnd, &top->surface, ox + 2, oy + field + 2,
+                         cr.right - 4);
+        return;
+    }
     FillRect(dc, &r, GetSysColorBrush(COLOR_WINDOW));
     /* the drop-down button, and its arrow: the same glyph a scroll bar's
      * down arrow uses */
@@ -2568,8 +2618,11 @@ static int combo_list_rows(HWND wnd)
     else if (it && ih) {
         /* what is left of the asked-for height once the closed control and
          * the list's border come off it — measured against the height the
-         * control has now, since a bar or a dialog lays it out afterwards */
-        int room = it->drop_h - wnd->h - 2;
+         * control has now, since a bar or a dialog lays it out afterwards.
+         * A simple combo never shrank, so its own height is the one to take
+         * the field's band out of. */
+        int room = combo_simple(wnd) ? wnd->h - combo_closed_h(wnd) - 2
+                                     : it->drop_h - wnd->h - 2;
         if (room >= ih)
             want = room / ih;
     }
@@ -2612,6 +2665,33 @@ static void combo_list_rect(HWND wnd, int *x, int *y, int *w, int *h)
     *y = oy - ween_border_width(wnd) + wnd->h;
     *w = wnd->w;
     *h = combo_list_height(wnd);
+}
+
+/* The rows of a combo's list, drawn at (x, y) of `s` in `w` pixels of width.
+ * Split out of the dropped list's own drawing because a **simple** combo
+ * shows the same rows inside itself, with no window of its own and no border
+ * to draw round them: the rows are the part both share. */
+static void combo_items_draw(HWND cb, ween_surface *surface, int x, int y,
+                             int w)
+{
+    ween_items *it = cb ? cb->ctl : NULL;
+    const ween_strike *f = cb && cb->font ? cb->font : ween_gui_font();
+    int ih = item_height(cb), i;
+    int rows = combo_list_rows(cb);
+    for (i = it ? it->top : 0; it && i < it->count; i++) {
+        int iy = y + (i - it->top) * ih;
+        int selected = i == (it->track >= 0 ? it->track : it->cursel);
+        int tx = x + 1, th = f ? f->ascent - f->descent : ih;
+        if (i - it->top >= rows)
+            break;
+        if (selected)
+            ween_surface_fill(surface, tx - 1, iy + (ih - th) / 2, w - 1, th,
+                              WEEN_CAP_LEFT);
+        if (f)
+            ween_strike_draw(f, surface, tx, iy + (ih - th) / 2, it->item[i],
+                             (int)strlen(it->item[i]),
+                             selected ? WEEN_WHITE : WEEN_BLACK);
+    }
 }
 
 /* Draw the open list, with its top-left corner at (x, y) of `s`. The list
@@ -2802,10 +2882,13 @@ static void combo_damage(HWND wnd)
 }
 
 /* Whether this combo's field can be typed in. CBS_DROPDOWNLIST is
- * CBS_DROPDOWN with another bit, so the test is for the whole value. */
+ * CBS_DROPDOWN with another bit, so the test is for the whole value -- and
+ * CBS_SIMPLE has a field too, which is what the machine's Font box types
+ * into. */
 static int combo_editable(const struct ween_wnd *wnd)
 {
-    return (wnd->style & CBS_DROPDOWNLIST) == CBS_DROPDOWN;
+    int kind = wnd->style & CBS_DROPDOWNLIST;
+    return kind == CBS_DROPDOWN || kind == CBS_SIMPLE;
 }
 
 /* Whether the field still shows the item that is picked. While it does, the
@@ -2950,9 +3033,14 @@ static HWND combo_edit(HWND wnd)
          * §4 and §8.5 both read. A program that wants the field -- to hold a
          * font name that can be typed, which is what §4's first combo is --
          * asks `GetDlgItem(combo, 1001)` for it, and got nothing here. */
-        it->edit = CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE, 3, 3,
-                                   cr.right - btn - 3, cr.bottom - 6, wnd,
-                                   (HMENU)(UINT_PTR)1001, NULL, NULL);
+        /* A simple combo has no button to leave room for, and its field is
+         * only the top band: the machine's is 141 wide in a 147 box and 15
+         * tall where the field's band is 21. */
+        it->edit = CreateWindowExA(
+            0, "EDIT", "", WS_CHILD | WS_VISIBLE, 3, 3,
+            combo_simple(wnd) ? cr.right - 6 : cr.right - btn - 3,
+            (combo_simple(wnd) ? combo_closed_h(wnd) : cr.bottom) - 6, wnd,
+            (HMENU)(UINT_PTR)1001, NULL, NULL);
         if (it->edit) {
             /* the field starts in the box's own face, not the system one:
              * the box may have been given a font before it was asked for a
@@ -2972,9 +3060,18 @@ static HWND combo_edit(HWND wnd)
      * had been putting the text, and that painting was two rows low -- so the
      * field inherited the error from the thing it replaced. */
     x = combo_edit_x(wnd, it);
-    if (it->edit)
-        MoveWindow(it->edit, x, 1, cr.right - btn - x - 1, cr.bottom - 2,
-                   FALSE);
+    if (it->edit) {
+        /* A simple combo's field is the top band only, and there is no
+         * button beside it: the machine's is 141x15 in a 147x116 box, which
+         * is the whole width less six and the field's band less six. */
+        int w = combo_simple(wnd) ? cr.right - 6 : cr.right - btn - x - 1;
+        int h = combo_simple(wnd) ? combo_closed_h(wnd) - 6 : cr.bottom - 2;
+        /* A simple combo has no border of its own, so its field sits three
+         * in and three down of the box itself -- which is where the
+         * machine's 141x15 Edit sits in its 147x116 ComboBox. */
+        MoveWindow(it->edit, combo_simple(wnd) ? 3 : x,
+                   combo_simple(wnd) ? 3 : 1, w, h, FALSE);
+    }
     return it->edit;
 }
 
@@ -3331,7 +3428,13 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
          * was created with, and a closed drop-down list is one row tall
          * however high the app asked for -- what it asked for is how far the
          * list drops. */
-        wnd->ex_style |= WS_EX_CLIENTEDGE;
+        /* ...but a **simple** combo wears two: one round its field and one
+         * round the list underneath, with the box's own face between them.
+         * The machine's has no client edge either -- probe/font.txt reads
+         * `ex=00000004`, WS_EX_NOPARENTNOTIFY and nothing else -- so it
+         * draws both itself, in combo_paint. */
+        if (!combo_simple(wnd))
+            wnd->ex_style |= WS_EX_CLIENTEDGE;
         it = items_of(wnd);
         if (it)
             it->drop_h = wnd->h; /* what it will be when the list is down */
@@ -3348,7 +3451,13 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             if (mi.itemHeight > 0 && it)
                 it->item_h = (int)mi.itemHeight;
         }
-        wnd->h = combo_closed_h(wnd);
+        /* A dropdown is made as tall as it is with its list *down* and
+         * shrinks to its field; a **simple** combo keeps what it was given,
+         * because its list is inside it. `probe/font.txt`: the machine's
+         * Font combo is 147x116 and its Edit 141x15 -- the box is the whole
+         * of it, not the field. */
+        if (!combo_simple(wnd))
+            wnd->h = combo_closed_h(wnd);
         combo_edit(wnd); /* a field, when the style says it can be typed in */
         return 0;
     }

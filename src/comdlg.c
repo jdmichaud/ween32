@@ -2407,15 +2407,21 @@ BOOL ChooseFontA(CHOOSEFONTA *cf)
     static const dlg_item items[] = {
         { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 7, 7, 40, 9, 1088, ATOM_STATIC,
           NULL, "&Font:" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0, 7,
+        /* **CBS_SIMPLE, not CBS_DROPDOWN**: the machine's three top combos
+         * keep their lists open under their fields -- `probe/font.txt` reads
+         * `50010B51`, `50010241`, `50010B51`, and `0x0001` is the bit, where
+         * Color and Script are `50010253`, `CBS_DROPDOWNLIST`. The heights
+         * here were already the machine's: 72 units is 117 pixels, which is
+         * the box *with* its list, and only a simple combo keeps it. */
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_SIMPLE, 0, 7,
           16, 98, 72, CF_FACE, ATOM_COMBOBOX, NULL, "" },
         { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 110, 7, 44, 9, 1089,
           ATOM_STATIC, NULL, "Font st&yle:" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_SIMPLE, 0,
           110, 16, 74, 76, CF_STYLE, ATOM_COMBOBOX, NULL, "" },
         { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 189, 7, 30, 9, 1090,
           ATOM_STATIC, NULL, "&Size:" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_SIMPLE, 0,
           190, 16, 36, 72, CF_SIZE, ATOM_COMBOBOX, NULL, "" },
         { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 7, 97, 98, 72,
           1072, ATOM_BUTTON, NULL, "Effects" },

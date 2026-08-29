@@ -623,6 +623,94 @@ int main(void)
               "own sizes are what the machine's box lists");
     }
 
+    {
+        /* CBS_SIMPLE: a combo whose list is always open under its field.
+         * The machine's Font, Font style and Size are these -- probe/font.txt
+         * reads 50010B51, 50010241, 50010B51, and 0x0001 is the bit -- and
+         * every number below is the machine's own:
+         *
+         *     ComboBox 1136   147x116        the box keeps what it was made
+         *     Edit     1001   141x15 at +3,+3   with; the field is the top
+         *                                       band, six narrower than the
+         *                                       box and six shorter than the
+         *                                       band
+         */
+        WNDCLASSA hc;
+        HWND host;
+        memset(&hc, 0, sizeof hc);
+        hc.lpfnWndProc = DefWindowProcA;
+        hc.lpszClassName = "weencombohost";
+        hc.hbrBackground = (HBRUSH)(UINT_PTR)(COLOR_BTNFACE + 1);
+        RegisterClassA(&hc);
+        host = CreateWindowExA(0, "weencombohost", "h", WS_POPUP | WS_VISIBLE,
+                               0, 0, 300, 300, NULL, NULL, NULL, NULL);
+        HWND simple = CreateWindowExA(0, "ComboBox", "",
+                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                          CBS_SIMPLE,
+                                      10, 10, 147, 116, host,
+                                      (HMENU)(UINT_PTR)1136, NULL, NULL);
+        HWND drop = CreateWindowExA(0, "ComboBox", "",
+                                    WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                        CBS_DROPDOWNLIST,
+                                    10, 140, 147, 116, host,
+                                    (HMENU)(UINT_PTR)1139, NULL, NULL);
+        RECT r;
+        HWND field;
+        int k;
+        static const char *faces[] = { "Arial", "Arial Black", "Comic Sans MS",
+                                       "Courier", "Courier New", "Fixedsys",
+                                       "Georgia" };
+        for (k = 0; k < 7; k++)
+            SendMessageA(simple, CB_ADDSTRING, 0, (LPARAM)faces[k]);
+        SendMessageA(simple, CB_SETCURSEL, 0, 0);
+
+        GetWindowRect(simple, &r);
+        CHECK(r.right - r.left == 147 && r.bottom - r.top == 116,
+              "a simple combo keeps the height it was made with, where a "
+              "dropdown shrinks to its field");
+        GetWindowRect(drop, &r);
+        CHECK(r.bottom - r.top < 116,
+              "and the dropdown beside it still shrinks, so the difference is "
+              "the style and not the class");
+
+        field = GetDlgItem(simple, 1001);
+        CHECK(field != NULL, "a simple combo has a field, as an editable one "
+                             "does -- it is CBS_SIMPLE that has no button, "
+                             "not no edit");
+        if (field) {
+            RECT fr, cb;
+            GetWindowRect(field, &fr);
+            GetWindowRect(simple, &cb);
+            CHECK(fr.left - cb.left == 3 && fr.top - cb.top == 3 &&
+                      fr.right - fr.left == 141 && fr.bottom - fr.top == 15,
+                  "and the field is the machine's: three in, three down, "
+                  "141x15 in a 147-wide box");
+        }
+
+        /* The list is drawn inside the box rather than as a window over
+         * other things, so the rows are on the host's own surface. */
+        {
+            struct ween_wnd *hw = (struct ween_wnd *)host;
+            int x, y, blue = 0, ink = 0;
+            InvalidateRect(host, NULL, TRUE);
+            ween_flush_paint();
+            for (y = 10 + 21; y < 10 + 116 && hw->surface.px; y++)
+                for (x = 10; x < 10 + 147; x++) {
+                    unsigned px =
+                        hw->surface.px[(size_t)y * hw->surface.w + x] &
+                        0xffffff;
+                    if (px == WEEN_CAP_LEFT)
+                        blue++;
+                    else if (px == WEEN_BLACK)
+                        ink++;
+                }
+            CHECK(blue > 100 && ink > 100,
+                  "the list is drawn inside the box: the chosen row's bar and "
+                  "the other rows' letters are both under the field");
+        }
+        DestroyWindow(host);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

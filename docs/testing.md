@@ -1407,20 +1407,37 @@ WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/fb%d.bmp \
 ```
 
 ```
-differing pixels   32,050 of 150,328   21.3%
-  the three lists  28,416   ween32 has no CBS_SIMPLE
+before CBS_SIMPLE  32,050 of 150,328   21.3%
+  the three lists  28,416   ween32 had no CBS_SIMPLE
   the note            954   the static is there and its text is not
   everything else   2,680   of which 60 are the caption's bold title
+
+after              9,614 of 150,328    6.4%
+  the three lists   5,623   what is left is the *contents*: our two faces
+                            against the machine's seven, our sizes against
+                            its, and the OpenType marks beside its names
+  the note            954   unchanged, and still ours to fix
+  everything else   3,037
 ```
 
-**The 28,416 are one missing style bit.** The machine's Font, Font style and
+**The 28,416 were one missing style bit, and it is implemented now.** The machine's Font, Font style and
 Size controls are `ComboBox` with **`CBS_SIMPLE`** -- `probe/font.txt` reads
 `50010B51`, `50010241`, `50010B51`, and `0x0001` is `CBS_SIMPLE` -- which
 draws an edit with its list **always open below it**. ween32's combo box
-treats every combo as a dropdown, so where the machine shows three lists of
-fonts, styles and sizes, ours shows three closed fields and dialog face. The
+treated every combo as a dropdown, so where the machine showed three lists of
+fonts, styles and sizes, ours showed three closed fields and dialog face. The
 Color and Script combos are `50010253`, `CBS_DROPDOWNLIST`, and those two ours
-draws correctly.
+already drew correctly.
+
+**A simple combo is a different control rather than a differently-drawn one**,
+which is what the implementation had to follow: it keeps the height it was
+made with instead of shrinking to its field, it has no button, it wears two
+sunken frames of its own rather than one client edge round everything, and
+its list is part of the box instead of a window that appears over other
+things. Every number in it is the machine's: `147x116` for the box, `141x15`
+at `(3,3)` for the field -- the whole width less six, the field's band less
+six -- which `tests/comdlg_test.c` asserts against a dropdown beside it, so
+the difference is the style and not the class.
 
 **The 954 are the note** at the bottom -- *"This is an OpenType font. This
 same font will be used on both your printer and your screen."* -- which is
