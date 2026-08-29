@@ -950,6 +950,10 @@ pub const EC_RIGHTMARGIN = 0x0002;
 pub const RICHEDIT_CLASSA = "RichEdit20A";
 pub const RICHEDIT_CLASS10A = "RICHEDIT";
 pub const EM_CANPASTE = (WM_USER + 50);
+/// Scroll whatever is needed to bring the caret into view. What a program
+/// sends after moving the selection somewhere the user cannot see -- the end
+/// of a search, for one.
+pub const EM_SCROLLCARET = 0x00B7;
 pub const EM_EXGETSEL = (WM_USER + 52);
 pub const EM_EXLIMITTEXT = (WM_USER + 53);
 pub const EM_EXSETSEL = (WM_USER + 55);
