@@ -180,7 +180,19 @@ static void register_builtin(const char *name, WNDPROC proc, UINT style)
     wc.style = style;
     wc.lpfnWndProc = proc;
     wc.lpszClassName = name;
-    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    /* **No class background.** win32's BUTTON and STATIC have none: a control
+     * paints what it needs and lets the parent's colour show through the
+     * rest. Giving them one means a control's *window* is filled before it
+     * paints, so a group box -- which draws nothing but a frame and a label --
+     * erased whatever sibling had been painted before it.
+     *
+     * That is not hypothetical. probe.exe reads the machine's own first
+     * Options page declaring its group box **fifth of six**, after the four
+     * option buttons it holds, and the machine keeps them; ours lost all four
+     * and the application had to declare its group boxes first to get them
+     * back. An application compensating for a library is how the hardest
+     * puzzles of this project have been made. */
+    wc.hbrBackground = NULL;
     RegisterClassA(&wc);
 }
 

@@ -1557,6 +1557,49 @@ int main(void)
         DestroyWindow(cw);
         ImageList_Destroy(il2);
     }
+    /* **A control declared before a group box must survive it.** A group box
+     * draws a frame and a label and nothing else, so on win32 one declared
+     * after its contents leaves them alone -- and probe.exe reads the
+     * machine's own first Options page declaring its group **fifth of six**,
+     * after the four option buttons it holds, with all four still there.
+     *
+     * Ours lost them, because every built-in class was registered with a
+     * COLOR_BTNFACE background and a control's window is filled before it
+     * paints. win32's BUTTON and STATIC have **no** class background: a
+     * control paints what it needs and lets the parent's colour through the
+     * rest. wordpad's Options page had been declaring its group boxes first
+     * to compensate. */
+    {
+        HWND host = CreateWindowA("weenviews", "", WS_OVERLAPPEDWINDOW, 0, 0,
+                                  300, 160, NULL, NULL, NULL, NULL);
+        HWND rb = CreateWindowExA(0, "BUTTON", "&Inches",
+                                  WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+                                  30, 40, 90, 16, host, (HMENU)(UINT_PTR)61,
+                                  NULL, NULL);
+        /* declared *after* the button it holds, and around it */
+        HWND box = CreateWindowExA(0, "BUTTON", "Units",
+                                   WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 20,
+                                   200, 80, host, (HMENU)(UINT_PTR)62, NULL,
+                                   NULL);
+        const ween_surface *gs;
+        int gx, gy, ink = 0;
+        ShowWindow(host, SW_SHOWNORMAL);
+        InvalidateRect(host, NULL, TRUE);
+        ween_flush_paint();
+        gs = ween_headless_surface();
+        ween_client_origin(rb, &gx, &gy);
+        for (int y = 0; gs && y < 16; y++)
+            for (int x = 0; x < 90; x++)
+                if ((gs->px[(size_t)(gy + y) * gs->w + gx + x] & 0xffffff) ==
+                    (WEEN_BLACK & 0xffffff))
+                    ink++;
+        CHECK(ink > 0,
+              "an option button declared before the group box around it is "
+              "still there");
+        (void)box;
+        DestroyWindow(host);
+    }
+
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
