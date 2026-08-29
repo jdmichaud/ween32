@@ -2526,6 +2526,42 @@ int main(void)
               "line start on the same column");
         CHECK(p0.x > plain_x + 11,
               "and it is the body indent rather than the bullet's own eleven");
+
+        /* **And the eleven is a floor, which is the band that discriminates.**
+         * An indent *smaller* than the bullet does not pull the text back
+         * into it. Measured on riched20 (tools/vm/bulletprobe.txt), start 0:
+         *
+         *     offset  60tw ( 4px)   first line 11    wrapped  4
+         *     offset 120tw ( 8px)   first line 11    wrapped  8
+         *     offset 165tw (11px)   first line 11    wrapped 11
+         *     offset 240tw (16px)   first line 16    wrapped 16
+         *
+         * These four rows are here because every *other* pair anyone tried
+         * agrees under both candidate rules -- WordPad's own half inch is
+         * forty-eight, which is well clear of the floor. A test that only
+         * carried the agreeing band would pass under a rule that is wrong. */
+        {
+            static const struct { LONG off; int first; } band[] = {
+                { 60, 11 }, { 120, 11 }, { 165, 11 }, { 240, 16 }
+            };
+            size_t k;
+            for (k = 0; k < sizeof band / sizeof band[0]; k++) {
+                char what[96];
+                memset(&pf, 0, sizeof pf);
+                pf.cbSize = sizeof pf;
+                pf.dwMask = PFM_NUMBERING | PFM_STARTINDENT | PFM_OFFSET;
+                pf.wNumbering = PFN_BULLET;
+                pf.dxStartIndent = 0;
+                pf.dxOffset = band[k].off;
+                SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+                p0.x = p0.y = 0;
+                SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p0, 0);
+                sprintf(what, "an offset of %ld twips puts the first line at "
+                              "%d, the machine's floor", (long)band[k].off,
+                        band[k].first);
+                CHECK(p0.x == plain_x + band[k].first, what);
+            }
+        }
         DestroyWindow(host6);
     }
 

@@ -1903,27 +1903,32 @@ static int rich_bullet_indent(ween_rich *e, int row)
     const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
     if (pf->numbering != PFN_BULLET || !e->line[row].first)
         return 0;
-    /* **A hanging indent takes over from the eleven.** The bare control's
-     * eleven is what it uses when the paragraph says nothing; with a hanging
-     * indent set -- which is what WordPad's Bullet Style does -- the first
-     * line's text goes to the *body* indent and the bullet takes the outdent,
-     * which is the ordinary shape of a list.
+    /* **The eleven is a floor on the first line, not a fallback.** A hanging
+     * indent moves the text past the bullet; an indent *smaller* than the
+     * bullet does not pull the text back into it.
      *
-     * Three readings say so together, and no single one of them does:
+     *     riched20, start 0    offset 60tw (4px)   first line 11
+     *                          offset 120tw (8px)  first line 11
+     *                          offset 165tw (11px) first line 11
+     *                          offset 240tw (16px) first line 16
      *
-     *     bare control, no indents     text +11, wrapped back to the margin
-     *     machine's WordPad            bullet on the margin, text +48,
-     *                                  wrapped +48 -- not +48 and +59
-     *     ours with the indents set    the wrapped line already lands on the
-     *                                  machine's, and only the first line
-     *                                  disagreed -- which isolates it here
+     * **This was `offset > 0 ? start + offset : start + 11` and gave 4, 8,
+     * 10, 16.** That rule fitted every pair anyone had measured, because the
+     * two agree for any offset above eleven pixels and nobody had gone
+     * below -- WordPad's own half inch is forty-eight. Dan proposed the
+     * `max`, I said the two were not the same rule and named the band where
+     * they part, and Sam read that band. **The measurement exists because
+     * the disagreement was stated precisely enough to be checkable.**
      *
-     * The third is Dan's, from wordpad's half, and it is what turns two
-     * readings that merely *fit* this rule into one that points at this
-     * line. */
-    if (pf->offset > 0)
-        return rfmt_px_twips(pf->offset);
-    return ween_ncm(11);
+     * A floor is also what the drawing needs, which is how Dan got to it:
+     * the glyph is five pixels wide, so text placed four in was drawn
+     * through the dot. That was the argument for it and not the evidence --
+     * the evidence is the four rows above. */
+    {
+        int floor = ween_ncm(11);
+        int body = rfmt_px_twips(pf->offset);
+        return body > floor ? body : floor;
+    }
 }
 
 static int rich_line_left(HWND wnd, ween_rich *e, int row)
