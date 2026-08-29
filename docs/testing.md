@@ -1418,6 +1418,10 @@ after              9,614 of 150,328    6.4%
                             its, and the OpenType marks beside its names
   the note            954   unchanged, and still ours to fix
   everything else   3,037
+
+with the note written 9,635 of 150,328   6.4%
+  the note            975   **up 21, and this is the right direction**
+  everything else   8,660   unchanged to the pixel
 ```
 
 **The 28,416 were one missing style bit, and it is implemented now.** The machine's Font, Font style and
@@ -1439,10 +1443,45 @@ at `(3,3)` for the field -- the whole width less six, the field's band less
 six -- which `tests/comdlg_test.c` asserts against a dropdown beside it, so
 the difference is the style and not the class.
 
-**The 954 are the note** at the bottom -- *"This is an OpenType font. This
-same font will be used on both your printer and your screen."* -- which is
-static 1093 in the template. ween32 creates the static and never gives it
-text.
+**The 954 were the note** at the bottom, which is static 1093 in the
+template, and ween32 created the static and never gave it text.
+
+**It is written now, and the count went up rather than down.** That is not a
+regression and it is worth the space, because a number moving the wrong way
+is normally the thing this file exists to catch.
+
+The note is **a rule and not a string**, read verbatim off the machine with
+`probe.exe` at three selections:
+
+```
+Arial           "This is an OpenType font. This same font will be used on
+                 both your printer and your screen."
+MS Sans Serif   "This is a screen font. The closest matching printer font
+                 will be used for printing."
+Courier         the same string as MS Sans Serif, exactly
+```
+
+So it is keyed on the font's **kind**, not on the font. The control is
+present, and in the same place, in all three dumps -- `334,552 329x33 style
+50000080` -- which is how *"the static is hidden"* was ruled out: an empty
+string and an absent control look identical in a screenshot and are two lines
+apart in a probe.
+
+**And that is why the count rose.** `font-machine.png` was taken with **Arial**
+selected, so the reference carries the OpenType string; ours opens on MS Sans
+Serif 8 and now correctly carries the screen-font one. Blank-against-text was
+954 differing pixels; text-against-different-text is 975. **The note has moved
+out of "missing" and into the state difference named below** -- it cannot
+reach zero until the two boxes open on the same font, and then it should reach
+it exactly.
+
+**Two limits, because the rule is two samples wide.** One OpenType face and
+two bitmap ones were read; TrueType-but-not-OpenType was not looked at and may
+be a third string. Whether the wording changes with a printer installed was
+not looked at either, and both strings are about printing. **The OpenType
+branch is also unreachable in ween32 today**, since both faces it offers are
+bitmap strikes -- it is written as the rule so a scalable face carries the
+note with it, but nothing that opens the box exercises it.
 
 **And 415 of the rest are state rather than drawing**: WordPad's box opens on
 Arial 10 and ours on MS Sans Serif 8, so the three fields hold different

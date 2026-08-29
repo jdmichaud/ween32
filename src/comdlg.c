@@ -2146,10 +2146,43 @@ static const struct {
     const char *face;
     const int *sizes;
     int n;
+    int screen; /* a bitmap face, which is every face this library has */
 } font_faces[] = {
-    { "MS Sans Serif", (const int[]){ 8, 10, 12, 14, 18, 24 }, 6 },
-    { "Tahoma", (const int[]){ 6, 7, 8, 9, 10, 11, 12 }, 7 },
+    { "MS Sans Serif", (const int[]){ 8, 10, 12, 14, 18, 24 }, 6, 1 },
+    { "Tahoma", (const int[]){ 6, 7, 8, 9, 10, 11, 12 }, 7, 1 },
 };
+
+/* Static 1093, the note under the Sample box, **which is a rule and not a
+ * string**. Read verbatim off the machine with probe.exe, three selections:
+ *
+ *     Arial           "This is an OpenType font. ..."
+ *     MS Sans Serif   "This is a screen font. ..."
+ *     Courier         "This is a screen font. ..."   -- the same string
+ *
+ * The two bitmap faces give the *identical* text, so it is keyed on the
+ * font's kind rather than on the font. The control is present and in the
+ * same place in all three dumps (334,552 329x33, style 50000080), which is
+ * how "the static is hidden" was ruled out: an empty string and an absent
+ * control look the same in a picture and are two lines apart in a probe.
+ *
+ * **The taxonomy behind this is two samples wide.** One OpenType face and
+ * two bitmap ones were read; TrueType-but-not-OpenType was not looked at and
+ * may be a third string. Whether the wording changes with a printer
+ * installed was not looked at either, and both strings are about printing.
+ *
+ * **And the OpenType branch cannot be reached today**, because both faces
+ * this library offers are bitmap strikes. It is written as the rule anyway
+ * so that adding a scalable face carries the note with it -- but it is
+ * untested by anything that opens the box, and saying so here is the point:
+ * a branch nothing exercises is not a branch anybody has checked. */
+static const char *font_note(int face)
+{
+    return font_faces[face].screen
+               ? "This is a screen font. The closest matching printer font "
+                 "will be used for printing."
+               : "This is an OpenType font. This same font will be used on "
+                 "both your printer and your screen.";
+}
 
 /* The colours the machine's box offers, in its own order. */
 static const struct {
@@ -2343,6 +2376,7 @@ static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                             : -1;
                 SendDlgItemMessageA(dlg, CF_SIZE, CB_SETCURSEL,
                                     (WPARAM)(i >= 0 ? i : 0), 0);
+                SetDlgItemTextA(dlg, 1093, font_note(f));
                 cf_sample(dlg);
             }
             return TRUE;
