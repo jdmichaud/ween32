@@ -1685,6 +1685,10 @@ pub const WEEN32_HAS_CLIPBOARD = 1;
 pub const WEEN32_HAS_CURSORS = 1;
 pub const GWL_WNDPROC = (-4);
 pub const GWLP_WNDPROC = (-4);
+/// A window's own spare pointer. The C header has had it since dialogs did,
+/// and the module had `GWLP_WNDPROC` beside it and not this -- so a Zig
+/// program could subclass a window and not remember anything about it.
+pub const GWLP_USERDATA = (-21);
 pub const GWL_STYLE = (-16);
 pub const GWL_EXSTYLE = (-20);
 pub const GWL_ID = (-12);
