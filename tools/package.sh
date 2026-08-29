@@ -258,12 +258,21 @@ fi
 # `git status` stays silent about, so it is the one a dirty-tree warning
 # cannot cover.
 plant="src/.package-invariant-$$.o"
+# The trap goes on before the file does, and it is the point: with
+# `set -e`, a `zig fetch` that fails here would exit the script with the
+# plant still sitting in src/ -- and it is a gitignored dotfile, so nothing
+# would ever mention it again. **The failing run is the one that leaks, so
+# the cleanup belongs on the path a failure takes**, not on the line after
+# the last success. (The same fault was fixed in the Python instruments the
+# same evening, in the commit that was fixing cleanup.)
+trap 'rm -f "$plant"' EXIT
 rm -f "$plant"
 printf 'not tracked, must not be packaged\n' > "$plant"
 make_tarball "$out/again.tar.gz"
 again=$(zig fetch --global-cache-dir "$out/again-cache" "$out/again.tar.gz" \
         2>/dev/null | tail -1)
 rm -f "$plant"
+trap - EXIT
 rm -rf "$out/again.tar.gz" "$out/again-cache"
 if [ "$again" = "$hash" ]; then
     echo "  ok      an untracked file in a packaged directory does not move"

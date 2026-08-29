@@ -86,6 +86,21 @@ that change made on purpose, the check says:
 
 and exits 1.
 
+**The cleanup is a `trap`, not the next statement.** With `set -e`, a
+`zig fetch` that fails while the plant is down would exit with the file still
+in `src/` -- and it is a gitignored dotfile, so nothing would ever mention it
+again. Measured both ways, with the fetch made to fail on purpose:
+
+```
+without the trap   exit 1, and src/.package-invariant-248115.o left behind
+with the trap      exit 1, and nothing left behind
+```
+
+The general form is worth more than the fix: **the failing run is the one that
+leaks, so cleanup belongs on the path a failure takes.** The same fault was
+found and fixed in the Python instruments the same evening -- in a commit that
+was itself about cleanup.
+
 ## Two things about `zig fetch` that are worth knowing before you design around them
 
 **The hash is of the unpacked tree, not of the tarball's bytes.** Measured with
