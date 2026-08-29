@@ -462,6 +462,7 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     /* the backend puts Shift in bit 0 of lParam and Alt in bit 29, where win32
      * keeps the context code */
     int shift = (msg->lParam & 1) != 0;
+    int ctrl = (msg->lParam & (1L << 28)) != 0;
     int alt = (msg->lParam & (1L << 29)) != 0;
 
     /* Alt on its own, or F10, opens the window's menu bar; Alt+letter opens
@@ -489,7 +490,20 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
 
     switch (msg->wParam) {
     case VK_TAB: {
-        HWND nx = ween_tab_next(dlg, focus, !shift);
+        HWND nx;
+        /* **Ctrl+Tab is the window's gesture, not the tab ring's.** A
+         * property sheet walks its pages with it, and this helper swallowing
+         * every VK_TAB turned it into a plain Tab before the sheet could see
+         * one -- the focus being on a control inside a page, the sheet is
+         * never sent the key at all.
+         *
+         * So it is offered to the dialog's own proc, which is the only thing
+         * here that knows whether the window has pages. A dialog that does
+         * not want it returns zero and the key does nothing, which is what a
+         * dialog without pages does on the machine. */
+        if (ctrl)
+            return SendMessageA(dlg, WM_KEYDOWN, VK_TAB, msg->lParam) != 0;
+        nx = ween_tab_next(dlg, focus, !shift);
         if (nx)
             dlg_focus(nx);
         return TRUE;

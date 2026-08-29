@@ -148,6 +148,7 @@ static void apply_enable(ps_sheet *ps)
  * refuses stops the rest and is brought to the front, which is what tells
  * the person which one it was. */
 static void sheet_show(ps_sheet *ps, int want);
+static void sheet_show_keeping_focus(ps_sheet *ps, int want);
 
 static int sheet_apply(ps_sheet *ps)
 {
@@ -169,7 +170,11 @@ static int sheet_apply(ps_sheet *ps)
 
 /* Bring one page to the front. The one going back is asked first and may
  * refuse, which is how a page with something wrong in it keeps the keyboard. */
-static void sheet_show(ps_sheet *ps, int want)
+/* Bring a page to the front. `move_focus` says whether the keyboard goes with
+ * it, which is not the same for every gesture that changes a page: a **click**
+ * puts the focus on the new page, and **Ctrl+Tab does not move it at all**.
+ * Both measured -- see sheet_key. */
+static void sheet_show_at(ps_sheet *ps, int want, int move_focus)
 {
     if (want < 0 || want >= ps->count || want == ps->current)
         return;
@@ -181,7 +186,7 @@ static void sheet_show(ps_sheet *ps, int want)
     ShowWindow(ps->page[want], SW_SHOW);
     SendMessageA(ps->tabs, TCM_SETCURSEL, (WPARAM)want, 0);
     page_notify(ps, want, PSN_SETACTIVE);
-    {   /* The page that comes to the front takes the keyboard with it: what
+    if (move_focus) {   /* The page that comes to the front takes the keyboard with it: what
          * the machine shows is a focus rectangle on the new page's first
          * item, not on the tabs that were clicked. A group of option buttons
          * hands the stop to whichever of them is set.
@@ -198,6 +203,43 @@ static void sheet_show(ps_sheet *ps, int want)
         else if (first)
             SetFocus(first);
     }
+}
+
+static void sheet_show(ps_sheet *ps, int want)
+{
+    sheet_show_at(ps, want, 1);
+}
+
+static void sheet_show_keeping_focus(ps_sheet *ps, int want)
+{
+    sheet_show_at(ps, want, 0);
+}
+
+/* **Ctrl+Tab walks the pages, and it wraps.** Measured on the machine: from
+ * the last page it comes round to the first, where the tab control's own
+ * arrows stop dead at either end and change nothing.
+ *
+ * **And it does not move the keyboard.** That reading cost a correction: it
+ * looked at first as though Ctrl+Tab kept the focus in the page, because
+ * every run that showed it had started with the focus in a page. Pressed with
+ * the tabs focused the ring stays on the tabs, and the simpler rule is the
+ * true one -- change the page and touch nothing else.
+ *
+ * Ctrl+Shift+Tab going the other way is **not measured**; it is win32's
+ * convention for every other Ctrl+Tab in the system and it is a guess. */
+static int sheet_key(ps_sheet *ps, WPARAM wp, LPARAM lp)
+{
+    int back, want;
+    if (!ps || wp != VK_TAB || !(lp & (1L << 28)) || ps->count < 2)
+        return 0;
+    back = (lp & 1) != 0; /* the pump puts Shift in bit 0 */
+    want = ps->current + (back ? -1 : 1);
+    if (want >= ps->count)
+        want = 0;
+    if (want < 0)
+        want = ps->count - 1;
+    sheet_show_keeping_focus(ps, want);
+    return 1;
 }
 
 /* The sheet's procedure is a dialog's, so what it *answers* goes in
@@ -249,6 +291,11 @@ static INT_PTR CALLBACK sheet_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         if (ps)
             sheet_show(ps, (int)wp);
         return TRUE;
+    case WM_KEYDOWN:
+        /* Only Ctrl+Tab reaches a dialog proc this way: IsDialogMessageA
+         * hands it over rather than turning it into a plain Tab, and answers
+         * whatever this says. See the VK_TAB case there. */
+        return sheet_key(ps, wp, lp);
     case WM_COMMAND:
         if (!ps)
             return FALSE;

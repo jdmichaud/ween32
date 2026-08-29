@@ -38,6 +38,8 @@ static HWND g_placed, g_had_focus;
 /* Gathered while the sheet is still up: it and its pages are gone by the time
  * PropertySheetA returns, which is what makes it modal. */
 static int g_had_tabs, g_same_sheet, g_two_pages;
+static int g_ctrltab_wrapped;
+static HWND g_focus_before_ctrltab, g_focus_after_ctrltab;
 /* What PSH_NOAPPLYNOW does to the four buttons, asked from inside a page. */
 static int g_btn_exists[4], g_btn_visible[4], g_ok_x, g_cancel_x, g_apply_x;
 
@@ -54,6 +56,14 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
             SetFocus(g_placed);
             return FALSE;
         }
+        return TRUE;
+    case WM_USER + 101:
+        g_focus_after_ctrltab = GetFocus();
+        PostMessageA(sheet, WM_COMMAND, IDOK, 0);
+        return TRUE;
+    case WM_USER + 100:
+        g_focus_before_ctrltab = GetFocus();
+        PostMessageA(sheet, WM_KEYDOWN, VK_TAB, 1L << 28);
         return TRUE;
     case WM_NOTIFY: {
         const NMHDR *nm = (const NMHDR *)lp;
@@ -107,7 +117,22 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
             } else if (g_step == 1 && which == 1) {
                 g_step = 2;
                 g_had_focus = GetFocus();
-                PostMessageA(sheet, WM_COMMAND, IDOK, 0);
+                /* **Ctrl+Tab from the last page.** Measured on the machine:
+                 * it advances one and wraps -- Embedded came round to Options
+                 * -- where the tab control's own arrows stop dead at either
+                 * end. Posted to the sheet so it goes through the modal
+                 * loop's IsDialogMessageA, which is the only path that
+                 * carries it; a Ctrl+Tab sent straight to a control would
+                 * prove nothing about the route. */
+                /* Read the focus *after* the page switch has settled, not
+                 * here: PSN_SETACTIVE is sent before sheet_show places the
+                 * keyboard, so a reading taken now is the previous page's and
+                 * the check would compare two different moments. */
+                PostMessageA(dlg, WM_USER + 100, 0, 0);
+            } else if (g_step == 2 && which == 0) {
+                g_step = 3;
+                g_ctrltab_wrapped = 1;
+                PostMessageA(dlg, WM_USER + 101, 0, 0);
             }
             return TRUE;
         case PSN_KILLACTIVE:
@@ -205,10 +230,17 @@ int main(void)
     r = PropertySheetA(&hdr);
 
     CHECK(g_two_pages, "each page is a dialog of its own");
-    CHECK(g_active[0] == 1, "the first page was told it was at the front");
+    /* Twice, not once: the sheet goes 0 -> 1 by PSM_SETCURSEL and then
+     * 1 -> 0 by Ctrl+Tab wrapping round, so the first page comes to the
+     * front at the start and again at the end. */
+    CHECK(g_active[0] == 2, "the first page was told it was at the front");
     CHECK(g_active[1] == 1, "and the second when it was moved to");
-    CHECK(g_kill[0] == 1,
+    /* Also twice, and for the same reason plus one: page 0 is asked when it
+     * goes to the back, page 1 is asked when Ctrl+Tab leaves it, and page 0
+     * is asked again when OK closes the sheet on it. */
+    CHECK(g_kill[0] == 2,
           "the one going to the back was asked first, and let go");
+    CHECK(g_kill[1] == 1, "and the page Ctrl+Tab left was asked as well");
     CHECK(g_apply[0] == 1,
           "OK asked the page that had something to keep to keep it");
     CHECK(g_apply[1] == 0, "and did not ask the one that had nothing");
@@ -220,6 +252,21 @@ int main(void)
     CHECK(g_placed && g_had_focus == g_placed,
           "a page that placed the keyboard itself keeps it");
     CHECK(g_had_tabs, "the sheet hands over its tab control");
+
+    /* ---- Ctrl+Tab ----------------------------------------------------------
+     *
+     * Measured on the machine, and the second of these cost a correction: it
+     * looked at first as though Ctrl+Tab kept the focus *in the page*,
+     * because every run that showed it had started with the focus in a page.
+     * Pressed with the tabs focused the ring stays on the tabs. The simpler
+     * rule is the true one -- change the page and touch nothing else.
+     */
+    CHECK(g_ctrltab_wrapped,
+          "Ctrl+Tab from the last page comes round to the first, where the "
+          "arrows stop dead");
+    CHECK(g_focus_before_ctrltab && g_focus_after_ctrltab &&
+              g_focus_before_ctrltab == g_focus_after_ctrltab,
+          "and it does not move the keyboard, which a click does");
     CHECK(g_same_sheet, "and both pages hang off the same sheet");
 
     /* ---- PSH_NOAPPLYNOW ----------------------------------------------------
