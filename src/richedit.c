@@ -152,6 +152,12 @@ typedef struct {
      * lines in a control 200 wide and one line after
      * EM_SETTARGETDEVICE(0, 1440). */
     int nowrap;
+    /* Whether the vertical bar is showing. A rich edit puts one up only
+     * when there is something to scroll -- the machine's WordPad has none at
+     * all on an empty document, where an EDIT with WS_VSCROLL always has one
+     * -- so this is worked out while the lines are, and the lines are worked
+     * out again when it changes, since the bar takes width from them. */
+    int bar_on;
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
@@ -720,6 +726,7 @@ static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
 
 static int rich_inset(HWND wnd);
 static int rich_bar(HWND wnd);
+static int rich_visible_lines(HWND wnd);
 
 /* How wide the text may be before it has to break, in pixels of client. */
 static int rich_wrap_width(HWND wnd, ween_rich *e)
@@ -766,7 +773,7 @@ static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
     return para_len;
 }
 
-static void rich_relines(HWND wnd, ween_rich *e)
+static void rich_relines_once(HWND wnd, ween_rich *e)
 {
     int at = 0, top = 0, n = 0;
     int width = rich_wrap_width(wnd, e);
@@ -806,6 +813,25 @@ static void rich_relines(HWND wnd, ween_rich *e)
         at++; /* past the mark */
     }
     e->lines = n;
+}
+
+/* The lines, and the bar that depends on them and that they depend on. It
+ * settles in two passes: measured without a bar, and again with one if the
+ * text turned out not to fit. Adding the bar can only take width away, which
+ * can only add lines, so the second answer stands. */
+static void rich_relines(HWND wnd, ween_rich *e)
+{
+    int was;
+    if (!e)
+        return;
+    e->bar_on = 0;
+    rich_relines_once(wnd, e);
+    if (!(wnd->style & WS_VSCROLL) || (wnd->style & ES_DISABLENOSCROLL))
+        return;
+    was = e->bar_on;
+    e->bar_on = e->lines > rich_visible_lines(wnd);
+    if (e->bar_on != was)
+        rich_relines_once(wnd, e);
 }
 
 /* Which line an offset is on, from the table. */
@@ -1078,7 +1104,12 @@ static int rich_inset(HWND wnd)
 
 static int rich_bar(HWND wnd)
 {
-    return (wnd->style & WS_VSCROLL) ? ween_scroll_metric() : 0;
+    ween_rich *e = rich_state(wnd);
+    if (!(wnd->style & WS_VSCROLL))
+        return 0;
+    if (wnd->style & ES_DISABLENOSCROLL)
+        return ween_scroll_metric(); /* always there, disabled when idle */
+    return (e && e->bar_on) ? ween_scroll_metric() : 0;
 }
 
 static int rich_visible_lines(HWND wnd)

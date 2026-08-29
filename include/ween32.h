@@ -641,6 +641,11 @@ typedef struct {
  * is what Windows needs and the registration is what this needs. */
 #define RICHEDIT_CLASSA "RichEdit20A"
 #define RICHEDIT_CLASS10A "RICHEDIT"
+/* A rich edit shows a scroll bar only when there is something to scroll,
+ * unless this says otherwise -- which is the opposite way round from an
+ * EDIT, where WS_VSCROLL alone means the bar is always there. The machine's
+ * WordPad has no bar at all on an empty document. */
+#define ES_DISABLENOSCROLL 0x00002000
 #define EM_CANPASTE (WM_USER + 50)
 #define EM_EXGETSEL (WM_USER + 52)
 #define EM_EXLIMITTEXT (WM_USER + 53)

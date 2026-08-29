@@ -1252,6 +1252,20 @@ asked — gets the first step right by luck and the second wrong: it puts the
 EDIT's caret on 28 where the machine puts it on 29, and never moves a caret
 to the character *nearest* a pixel in a proportional face at all.
 
+### The bar a rich edit puts up, and when
+
+A rich edit shows its vertical bar **only when there is something to
+scroll**, where an EDIT with WS_VSCROLL always has one and greys it. The
+machine's WordPad has no bar at all on an empty document: columns 749..761
+of `wordpad/reference/shots/win.png` are white where ween32 had a dithered
+track, which was about 830 pixels of that band. `ES_DISABLENOSCROLL` is what
+asks for one that is always there.
+
+It costs two passes over the lines, because the bar and the wrapping each
+depend on the other: measure without a bar, and again with one if the text
+turned out not to fit. Adding the bar can only take width away, which can
+only add lines, so the second answer stands.
+
 ### The two text controls, held against each other
 
 `tests/richedit_test.c` asks the rich edit the questions `tests/edit_test.c`
@@ -1405,14 +1419,25 @@ the machine's pixels at their widths. The two that moved are the wine
 renders, and toward the machine rather than away: the sampler 15749 →
 **14178**, the menu unchanged at 4397.
 
+**A fourth width confirms it.** `wordpad/reference/shots/win.png` is the
+machine's own WordPad at 768, and the same rule with the same hold of
+eighteen is **every one of its 760 columns**. All four widths are in
+`tests/caption_rows.h` now, 2,078 columns in all.
+
+What that capture also settles is what looked at first like a disagreement:
+against it, ween32's WordPad frame holds sixteen where the machine holds
+eighteen. That is not the ramp — it is the *window*. The machine's WordPad
+has an icon in its caption and ours has not been given one yet, and the two
+columns past the icon's room are what an icon earns.
+
 **One thing still not measured, and marked here rather than guessed**: a
 window that keeps the icon's room without an icon of its own — a system menu
-and nothing hung on it. The two columns past the icon are measured on a
-window that *has* one, so ween32 keeps them only there. Wine holds eighteen
-either way, and the menu sampler is 235 pixels closer to wine if we do the
-same, which is a reason to look but not a reason to change: the way to settle
-it is a capture of a captioned window with a system menu and no icon, at a
-width where the ramp is long enough to show the two columns.
+and nothing hung on it. Every capture we have is of a window that has one.
+Wine holds eighteen either way, and the menu sampler is 235 pixels closer to
+wine if we do the same, which is a reason to look but not a reason to change:
+the way to settle it is a capture of a captioned window with a system menu
+and nothing hung on it, at a width where the ramp is long enough to show the
+two columns.
 
 
 ### The toolbar, asked rather than looked at

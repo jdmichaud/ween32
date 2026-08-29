@@ -992,6 +992,44 @@ int main(void)
         DestroyWindow(w);
     }
 
+    /* ---- the bar comes and goes ----
+     *
+     * A rich edit puts a vertical bar up only when there is something to
+     * scroll, where an EDIT with WS_VSCROLL always has one. The machine's
+     * WordPad shows none at all on an empty document -- columns 749..761 of
+     * `wordpad/reference/shots/win.png` are white where ours had a track --
+     * and ES_DISABLENOSCROLL is what asks for one that is always there. */
+    {
+        HWND w = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                     ES_MULTILINE,
+                                 0, 0, 200, 60, host, (HMENU)(UINT_PTR)13,
+                                 NULL, NULL);
+        RECT cr;
+        int bare, full;
+        GetClientRect(w, &cr);
+        bare = cr.right;
+        SetWindowTextA(w, "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n"
+                          "seven\r\neight\r\nnine\r\nten");
+        GetClientRect(w, &cr);
+        full = cr.right;
+        CHECK(bare == full,
+              "the client is the client either way -- the bar is drawn "
+              "inside it, as every control here draws its own");
+        {
+            /* what the text is broken to is what says whether the bar took
+             * room: a line that fitted before has to break once it has */
+            int wide = (int)SendMessageA(w, EM_GETLINECOUNT, 0, 0);
+            SetWindowTextA(w, "one");
+            CHECK((int)SendMessageA(w, EM_GETLINECOUNT, 0, 0) == 1,
+                  "a document of one line is one line");
+            CHECK(wide == 10,
+                  "and ten short paragraphs are ten lines, none of them "
+                  "broken by a bar that took width from them");
+        }
+        DestroyWindow(w);
+    }
+
     /* ---- RTF ---- */
 
     {

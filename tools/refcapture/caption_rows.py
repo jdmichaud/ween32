@@ -21,13 +21,27 @@ import sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WIDTHS = (400, 500, 654)
 FRAME = 4
 BUTTONS = 55
 
+# Three of the machine's captures live here; the fourth is the whole WordPad
+# window in the other repository, which is the same program at a fourth
+# width and the one that settles whether the hold is a constant. The row is
+# copied into the generated header, so the test needs neither repository at
+# run time -- but if that capture is ever re-taken, this is the path.
+SOURCES = (
+    (400, os.path.join(HERE, "caption-400-machine.png")),
+    (500, os.path.join(HERE, "caption-500-machine.png")),
+    (654, os.path.join(HERE, "caption-654-machine.png")),
+    (768, os.path.join(HERE, "..", "..", "..", "wordpad", "reference",
+                       "shots", "win.png")),
+)
+WIDTHS = tuple(w for w, _ in SOURCES)
+
 
 def row_of(width):
-    im = Image.open(os.path.join(HERE, "caption-%d-machine.png" % width))
+    path = dict(SOURCES)[width]
+    im = Image.open(path)
     px = im.convert("RGB").load()
     end = width - FRAME - BUTTONS + 1  # the last ramp column, inclusive
     return [px[x, 4] for x in range(FRAME, end + 1)]
