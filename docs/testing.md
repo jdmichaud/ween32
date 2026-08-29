@@ -1902,6 +1902,32 @@ the instrument rather than the code:
   finds `ok   a buffer too small is ERROR_MORE_DATA`. Grep for the
   sanitizer's own words, `AddressSanitizer|LeakSanitizer|runtime error`.
 
+**And the two struct gates read the same header and disagree about which
+structs they can read, because of one word in one regex.**
+`tools/win32check/genstructs.py` reports **five it does not compare** —
+CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA, PAGESETUPDLGA and PRINTDLGA — and it
+says so in its own output, which is the right behaviour. What the line does
+not say is that all five have the same cause and it is not the structs:
+
+```
+the C header writes a hook as   INT_PTR(CALLBACK *lpfnHook)(HWND, ...)
+win32check looks for            \(\s*\*\s*(\w+)\s*\)         -- (*name)
+zigbind looks for               \(\s*\w*\s*\*\s*(\w+)\s*\)  -- (CALLBACK *name) too
+```
+
+So the *Zig* gate reads them and the *win32* gate does not, and the five are
+exactly the five comdlg32 structs that carry a hook. Three of them —
+CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA — are declared in `zig/ween32.zig`, so
+those three are compared against this header field for field and **this header
+is compared against real `windows.h` for none of them**. The triangle has one
+side open. The other two, PAGESETUPDLGA and PRINTDLGA, are declared in no Zig
+at all, so **nothing checks them from either direction.**
+
+None of the five is known to be wrong; FINDREPLACEA's offsets were read out of
+the Zig gate's own assertions when it was declared and they are win32's
+standard ones. The point is that being right and being checked are different
+things, and here the difference is a `\w*`.
+
 Two more, both about what a gate is *shaped* to notice:
 
 - **the binding gate is a spell-checker, not a dictionary.** It checks that
