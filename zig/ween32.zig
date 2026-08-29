@@ -395,6 +395,10 @@ pub extern fn GetKeyState(vk: c_int) callconv(.c) SHORT;
 pub extern fn SetTimer(wnd: HWND, id: UINT_PTR, ms: UINT, proc: ?TIMERPROC) callconv(.c) UINT_PTR;
 pub extern fn KillTimer(wnd: HWND, id: UINT_PTR) callconv(.c) BOOL;
 pub extern fn LoadCursorA(inst: HINSTANCE, name: LPCSTR) callconv(.c) HCURSOR;
+/// An icon out of the script -- the name asks for an RT_GROUP_ICON, the
+/// directory of the sizes it was drawn at, and the row nearest a caption's
+/// icon is the one that comes back.
+pub extern fn LoadIconA(inst: HINSTANCE, name: LPCSTR) callconv(.c) HICON;
 pub extern fn SetCursor(cursor: HCURSOR) callconv(.c) HCURSOR;
 pub extern fn CreateCursor(inst: HINSTANCE, xhot: c_int, yhot: c_int, width: c_int, height: c_int, and_plane: *const anyopaque, xor_plane: *const anyopaque) callconv(.c) HCURSOR;
 pub extern fn DestroyCursor(cursor: HCURSOR) callconv(.c) BOOL;
