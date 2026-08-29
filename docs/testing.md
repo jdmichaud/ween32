@@ -2239,6 +2239,148 @@ if the answer is no, the instrument is the picture wearing a script's clothes.
 Ask the program: `GetDlgItem`, a probe, a window walk. Knowing the rule is not
 protection; reaching for the other instrument is.
 
+### A build that did not happen looks exactly like a measurement that did
+
+**Three times in one evening a build failed and the harness that ran it
+reported a result anyway.** Each time the number came from the binary that was
+already there.
+
+```
+two sabotages did not compile under -Werror and printed nothing
+gb_paint failed on -Werror unused parameter 'ps'; the render came from the stale binary
+```
+
+The mechanism is the same each time and it is not subtle once you have seen
+it: a script builds, does not look at the exit status, and then measures
+whatever is on disk. **There is always something on disk.** The measurement
+succeeds, prints a plausible figure, and the figure is about a version of the
+program that no longer exists in the source.
+
+**No instrument here can tell that number from a real one**, and that is the
+whole reason this is dangerous rather than annoying. A wrong pixel count looks
+wrong. A count of the *previous* build looks exactly like a count — right
+shape, right magnitude, often right value, because most of the time the change
+you are making does not move it much.
+
+**So: a script that builds and then measures must check the build's status and
+refuse to measure.** Not warn — *refuse*, and print what the compiler said.
+Warning is not enough because a warning scrolls past above a number, and the
+number is what gets quoted into a report.
+
+The way it was caught in the end is worth copying: **print the compiler's
+output rather than counting its lines.** A build step that captures output and
+prints nothing on success prints nothing on failure either, unless somebody
+wrote the branch that says so.
+
+**And a fourth, found in this file's own `verify.sh` while writing this entry**
+— which is the most useful kind of instance, because nobody was hunting it.
+The suite's line was
+
+```sh
+ok=$(make test 2>&1 | grep -cE "^ok")
+```
+
+counting `ok` lines and never asking whether `make test` ran. **The tests are a
+second compile**, so a test file that stops compiling ends the run before any
+binary executes. Sabotaged by appending `this is not c;` to
+`tests/propsheet_test.c`:
+
+```
+as it was    assertions 0, and the run carried on
+as it is     FAILED to build or run the tests, gcc's errors, exit 1
+```
+
+**Zero is not silence**, and somebody would very likely notice a suite that had
+gone from 1123 to 0. What it is not is *the reason*: `assertions 0` reads as a
+suite that ran and passed nothing, which is a different and far more alarming
+thing than a file that would not compile. Meanwhile every capture below it is
+measured perfectly well, because the *library* built — so the report is nine
+right numbers and one wrong one, which is the hardest shape there is to read.
+
+**And a fifth of a different kind, which belongs beside these and is not one of
+them.** `wordpad`'s `verify.sh` reported `0 warnings` where a cold build
+reports 2, because zig prints a warning when it *compiles* the thing that has
+it and says nothing on a warm cache. Nothing failed and nothing was stale: the
+build was real and the count was of what was rebuilt, which was nothing. That
+is not a stale binary, it is **a number whose meaning depends on the cache**,
+and the fix is a different one — `rm -rf` the build cache before counting, and
+spend the three seconds.
+
+**Not a fourth instance**, though it was nearly written down as one: two
+templates that measured identically turned out to be a file nothing read —
+`fo_layout` overwrites every control from a table of pixels at `WM_INITDIALOG`,
+so the dialog units being edited were dead. It *presented* the same way, two
+different inputs and one output, and "the build did not happen" was the cause
+already to hand. **A wrong cause with a confident sentence on it is the thing
+this section exists to stop**, and it does not stop being that when the
+sentence is one of this section's own.
+
+### A sabotage that does not compile looks exactly like one that failed
+
+This is the entry above at the worst possible moment: **while you are proving
+a test can fail.**
+
+The ritual is right and this file asks for it — *break the library on purpose,
+watch the assertion go red, put it back.* The trap is that a sabotage is
+usually a small edit made quickly, in a tree built with `-Werror`, and the
+edits that come to hand are exactly the ones that stop compiling: change a
+constant and its old value becomes an unused variable; take a parameter out of
+a calculation and it becomes an unused parameter. **The build fails, the old
+binary runs, the test goes red, and red is what you were hoping for.**
+
+You then write down that the test catches the bug. It may not catch anything.
+
+**So a sabotage has to print the failure it caused, not merely fail.** Not
+`FAILED` but the two numbers, in the test's own words:
+
+```
+index 0: EM_POSFROMCHAR says 21, the caret is drawn at 19
+FAILED  planting src/.package-invariant-243211.o moved the hash:
+          without it  ween32-0.1.0-jgasIMLBSACaby9G1B66j7U7UE4kV7mCqpXMLnvn8Q22
+          with it     ween32-0.1.0-jgasIOTBSAAAd7jg3MfNCbSlbb1aU9gwq6m2gW19GuOh
+```
+
+**A stale binary cannot produce that text**, because the text is about the
+change you just made and the stale binary has never seen it. A bare `FAILED`
+is produced identically by a working check and by a build that did not happen;
+a failure that describes its own cause is produced only by the first.
+
+**And check the exit status separately from the text.** One of these was found
+because `| tail` had been swallowing it — a pipeline reports the status of its
+last command, so `make 2>&1 | tail` is always 0 and a build failure reads as
+a build.
+
+### Cleanup belongs on the path a failure takes
+
+**Two people, two languages, one evening, and both of them in commits that were
+about cleanup.**
+
+```
+python   the instruments' mkdtemp was removed after the last print
+shell    a scratch file's trap was dropped when a second file was added
+```
+
+Both are the same shape: the cleanup sits at the end of the success path, so a
+run that finishes tidies up and **a run that dies leaves everything behind**.
+And the run that dies is the run somebody repeats — five times, while working
+out what is wrong — so the leak is not merely biased towards failure, it is
+*multiplied* by it.
+
+It ended with 2168 leaked directories and 15GB in `/tmp`, and the next build
+died of `ENOSPC`. **A tool that measures the program should not be the thing
+that stops it building.**
+
+The rule is not "remember to clean up", which everybody already intends. It is
+**put the cleanup where a failure goes**: a `trap` in shell, `try/finally` or
+an `except` that re-raises in Python, `defer` in Zig. And then, because this is
+this section: make it fail on purpose and look at the directory.
+
+**The general form, which is worth more than the three instances:** a check is
+only as good as its worst path, and **the worst path is the one nobody runs on
+purpose.** Every entry in this section is an instance of it — the un-compiled
+sabotage is the failure path of a test, the stale binary is the failure path of
+a build, and this is the failure path of a tool.
+
 ### What a guess is reasoned from
 
 Everything above is about numbers that are wrong. This is about numbers that

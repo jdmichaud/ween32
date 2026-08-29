@@ -91,7 +91,39 @@ warn=$(grep -cE "warning:" "$tmp/build.log")
 echo "  built, $warn compiler warnings"
 [ "$warn" != 0 ] && grep -E "warning:" "$tmp/build.log" | head -3
 
-ok=$(make test 2>&1 | grep -cE "^ok")
+# **The status, and not just the count.** This was
+#
+#     ok=$(make test 2>&1 | grep -cE "^ok")
+#
+# which counts `ok` lines and never looks at whether `make test` ran at all.
+# **The tests are a second compile** -- the library built ten lines above says
+# nothing about them -- so a test file that stops compiling ends the run
+# before any binary is executed.
+#
+# Measured rather than described, by appending `this is not c;` to
+# `tests/propsheet_test.c`:
+#
+#     the line as it was    assertions 0, and the run carried on
+#     the line as it is     FAILED to build or run the tests, plus gcc's
+#                           first errors, exit 1
+#
+# **Zero is not silence and it is not nothing** -- somebody would very likely
+# notice a suite that had gone from 1123 to 0. What it is not is *the reason*,
+# and a number cannot be told from another number: `assertions 0` reads as a
+# suite that ran and passed nothing, which is a different and much more
+# alarming thing than a file that would not compile. The captures below it
+# would meanwhile be measured perfectly well, because `make` succeeded -- so
+# the report would be nine right numbers and one wrong one, which is the
+# hardest shape to read.
+#
+# This is §9's *a build that did not happen looks exactly like a measurement
+# that did*, in the file that exists to catch it, found by writing the entry.
+if ! make test > "$tmp/test.log" 2>&1; then
+    echo "  FAILED to build or run the tests"
+    grep -E "error:|FAIL" "$tmp/test.log" | head -5
+    exit 1
+fi
+ok=$(grep -cE "^ok" "$tmp/test.log")
 echo "  assertions   $ok"
 echo
 
