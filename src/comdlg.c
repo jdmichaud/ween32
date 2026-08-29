@@ -2253,41 +2253,49 @@ static HWND fr_open(FINDREPLACEA *fr, int replace)
 {
     static unsigned char tmpl[2048];
     static const dlg_item find_items[] = {
-        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 7, 44, 8, 0xFFFF, ATOM_STATIC,
-          NULL, "Fin&d what:" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 8, 44, 8, 0xFFFF, ATOM_STATIC,
+          NULL, "Fi&nd what:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-          WS_EX_CLIENTEDGE, 46, 5, 136, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 3, 42, 60,
-          10, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
-        { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 106, 28, 67, 24,
+          WS_EX_CLIENTEDGE, 47, 7, 128, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 4, 42, 60,
+          12, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 107, 26, 68, 28,
           0xFFFF, ATOM_BUTTON, NULL, "Direction" },
+        /* The one pair of rectangles in either box that cannot be made to
+         * land: the machine's two circles are forty pixels apart, and at six
+         * quarters of a pixel to the unit no two whole units are. 112 puts
+         * Up's circle exactly where the machine has it; 138 puts Down's one
+         * column left of the machine's, which is where its *control* is if
+         * the circle is drawn one column in -- so if that rule is settled
+         * the way Find argues, this number is already right and only the
+         * library moves. 178 pixels of the count below are these two. */
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-          0, 110, 38, 26, 10, FR_RAD1, ATOM_BUTTON, NULL, "&Up" },
-        { WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON, 0, 138, 38, 34, 10,
+          0, 112, 38, 26, 12, FR_RAD1, ATOM_BUTTON, NULL, "&Up" },
+        { WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON, 0, 138, 38, 34, 12,
           FR_RAD2, ATOM_BUTTON, NULL, "&Down" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
-          181, 3, 53, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 181, 21, 53,
+          182, 5, 50, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 182, 23, 50,
           14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
     };
     static const dlg_item replace_items[] = {
-        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 7, 44, 8, 0xFFFF, ATOM_STATIC,
-          NULL, "Fin&d what:" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 9, 44, 8, 0xFFFF, ATOM_STATIC,
+          NULL, "Fi&nd what:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-          WS_EX_CLIENTEDGE, 50, 6, 132, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
-        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 3, 23, 48, 8, 0xFFFF,
+          WS_EX_CLIENTEDGE, 54, 7, 114, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 26, 48, 8, 0xFFFF,
           ATOM_STATIC, NULL, "Re&place with:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-          WS_EX_CLIENTEDGE, 50, 22, 132, 12, FR_EDT2, ATOM_EDIT, NULL, "" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 3, 45, 60,
-          10, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
+          WS_EX_CLIENTEDGE, 54, 24, 114, 12, FR_EDT2, ATOM_EDIT, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 5, 62, 60,
+          12, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
-          186, 4, 53, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 21, 53,
+          174, 4, 50, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 174, 21, 50,
           14, FR_PSH1, ATOM_BUTTON, NULL, "&Replace" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 38, 53,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 174, 38, 50,
           14, FR_PSH2, ATOM_BUTTON, NULL, "Replace &All" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 186, 55, 53,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 174, 55, 50,
           14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
     };
     /* DS_CONTEXTHELP: the machine's box wears the question mark beside its
@@ -2304,9 +2312,9 @@ static HWND fr_open(FINDREPLACEA *fr, int replace)
         DestroyWindow(g_fr.dlg);
     g_fr.fr = fr;
     g_fr.replace = replace;
-    t = replace ? build(tmpl, style, 245, 78, "Replace", replace_items,
+    t = replace ? build(tmpl, style, 230, 94, "Replace", replace_items,
                         (int)(sizeof replace_items / sizeof replace_items[0]))
-                : build(tmpl, style, 235, 61, "Find", find_items,
+                : build(tmpl, style, 236, 62, "Find", find_items,
                         (int)(sizeof find_items / sizeof find_items[0]));
     dlg = CreateDialogIndirectParamA(fr->hInstance, (LPCDLGTEMPLATEA)t,
                                      fr->hwndOwner, fr_proc, 0);

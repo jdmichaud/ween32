@@ -45,17 +45,25 @@ that no application has asked for:
   way to ask what else is there. A box offering four faces would be worse
   than none.
 
-- [ ] **The Find box, to the pixel.** It is built from the machine's own
-  rectangles and its body counts **4,912 pixels of 36,516** against
-  `find-machine.png`, every control within a pixel of where the machine puts
-  it. Two things are known and unfixed: our window comes out **one pixel
-  wider** (353 of client where the machine has 352, and at this font's dialog
-  units no integer width lands on 352 -- 234 gives 351 and 235 gives 353),
-  and that one pixel shifts the caption's gradient so that **86% of the
-  caption band differs** where the body is at 13%. And the reference itself
-  is suspect: it was trimmed by walking out until a row was entirely the
-  white of the window behind, which would have eaten a white frame column.
-  Re-take it before trusting a smaller number.
+- [ ] **The option button's column.** Two captures of the machine disagree
+  about where a circle sits inside its control, and one rule has to explain
+  both: Notepad's Find box has two circles forty pixels apart, which no pair
+  of whole dialog units can produce unless the circle is one column in, and
+  Folder Options General loses 7,577 pixels the moment it is. Neither can be
+  dismissed, because the unit map skips every third pixel. What settles it is
+  one machine measurement -- click-bracket an option button's left edge on
+  the machine's own Folder Options and compare it with the circle's column,
+  as Find's were bracketed. docs/testing.md, "The option button's column,
+  unsettled", has both arguments and the experiment.
+
+- [ ] **The strike's diagonals, and the caption's bold `F`.** Find and
+  Replace are within **261 pixels of 45,360** and **57 of 62,478** of the
+  machine's own boxes; 178 of Find's are the option button above, and every
+  one of the rest is a letter: our `M`, `w`, `N`, `A` and `R` step a diagonal
+  on a different row from the machine's bitmap face, and the caption's bold
+  `F` is one column wider, which shifts the whole title. Both are the fonts
+  rather than the drawing -- the last thing between these two dialogs and
+  zero, and every other dialog in the library carries the same letters.
 
 - [ ] **Printing.** `PrintDlgA`, `PageSetupDlgA` and `StartDoc`/`StartPage`/
   `EndPage`/`EndDoc` link and fail honestly. What is missing is a device
@@ -268,7 +276,9 @@ reaches the owner as `RegisterWindowMessage(FINDMSGSTRING)` with the
 read off the controls rather than remembered. What was typed goes back into
 the program's own buffers. The searching is the program's: that is why a text
 editor and a hex editor can wear the same box. Laid out from the machine's
-own rectangles, and what is still a pixel out is on the Next list.
+own rectangles -- every one of them measured off a capture of the machine's
+own Notepad, and both boxes agree with it in everything but one option
+button's column, five letters and the bold `F` of a title.
 
 **The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
 `RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows
@@ -635,7 +645,10 @@ between a check box and its text than it does between an option button and
 its, with the same font and the same thirteen-pixel glyph. Wine gives the two
 the same offset, so the sampler's check boxes now differ from it by about
 1213 pixels — measured on Folder Options, whose boxes and option buttons sit
-on the same page.
+on the same page. Where that column belongs — to the label or to the circle
+— is the open question in docs/testing.md, "The option button's column,
+unsettled": Notepad's Find box says one thing and Folder Options says the
+other, and one rule has to explain both.
 
 The list view is the third. Against the machine, a report row is as tall as
 the tallest thing in it and one more — seventeen with small icons, fourteen

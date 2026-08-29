@@ -396,6 +396,45 @@ int main(void)
                 SendMessageA(field, WM_CHAR, (WPARAM)*p2, 0);
         }
 
+        /* Two pixels of the machine's own Find box, kept here so that
+         * neither can drift back without a test saying so. The columns are
+         * the capture's own (tools/refcapture/find-machine.png).
+         *
+         * The Up option button's circle begins at column 171. The Down one
+         * is at 211 on the machine and at 210 here, and that pixel is the
+         * open question written up in docs/testing.md: the two circles are
+         * forty pixels apart and no two whole dialog units are, so one of
+         * them has to be out until the rule for where a circle sits inside
+         * its control is settled on the machine.
+         *
+         * The "h" just typed begins at column 78, one pixel inside the
+         * field's border, where half an average character would have put it
+         * at 81 -- a field is given no margin of its own in a face that
+         * stands in for a bitmap font. */
+        {
+            struct ween_wnd *w = (struct ween_wnd *)dlg;
+            unsigned face = 0, rim = 0;
+            int ink = 0;
+            ween_flush_paint();
+            if (w->surface.px && w->surface.w >= 360 && w->surface.h >= 126) {
+                size_t row = (size_t)91 * w->surface.w;
+                face = w->surface.px[row + 170] & 0xffffff;
+                rim = w->surface.px[row + 171] & 0xffffff;
+                for (int y = 36; y < 49 && !ink; y++)
+                    for (int x = 76; x < 100; x++)
+                        if ((w->surface.px[(size_t)y * w->surface.w + x] &
+                             0xffffff) == WEEN_BLACK) {
+                            ink = x;
+                            break;
+                        }
+            }
+            CHECK(face == WEEN_FACE && rim == WEEN_SHADOW,
+                  "the Up circle stands in the machine's own column");
+            CHECK(ink == 78,
+                  "and the field's text starts where the machine starts it, "
+                  "one pixel inside the border");
+        }
+
         /* The press, and what the owner is told. */
         g_fr_told = 0;
         g_fr_flags = 0;

@@ -152,7 +152,9 @@ Another 1213 of the sampler's is where a tick box puts its label: the machine
 keeps one column more between a check box and its text than an option button
 gets, and wine gives the two the same. That was measured on two Folder
 Options pages at once — the boxes on Offline Files and the option buttons on
-General — and the machine is followed.
+General — and the machine is followed. Whether the column belongs to the
+label or to the circle is an open question with two captures on either side;
+see "The option button's column, unsettled" below.
 
 Fourteen of the rest are two mnemonic underlines a control draws only once Alt
 has been pressed, which wine draws always — the same rule that keeps a menu's
@@ -870,43 +872,162 @@ more than two screenfuls below.
 
 ### Notepad's Find and Replace, as the machine draws them
 
-`tools/refcapture/find-machine.png` (358x124) and `replace-machine.png`
-(349x176) are the two boxes cut out of the machine's own Notepad, for
-whenever `FindTextA` and `ReplaceTextA` are written: today they answer with
-no window at all, which is honest but is not a dialog. Taken with
+`tools/refcapture/find-machine.png` (360x126) and `replace-machine.png`
+(351x178) are the two boxes cut out of the machine's own Notepad, whole
+windows including their frames. Ours are held against them pixel for pixel:
+
+| box | differing | of | what is left |
+| --- | --- | --- | --- |
+| Find | **261** | 45360 | 178 one option button, 64 the bold `F` of the title, 19 four letters |
+| Replace | **57** | 62478 | the same letters, in this box's words |
+
+Every rectangle agrees but one, and it is the one below that cannot be made
+to: the two option buttons' circles are forty pixels apart and no two whole
+dialog units are. Everything else that differs is the strike — our `M`, `w`,
+`N`, `A` and `R` put a diagonal's step on a different row from the machine's,
+and the caption's bold `F` is a column wider, which shifts the rest of the
+title.
+
+**Taking the captures.** The box has to be caught in the state a program's
+own call puts it in, because four things about it are state and each one
+costs pixels:
 
 ```sh
-tools/vm/drive.py click 300,200 type "find me here" \
-  key KeyF:ControlLeft wait 1500 park shot /tmp/find.png
+export JSLINUX_SOCK=/tmp/jslinux-bob.sock JSLINUX_SHM=/dev/shm/jslinux-bob.fb
+tools/vm/drive.py click 300,200 wait 400 key KeyF:ControlLeft wait 1500 park
+tools/vm/drive.py key AltLeft wait 700 park          # the underlines on
+tools/vm/drive.py shot /tmp/find.png 45,157,360,126  # until the caret is in
 ```
 
-and trimmed to the frame by walking out from a point inside until the row or
-column is entirely the white of the window behind.
+- **Never let it lose the keyboard.** A box that is deactivated and made
+  active again by a click comes back *without the black ring round its
+  default button*, and does not get it back until the focus moves — Tab and
+  Shift+Tab both restore it. A fresh box has the ring even though Find Next
+  is greyed out, which is what ween32 draws. Moving Notepad out from under
+  the box costs the ring; maximising Notepad and taking the box over its own
+  white client costs nothing, because the crop is found by structure.
+- **Do not click the box to activate it** — the blank face between the tick
+  box and the group looks safe and is not: the click that lands on `Match
+  case` ticks it and leaves a focus rectangle round its label.
+- **The mnemonic underlines are their own state.** Ctrl+F after a run of
+  mouse work opens a box with no underlines at all; a press of Alt turns them
+  on. 41 pixels, and they are the ones a reader will call a font bug.
+- **The caret blinks.** Shoot until column 77 (Find) or 87 (Replace) is
+  black; ween32's render always has it.
 
-Every rectangle in the Find box, read off that capture in pixels from the
-window's own top-left, so that whoever writes the template can check the
-mapping rather than guess it (the dialog is 358x124 with its frame, and at
-96 dpi its base units are 6 and 13, so a dialog unit is 1.5 px across and
-1.625 down):
+**Finding the window in the screenshot.** Not by trimming to white — that is
+what cost the last attempt two columns, because the frame's outermost pixel
+is the face colour and the window behind it is white. The dialog's own
+corners say where it is: the top-left pixel of the window rect is
+`COLOR_3DFACE` and the bottom-right is `COLOR_3DDKSHADOW`. Over a maximized
+Notepad the box is the only thing that is not white, so its bounding box is
+the window rect, and the two corners check it.
 
-| part | rect | size |
-| --- | --- | --- |
-| `Fin&d what:` label ink | 8,35 | to 52,45 |
-| the field | 72,31 | 204 x 20 |
-| `&Find Next` (default, disabled while empty) | 274,28 | 79 x 23 |
-| `Cancel` | 274,57 | 79 x 23 |
-| `Direction` group | 162,68 | 101 x 39 |
-| `&Up` radio | 168,85 | circle 12, label from 188 |
-| `&Down` radio | 210,85 | circle 12, label from 228 |
-| `Match &case` tick | 8,91 | box 13, label from 26 |
+**The rectangles, as the template says them.** At 96 dpi this dialog's base
+units are 6 across and 13 down, so `MulDiv(u, 6, 4)` and `MulDiv(v, 13, 8)`
+map them, position and size separately, and the client's origin in the window
+is (3, 22). Find is 236 x 62 units and Replace 230 x 94 — both exact: 354 and
+345 pixels of client width, 101 and 153 of height.
 
-Replace drops the direction group, adds `Re&place with:` under the first
-field, and stacks `Find Next`, `Replace`, `Replace All` and `Cancel` down its
-right-hand side.
+| Find | x, y | cx, cy | the pixel it lands on |
+| --- | --- | --- | --- |
+| `Fi&nd what:` | 4, 8 | 44, 8 | ink from 10, 37 |
+| field | 47, 7 | 128, 12 | 74..265, 33..52 |
+| `Match &case` | 4, 42 | 60, 12 | box at 9, 93; label ink 28 |
+| `Direction` group | 107, 26 | 68, 28 | 164..265, frame top 70, bottom 109 |
+| `&Up` | 112, 38 | 26, 12 | machine's circle at 171, 87; label rect 188 |
+| `&Down` | 138, 38 | 34, 12 | machine's circle at 211, 87 — ours at 210, see below |
+| `&Find Next` | 182, 5 | 50, 14 | 276..350, 30..52 |
+| `Cancel` | 182, 23 | 50, 14 | 276..350, 59..81 |
 
-**What ours counts against it.** Render the box on its own surface and diff:
+| Replace | x, y | cx, cy | the pixel it lands on |
+| --- | --- | --- | --- |
+| `Fi&nd what:` | 4, 9 | 44, 8 | ink from 10, 39 |
+| field | 54, 7 | 114, 12 | 84..254, 33..52 |
+| `Re&place with:` | 4, 26 | 48, 8 | ink from 10, 66 |
+| field | 54, 24 | 114, 12 | 84..254, 61..80 |
+| `Match &case` | 5, 62 | 60, 12 | box at 11, 126; label ink 30 |
+| `&Find Next` | 174, 4 | 50, 14 | 264..338, 29..51 |
+| `&Replace` | 174, 21 | 50, 14 | 264..338, 56..78 |
+| `Replace &All` | 174, 38 | 50, 14 | 264..338, 84..106 |
+| `Cancel` | 174, 55 | 50, 14 | 264..338, 111..133 |
+
+The mnemonic in the first label is the **n**, not the d: the machine
+underlines `Fi_n_d what:` in both boxes.
+
+**A field's own margin comes from its font, and a bitmap face gets none.**
+The caret of an empty Find field stands in column 77, one pixel inside a
+client that begins at 76, and Replace's two fields put theirs the same one
+pixel in. Half an average character — what wine's edit control uses, and what
+this library used — would have put it at 80. But the shell's Properties page,
+drawn in Tahoma, *does* have half a character: `CONFIG.SYS` starts three
+pixels inside its field. Win32 sets these default margins from the font when
+the control is made and gives them only to a scalable face; the strike flag
+`bitmap_only` is the same question, so that is what ween32 asks. The two
+dialogs disagree because their fonts do, and both now agree with ours. A
+blanket margin of nothing was tried first and put Properties at 878 where it
+had been 640.
+
+The rounding is confirmed twice over on the way: `MulDiv` rounds a half away
+from zero, and the fields prove it inside these very boxes — Find's at unit
+47 lands on 71 rather than 70, Replace's tick box at unit 5 on 8 rather than
+7.
+
+### The option button's column, unsettled
+
+**Two captures of the machine disagree about where an option button's circle
+sits inside its control, and one rule has to explain both.** Nothing in the
+library turns on the answer except a pixel, but it is a pixel in every dialog
+with an option button in it, so it is written down here rather than guessed
+at.
+
+**What Find says: one column in.** Its two circles' leftmost pixels are at
+171 and 211 of the window, forty apart, and the client begins at 3. A
+control's left edge is `MulDiv(u, 6, 4)` from the client's, so if the circle
+began at that edge the two edges would be 168 and 208 pixels in — and no
+whole number of units maps to 208 (111 gives 167, 112 gives 168, 138 gives
+207, 139 gives 209; the map skips every third pixel). One column in they are
+167 and 207, which are units 111 and 138. The clicks in that box agree:
+pressing the column left of a circle takes the button and one further left
+does not, bracketed on both, while the tick box's control begins on its box's
+own column and not one before it.
+
+**What Folder Options says: on the edge.** ween32's General page reproduces
+the machine's capture exactly with the circle at the control's edge — 1208 of
+180648, and every pixel of that is the caption's bold title and the machine's
+own mouse pointer. Move the circle one column in and the page loses **7,577
+pixels**, every one of them in the four option buttons' rows, and *no whole
+unit hands the page back the pixel it loses*: its "Underline icon titles"
+buttons are at unit 57, which maps to 86, and 85 is one of the pixels the map
+skips.
+
+So each capture rules out the other's rule. The map skipping every third
+pixel is what makes both arguments possible, and it is why neither can be
+dismissed as a fitting accident.
+
+**What ween32 does meanwhile**: the circle at the control's edge, which is
+three captures out of four — Folder Options General, the Column Settings
+dialog and the wine sampler — against Find's one. The cost is 178 pixels of
+Find's 261: `&Up` at unit 112 puts its circle exactly where the machine has
+it and `&Down` at 138 puts its one column left, which is where its *control*
+is if the other rule is the true one. If it is, that template value is
+already right and only the library moves.
+
+**What would settle it**, and it is a machine measurement rather than an
+argument: open the machine's *own* Folder Options and click-bracket the left
+edge of one of its option buttons, the way Find's were bracketed — the column
+that takes the button against the column its circle starts in. Find's answer
+was "one before"; if General's is "the same", the two dialogs really do
+differ and the difference is in the mapping rather than in the control, and
+the next question is what is different about a property sheet page's units.
+If General's is also "one before", the rule is settled and it is our General
+page that cannot express it — which would be a finding about this library's
+unit grid, not about win32.
+
+**Rendering ours to compare.** The box draws on its own window surface:
 
 ```c
+ween_kbd_used = ween_menu_cues = ween_ui_focus_cues = 1;  /* opened by Ctrl+F */
 FINDREPLACEA fr = { .lStructSize = sizeof fr, .hwndOwner = host,
                     .lpstrFindWhat = buf, .wFindWhatLen = sizeof buf,
                     .Flags = FR_DOWN };
@@ -915,27 +1036,9 @@ InvalidateRect(dlg, NULL, TRUE); ween_flush_paint();
 ween_surface_write_bmp(&((struct ween_wnd *)dlg)->surface, "/tmp/find-ours.bmp");
 ```
 
-Counted in two halves, because one number hides the story:
-
-| region | differing | of | |
-| --- | --- | --- | --- |
-| body, rows 22..123 | 4912 | 36516 | 13% — every control within a pixel |
-| caption, rows 0..21 | 6779 | 7876 | 86% — see below |
-
-The caption is not eighty-six percent wrong: **our window is one pixel wider
-than the machine's**, and a gradient shifted by one column differs in almost
-every pixel of it. Where that pixel comes from is arithmetic: the machine's
-client is 352 wide, and at this dialog's base units (6 across, 13 down at 96
-dpi) `MulDiv(u, 6, 4)` gives 351 for 234 units and 353 for 235. No integer
-lands on 352, so either the machine's dialog is not in these units or its
-frame is not three pixels — unresolved, and worth an hour with the capture.
-
-**And the reference may itself be a pixel short.** Both captures were trimmed
-by walking out from a point inside until the row or column was entirely the
-white of the Notepad window behind — which would eat a frame column that is
-*also* white. Ours has face at column 0 and white at column 1; the machine's
-crop has face at both. Before anyone chases the last pixels, re-take the
-capture with a fixed generous crop and find the edges by structure.
+`tests/comdlg_test.c` keeps two of the capture's pixels as assertions — the
+circle's column and the field's first ink — so that neither can drift back
+without a test saying so.
 
 ### The explorer's commands
 

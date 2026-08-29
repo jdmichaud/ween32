@@ -3691,10 +3691,22 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     int offset = f ? ween_strike_char_advance(f, '0') / 2 : 3;
     /* A tick box keeps one column more between itself and its label than an
      * option button does. Both glyphs are the same thirteen pixels and both
-     * sit at the control's left edge, but the machine's Folder Options puts
-     * "Synchronize all offline files..." one pixel further right than it puts
-     * "Use Windows classic desktop" — measured on both pages. Wine gives the
-     * two the same offset. */
+     * are drawn at the control's left edge, which is what the machine's
+     * Folder Options shows — its Offline Files boxes sit one pixel further
+     * from their labels than its General option buttons do.
+     *
+     * Where the *circle* sits inside its control is not settled, and two
+     * captures of the machine disagree about it. Notepad's Find box has two
+     * option buttons whose circles are forty pixels apart, and no pair of
+     * whole dialog units maps to that pair of control edges unless the
+     * circle is one column in — which is also what a click says there: the
+     * column left of the circle takes the button and one further left does
+     * not. But moving the circle in costs Folder Options General 7,577
+     * pixels against its own capture, and no whole unit can hand that page
+     * back the pixel it loses. One rule has to explain both and neither does
+     * yet, so what is here is the one that matches three captures out of
+     * four. docs/testing.md says what is known and what the next measurement
+     * has to be. */
     int tick = !(button_type(wnd) == BS_RADIOBUTTON ||
                  button_type(wnd) == BS_AUTORADIOBUTTON);
     int lh = label_line(f), delta;
@@ -3740,19 +3752,22 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     rtext.right++;
     button_label(wnd, dc, &rtext, DT_LEFT | DT_SINGLELINE);
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED)) {
-        /* The rectangle goes round the label, not the box: as tall as the
-         * label's own rectangle — which is the control's client height, the
-         * text sitting centred in it — and one pixel either side of the text.
-         * The marker in "Use Windows &classic desktop" is not measured: it is
-         * not drawn either. */
+        /* The rectangle goes round the label, not the box, and not round the
+         * control either: the label's own rectangle with a pixel of margin
+         * on every side. On a control sixteen pixels tall the two readings
+         * agree, which is why the Folder Options pages could not tell them
+         * apart; the machine's Find box can, because its option buttons are
+         * twenty pixels tall and the rectangle round "Down" is sixteen —
+         * rows 86 to 101 of a control that runs 84 to 103. The marker in
+         * "Use Windows &classic desktop" is not measured: it is not drawn
+         * either. */
         struct ween_wnd *top = ween_top_level(wnd);
         int tw = label_width(wnd);
         int ox, oy;
         ween_client_origin(wnd, &ox, &oy);
         ween_surface_focus_rect_in(&top->surface, ox + rtext.left - 1,
-                                   oy + client.top, tw + 2,
-                                   client.bottom - client.top, (ox + oy) & 1,
-                                   WEEN_BLACK);
+                                   oy + rtext.top - 1, tw + 2, lh + 2,
+                                   (ox + oy) & 1, WEEN_BLACK);
     }
 }
 
@@ -3782,13 +3797,16 @@ static void gb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     r.top++;
     r.bottom = r.top + lh;
     r.right = r.left + tw;
-    /* one pixel of margin left, right and below, so the frame is erased */
-    r.left--;
-    r.right++;
+    /* Two pixels of margin either side of the label and one below, so the
+     * frame is erased: on the machine's Find box the top of the Direction
+     * frame stops at 170 and starts again at 217 for a label whose ink runs
+     * 174 to 214, which is the label's rectangle and two more each way. */
+    r.left -= 2;
+    r.right += 2;
     r.bottom++;
     FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
-    r.left++;
-    r.right--;
+    r.left += 2;
+    r.right -= 2;
     r.bottom--;
     button_label(wnd, dc, &r, DT_LEFT | DT_SINGLELINE);
 }

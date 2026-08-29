@@ -920,19 +920,38 @@ static int edit_delete_selection(HWND wnd, ween_edit *e)
     return 1;
 }
 
-/* The left inset of an edit's text: the border pixel plus half an average
- * character, as Wine's EDIT_SetRectNP computes it. */
-static int edit_margin(HWND wnd)
+/* The margin an edit keeps of its own, which the font decides: half an
+ * average character for a scalable face, and nothing at all for one that
+ * stands in for a bitmap font. Win32 sets these from EC_USEFONTINFO when the
+ * control is made, and only a TrueType face is given them.
+ *
+ * Both halves are measured on the machine, in two dialogs that disagree
+ * because their fonts do. Notepad's Find box is comdlg32's, drawn in MS Sans
+ * Serif: the caret of its empty field stands in column 77 of the box, one
+ * pixel inside a field whose client begins at 76, and Replace's two fields
+ * put theirs the same one pixel in. The shell's Properties page is drawn in
+ * Tahoma: CONFIG.SYS in its name field starts three pixels inside, which is
+ * half of Tahoma's average character. */
+static int edit_default_margin(const struct ween_wnd *wnd)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     static const char alpha[] =
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     int sum = 0;
-    if (!f)
-        return 4;
+    if (!f || f->bitmap_only)
+        return 0;
     for (int i = 0; i < 52; i++)
         sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
-    return (ween_border_width(wnd) ? 1 : 0) + ((sum + 26) / 52) / 2;
+    return ((sum + 26) / 52) / 2;
+}
+
+/* The left inset of an edit's text: the border pixel and the left margin. */
+static int edit_margin(HWND wnd)
+{
+    ween_edit *m = edit_state(wnd);
+    int margin = m && m->left_margin >= 0 ? m->left_margin
+                                          : edit_default_margin(wnd);
+    return (ween_border_width(wnd) ? 1 : 0) + margin;
 }
 
 /* The character index nearest an x offset within the text. */
@@ -1050,19 +1069,11 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                           : COLOR_WINDOW));
 
     ween_color ink = (wnd->style & WS_DISABLED) ? WEEN_SHADOW : WEEN_BLACK;
-    /* Wine's EDIT_SetRectNP: a field-bordered edit gives up one pixel on each
-     * side, then the format rect is inset by the margins, which default to
-     * half the average character width. */
+    /* A field-bordered edit gives up one pixel on each side, and the format
+     * rect is inset by the margins on top of that -- which are nothing until
+     * the application says otherwise; see edit_margin. */
     int inset = ween_border_width(wnd) ? 1 : 0;
-    int margin = 3;
-    if (f) {
-        static const char alpha[] =
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        int sum = 0;
-        for (int i = 0; i < 52; i++)
-            sum += ween_strike_char_advance(f, (unsigned char)alpha[i]);
-        margin = ((sum + 26) / 52) / 2;
-    }
+    int margin = edit_default_margin(wnd); /* see edit_margin */
     int rmargin = margin;
     {   /* unless the application said what the margins are */
         ween_edit *m = edit_state(wnd);
