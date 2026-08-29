@@ -151,6 +151,32 @@ const ween_strike *ween_font_by_face(const char *face)
     return ween_gui_font();
 }
 
+/* **Every face this library has, and the only list of them.**
+ *
+ * Two strikes are embedded: MS Sans Serif and Tahoma. `ween_font_create`
+ * above resolves any other name to Tahoma without complaint -- which is what
+ * win32's font mapper does too -- so a program could ask for Arial, or for a
+ * name nobody has ever used, and be given Tahoma with nothing to tell it so.
+ *
+ * These names must be the ones `ween_font_create` tests for. They are checked
+ * against it by `tests/font_test.c`: every name here resolves to a *different*
+ * strike, which is the property that makes it a list of faces rather than a
+ * list of words.
+ */
+static const char *const g_families[] = { "MS Sans Serif", "Tahoma" };
+
+int ween_font_family_count(void)
+{
+    return (int)(sizeof g_families / sizeof *g_families);
+}
+
+const char *ween_font_family(int i)
+{
+    if (i < 0 || i >= ween_font_family_count())
+        return NULL;
+    return g_families[i];
+}
+
 const ween_strike *ween_gui_font_bold(void)
 {
     static ween_strike f;

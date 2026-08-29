@@ -1098,6 +1098,44 @@ pub const LOGFONTA = extern struct {
     lfFaceName: [LF_FACESIZE]u8 = std.mem.zeroes([LF_FACESIZE]u8),
 };
 
+pub const TEXTMETRICA = extern struct {
+    tmHeight: LONG = 0,
+    tmAscent: LONG = 0,
+    tmDescent: LONG = 0,
+    tmInternalLeading: LONG = 0,
+    tmExternalLeading: LONG = 0,
+    tmAveCharWidth: LONG = 0,
+    tmMaxCharWidth: LONG = 0,
+    tmWeight: LONG = 0,
+    tmOverhang: LONG = 0,
+    tmDigitizedAspectX: LONG = 0,
+    tmDigitizedAspectY: LONG = 0,
+    tmFirstChar: BYTE = 0,
+    tmLastChar: BYTE = 0,
+    tmDefaultChar: BYTE = 0,
+    tmBreakChar: BYTE = 0,
+    tmItalic: BYTE = 0,
+    tmUnderlined: BYTE = 0,
+    tmStruckOut: BYTE = 0,
+    tmPitchAndFamily: BYTE = 0,
+    tmCharSet: BYTE = 0,
+};
+
+/// Called once per face by `EnumFontFamiliesA`. **Returning zero stops the
+/// enumeration**, which is win32's rule and not an error path.
+pub const FONTENUMPROCA = *const fn (*const LOGFONTA, *const TEXTMETRICA, DWORD, LPARAM) callconv(.c) c_int;
+
+/// Every face the library has. **Two**, and that is the honest number: any
+/// other name resolves to Tahoma silently, so a longer list would be names
+/// with the same strike behind each of them.
+pub extern fn EnumFontFamiliesA(dc: ?HDC, family: ?LPCSTR, proc: FONTENUMPROCA, param: LPARAM) callconv(.c) c_int;
+pub extern fn GetTextMetricsA(dc: HDC, tm: *TEXTMETRICA) callconv(.c) BOOL;
+
+pub const RASTER_FONTTYPE = 0x0001;
+pub const DEVICE_FONTTYPE = 0x0002;
+pub const TRUETYPE_FONTTYPE = 0x0004;
+pub const LF_FULLFACESIZE = 64;
+
 pub const CHARFORMATA = extern struct {
     cbSize: UINT = @sizeOf(CHARFORMATA),
     dwMask: DWORD = 0,

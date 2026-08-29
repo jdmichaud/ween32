@@ -153,16 +153,17 @@ HFONT CreateFontIndirectA(const LOGFONTA *lf)
  * ascent and the descent it was cut with -- the descent negative, as the font
  * writes it -- and everything a program lays text out with is worked from
  * those and from the widths of the characters themselves. */
-BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm)
+/* A strike's metrics, which both `GetTextMetricsA` and `EnumFontFamiliesA`
+ * need and which used to be written out only inside the first. **An
+ * enumeration that reports every face with the same metrics is a list nobody
+ * can choose from**, so the two must not drift: one function, two callers. */
+static void metrics_of(const ween_strike *f, int weight, int italic,
+                       int underline, TEXTMETRICA *tm)
 {
-    const ween_strike *f;
     int wide = 0, sum = 0, n = 0;
-    if (!dc || !tm)
-        return FALSE;
-    f = dc->font ? dc->font : ween_gui_font();
     memset(tm, 0, sizeof *tm);
     if (!f)
-        return FALSE;
+        return;
     for (int c = 32; c < 127; c++) {
         int w = ween_strike_char_advance(f, (unsigned char)c);
         sum += w;
@@ -175,11 +176,9 @@ BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm)
     tm->tmHeight = tm->tmAscent + tm->tmDescent;
     tm->tmAveCharWidth = n ? (sum + n / 2) / n : 0;
     tm->tmMaxCharWidth = wide;
-    tm->tmWeight = dc->font_obj && dc->font_obj->font_weight
-                       ? dc->font_obj->font_weight
-                       : FW_NORMAL;
-    tm->tmItalic = (BYTE)(dc->font_obj ? dc->font_obj->font_italic : 0);
-    tm->tmUnderlined = (BYTE)(dc->font_obj ? dc->font_obj->font_underline : 0);
+    tm->tmWeight = weight ? weight : FW_NORMAL;
+    tm->tmItalic = (BYTE)italic;
+    tm->tmUnderlined = (BYTE)underline;
     tm->tmFirstChar = 32;
     tm->tmLastChar = 255;
     tm->tmDefaultChar = '?';
@@ -187,7 +186,57 @@ BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm)
     tm->tmCharSet = ANSI_CHARSET;
     tm->tmDigitizedAspectX = (LONG)ween_render_dpi();
     tm->tmDigitizedAspectY = (LONG)ween_render_dpi();
+}
+
+BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm)
+{
+    const ween_strike *f;
+    if (!dc || !tm)
+        return FALSE;
+    f = dc->font ? dc->font : ween_gui_font();
+    if (!f) {
+        memset(tm, 0, sizeof *tm);
+        return FALSE;
+    }
+    metrics_of(f, dc->font_obj ? dc->font_obj->font_weight : 0,
+               dc->font_obj ? dc->font_obj->font_italic : 0,
+               dc->font_obj ? dc->font_obj->font_underline : 0, tm);
     return TRUE;
+}
+
+/* Every face the library has, one call to `proc` each. **Two of them**, and
+ * that is the honest number: `ween_font_create` resolves any other name to
+ * Tahoma without saying so, so a longer list would be names with the same
+ * strike behind each. Returning zero from the callback stops it, as win32's
+ * does.
+ *
+ * `family` names one face to enumerate, or is NULL for all of them. The DC
+ * is unused: this library has one device and its faces do not depend on it. */
+int EnumFontFamiliesA(HDC dc, LPCSTR family, FONTENUMPROCA proc, LPARAM param)
+{
+    int n = ween_font_family_count();
+    (void)dc;
+    if (!proc)
+        return 0;
+    for (int i = 0; i < n; i++) {
+        const char *name = ween_font_family(i);
+        const ween_strike *f;
+        ENUMLOGFONTA elf;
+        TEXTMETRICA tm;
+        if (!name || (family && *family && strcmp(family, name) != 0))
+            continue;
+        f = ween_font_create(name, 0, FW_NORMAL);
+        memset(&elf, 0, sizeof elf);
+        metrics_of(f, FW_NORMAL, 0, 0, &tm);
+        elf.elfLogFont.lfHeight = tm.tmHeight;
+        elf.elfLogFont.lfWeight = FW_NORMAL;
+        elf.elfLogFont.lfCharSet = (BYTE)ANSI_CHARSET;
+        strncpy(elf.elfLogFont.lfFaceName, name, LF_FACESIZE - 1);
+        strncpy((char *)elf.elfFullName, name, LF_FULLFACESIZE - 1);
+        if (!proc(&elf.elfLogFont, &tm, RASTER_FONTTYPE, param))
+            return 0;
+    }
+    return 1;
 }
 
 /* What the device is like. The screen is the desktop, and its dots per inch

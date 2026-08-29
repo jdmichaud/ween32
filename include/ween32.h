@@ -1758,6 +1758,12 @@ HINSTANCE GetModuleHandleA(LPCSTR name);
  * CreateFont takes, in a structure a program can keep, hand to ChooseFont and
  * store in its settings. CreateFontIndirect is CreateFont with them read out
  * of it, which is exactly what it is on Windows. */
+/* What kind of font an enumeration is reporting. This library has bitmap
+ * strikes and nothing else, so it only ever says RASTER_FONTTYPE. */
+#define RASTER_FONTTYPE 0x0001
+#define DEVICE_FONTTYPE 0x0002
+#define TRUETYPE_FONTTYPE 0x0004
+
 #define LF_FACESIZE 32
 typedef struct tagLOGFONTA {
     LONG lfHeight;
@@ -1775,6 +1781,16 @@ typedef struct tagLOGFONTA {
     BYTE lfPitchAndFamily;
     CHAR lfFaceName[LF_FACESIZE];
 } LOGFONTA, *PLOGFONTA, *LPLOGFONTA;
+
+/* A face's full name and style, handed to an EnumFontFamilies callback. The
+ * callback is declared to take a LOGFONTA -- win32 declares it that way and
+ * hands this -- so a caller that casts finds the extra fields there. */
+#define LF_FULLFACESIZE 64
+typedef struct tagENUMLOGFONTA {
+    LOGFONTA elfLogFont;
+    BYTE elfFullName[LF_FULLFACESIZE];
+    BYTE elfStyle[LF_FACESIZE];
+} ENUMLOGFONTA, *LPENUMLOGFONTA;
 
 /* A run of characters' formatting, which needs a face name and so waits for
  * the one constant that says how long one is. The rest of the rich edit's
@@ -1817,6 +1833,26 @@ typedef struct tagTEXTMETRICA {
     BYTE tmCharSet;
 } TEXTMETRICA, *PTEXTMETRICA, *LPTEXTMETRICA;
 BOOL GetTextMetricsA(HDC dc, TEXTMETRICA *tm);
+
+/* Called once per face. Returning zero stops the enumeration, as win32's
+ * does. The third argument is the font's type: this library has bitmap
+ * strikes and nothing else, so it is always RASTER_FONTTYPE. */
+typedef int(CALLBACK *FONTENUMPROCA)(const LOGFONTA *, const TEXTMETRICA *,
+                                     DWORD, LPARAM);
+
+/* **Every face this library has, which is the only list of them.**
+ *
+ * There are two: MS Sans Serif and Tahoma. A program asking for any other
+ * name gets Tahoma -- `ween_font_create` falls back silently, as win32's font
+ * mapper does -- so until now **nothing in the library could tell a caller
+ * that a face was absent.** This is the first thing that can, and it is why
+ * the answer is two entries rather than a longer list that would be six
+ * lies with a Tahoma behind each of them.
+ *
+ * The metrics handed to the callback are the face's own, at the GUI font's
+ * size; a list whose entries all measure the same is one nobody can choose
+ * from. */
+int EnumFontFamiliesA(HDC dc, LPCSTR family, FONTENUMPROCA proc, LPARAM param);
 
 /* What the device this DC draws on is like. The screen here is the desktop
  * and its dots per inch are the ones the whole library scales by, which is
@@ -3366,6 +3402,7 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define GetClassName GetClassNameA
 #define DefWindowProc DefWindowProcA
 #define CallWindowProc CallWindowProcA
+#define EnumFontFamilies EnumFontFamiliesA
 #define SendMessage SendMessageA
 #define SendDlgItemMessage SendDlgItemMessageA
 #define PostMessage PostMessageA
@@ -3416,6 +3453,9 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define CreateFontIndirect CreateFontIndirectA
 #define GetTextMetrics GetTextMetricsA
 #define LOGFONT LOGFONTA
+#define ENUMLOGFONT ENUMLOGFONTA
+#define LPENUMLOGFONT LPENUMLOGFONTA
+#define FONTENUMPROC FONTENUMPROCA
 #define PLOGFONT PLOGFONTA
 #define LPLOGFONT LPLOGFONTA
 #define TEXTMETRIC TEXTMETRICA

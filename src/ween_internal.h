@@ -229,6 +229,11 @@ const ween_strike *ween_gui_font(void);
 /* What a dialog is lettered in, and how a face name is resolved to a strike. */
 const ween_strike *ween_dialog_font(void);
 const ween_strike *ween_font_by_face(const char *face);      /* Tahoma 11px — DEFAULT_GUI_FONT */
+
+/* The faces this library has, which is `src/fonts.c`'s table and the only
+ * list of them. `EnumFontFamiliesA` is the way out to a program. */
+int ween_font_family_count(void);
+const char *ween_font_family(int i);
 const ween_strike *ween_gui_font_bold(void); /* Tahoma Bold 11px */
 /* A face at a size, as CreateFont asks for one: the nearest strike that face
  * carries, and the bold cut when the weight says so. */
