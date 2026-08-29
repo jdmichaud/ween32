@@ -93,7 +93,6 @@ done
 [ "$missing" = 0 ] || { echo "error: .paths names something HEAD does not have" >&2
                         exit 1; }
 
-tarball="$out/$name.tar.gz"
 # **From the commit, not from the directory.** `cp -r src` in a tree that has
 # been built copies `src/*.o` in with it, and then the hash of a package is a
 # fact about whether somebody has run `make` -- measured the hard way: 78
@@ -101,7 +100,16 @@ tarball="$out/$name.tar.gz"
 # worktree at the same sha. A hash that moves with the state of a build
 # directory is worse than no hash, because it is reproducible for exactly one
 # person. `git archive` takes tracked files at HEAD and nothing else.
-git archive --format=tar --prefix="$name/" HEAD -- $paths | gzip -n > "$tarball"
+#
+# A function because the invariant below packages a second time, and the two
+# have to be the same packaging or the check is comparing this script against
+# a copy of itself that cannot go wrong.
+make_tarball() {
+    git archive --format=tar --prefix="$name/" HEAD -- $paths | gzip -n > "$1"
+}
+
+tarball="$out/$name.tar.gz"
+make_tarball "$tarball"
 files=$(tar tzf "$tarball" | grep -vc '/$' || true)
 echo "  files $files, $(wc -c < "$tarball") bytes"
 echo "  tarball $tarball"
@@ -231,6 +239,42 @@ if zig cc -target x86_64-windows-gnu -std=c99 \
 else
     echo "  FAILED  the same source against real win32 out of the packaged headers"
     tail -8 "$out/consumer-win32.log"
+    exit 1
+fi
+
+# ---- the invariant ----------------------------------------------------------
+#
+# **A file in a packaged directory that git does not track must not move the
+# hash.** This is not a sabotage in the usual sense -- `git archive` cannot
+# include an untracked file, so demonstrating that it does not would be
+# demonstrating that git works. It is here for the *other* direction: nothing
+# in this script or in CI would notice `git archive` being changed back to a
+# `cp -r` of the working directory. The package would still build, the
+# consumer would still be green, and the hash would quietly go back to being
+# a fact about whose machine ran it -- 78 files on a built tree against 51 on
+# a clean one, which is the bug this line exists to catch coming back.
+#
+# The planted file is a `.o` in `src/` on purpose: that is the case
+# `git status` stays silent about, so it is the one a dirty-tree warning
+# cannot cover.
+plant="src/.package-invariant-$$.o"
+rm -f "$plant"
+printf 'not tracked, must not be packaged\n' > "$plant"
+make_tarball "$out/again.tar.gz"
+again=$(zig fetch --global-cache-dir "$out/again-cache" "$out/again.tar.gz" \
+        2>/dev/null | tail -1)
+rm -f "$plant"
+rm -rf "$out/again.tar.gz" "$out/again-cache"
+if [ "$again" = "$hash" ]; then
+    echo "  ok      an untracked file in a packaged directory does not move"
+    echo "          the hash, so the package is the commit's and not the"
+    echo "          working directory's"
+else
+    echo "  FAILED  planting $plant moved the hash:"
+    echo "            without it $hash"
+    echo "            with it    $again"
+    echo "          the package is being taken from the working directory"
+    echo "          again, which makes it a fact about whoever ran it"
     exit 1
 fi
 

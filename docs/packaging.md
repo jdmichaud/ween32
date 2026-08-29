@@ -53,6 +53,39 @@ carries the sources and not the headers is the same failure as
 `installHeadersDirectory` staging nothing over sshfs -- the one
 `ween32.addHeaders` exists to route around.
 
+### The invariant, and the bug it is there to catch coming back
+
+The tarball is `git archive` of HEAD. The first draft copied the listed paths
+out of the working directory, which in any tree that has been built copies
+`src/*.o` along with them: **78 files here against 51 in a clean worktree at
+the same commit, and two different hashes for one sha**. A package hash that
+moves with a build directory is worse than none, because it is reproducible for
+exactly one person -- and that person is whoever wrote the script, whose tree is
+always built.
+
+So `--verify` packages **twice in one run**, through the same function, with an
+untracked file planted in a packaged directory between them, and fails if the
+two hashes differ. The plant is a `.o` in `src/` on purpose: that is the case
+`git status` says nothing about, so it is the one the dirty-tree warning cannot
+cover.
+
+This is not quite a sabotage -- `git archive` cannot include an untracked file,
+so watching it not do so would be watching git work. It is there for the other
+direction: **nothing else would notice `git archive` being changed back to a
+`cp -r`.** The package would still build, the consumer would still be green, and
+the hash would quietly go back to being a fact about whose machine ran it. With
+that change made on purpose, the check says:
+
+```
+  FAILED  planting src/.package-invariant-243211.o moved the hash:
+            without it ween32-0.1.0-jgasIMLBSACaby9G1B66j7U7UE4kV7mCqpXMLnvn8Q22
+            with it    ween32-0.1.0-jgasIOTBSAAAd7jg3MfNCbSlbb1aU9gwq6m2gW19GuOh
+          the package is being taken from the working directory
+          again, which makes it a fact about whoever ran it
+```
+
+and exits 1.
+
 ## Two things about `zig fetch` that are worth knowing before you design around them
 
 **The hash is of the unpacked tree, not of the tarball's bytes.** Measured with
