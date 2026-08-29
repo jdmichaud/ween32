@@ -110,14 +110,34 @@ R=$work/tools/refcapture
 # they are missing here, and said out loud when they are borrowed: a number
 # measured against a file from somewhere else is still a number, but nobody
 # should have to guess where it came from.
+#
+# **The main checkout is asked of git, not derived from this script's path.**
+# It used to be `$repo`, which is where *this file* lives -- fine when the
+# script is the main checkout's, and wrong for everybody running it from
+# their own worktree, where `$repo` is the worktree that by construction has
+# neither file. So the borrow could not fire for the three people it was
+# written for, and their runs said `MISSING REFERENCE -- not measured` for
+# these two all day. `git worktree list` names the main worktree first from
+# anywhere inside the repository.
+main=$(git -C "$work" worktree list --porcelain 2>/dev/null |
+       sed -n '1s/^worktree //p')
+[ -n "${main:-}" ] || main=$repo
 for gen in reference.png menu-reference.png; do
-    if [ ! -f "$R/$gen" ] && [ -f "$repo/tools/refcapture/$gen" ]; then
-        cp "$repo/tools/refcapture/$gen" "$R/$gen"
-        echo "  (borrowed $gen from the main checkout; it is not in the repository)"
+    if [ ! -f "$R/$gen" ] && [ -f "$main/tools/refcapture/$gen" ]; then
+        cp "$main/tools/refcapture/$gen" "$R/$gen"
+        echo "  (borrowed $gen from $main; it is not in the repository)"
     fi
 done
 
+# **Every capture is counted, measured or not.** `MISSING REFERENCE` is an
+# honest line and it was far too quiet: it appeared in every run three people
+# posted today and nobody, including me, noticed that two of the nine were
+# never being measured at all. A line you can skim past is not a report. The
+# tally at the end has to read nine.
+captures=0
+measured=0
 count() { # name reference our-png expected
+    captures=$((captures + 1))
     if [ ! -f "$2" ]; then
         printf "  %-22s MISSING REFERENCE -- not measured\n" "$1"; return
     fi
@@ -127,12 +147,17 @@ count() { # name reference our-png expected
     if [ -z "$n" ]; then
         printf "  %-22s COULD NOT COUNT -- not measured\n" "$1"; return
     fi
+    measured=$((measured + 1))
     printf "  %-22s %8s   was %s\n" "$1" "$n" "$4"
 }
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=$tmp/s.bmp ./examples/controls >/dev/null 2>&1
 magick "$tmp/s.bmp" "$tmp/s.png" 2>/dev/null
-count "wine sampler" "$R/reference.png" "$tmp/s.png" 14877
+# 14877 until 2026-08-29, when the property sheet's frame landed. `gb_paint`
+# and the tab row are not the property sheet's alone -- examples/controls goes
+# through both -- so a change whose predictions covered nine captures moved a
+# tenth thing nobody had listed. It moved 334 pixels *towards* the machine.
+count "wine sampler" "$R/reference.png" "$tmp/s.png" 14543
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=$tmp/m.bmp ./examples/menu >/dev/null 2>&1
 magick "$tmp/m.bmp" "$tmp/m.png" 2>/dev/null
@@ -175,6 +200,12 @@ explorer "Properties CONFIG.SYS" "$R/properties-machine.png" 652 \
 explorer "Properties boot.ini" "$R/properties-boot-machine.png" 306 \
     "w:300 k:40 k:40 k:40 k:40 w:200 a:13 w:900" WEEN32_EXPLORER_FIXTURE=1
 echo
+if [ "$measured" = "$captures" ]; then
+    echo "  all $captures captures measured"
+else
+    echo "  MEASURED $measured OF $captures -- the rest are lines, not numbers"
+    bad_captures=1
+fi
 echo "  Properties carries the day of the month in it and moves on its own."
 echo "  The explorer's own window needs a machine: docs/testing.md."
 echo
