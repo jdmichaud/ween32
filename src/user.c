@@ -3814,10 +3814,19 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 static void gb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-    RECT client = ps->rcPaint, frame = client, r;
+    /* **The control's own rectangle, not the damage.** This read
+     * `ps->rcPaint`, which `BeginPaint` narrows to whatever needs painting,
+     * so a group box asked to repaint part of itself drew its etched frame
+     * around that part -- a line down its own middle. Every capture we own is
+     * a full repaint, where the two rectangles are equal, which is why
+     * nothing had ever seen it. */
+    RECT client, frame, r;
     int lh = label_height(wnd);
     int tw = f ? ween_strike_text_extent(f, wnd->text, (int)strlen(wnd->text)) : 0;
 
+    (void)ps;
+    GetClientRect(wnd, &client);
+    frame = client;
     frame.top += lh / 2 - 1;
     DrawEdge(dc, &frame, EDGE_ETCHED, BF_RECT);
 

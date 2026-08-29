@@ -496,6 +496,63 @@ int main(void)
         CHECK(c != a, "and a different name a different one");
     }
 
+    /* ---- a group box frames itself, not the damage ---- */
+    {
+        WNDCLASSA wc;
+        HWND host, gb;
+        struct ween_wnd *tw;
+        RECT half;
+        int x, full = 0, after = 0, spurious = 0;
+        memset(&wc, 0, sizeof wc);
+        wc.lpfnWndProc = DefWindowProcA;
+        wc.lpszClassName = "weengbdamage";
+        wc.hbrBackground = (HBRUSH)(UINT_PTR)(COLOR_BTNFACE + 1);
+        RegisterClassA(&wc);
+        host = CreateWindowExA(0, "weengbdamage", "h", WS_POPUP | WS_VISIBLE,
+                               0, 0, 240, 140, NULL, NULL, NULL, NULL);
+        gb = CreateWindowExA(0, "BUTTON", "G",
+                             WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 20, 200,
+                             100, host, NULL, NULL, NULL);
+        CHECK(host && gb, "a group box on a face-coloured window");
+        InvalidateRect(host, NULL, TRUE);
+        ween_flush_paint();
+        tw = ween_top_level(host);
+        if (tw)
+            for (x = 200; x < 230; x++)
+                if ((tw->surface.px[70 * tw->surface.w + x] & 0xffffff) ==
+                    0x808080)
+                    full = x;
+        CHECK(full == 218, "its frame's right line stands one in from its edge");
+
+        /* Sixty columns of it. BeginPaint narrows rcPaint to the damage, so a
+         * group box that framed *that* draws a line down its own middle --
+         * which is what this one did until gb_paint asked for its client
+         * rectangle. No capture could see it: every one of ours is a full
+         * repaint, where the two rectangles are equal. */
+        half.left = 0;
+        half.top = 0;
+        half.right = 60;
+        half.bottom = 100;
+        InvalidateRect(gb, &half, TRUE);
+        ween_flush_paint();
+        if (tw) {
+            for (x = 70; x < 90; x++)
+                if ((tw->surface.px[70 * tw->surface.w + x] & 0xffffff) ==
+                    0x808080)
+                    spurious = x;
+            for (x = 200; x < 230; x++)
+                if ((tw->surface.px[70 * tw->surface.w + x] & 0xffffff) ==
+                    0x808080)
+                    after = x;
+        }
+        CHECK(spurious == 0,
+              "and repainting part of it draws no frame around that part");
+        if (spurious)
+            printf("     a frame line appeared at x=%d\n", spurious);
+        CHECK(after == 218, "its own right line being where it was");
+        DestroyWindow(host);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
