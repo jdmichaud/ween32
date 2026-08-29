@@ -970,6 +970,52 @@ int main(void)
         DestroyWindow(cw);
     }
 
+    /* A separator's etched line belongs to a flat bar and not to a classic
+     * one. WordPad's Standard bar is classic and has four separators; the
+     * machine leaves plain face where each one is, while the shell's flat bar
+     * has the line and ours has always matched it there. */
+    {
+        static const DWORD flat2[2] = { TBSTYLE_FLAT, 0 };
+        for (int k = 0; k < 2; k++) {
+            HWND host = CreateWindowA("weentb", "", WS_OVERLAPPEDWINDOW,
+                                      0, 0, 240, 80, NULL, NULL, NULL, NULL);
+            HWND sb2 = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                       WS_CHILD | WS_VISIBLE | flat2[k], 0, 0,
+                                       200, 30, host, (HMENU)(UINT_PTR)95,
+                                       NULL, NULL);
+            TBBUTTON sp[2];
+            RECT ir, br;
+            const ween_surface *ps2;
+            int ink = 0, sx;
+            memset(sp, 0, sizeof(sp));
+            sp[0].idCommand = 701;
+            sp[0].fsState = TBSTATE_ENABLED;
+            sp[0].fsStyle = TBSTYLE_BUTTON;
+            sp[1].fsStyle = TBSTYLE_SEP;
+            sp[1].iBitmap = 8;
+            SendMessageA(sb2, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            SendMessageA(sb2, TB_ADDBUTTONSA, 2, (LPARAM)sp);
+            ShowWindow(host, SW_SHOWNORMAL);
+            InvalidateRect(host, NULL, TRUE);
+            ween_flush_paint();
+            ps2 = ween_headless_surface();
+            SendMessageA(sb2, TB_GETITEMRECT, 1, (LPARAM)&ir);
+            GetWindowRect(sb2, &br);
+            sx = (int)br.left + (int)ir.left + 3;
+            for (int y = (int)br.top + (int)ir.top + 2;
+                 ps2 && y < (int)br.top + (int)ir.bottom - 2; y++)
+                if (y >= 0 && y < ps2->h && sx >= 0 && sx < ps2->w &&
+                    (ps2->px[(size_t)y * ps2->w + sx] & 0xffffff) ==
+                        (WEEN_SHADOW & 0xffffff))
+                    ink++;
+            if (k == 0)
+                CHECK(ink > 0, "a flat bar's separator draws its etched line");
+            else
+                CHECK(ink == 0, "and a classic bar's draws nothing at all");
+            DestroyWindow(host);
+        }
+    }
+
     /* A band told RBBS_NOGRIPPER has no handle, so it leaves no room for one.
      * Real comctl32, asked with tools/vm/ctlprobe.c: a toolbar in a
      * no-gripper band comes back at **0,0** in the band. ween32 drew no

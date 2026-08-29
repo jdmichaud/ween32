@@ -7891,11 +7891,19 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                    (b->state & TBSTATE_PRESSED) != 0;
 
         if (b->style & TBSTYLE_SEP) {
-            /* an etched line three pixels in, which is the middle of the
-             * six it takes */
-            int sx = bx + 3;
-            ween_surface_vline(&top->surface, sx, by + 2, h - 4, WEEN_SHADOW);
-            ween_surface_vline(&top->surface, sx + 1, by + 2, h - 4, WEEN_WHITE);
+            /* An etched line three pixels in -- **but only on a flat bar**.
+             * A classic bar's separator draws nothing at all: WordPad's has
+             * four of them and the machine leaves plain face where each one
+             * is, while the shell's flat bar has the line and ours matches it
+             * there. Drawing it on both was worth 144 pixels of WordPad's
+             * toolbar band, four runs of two columns by eighteen rows. */
+            if (flat) {
+                int sx = bx + 3;
+                ween_surface_vline(&top->surface, sx, by + 2, h - 4,
+                                   WEEN_SHADOW);
+                ween_surface_vline(&top->surface, sx + 1, by + 2, h - 4,
+                                   WEEN_WHITE);
+            }
             continue;
         }
 
