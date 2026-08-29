@@ -455,6 +455,9 @@ pub extern fn DefDlgProcA(dlg: HWND, msg: UINT, wp: WPARAM, lp: LPARAM) callconv
 pub extern fn EndDialog(dlg: HWND, result: INT_PTR) callconv(.c) BOOL;
 pub extern fn CreateDialogIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, parent: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) ?HWND;
 pub extern fn DialogBoxIndirectParamA(inst: HINSTANCE, tmpl: *const DLGTEMPLATE, owner: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) INT_PTR;
+/// The same, from a DIALOG in the script rather than a template in memory --
+/// which is how a program that has a resource script writes it.
+pub extern fn DialogBoxParamA(inst: HINSTANCE, name: LPCSTR, owner: ?HWND, proc: DLGPROC, param: LPARAM) callconv(.c) INT_PTR;
 
 // ---- USER32: a window's own scroll bars ---------------------------------
 
