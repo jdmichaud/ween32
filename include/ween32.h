@@ -617,6 +617,16 @@ typedef struct {
 #define EM_EMPTYUNDOBUFFER 0x00CD
 #define EM_GETFIRSTVISIBLELINE 0x00CE
 #define EM_SETLIMITTEXT EM_LIMITTEXT
+/* The formatting rectangle: the box inside a control that the text is laid
+ * out in, which is not the client rectangle and need not fill it. An EDIT and
+ * a rich edit both take one. EM_SETRECTNP is the same message without the
+ * repaint.
+ *
+ * A control that has not been given one uses its client rectangle less its
+ * border, which is what everything did before this existed. */
+#define EM_GETRECT 0x00B2
+#define EM_SETRECT 0x00B3
+#define EM_SETRECTNP 0x00B4
 /* What an edit leaves before and after its text. It works one out from the
  * font by default; a control that puts an edit inside itself says otherwise,
  * which is how a combo box lines its field up with what it draws beside it. */

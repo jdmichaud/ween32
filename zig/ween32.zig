@@ -1018,6 +1018,13 @@ pub const FINDTEXTEXA = extern struct {
 pub const LF_FACESIZE = 32;
 pub const EM_GETCHARFORMAT = (WM_USER + 58);
 pub const EM_SETCHARFORMAT = (WM_USER + 68);
+/// The formatting rectangle: the box inside a control that its text is laid
+/// out in, which need not be the client rectangle. `EM_SETRECTNP` is the same
+/// message without the repaint, and a NULL rectangle puts a control back on
+/// its client less the border.
+pub const EM_GETRECT = 0x00B2;
+pub const EM_SETRECT = 0x00B3;
+pub const EM_SETRECTNP = 0x00B4;
 pub const EM_POSFROMCHAR = 0x00D6;
 pub const EM_CHARFROMPOS = 0x00D7;
 pub const SCF_DEFAULT = 0x0000;

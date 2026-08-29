@@ -1703,6 +1703,105 @@ int main(void)
         }
     }
 
+    /* ---- EM_SETRECT: the box the text is laid out in ---- */
+    {
+        /* WordPad's first character stands on its ruler's zero and a rich
+         * edit built with WordPad's own style word puts it five pixels short
+         * of that. bob eliminated the other mechanisms on the machine --
+         * EM_GETMARGINS answers nought with the bar and without it, and
+         * Format > Paragraph reads nought for all three indents -- which
+         * leaves the formatting rectangle, a message this library did not
+         * have at all.
+         *
+         * **These are the library's own checks and not WordPad's.** A
+         * message whose only evidence is that one application looks right is
+         * not a measured message. */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                     ES_SELECTIONBAR,
+                                 0, 0, 300, 60, host, NULL, NULL, NULL);
+        POINTL p;
+        RECT got, set;
+        SetWindowTextA(t, "cat\r\ndog");
+
+        /* Untouched, it is the client rectangle less the border, and the
+         * text is where ES_SELECTIONBAR left it. */
+        memset(&got, 0, sizeof got);
+        SendMessageA(t, EM_GETRECT, 0, (LPARAM)&got);
+        CHECK(got.left == 1 && got.top == 1,
+              "a rich edit nobody has set a rectangle on formats in its "
+              "client less the border");
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        CHECK(p.x == 9, "and its first character is at nine, the bar's eight "
+                        "and the border's one");
+
+        /* Set one, and the text moves with it. The selection bar is inside
+         * the rectangle -- see rich_fmt in richedit.c, which says so and says
+         * that nobody has measured which way the machine has it. */
+        set.left = 6;
+        set.top = 1;
+        set.right = 290;
+        set.bottom = 55;
+        SendMessageA(t, EM_SETRECT, 0, (LPARAM)&set);
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        CHECK(p.x == 14, "a formatting rectangle at six puts the first "
+                         "character at fourteen, the bar inside it");
+        if (p.x != 14)
+            printf("     wanted 14, got %d\n", (int)p.x);
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 4);
+        CHECK(p.x == 14, "and the second line with it, not the first alone");
+
+        memset(&got, 0, sizeof got);
+        SendMessageA(t, EM_GETRECT, 0, (LPARAM)&got);
+        CHECK(got.left == 6 && got.top == 1 && got.right == 290 &&
+                  got.bottom == 55,
+              "and EM_GETRECT hands back the one that was set");
+
+        /* The top moves the text down, which the left cannot show. */
+        set.top = 11;
+        SendMessageA(t, EM_SETRECTNP, 0, (LPARAM)&set);
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        CHECK(p.y == 11, "the rectangle's top is where the first line sits");
+
+        /* NULL puts it back, which is what makes the message reversible. */
+        SendMessageA(t, EM_SETRECT, 0, 0);
+        memset(&got, 0, sizeof got);
+        SendMessageA(t, EM_GETRECT, 0, (LPARAM)&got);
+        CHECK(got.left == 1 && got.top == 1,
+              "and a NULL rectangle puts it back on the client");
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        CHECK(p.x == 9 && p.y == 1, "with the text where it started");
+
+        {
+            /* A narrower rectangle wraps sooner, which is the whole of what
+             * a formatting rectangle means and not merely where it draws. */
+            HWND wide = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                        WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+                                        0, 0, 200, 60, host, NULL, NULL, NULL);
+            const char *many = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            LRESULT before, after;
+            RECT narrow;
+            SetWindowTextA(wide, many);
+            before = SendMessageA(wide, EM_LINEINDEX, 1, 0);
+            narrow.left = 1;
+            narrow.top = 1;
+            narrow.right = 90;
+            narrow.bottom = 55;
+            SendMessageA(wide, EM_SETRECT, 0, (LPARAM)&narrow);
+            after = SendMessageA(wide, EM_LINEINDEX, 1, 0);
+            CHECK(after < before && after > 0,
+                  "and the same text breaks sooner in a narrower formatting "
+                  "rectangle, the box being what it wraps to");
+            DestroyWindow(wide);
+        }
+        DestroyWindow(t);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

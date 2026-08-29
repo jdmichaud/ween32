@@ -161,6 +161,11 @@ typedef struct {
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
+    /* The formatting rectangle -- EM_SETRECT -- and whether one was given.
+     * Without one the text is laid out in the client rectangle less the
+     * border, which is what this control did before the message existed. */
+    RECT fmt;
+    int fmt_set;
 } ween_rich;
 
 static void rich_free(void *p)
@@ -726,6 +731,7 @@ static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
 
 static int rich_inset(HWND wnd);
 static int rich_selbar(HWND wnd);
+static void rich_fmt(HWND wnd, RECT *r);
 static int rich_bar(HWND wnd);
 static int rich_visible_lines(HWND wnd);
 static int rich_next_tab_stop(ween_rich *e, int at, int x);
@@ -737,9 +743,8 @@ static int rich_wrap_width(HWND wnd, ween_rich *e)
     int w;
     if (e->nowrap)
         return 0; /* nothing to break to */
-    GetClientRect(wnd, &r);
-    w = r.right - r.left - 2 * rich_inset(wnd) - rich_bar(wnd) -
-        rich_selbar(wnd);
+    rich_fmt(wnd, &r);
+    w = r.right - r.left - rich_bar(wnd) - rich_selbar(wnd);
     return w > 0 ? w : 0;
 }
 
@@ -1278,6 +1283,40 @@ static int rich_selbar(HWND wnd)
     return (wnd->style & ES_SELECTIONBAR) ? ween_ncm(8) : 0;
 }
 
+/* The box the text is laid out in.
+ *
+ * Without EM_SETRECT this is the client rectangle less the border, which is
+ * exactly what every one of these places used to work out for itself -- so a
+ * control nobody has sent the message to lays out to the pixel it did before.
+ *
+ * **The selection bar sits inside it**, so a line begins at `left` plus the
+ * bar and not at `left`. That is the choice this file makes and nobody has
+ * measured which the machine makes: WordPad's first character is at
+ * editor-client 14 either way, and 14 could be a rect of 14 with the bar
+ * inside it or a rect of 6 with the bar added on top. It is written this way
+ * because it is what the client rectangle already did -- the client holds the
+ * bar and then the text -- so the message replaces the box and changes
+ * nothing else. A measurement will settle it; this note is what makes that
+ * cheap.
+ *
+ * The vertical scroll bar is *not* inside it and is still taken off the wrap
+ * width separately, for the same reason: that is what happened before. */
+static void rich_fmt(HWND wnd, RECT *r)
+{
+    ween_rich *e = rich_state(wnd);
+    int inset;
+    if (e && e->fmt_set) {
+        *r = e->fmt;
+        return;
+    }
+    GetClientRect(wnd, r);
+    inset = rich_inset(wnd);
+    r->left += inset;
+    r->top += inset;
+    r->right -= inset;
+    r->bottom -= inset;
+}
+
 static int rich_bar(HWND wnd)
 {
     ween_rich *e = rich_state(wnd);
@@ -1291,9 +1330,9 @@ static int rich_bar(HWND wnd)
 static int rich_visible_lines(HWND wnd)
 {
     RECT r;
-    int line = rich_line_height(wnd), inset = rich_inset(wnd), rows;
-    GetClientRect(wnd, &r);
-    rows = line > 0 ? (r.bottom - r.top - 2 * inset) / line : 0;
+    int line = rich_line_height(wnd), rows;
+    rich_fmt(wnd, &r);
+    rows = line > 0 ? (r.bottom - r.top) / line : 0;
     return rows > 0 ? rows : 1;
 }
 
@@ -1401,20 +1440,20 @@ static int rich_x_of(ween_rich *e, int row, int col)
  * first line; when 4a wraps them this is where the difference goes. */
 static int rich_line_left(HWND wnd, ween_rich *e, int row)
 {
-    int inset = rich_inset(wnd), sb = rich_bar(wnd);
+    int sb = rich_bar(wnd);
     const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
     /* dxStartIndent is where the *first* line begins and dxOffset is where
      * the rest do, against it -- which is what riched20's own RTF says: a
      * paragraph set to 720 and -360 comes out "\li360\fi360", a left indent
      * of 360 with the first line 360 further in. */
-    int left = inset + rich_selbar(wnd) + rfmt_px_twips(pf->start_indent) +
-               (e->line[row].first ? 0 : rfmt_px_twips(pf->offset));
     RECT cr;
-    int right, width;
+    int left, right, width;
+    rich_fmt(wnd, &cr);
+    left = cr.left + rich_selbar(wnd) + rfmt_px_twips(pf->start_indent) +
+           (e->line[row].first ? 0 : rfmt_px_twips(pf->offset));
     if (pf->alignment == PFA_LEFT || !pf->alignment)
         return left;
-    GetClientRect(wnd, &cr);
-    right = cr.right - sb - inset - rfmt_px_twips(pf->right_indent);
+    right = cr.right - sb - rfmt_px_twips(pf->right_indent);
     width = rich_x_of(e, row, e->line[row].len);
     if (pf->alignment == PFA_RIGHT)
         return right - width;
@@ -1452,12 +1491,14 @@ static int rich_index_at_x(HWND wnd, ween_rich *e, int row, int x)
 
 static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
 {
-    int inset = rich_inset(wnd), row, top;
+    RECT fmt;
+    int row, top;
     if (!e || !e->lines)
         return 0;
+    rich_fmt(wnd, &fmt);
     top = e->line[e->first_visible].top;
     for (row = e->first_visible; row < e->lines; row++) {
-        int at = inset + e->line[row].top - top;
+        int at = fmt.top + e->line[row].top - top;
         if (y < at + e->line[row].height || row == e->lines - 1)
             break;
     }
@@ -1465,8 +1506,10 @@ static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
         row = e->first_visible;
     if (row >= e->lines)
         row = e->lines - 1;
-    return rich_index_at_x(wnd, e, row, x - rich_line_left(wnd, e, row) +
-                                            rich_inset(wnd));
+    /* `x` is the client x as it arrived. It used to have the border taken
+     * off by each caller and added back here -- a compensating pair that
+     * cancelled exactly, and both halves are gone. */
+    return rich_index_at_x(wnd, e, row, x - rich_line_left(wnd, e, row));
 }
 
 /* Bring the caret into view, scrolling by lines the way win32 does. */
@@ -1501,12 +1544,12 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     ween_rich *e = rich_state(wnd);
     RECT r = ps->rcPaint, cr;
-    int ox, oy, inset = rich_inset(wnd), sb = rich_bar(wnd);
+    int ox, oy, sb = rich_bar(wnd);
     int from = 0, to = 0, row;
     ween_color ink = (wnd->style & WS_DISABLED) ? WEEN_SHADOW : WEEN_BLACK;
 
     ween_client_origin(wnd, &ox, &oy);
-    GetClientRect(wnd, &cr);
+    rich_fmt(wnd, &cr);
     FillRect(dc, &r, GetSysColorBrush((wnd->style & WS_DISABLED) ||
                                               (wnd->style & ES_READONLY)
                                           ? COLOR_BTNFACE
@@ -1522,13 +1565,12 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         rich_range(e, &from, &to);
 
     for (row = e->first_visible; row < e->lines; row++) {
-        int y = inset + e->line[row].top - e->line[e->first_visible].top;
+        int y = cr.top + e->line[row].top - e->line[e->first_visible].top;
         int left = rich_line_left(wnd, e, row);
         int x = left;
         int at = e->line[row].start, end = at + e->line[row].len;
         int i = run_at(e, at);
-        if ((wnd->style & ES_MULTILINE) &&
-            y + e->line[row].height > cr.bottom - inset)
+        if ((wnd->style & ES_MULTILINE) && y + e->line[row].height > cr.bottom)
             break;
         /* A line is drawn run by run, and a run in two or three pieces where
          * the selection crosses it. Each piece is in its own face, size,
@@ -1603,10 +1645,10 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
      * puts it. */
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && e->caret_on) {
         int crow = rich_line_of(e, e->caret);
-        int cy = inset + e->line[crow].top - e->line[e->first_visible].top;
+        int cy = cr.top + e->line[crow].top - e->line[e->first_visible].top;
         int cx = rich_line_left(wnd, e, crow) +
                  rich_x_of(e, crow, e->caret - e->line[crow].start);
-        if (cy >= inset && cy + e->line[crow].height <= cr.bottom - inset)
+        if (cy >= cr.top && cy + e->line[crow].height <= cr.bottom)
             ween_surface_vline(&top->surface, ox + cx, oy + cy,
                                e->line[crow].height, WEEN_BLACK);
     }
@@ -2539,6 +2581,33 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rich_relines(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
+    case EM_SETRECT:
+    case EM_SETRECTNP: {
+        /* The box the text is laid out in. A NULL rectangle puts the control
+         * back on its client rectangle less the border, which is win32's own
+         * meaning for it and what makes the message reversible.
+         *
+         * EM_SETRECTNP is the same thing without the repaint -- NP for "no
+         * paint" -- and the only difference here is the InvalidateRect. */
+        const RECT *r = (const RECT *)lp;
+        if (!r) {
+            e->fmt_set = 0;
+        } else {
+            e->fmt = *r;
+            e->fmt_set = 1;
+        }
+        rich_relines(wnd, e);
+        if (msg == EM_SETRECT)
+            InvalidateRect(wnd, NULL, FALSE);
+        return 0;
+    }
+    case EM_GETRECT: {
+        RECT *r = (RECT *)lp;
+        if (!r)
+            return 0;
+        rich_fmt(wnd, r);
+        return 0;
+    }
     case EM_POSFROMCHAR: {
         /* A rich edit fills in a POINTL the caller passes and takes the
          * index in lParam, where an EDIT takes the index in wParam and packs
@@ -2555,8 +2624,12 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         row = rich_line_of(e, at);
         pt->x = rich_line_left(wnd, e, row) +
                 rich_x_of(e, row, at - e->line[row].start);
-        pt->y = rich_inset(wnd) + e->line[row].top -
-                e->line[e->first_visible].top;
+        {
+            RECT fmt;
+            rich_fmt(wnd, &fmt);
+            pt->y = fmt.top + e->line[row].top -
+                    e->line[e->first_visible].top;
+        }
         return 0;
     }
 
@@ -2734,7 +2807,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         }
         SetFocus(wnd);
-        e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp) - rich_inset(wnd),
+        e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
         e->goal_set = 0;
@@ -2763,7 +2836,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         } else if (GetCapture() == wnd) {
             int at = rich_index_at_point(wnd, e,
-                                         GET_X_LPARAM(lp) - rich_inset(wnd),
+                                         GET_X_LPARAM(lp),
                                          GET_Y_LPARAM(lp));
             if (at != e->caret) {
                 e->caret = at; /* a drag extends from the anchor */
@@ -2780,7 +2853,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONDBLCLK:
         if (!(wnd->style & WS_DISABLED)) {
             e->caret = rich_index_at_point(wnd, e,
-                                           GET_X_LPARAM(lp) - rich_inset(wnd),
+                                           GET_X_LPARAM(lp),
                                            GET_Y_LPARAM(lp));
             rich_select_word(e);
             rich_show_caret(wnd, e);
