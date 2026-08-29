@@ -150,6 +150,76 @@ int main(void)
         DestroyWindow(stuck);
     }
 
+    /* Where a status bar puts its parts, which is a rule and not a guess.
+     * Real comctl32, asked with SB_GETRECT after SB_SETPARTS 200 260 320 --
+     * tools/vm/ctlprobe.c on the Windows 2000 -- answers:
+     *
+     *     part 0  0,2 200x18     part 1  202,2 58x18     part 2  262,2 58x18
+     *
+     * So a part ends at the edge it was given and the next one starts two
+     * past it: the two-pixel gap comes out of the *front* of the following
+     * part, not off the back of the one before. Those are the exact numbers
+     * below. It matters because a program that reads the divider positions off
+     * a picture and calls them edges is out by exactly that two, which is what
+     * happened to WordPad's status bar. */
+    {
+        HWND host = CreateWindowA("weenresize", "", WS_OVERLAPPEDWINDOW, 0, 0, 420,
+                                  200, NULL, NULL, NULL, NULL);
+        HWND sb = CreateWindowA(STATUSCLASSNAMEA, "", WS_CHILD | WS_VISIBLE, 0,
+                                0, 400, 20, host, NULL, NULL, NULL);
+        int edges[3] = { 200, 260, 320 };
+        RECT p0, p1, p2;
+        SendMessageA(sb, SB_SETPARTS, 3, (LPARAM)edges);
+        SendMessageA(sb, SB_SETTEXTA, 0, (LPARAM) "first");
+        SendMessageA(sb, SB_SETTEXTA, 1, (LPARAM) "second");
+        SendMessageA(sb, SB_SETTEXTA, 2, (LPARAM) "third");
+        CHECK(SendMessageA(sb, SB_GETRECT, 0, (LPARAM)&p0) &&
+              SendMessageA(sb, SB_GETRECT, 1, (LPARAM)&p1) &&
+              SendMessageA(sb, SB_GETRECT, 2, (LPARAM)&p2),
+              "a status bar can be asked where its parts are");
+        CHECK(p0.left == 0 && p0.right == 200,
+              "the first part runs from nothing to the first edge");
+        CHECK(p1.left == 202 && p1.right == 260,
+              "and the next starts two past that edge and ends on its own");
+        CHECK(p2.left == 262 && p2.right == 320,
+              "and so does the one after it");
+        CHECK(SendMessageA(sb, SB_GETRECT, 3, (LPARAM)&p0) == 0,
+              "a part it has not got has no rectangle");
+
+        /* SBT_NOBORDERS, which is what WordPad's message pane has: the part
+         * keeps its rectangle and loses its sunken box. Read off the surface
+         * rather than asserted about, because a flag that is stored and never
+         * looked at passes every test that only asks where the part is. */
+        {
+            struct ween_wnd *top = ween_top_level(sb);
+            int ox, oy, shadow_before = 0, shadow_after = 0;
+            ween_client_origin(sb, &ox, &oy);
+            ShowWindow(host, SW_SHOWNORMAL);
+            InvalidateRect(sb, NULL, TRUE);
+            ween_flush_paint();
+            for (int y = p1.top; y < p1.bottom; y++)
+                if ((top->surface.px[(size_t)(oy + y) * top->surface.w +
+                                     ox + p1.left] &
+                     0xffffff) == (WEEN_SHADOW & 0xffffff))
+                    shadow_before++;
+            SendMessageA(sb, SB_SETTEXTA, 1 | SBT_NOBORDERS,
+                         (LPARAM) "second");
+            InvalidateRect(sb, NULL, TRUE);
+            ween_flush_paint();
+            for (int y = p1.top; y < p1.bottom; y++)
+                if ((top->surface.px[(size_t)(oy + y) * top->surface.w +
+                                     ox + p1.left] &
+                     0xffffff) == (WEEN_SHADOW & 0xffffff))
+                    shadow_after++;
+            CHECK(shadow_before > 0, "a part is drawn with a sunken box");
+            CHECK(shadow_after == 0, "and SBT_NOBORDERS takes it away");
+            SendMessageA(sb, SB_GETRECT, 1, (LPARAM)&p2);
+            CHECK(p2.left == p1.left && p2.right == p1.right,
+                  "and leaves the part where it was");
+        }
+        DestroyWindow(host);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

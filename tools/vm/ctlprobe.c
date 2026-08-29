@@ -536,6 +536,114 @@ static void barstates(HWND parent)
     }
 }
 
+/* A status bar's parts, which are two questions in one.
+ *
+ * SB_SETPARTS is given a list of right edges. Where each part's *rectangle*
+ * then falls is not stated anywhere and cannot be read off a picture without
+ * knowing the answer already, because a part drawn two right of its edge and
+ * a part two narrow look identical unless you know which edge was asked for.
+ * SB_GETRECT says outright.
+ *
+ * ween32 starts a part at the previous edge plus two and ends it at its own
+ * edge; WordPad's status bar comes out two pixels right of the machine's on
+ * both dividers, which is what that plus-two would do. But changing it moves
+ * 853 pixels of explorer's status bar, and that band is recorded as matching
+ * the machine within one pixel. One of the two is fitted to the other and a
+ * rectangle from comctl32 says which.
+ */
+static void statusbar(HWND parent)
+{
+    static const int edges[3] = { 200, 260, 320 };
+    HWND sb;
+    int i;
+
+    sb = CreateWindowExA(0, STATUSCLASSNAMEA, NULL,
+                         WS_CHILD | WS_VISIBLE | CCS_NORESIZE |
+                         CCS_NOPARENTALIGN,
+                         0, 240, 400, 20, parent, (HMENU)(UINT_PTR)360, NULL,
+                         NULL);
+    SendMessageA(sb, SB_SETPARTS, 3, (LPARAM)edges);
+    SendMessageA(sb, SB_SETTEXTA, 0, (LPARAM)"first");
+    SendMessageA(sb, SB_SETTEXTA, 1, (LPARAM)"second");
+    SendMessageA(sb, SB_SETTEXTA, 2, (LPARAM)"third");
+
+    emit("== status bar, SB_SETPARTS 200 260 320 ==\r\n");
+    for (i = 0; i < 3; i++) {
+        RECT r;
+        r.left = r.top = r.right = r.bottom = 0;
+        SendMessageA(sb, SB_GETRECT, (WPARAM)i, (LPARAM)&r);
+        wsprintfA(buf, "  part %d  %ld,%ld %ldx%ld  (left %ld right %ld)\r\n",
+                  i, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                  r.left, r.right);
+        emit(buf);
+    }
+    /* And whether a part can be asked to drop its border, which is what
+     * WordPad's message pane looks like it has done. */
+    SendMessageA(sb, SB_SETTEXTA, 0 | SBT_NOBORDERS, (LPARAM)"first");
+    emit("  part 0 set with SBT_NOBORDERS; see the capture\r\n");
+}
+
+/* A toolbar in a rebar band, which is where explorer's menu band lives and
+ * the only place ween32's centring has ever been checked. Two numbers: where
+ * the rebar puts the toolbar, and where the toolbar puts its button. ween32
+ * gets the sum right and may have neither half right. */
+static void rebarband(HWND parent)
+{
+    HWND rb, tb;
+    REBARINFO ri;
+    REBARBANDINFOA bi;
+    TBBUTTON b;
+    RECT wr, cr;
+
+    memset(&ri, 0, sizeof ri);
+    ri.cbSize = sizeof ri;
+    rb = CreateWindowExA(0, REBARCLASSNAMEA, NULL,
+                         WS_CHILD | WS_VISIBLE | RBS_VARHEIGHT |
+                         CCS_NODIVIDER | CCS_NORESIZE | CCS_NOPARENTALIGN,
+                         0, 270, 400, 26, parent, (HMENU)(UINT_PTR)370, NULL,
+                         NULL);
+    SendMessageA(rb, RB_SETBARINFO, 0, (LPARAM)&ri);
+
+    tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                         WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST |
+                         CCS_NORESIZE | CCS_NODIVIDER | CCS_NOPARENTALIGN,
+                         0, 0, 100, 22, rb, (HMENU)(UINT_PTR)371, NULL, NULL);
+    SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    SendMessageA(tb, TB_SETPADDING, 0, MAKELPARAM(16, 0));
+    SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, 19));
+    memset(&b, 0, sizeof b);
+    b.iBitmap = -1;
+    b.idCommand = 600;
+    b.fsState = TBSTATE_ENABLED;
+    b.fsStyle = TBSTYLE_BUTTON;
+    b.iString = (INT_PTR)"File";
+    SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+
+    memset(&bi, 0, sizeof bi);
+    bi.cbSize = sizeof bi;
+    bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
+    bi.fStyle = RBBS_NOGRIPPER;
+    bi.hwndChild = tb;
+    bi.cxMinChild = 100;
+    bi.cyMinChild = 22;
+    SendMessageA(rb, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
+
+    emit("== a toolbar in a rebar band ==\r\n");
+    wr.left = wr.top = wr.right = wr.bottom = 0;
+    GetWindowRect(tb, &wr);
+    cr.left = cr.top = cr.right = cr.bottom = 0;
+    GetWindowRect(rb, &cr);
+    wsprintfA(buf, "  toolbar sits at %ld,%ld in the rebar, %ldx%ld\r\n",
+              wr.left - cr.left, wr.top - cr.top, wr.right - wr.left,
+              wr.bottom - wr.top);
+    emit(buf);
+    wr.left = wr.top = wr.right = wr.bottom = 0;
+    SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&wr);
+    wsprintfA(buf, "  and its button at %ld,%ld %ldx%ld inside that\r\n",
+              wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top);
+    emit(buf);
+}
+
 static char *arg(int want, char *line, int cap)
 {
     char *p = GetCommandLineA();
@@ -857,7 +965,7 @@ static void probe_main(void)
                         /* 300 tall, not 230: the two state bars go below the
                          * measuring one and a control off the client is a
                          * control that was never drawn. */
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 300,
+                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 380,
                         NULL, NULL, wc.hInstance, NULL);
 
     /* The same font the dialogs use, because a control's size is measured in
@@ -884,6 +992,8 @@ static void probe_main(void)
     toolbar(w, 23);
     richedit(w, font);
     barstates(w);
+    statusbar(w);
+    rebarband(w);
     CloseHandle(out_file);
 
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {

@@ -1212,6 +1212,13 @@ typedef struct tagTCITEMA {
 #define SB_SETICON (WM_USER + 15)
 #define SB_SETPARTS (WM_USER + 4)
 #define SB_GETPARTS (WM_USER + 6)
+#define SB_GETRECT (WM_USER + 10)
+/* The flags SB_SETTEXTA takes above the part index. Only the first is drawn
+ * differently here; the others are accepted and ignored. */
+#define SBT_NOBORDERS 0x0100
+#define SBT_POPOUT 0x0200
+#define SBT_RTLREADING 0x0400
+#define SBT_OWNERDRAW 0x1000
 #define SB_SIMPLE (WM_USER + 9)
 
 /* progress bar (comctl32) */

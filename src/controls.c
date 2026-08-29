@@ -1944,6 +1944,7 @@ typedef struct {
     int *edge; /* status-bar part right edges, in client coordinates */
     int nedge; /* how many of them there are: a part past them is the rest */
     HICON icon[8]; /* status bar: an icon before a part's text, or NULL */
+    unsigned pflags[8]; /* status bar: SBT_* for each part, from SB_SETTEXTA */
     int *image;  /* ComboBoxEx: the image each item names, -1 for none */
     int *indent; /* ComboBoxEx: how many steps in it is drawn */
     HIMAGELIST images; /* ComboBoxEx: where those images come from */
@@ -7264,12 +7265,46 @@ static LRESULT tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
  * bar's height: the parts grow downward with the window, not upward. */
 #define WEEN_SB_VBORDER 2
 
+/* Where part `i` of a status bar is, in client coordinates. One rule, shared
+ * by the paint and by SB_GETRECT, so that a bar cannot draw a part in one
+ * place and report it in another -- which is exactly the pair of numbers it
+ * took a Windows box to tell apart when WordPad's dividers came out two
+ * pixels right of the machine's.
+ *
+ * A part's right edge is the one the app gave; a part the app gave no edge
+ * for -- SB_SETTEXTA past the end makes one, and a bar whose parts were never
+ * set has one -- runs to the end of the bar. */
+static void status_part_rect(HWND wnd, int i, RECT *out)
+{
+    ween_items *it = items_of(wnd);
+    RECT cr;
+    int left = 0;
+
+    GetClientRect(wnd, &cr);
+    out->left = out->top = out->right = out->bottom = 0;
+    if (!it || i < 0 || i >= it->count)
+        return;
+    for (int k = 0; k <= i; k++) {
+        int right = k < it->nedge ? it->edge[k] : -1;
+        if (right < 0 || right > cr.right)
+            right = cr.right;
+        if (k == i) {
+            out->left = left;
+            out->top = cr.top + WEEN_SB_VBORDER;
+            out->right = right;
+            out->bottom = cr.bottom;
+            return;
+        }
+        left = right + 2; /* the gap between parts */
+    }
+}
+
 static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
     ween_items *it = items_of(wnd);
     struct ween_wnd *top = ween_top_level(wnd);
     RECT r = ps->rcPaint;
-    int ox, oy, left = 0, grip = 0;
+    int ox, oy, grip = 0;
 
     ween_client_origin(wnd, &ox, &oy);
     FillRect(dc, &r, GetSysColorBrush(COLOR_BTNFACE));
@@ -7277,23 +7312,16 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         grip = 15; /* the corner square the grip is drawn in */
 
     for (int i = 0; it && i < it->count; i++) {
-        /* A bar whose parts were never set has one, the width of the window:
-         * SB_SETTEXTA alone is enough to make a status bar, and win32 gives
-         * that text the whole strip. */
-        /* A part the app never gave an edge for -- SB_SETTEXTA past the end
-         * makes one -- runs to the end of the bar, as the only part of a bar
-         * with no parts set does. */
-        int right = i < it->nedge ? it->edge[i] : -1;
         RECT part;
-        if (right < 0 || right > r.right)
-            right = r.right;
-        part.left = left;
-        part.top = r.top + WEEN_SB_VBORDER;
-        part.right = right;
-        part.bottom = r.bottom;
-        ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
-                          part.right - part.left, part.bottom - part.top,
-                          BDR_SUNKENOUTER, BF_RECT, NULL);
+        status_part_rect(wnd, i, &part);
+        /* SBT_NOBORDERS: the part is drawn without its sunken box. WordPad's
+         * message pane is one -- on the machine "For Help, press F1" sits on
+         * the bare strip while the two indicator panes each have a box. */
+        if (!(i < (int)(sizeof(it->pflags) / sizeof(*it->pflags)) &&
+              (it->pflags[i] & SBT_NOBORDERS)))
+            ween_classic_edge(&top->surface, ox + part.left, oy + part.top,
+                              part.right - part.left, part.bottom - part.top,
+                              BDR_SUNKENOUTER, BF_RECT, NULL);
         if (it->icon[i]) { /* before the text, two in and one down */
             struct ween_dc idc;
             memset(&idc, 0, sizeof(idc));
@@ -7318,7 +7346,6 @@ static void status_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         }
         SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
         DrawTextA(dc, it->item[i], -1, &part, DT_LEFT | DT_SINGLELINE);
-        left = right + 2; /* the gap between parts */
     }
     if (grip) /* over the last part, which runs on under it */
         ween_classic_sizegrip(&top->surface, ox + r.right - 2,
@@ -7403,7 +7430,24 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
     }
+    case SB_GETRECT: {
+        /* Where a part is, asked rather than worked out. An app that draws in
+         * a part -- an owner-drawn one, or a progress bar dropped into it --
+         * has no other way to know, and neither has anybody trying to work
+         * out whether the bar agrees with Windows. Same rule as the paint,
+         * because they share the one function. */
+        RECT *out = (RECT *)lp;
+        if (!out)
+            return FALSE;
+        it = items_of(wnd);
+        if (!it || (int)wp < 0 || (int)wp >= it->count)
+            return FALSE;
+        status_part_rect(wnd, (int)wp, out);
+        return TRUE;
+    }
     case SB_SETTEXTA: {
+        /* The index is the low byte and the SBT_ flags are the rest, which is
+         * why a status bar has never had more than 255 parts. */
         int i = (int)(wp & 0xff);
         it = items_of(wnd);
         while (it && it->count <= i)
@@ -7417,6 +7461,8 @@ static LRESULT status_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 free(it->item[i]);
                 it->item[i] = copy;
             }
+            if (i < (int)(sizeof(it->pflags) / sizeof(*it->pflags)))
+                it->pflags[i] = (unsigned)wp & ~0xffu;
         }
         InvalidateRect(wnd, NULL, FALSE);
         return TRUE;
