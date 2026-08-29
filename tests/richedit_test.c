@@ -1802,6 +1802,130 @@ int main(void)
         DestroyWindow(t);
     }
 
+    {
+        /* §5's clicking, the parts the machine was measured for: a triple
+         * click takes the paragraph, the fourth press starts the count over,
+         * and a press in the selection bar takes a display line -- one
+         * wrapped row -- where a double click there takes the paragraph.
+         *
+         * The clock is the headless backend's virtual one, which does not
+         * advance unless a script asks it to, so three presses sent in a row
+         * are three presses at the same millisecond: exactly the run a
+         * person makes and the one win32 counts. */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                     ES_SELECTIONBAR,
+                                 0, 0, 140, 80, host, NULL, NULL, NULL);
+        CHARRANGE cr;
+        POINTL p;
+        int wrapped_rows;
+        /* "one" and its mark, then the middle paragraph and its mark: the
+         * range a triple click should take. Computed rather than counted by
+         * hand, so the text can be made longer without the numbers rotting. */
+        const int para_start = 4;
+        const int para_end =
+            para_start + (int)strlen("aaa bbb ccc ddd eee fff ggg hhh iii jjj") + 1;
+        /* Three paragraphs, the middle one long enough to wrap. */
+        SetWindowTextA(t,
+                       "one\r\naaa bbb ccc ddd eee fff ggg hhh iii jjj\r\n"
+                       "three");
+        SetFocus(t);
+        wrapped_rows = (int)SendMessageA(t, EM_GETLINECOUNT, 0, 0);
+        CHECK(wrapped_rows > 3,
+              "the middle paragraph wraps, so a display line and a paragraph "
+              "are different things to select");
+
+        /* Where the middle paragraph's second row is, so the clicks below
+         * land inside it rather than on arithmetic. */
+        p.x = p.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 10);
+        {
+            int x = p.x + 2, y = p.y + 2;
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMax - cr.cpMin <= 4 && cr.cpMax > cr.cpMin,
+                  "a double click in the text takes a word");
+            /* the third press, close in time and place */
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin == para_start && cr.cpMax == para_end,
+                  "and a third press takes the whole paragraph, wrapped "
+                  "lines and all");
+            /* and the fourth is a word again */
+            SendMessageA(t, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMax - cr.cpMin <= 4 && cr.cpMax > cr.cpMin,
+                  "a fourth press is a word again -- the count starts over");
+        }
+
+        /* A press far from the last double click is a first press, not a
+         * third: the run is broken by distance as well as by time. */
+        {
+            int x, y;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 10);
+            x = p.x + 2;
+            y = p.y + 2;
+            SendMessageA(t, WM_LBUTTONDBLCLK, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(x + 40, y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(x + 40, y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin == cr.cpMax,
+                  "and a press forty pixels away is a first press: it moves "
+                  "the caret and selects nothing");
+        }
+
+        /* The selection bar. It is the eight pixels ES_SELECTIONBAR adds, so
+         * x = 4 is inside it and the text begins at 9. */
+        {
+            int row1_y;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 10);
+            row1_y = p.y + 2;
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(4, row1_y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(4, row1_y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin >= para_start && cr.cpMax < para_end &&
+                      cr.cpMax > cr.cpMin,
+                  "a click in the selection bar takes the display line "
+                  "beside it -- part of the paragraph, not all of it");
+            SendMessageA(t, WM_LBUTTONDBLCLK, 0, MAKELPARAM(4, row1_y));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(4, row1_y));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMin == para_start && cr.cpMax == para_end,
+                  "and a double click there takes the whole paragraph");
+        }
+
+        /* A drag down the bar takes the lines it passes. */
+        {
+            POINTL a, b;
+            a.x = a.y = b.x = b.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&a, 0);
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&b, 10);
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(4, a.y + 2));
+            SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(4, b.y + 2));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(4, b.y + 2));
+            CHECK(cr.cpMin == 0 && cr.cpMax > 10,
+                  "a drag down the selection bar takes every line it passes, "
+                  "from the one it began on");
+        }
+        DestroyWindow(t);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

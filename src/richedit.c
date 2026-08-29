@@ -124,6 +124,19 @@ typedef struct {
     int undo_caret;
     int first_visible; /* the top line drawn */
     int sb_grab;       /* where in the thumb a drag took hold, or -1 */
+    /* The last double click, so that a press close to it in time and place
+     * can be told from a first one: win32 has no triple-click message, so a
+     * control that wants the third press counts them itself. */
+    unsigned long dbl_ms;
+    int dbl_x, dbl_y;
+    /* Whether dbl_ms means anything yet. A flag rather than a zero
+     * timestamp, because under the headless clock zero is a real time --
+     * the same trap the backend's own click pairing documents, and the one
+     * that made the third press here read as a first. */
+    int dbl_seen;
+    /* The display line a drag from the selection bar started on, or -1 when
+     * no such drag is running. */
+    int bar_anchor_row;
     /* Where a walk up or down the lines set out from, in pixels along the
      * line. A rich edit remembers it: the machine's, asked with
      * tools/vm/ctlprobe.c, walks down from twelve characters into a long
@@ -190,6 +203,7 @@ static ween_rich *rich_state(HWND w)
         ween_rich *e = calloc(1, sizeof(ween_rich));
         if (e) {
             e->sb_grab = -1;
+            e->bar_anchor_row = -1;
             e->text = calloc(1, 1); /* always a string, never NULL */
             e->cap = 1;
         }
@@ -1103,6 +1117,48 @@ static int rich_is_word_char(char c)
            (c >= '0' && c <= '9') || c == '\'';
 }
 
+/* Where the selection bar's columns are: from the control's own inset to the
+ * text's left edge, which is the eight pixels ES_SELECTIONBAR adds. A click
+ * inside them selects rather than places the caret -- §5, measured on the
+ * machine: one display line for a click, the paragraph for a double click,
+ * and line by line for a drag. */
+static int rich_in_selbar(HWND wnd, int x)
+{
+    RECT fmt;
+    int bar = rich_selbar(wnd);
+    if (bar <= 0)
+        return 0;
+    rich_fmt(wnd, &fmt);
+    return x >= 0 && x < fmt.left + bar;
+}
+
+/* The whole of one display line -- a wrapped row, not a paragraph. */
+static void rich_select_row(ween_rich *e, int row)
+{
+    if (row < 0 || row >= e->lines)
+        return;
+    e->anchor = e->line[row].start;
+    e->caret = row + 1 < e->lines ? e->line[row + 1].start
+                                  : e->line[row].start + e->line[row].len;
+}
+
+/* The whole paragraph an index is in, wrapped lines and all.
+ *
+ * **Whether the mark at the end goes with it is not measured**: §5 says a
+ * triple click takes "the whole paragraph, wrapped lines and all" and says
+ * nothing about the break. It is taken here, on the same reading as a double
+ * click taking the space after a word, and because a paragraph selected in
+ * WordPad highlights past its last character. ctlprobe.c asks the machine
+ * for the range, and this is what it will correct. */
+static void rich_select_para(ween_rich *e, int at)
+{
+    int p = para_at(e, at);
+    int start = e->para[p].start;
+    int end = p + 1 < e->paras ? e->para[p + 1].start : e->len;
+    e->anchor = start;
+    e->caret = end;
+}
+
 /* A double click takes the word under it, and the run of spaces if it landed
  * on one -- which is what the EDIT does and what the machine does. */
 static void rich_select_word(ween_rich *e)
@@ -1489,7 +1545,10 @@ static int rich_index_at_x(HWND wnd, ween_rich *e, int row, int x)
 /* Which character a point lands on: the row from the line table, since the
  * lines are no longer all one height, and then the nearest column on it. */
 
-static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
+/* Which display line a y falls on. One function because two things ask: the
+ * hit test below, and a drag from the selection bar, which takes whole lines
+ * and so wants the row rather than the character. */
+static int rich_row_at_y(HWND wnd, ween_rich *e, int y)
 {
     RECT fmt;
     int row, top;
@@ -1504,6 +1563,17 @@ static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
     }
     if (row < e->first_visible)
         row = e->first_visible;
+    if (row >= e->lines)
+        row = e->lines - 1;
+    return row;
+}
+
+static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
+{
+    int row;
+    if (!e || !e->lines)
+        return 0;
+    row = rich_row_at_y(wnd, e, y);
     if (row >= e->lines)
         row = e->lines - 1;
     /* `x` is the client x as it arrived. It used to have the border taken
@@ -2807,6 +2877,45 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         }
         SetFocus(wnd);
+        /* A press in the selection bar takes the display line beside it --
+         * one wrapped row, not the paragraph -- and a drag from there takes
+         * them line by line. §5, measured on the machine. */
+        if (rich_in_selbar(wnd, GET_X_LPARAM(lp))) {
+            int row = rich_row_at_y(wnd, e, GET_Y_LPARAM(lp));
+            rich_select_row(e, row);
+            e->bar_anchor_row = row;
+            e->goal_set = 0;
+            rich_selchange(wnd, e);
+            rich_show_caret(wnd, e);
+            SetCapture(wnd);
+            if (!had)
+                rich_notify(wnd, EN_SETFOCUS, ENM_CHANGE);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
+        /* The third press of a run: win32 sends no triple-click message, so
+         * a press close to the last double click in time and place is one.
+         * The fourth press arrives as a double click again -- the backend
+         * pairs presses rather than running them together -- which is what
+         * §5's "the count starts over" describes. */
+        if (e->dbl_seen &&
+            ween_now_ms() - e->dbl_ms <= (unsigned long)GetDoubleClickTime() &&
+            GET_X_LPARAM(lp) - e->dbl_x <= 4 &&
+            e->dbl_x - GET_X_LPARAM(lp) <= 4 &&
+            GET_Y_LPARAM(lp) - e->dbl_y <= 4 &&
+            e->dbl_y - GET_Y_LPARAM(lp) <= 4) {
+            rich_select_para(e, rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
+                                                    GET_Y_LPARAM(lp)));
+            e->dbl_seen = 0; /* the count starts over */
+            e->goal_set = 0;
+            rich_selchange(wnd, e);
+            rich_show_caret(wnd, e);
+            SetCapture(wnd);
+            if (!had)
+                rich_notify(wnd, EN_SETFOCUS, ENM_CHANGE);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
+        }
         e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
@@ -2834,6 +2943,28 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 rich_notify(wnd, EN_VSCROLL, ENM_SCROLL);
                 InvalidateRect(wnd, NULL, FALSE);
             }
+        } else if (GetCapture() == wnd && e->bar_anchor_row >= 0) {
+            /* A drag that began in the selection bar takes whole display
+             * lines, forwards or backwards from the one it started on. */
+            int row = rich_row_at_y(wnd, e, GET_Y_LPARAM(lp));
+            int a = e->bar_anchor_row, b = row, from, to;
+            if (b < a) {
+                int t = a;
+                a = b;
+                b = t;
+            }
+            from = e->line[a].start;
+            to = b + 1 < e->lines ? e->line[b + 1].start
+                                  : e->line[b].start + e->line[b].len;
+            if (row < e->bar_anchor_row) {
+                e->anchor = to;
+                e->caret = from;
+            } else {
+                e->anchor = from;
+                e->caret = to;
+            }
+            rich_selchange(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
         } else if (GetCapture() == wnd) {
             int at = rich_index_at_point(wnd, e,
                                          GET_X_LPARAM(lp),
@@ -2847,15 +2978,27 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_LBUTTONUP:
         e->sb_grab = -1;
+        e->bar_anchor_row = -1;
         if (GetCapture() == wnd)
             ReleaseCapture();
         return 0;
     case WM_LBUTTONDBLCLK:
         if (!(wnd->style & WS_DISABLED)) {
+            /* Remembered so the press after it can be told from a first one;
+             * see WM_LBUTTONDOWN. */
+            e->dbl_ms = ween_now_ms();
+            e->dbl_seen = 1;
+            e->dbl_x = GET_X_LPARAM(lp);
+            e->dbl_y = GET_Y_LPARAM(lp);
             e->caret = rich_index_at_point(wnd, e,
                                            GET_X_LPARAM(lp),
                                            GET_Y_LPARAM(lp));
-            rich_select_word(e);
+            /* In the selection bar it takes the paragraph rather than the
+             * word -- §5, measured. */
+            if (rich_in_selbar(wnd, GET_X_LPARAM(lp)))
+                rich_select_para(e, e->caret);
+            else
+                rich_select_word(e);
             rich_show_caret(wnd, e);
             rich_selchange(wnd, e);
             InvalidateRect(wnd, NULL, FALSE);

@@ -1900,6 +1900,17 @@ static int clock_is_virtual(void)
     return ween_active_backend == ween_backend_headless();
 }
 
+static unsigned long now_ms(void);
+
+/* The clock the whole library counts by: the real one, or the headless
+ * backend's virtual one so that a scripted run is reproducible. Exported
+ * because a control that has to tell a third click from a first needs it --
+ * win32 has no triple-click message and the control counts for itself. */
+unsigned long ween_now_ms(void)
+{
+    return now_ms();
+}
+
 static unsigned long now_ms(void)
 {
     if (clock_is_virtual())

@@ -616,6 +616,11 @@ void ween_register_richedit(void);
 int ween_rich_run_count(HWND w);
 
 int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
+/* Milliseconds on the library's own clock -- the headless backend's virtual
+ * one when it is running, so a scripted run counts the same every time. A
+ * control that has to tell a third click from a first needs it: win32 has no
+ * triple-click message and the control counts the presses itself. */
+unsigned long ween_now_ms(void);
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,
                          int enabled, int pos, int page, int min, int max);
 /* The bars a window wears itself (WS_HSCROLL/WS_VSCROLL): how much of the
