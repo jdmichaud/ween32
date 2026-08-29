@@ -1300,6 +1300,7 @@ pub const BS_LEFTTEXT = 0x00000020;
 pub const SS_LEFT = 0x00000000;
 pub const SS_CENTER = 0x00000001;
 pub const SS_RIGHT = 0x00000002;
+pub const STM_SETICON = 0x0170;
 pub const SS_ICON = 0x00000003;
 pub const SS_BLACKRECT = 0x00000004;
 pub const SS_GRAYRECT = 0x00000005;
