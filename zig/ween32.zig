@@ -402,6 +402,12 @@ pub const IDC_HAND = MAKEINTRESOURCE(32649);
 // ---- USER32: windows and messages ---------------------------------------
 
 pub extern fn RegisterClassA(wc: *const WNDCLASSA) callconv(.c) ATOM;
+/// A message number every program in the system agrees on, from a name.
+/// Ask twice for the same name and you get the same number; ask for a
+/// name nobody else has used and you get one nobody else will get. It is
+/// how `FINDMSGSTRING` becomes something a window procedure can compare
+/// `msg` against.
+pub extern fn RegisterWindowMessageA(name: LPCSTR) callconv(.c) UINT;
 pub extern fn CreateWindowExA(ex_style: DWORD, class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) callconv(.c) ?HWND;
 pub fn CreateWindowA(class_name: LPCSTR, window_name: ?LPCSTR, style: DWORD, x: c_int, y: c_int, w: c_int, h: c_int, parent: ?HWND, menu: HMENU, inst: HINSTANCE, param: ?*anyopaque) ?HWND {
     return CreateWindowExA(0, class_name, window_name, style, x, y, w, h, parent, menu, inst, param);
@@ -588,6 +594,47 @@ pub extern fn ShowScrollBar(wnd: HWND, bar: c_int, show: BOOL) callconv(.c) BOOL
 pub extern fn EnableScrollBar(wnd: HWND, bar: UINT, flags: UINT) callconv(.c) BOOL;
 
 // ---- COMDLG32 ------------------------------------------------------------
+
+/// What Find and Replace are asked for and what they answer with.
+///
+/// **Both boxes are modeless**, which is what makes this struct different from
+/// every other one here: the call puts a window up and returns straight away,
+/// and the program hears about each press through a message rather than from
+/// the call. So **this struct has to outlive the call** -- the box keeps the
+/// pointer and hands it back with every message -- which means a local is
+/// wrong and a `var` at file scope is right.
+///
+/// `lpstrFindWhat` and `lpstrReplaceWith` are the program's own buffers and
+/// the box types into them, so they are `LPSTR` rather than `LPCSTR` and
+/// `wFindWhatLen` says how big they are.
+pub const FINDREPLACEA = extern struct {
+    lStructSize: DWORD = @sizeOf(FINDREPLACEA),
+    hwndOwner: ?HWND = null,
+    hInstance: HINSTANCE = null,
+    Flags: DWORD = 0,
+    lpstrFindWhat: ?LPSTR = null,
+    lpstrReplaceWith: ?LPSTR = null,
+    wFindWhatLen: WORD = 0,
+    wReplaceWithLen: WORD = 0,
+    lCustData: LPARAM = 0,
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
+    lpTemplateName: ?LPCSTR = null,
+};
+
+/// The name to hand `RegisterWindowMessageA` to get the message both boxes
+/// send. **Not checked by any gate** -- `tools/zigbind/genconsts.py` derives
+/// numbers from the header and this is a string -- so it is written out
+/// exactly as `include/ween32.h` has it and must stay that way.
+pub const FINDMSGSTRING = "commdlg_FindReplace";
+
+/// Put the Find box up. Modeless: this answers with the window at once, and
+/// every press arrives afterwards as `RegisterWindowMessageA(FINDMSGSTRING)`
+/// with the FINDREPLACEA in `lParam`. **Neither box searches** -- the
+/// searching is the program's, which is why a text editor and a hex editor
+/// can wear the same dialog.
+pub extern fn FindTextA(fr: *FINDREPLACEA) callconv(.c) ?HWND;
+/// The same, with the two extra fields and the three extra buttons.
+pub extern fn ReplaceTextA(fr: *FINDREPLACEA) callconv(.c) ?HWND;
 
 pub const OPENFILENAMEA = extern struct {
     lStructSize: DWORD = @sizeOf(OPENFILENAMEA),
@@ -929,6 +976,21 @@ pub const TEXTRANGEA = extern struct {
 pub const FR_DOWN = 0x00000001;
 pub const FR_WHOLEWORD = 0x00000002;
 pub const FR_MATCHCASE = 0x00000004;
+/// The rest of the same word, which only the *box* uses: which button was
+/// pressed, and which parts of the box to leave out. A program reads the
+/// first group to search with and the second group to find out why it was
+/// asked. See FINDREPLACEA.
+pub const FR_FINDNEXT = 0x00000008;
+pub const FR_REPLACE = 0x00000010;
+pub const FR_REPLACEALL = 0x00000020;
+pub const FR_DIALOGTERM = 0x00000040;
+pub const FR_SHOWHELP = 0x00000080;
+pub const FR_NOUPDOWN = 0x00000400;
+pub const FR_NOMATCHCASE = 0x00000800;
+pub const FR_NOWHOLEWORD = 0x00001000;
+pub const FR_HIDEUPDOWN = 0x00004000;
+pub const FR_HIDEMATCHCASE = 0x00008000;
+pub const FR_HIDEWHOLEWORD = 0x00010000;
 pub const EM_FINDTEXT = (WM_USER + 56);
 pub const EM_FINDTEXTEX = (WM_USER + 79);
 pub const FINDTEXTA = extern struct {
