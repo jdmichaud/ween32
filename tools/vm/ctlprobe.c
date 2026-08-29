@@ -1217,6 +1217,63 @@ static void caret_here(HWND w, const char *cls, const char *when, int rich)
     emit(buf);
 }
 
+/* What an EDIT's EM_POSFROMCHAR answers, at its edges as well as in the
+ * middle. ween32's EDIT does not implement it at all -- it answers nought for
+ * every index, which is a live trap for the first caller -- and the parts
+ * that are not simply "where the caret would be" are the parts worth asking
+ * the machine rather than reading a document about.
+ *
+ * An EDIT packs the answer into the return value, x in the low word and y in
+ * the high one, where a rich edit takes a POINTL. Both are signed. */
+static void edit_positions(HWND parent, HFONT font)
+{
+    HWND e = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+                             WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                 ES_AUTOVSCROLL,
+                             330, 480, 300, 60, parent, NULL, NULL, NULL);
+    int i;
+    if (!e) {
+        wsprintfA(buf, "  no EDIT: %lu\r\n", GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(e, WM_SETFONT, (WPARAM)font, FALSE);
+    emit("== an EDIT's EM_POSFROMCHAR ==\r\n");
+
+    /* Empty: where does character nought stand, and what does one past it
+     * answer? */
+    SetWindowTextA(e, "");
+    for (i = 0; i <= 1; i++) {
+        LRESULT r = SendMessageA(e, EM_POSFROMCHAR, (WPARAM)i, 0);
+        wsprintfA(buf, "  empty control, index %d -> %ld,%ld (raw %08lX)\r\n", i,
+                  (long)(short)LOWORD(r), (long)(short)HIWORD(r),
+                  (unsigned long)r);
+        emit(buf);
+    }
+
+    /* Two lines, so the y of the second says what a line's height is here and
+     * whether the first line's y is nought or the control's own inset. */
+    SetWindowTextA(e, "abc\r\ndef");
+    for (i = 0; i <= 9; i++) {
+        LRESULT r = SendMessageA(e, EM_POSFROMCHAR, (WPARAM)i, 0);
+        wsprintfA(buf, "  \"abc\\r\\ndef\" index %d -> %ld,%ld (raw %08lX)\r\n", i,
+                  (long)(short)LOWORD(r), (long)(short)HIWORD(r),
+                  (unsigned long)r);
+        emit(buf);
+    }
+
+    /* And the other direction, so the pair can be held to each other: the
+     * documented inverse is EM_CHARFROMPOS. */
+    for (i = 0; i < 4; i++) {
+        int x = i * 8 + 1;
+        LRESULT r = SendMessageA(e, EM_CHARFROMPOS, 0, MAKELPARAM(x, 4));
+        wsprintfA(buf, "  EM_CHARFROMPOS at %d,4 -> char %ld line %ld\r\n", x,
+                  (long)(short)LOWORD(r), (long)(short)HIWORD(r));
+        emit(buf);
+    }
+    DestroyWindow(e);
+}
+
 static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
 {
     /* Visible, because an invisible control has not laid anything out and
@@ -1348,6 +1405,7 @@ static void richedit(HWND parent, HFONT font)
          "   caret actually is on 28.)\r\n");
     column_walk(parent, font, "RichEdit20A", 1);
     column_walk(parent, font, "EDIT", 0);
+    edit_positions(parent, font);
     paragraphs(parent, font);
     wrapping(parent, font);
     tabs(parent, font);

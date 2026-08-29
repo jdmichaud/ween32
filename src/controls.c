@@ -951,6 +951,35 @@ static int edit_margin(HWND wnd)
     return (ween_border_width(wnd) ? 1 : 0) + margin;
 }
 
+/* Where a field's text begins, in client pixels. The border and the margin,
+ * and then whatever ES_RIGHT or ES_CENTER does with what is left over -- a
+ * single line only, since neither style means anything to a field of many.
+ *
+ * One function because three things ask: the drawing, the caret, and
+ * EM_POSFROMCHAR. Two of them used to work it out separately and the third
+ * did not exist. */
+static int edit_text_x(HWND wnd)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int x = edit_margin(wnd);
+    if (!(wnd->style & ES_MULTILINE) && f &&
+        (wnd->style & (ES_CENTER | ES_RIGHT))) {
+        ween_edit *m = edit_state(wnd);
+        int rmargin = m && m->right_margin >= 0 ? m->right_margin
+                                                : edit_default_margin(wnd);
+        int sb = (wnd->style & WS_VSCROLL) ? ween_scroll_metric() : 0;
+        int tw = ween_strike_text_width(f, wnd->text, (int)strlen(wnd->text));
+        int inset = ween_border_width(wnd) ? 1 : 0;
+        RECT cr;
+        int room;
+        GetClientRect(wnd, &cr);
+        room = cr.right - sb - x - (inset + rmargin) - tw;
+        if (room > 0)
+            x += (wnd->style & ES_RIGHT) ? room : room / 2;
+    }
+    return x;
+}
+
 /* The character index nearest an x offset within the text. */
 /* Which character a point falls on, counted from the start of the line that
  * point is on. One line or many: a single-line field is the y that never
@@ -1079,20 +1108,15 @@ static void edit_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         if (m && m->right_margin >= 0)
             rmargin = m->right_margin;
     }
-    int tx = inset + margin;
-    int ty = inset;
     /* ES_RIGHT and ES_CENTER: a single line sits against the far margin or in
      * the middle of what is between the two. A number in a field is usually
-     * right-aligned — the machine's reminder-minutes box is. */
-    if (!multi && f && (wnd->style & (ES_CENTER | ES_RIGHT))) {
-        RECT cr;
-        int tw = ween_strike_text_width(f, wnd->text, (int)strlen(wnd->text));
-        int room;
-        GetClientRect(wnd, &cr);
-        room = cr.right - sb - (inset + margin) - (inset + rmargin) - tw;
-        if (room > 0)
-            tx += (wnd->style & ES_RIGHT) ? room : room / 2;
-    }
+     * right-aligned — the machine's reminder-minutes box is. edit_text_x
+     * knows all of that, and EM_POSFROMCHAR asks the same function, so the
+     * caret and the answer cannot drift apart. */
+    int tx = edit_text_x(wnd);
+    int ty = inset;
+    (void)margin;
+    (void)rmargin;
     {
         ween_edit *e = edit_state(wnd);
         /* A field hides its selection when the keyboard leaves it, unless it
@@ -1348,6 +1372,69 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
+    case EM_POSFROMCHAR: {
+        /* Where a character stands, in client pixels, packed x in the low
+         * word and y in the high one -- which is how an EDIT answers and how
+         * a rich edit does not: that one takes a POINTL and fills it in.
+         *
+         * Until this, ween32's EDIT answered nought for every index, because
+         * nothing here had ever asked. It is the same arithmetic the caret is
+         * drawn with, through the same edit_text_x, so the two cannot say
+         * different things about one index.
+         *
+         * **The boundary is the machine's, and it is not the obvious one.**
+         * captures-sam/ctl14.txt, an EDIT holding "abc\r\ndef":
+         *
+         *     index 0..2  ->  4,1   10,1   16,1
+         *     index 3, 4  ->  21,1  21,1    the CR and the LF share the end
+         *                                   of the first line; neither
+         *                                   begins the second
+         *     index 5..7  ->  4,14  10,14  16,14
+         *     index 8     ->  -1            and 8 is the *length*
+         *     empty field, index 0 -> -1
+         *
+         * So a field refuses the position after its last character, and an
+         * empty one refuses everything: `at >= len`, not `at > len`. The
+         * difference is exactly the index a caller asks about most, since a
+         * caret sits at the end of a field far more often than in the middle
+         * of one. */
+        const ween_strike *pf = wnd->font ? wnd->font : ween_gui_font();
+        int line = pf ? pf->ascent - pf->descent : 13;
+        int multi = (wnd->style & ES_MULTILINE) != 0;
+        int at = (int)wp, row, start, x, y;
+        if (at < 0 || at >= len)
+            return -1;
+        /* A break's second byte belongs to the line the break ends rather
+         * than the one it begins: the machine answers 21,1 for the CR and
+         * 21,1 for the LF after it. */
+        if (at > 0 && wnd->text[at] == '\n' && wnd->text[at - 1] == '\r')
+            at--;
+        row = multi ? ween_text_line_from_char(wnd->text, at) : 0;
+        start = multi ? ween_text_line_start(wnd->text, row) : 0;
+        x = edit_text_x(wnd) +
+            (pf ? ween_strike_pen(pf, wnd->text + start, at - start)
+                : at - start);
+        y = (ween_border_width(wnd) ? 1 : 0) +
+            (row - (multi && e ? e->first_visible : 0)) * line;
+        return (LRESULT)MAKELONG((short)x, (short)y);
+    }
+    case EM_CHARFROMPOS: {
+        /* The inverse, and the same rule the rich edit's click follows: the
+         * nearest place between two characters. The machine, on the same
+         * field whose characters stand at 4, 10, 16 and 21:
+         *
+         *     x = 1 -> 0    x = 9 -> 1    x = 17 -> 2    x = 25 -> 3
+         *
+         * which is nearest-boundary and not the character the point is
+         * inside -- 9 is within the 'a' that spans 4 to 10, and the answer is
+         * 1. The line the point is on comes back in the high word. */
+        int px = (int)(short)LOWORD(lp), py = (int)(short)HIWORD(lp);
+        int at = edit_index_at_point(wnd, px - edit_text_x(wnd), py);
+        int row = (wnd->style & ES_MULTILINE)
+                      ? ween_text_line_from_char(wnd->text, at)
+                      : 0;
+        return (LRESULT)MAKELONG((short)at, (short)row);
+    }
     case EM_GETSEL: {
         int from = 0, to = 0;
         if (e)

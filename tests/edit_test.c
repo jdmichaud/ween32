@@ -521,6 +521,123 @@ int main(void)
     DestroyWindow(host2);
     DestroyWindow(host);
 
+    {
+        /* EM_POSFROMCHAR and EM_CHARFROMPOS, which this control answered
+         * nought to for every index until it was asked. Every boundary below
+         * is the machine's, out of `captures-sam/ctl14.txt` -- an EDIT
+         * holding "abc\r\ndef", which is what this field holds:
+         *
+         *     index 0..2  ->  4,1   10,1   16,1
+         *     index 3, 4  ->  21,1  21,1     the CR and the LF share the end
+         *                                    of the first line
+         *     index 5..7  ->  4,14  10,14  16,14
+         *     index 8     ->  -1            and 8 is the length
+         *     empty field, index 0 -> -1
+         *     CHARFROMPOS  x = 1 -> 0, 9 -> 1, 17 -> 2, 25 -> 3
+         *
+         * The x's are the machine's font and are not asserted; the shape is.
+         * And the check for a position is not arithmetic against the same
+         * arithmetic -- it is **the caret**, since a test that re-computed
+         * the pen would pass whatever the implementation did.
+         */
+        HWND host3 = CreateWindowExA(0, "weenedit", "host3",
+                                     WS_POPUP | WS_CAPTION | WS_VISIBLE, 0, 0,
+                                     300, 120, NULL, NULL, NULL, NULL);
+        HWND f3 = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+                                  WS_CHILD | WS_VISIBLE | ES_MULTILINE, 10, 10,
+                                  200, 60, host3, NULL, NULL, NULL);
+        struct ween_wnd *hw = (struct ween_wnd *)host3;
+        static const int reachable[] = { 0, 1, 2, 3, 5, 6, 7 };
+        int k, bad = 0;
+        SetWindowTextA(f3, "abc\r\ndef");
+        SetFocus(f3);
+        for (k = 0; k < 7 && !bad; k++) {
+            int i = reachable[k];
+            LRESULT r;
+            int ox, oy, want_x, want_y, seen = -1, y;
+            SendMessageA(f3, EM_SETSEL, i, i);
+            InvalidateRect(f3, NULL, TRUE);
+            ween_flush_paint();
+            r = SendMessageA(f3, EM_POSFROMCHAR, (WPARAM)i, 0);
+            ween_client_origin(f3, &ox, &oy);
+            want_x = ox + (short)LOWORD(r);
+            want_y = oy + (short)HIWORD(r);
+            for (y = want_y; y < want_y + 4 && seen < 0; y++)
+                for (int x = ox; x < ox + 190; x++)
+                    if (hw->surface.px &&
+                        (hw->surface.px[(size_t)y * hw->surface.w + x] &
+                         0xffffff) == WEEN_BLACK &&
+                        x >= want_x - 6 && x <= want_x + 6) {
+                        seen = x;
+                        break;
+                    }
+            if (seen != want_x) {
+                printf("     index %d: EM_POSFROMCHAR says %d, the caret is "
+                       "drawn at %d\n", i, want_x, seen);
+                bad = 1;
+            }
+        }
+        CHECK(!bad,
+              "EM_POSFROMCHAR answers where the caret is actually drawn, at "
+              "every index of a two-line field a caret can reach");
+
+        {
+            LRESULT a = SendMessageA(f3, EM_POSFROMCHAR, 0, 0);
+            LRESULT cr = SendMessageA(f3, EM_POSFROMCHAR, 3, 0);
+            LRESULT lf = SendMessageA(f3, EM_POSFROMCHAR, 4, 0);
+            LRESULT b = SendMessageA(f3, EM_POSFROMCHAR, 5, 0);
+            const ween_strike *sf = ween_gui_font();
+            int line = sf ? sf->ascent - sf->descent : 13;
+            CHECK(cr == lf && (short)HIWORD(cr) == (short)HIWORD(a),
+                  "the CR and the LF of a break answer the same place, and it "
+                  "is on the line the break ends rather than the one it "
+                  "begins");
+            CHECK((short)LOWORD(a) == (short)LOWORD(b) &&
+                      (short)HIWORD(b) - (short)HIWORD(a) == line,
+                  "and the second line's first character is one line below "
+                  "the first's, in the same column");
+        }
+
+        /* The boundary, which is the part that was wrong before it was
+         * measured: a field refuses the position *after* its last character,
+         * and an empty one refuses everything. */
+        CHECK(SendMessageA(f3, EM_POSFROMCHAR, 8, 0) == -1,
+              "the index one past the last character -- the length itself, "
+              "where a caret sits most often -- is refused");
+        CHECK(SendMessageA(f3, EM_POSFROMCHAR, 99, 0) == -1,
+              "and so is one well past the end");
+        SetWindowTextA(f3, "");
+        CHECK(SendMessageA(f3, EM_POSFROMCHAR, 0, 0) == -1,
+              "an empty field refuses index nought rather than answering "
+              "where its caret would go");
+
+        /* EM_CHARFROMPOS is the inverse, and asking it where a character is
+         * has to give that character back. */
+        SetWindowTextA(f3, "abc\r\ndef");
+        {
+            static const int back[] = { 0, 1, 2, 5, 6, 7 };
+            int n;
+            bad = 0;
+            for (n = 0; n < 6; n++) {
+                LRESULT p = SendMessageA(f3, EM_POSFROMCHAR, back[n], 0);
+                LRESULT c = SendMessageA(f3, EM_CHARFROMPOS, 0,
+                                         MAKELPARAM((short)LOWORD(p),
+                                                    (short)HIWORD(p) + 2));
+                int row = back[n] < 3 ? 0 : 1;
+                if ((short)LOWORD(c) != back[n] || (short)HIWORD(c) != row) {
+                    printf("     char %d is at %d,%d, and that point answers "
+                           "%d on line %d\n",
+                           back[n], (short)LOWORD(p), (short)HIWORD(p),
+                           (short)LOWORD(c), (short)HIWORD(c));
+                    bad = 1;
+                }
+            }
+            CHECK(!bad, "EM_CHARFROMPOS gives back the character "
+                        "EM_POSFROMCHAR placed, with its line");
+        }
+        DestroyWindow(host3);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
