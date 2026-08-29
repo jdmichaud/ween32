@@ -1,0 +1,22 @@
+== SCF_DEFAULT, the way WordPad sets its editor up ==
+  before anything, selection         sel    face System                 height 195
+  before anything, default           deflt  face System                 height 195
+  EM_SETCHARFORMAT SCF_DEFAULT   Arial 10 -> 1
+  after the set, selection           sel    face Arial                  height 200
+  after the set, default             deflt  face Arial                  height 200
+  -- SetWindowTextA("hello") --
+  after the text, selection          sel    face Arial                  height 200
+  after the text, default            deflt  face Arial                  height 200
+  after the text, all selected       sel    face Arial                  height 200
+
+== SCF_SELECTION instead, same control otherwise ==
+  EM_SETCHARFORMAT SCF_SELECTION Arial 10 -> 1
+  after the set, selection           sel    face Arial                  height 200
+  -- SetWindowTextA("hello") --
+  after the text, selection          sel    face System                 height 195
+  after the text, all selected       sel    face System                 height 195
+
+Arial after the text in the first block -> rule A: SCF_DEFAULT
+outlives WM_SETTEXT and ween32 needs a third stored format.
+The control's own face there -> rule B: WordPad must set it again
+after a load, and the fix is in doc.zig.
