@@ -595,7 +595,7 @@ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
   WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:200 a:13 w:900" \
   ./examples/explorer
 PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
-  tools/refcapture/pxdiff.py                  # expect 640 / 162581 — 0.4%
+  tools/refcapture/pxdiff.py                  # see below: this number moves
 ```
 
 | what | differing | what it is |
@@ -603,9 +603,19 @@ PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
 | CONFIG.SYS | 640 | 453 the caption's bold title, 145 the icon quantised, 42 two glyphs |
 | boot | 294 | 236 the two icons quantised, 48 the same two glyphs and the title |
 
-Both were counted on the day the captures were taken. The Accessed row is
-today's date on either side, so on any other day it differs too — 22 pixels
-where the day of the month is.
+**Both were counted on the day the captures were taken, and neither is what
+you will get.** The Accessed row is today's date on either side, so the count
+moves with the calendar — up to 22 pixels where the day of the month is.
+`tools/verify.sh` stores **652** and **306**, and both are exactly **twelve
+more** than the two numbers above: the same drift, in both, from the same
+cause.
+
+So there are two authorities here saying different things and **both are
+right, for different days** — which is worth naming because it is the shape
+that wastes an afternoon. **`verify.sh` is the one to quote**; the numbers in
+this table are kept for their third column, which does not move, and its own
+output says *"Properties carries the day of the month in it and moves on its
+own."*
 
 Nothing else in either differs. The icons are the machine's own quantisation
 — it draws them through a sixteen bit image list, so its pixel is ours with
@@ -1975,6 +1985,39 @@ without it — one scanned for a gripper starting on the control's own white edg
 and so compared two buttons rather than two grippers; the other read freed
 memory that happened to survive, and only the sanitizer build could tell.
 Break the library on purpose, watch the assertion go red, put it back.
+
+### What a guess is reasoned from
+
+Everything above is about numbers that are wrong. This is about numbers that
+are *absent* — the places where nothing has been measured and something has to
+ship anyway. Three shipped in WordPad's §8.8 on 2026-08-29, all three labelled
+as guesses in the same words and the same tone. **Two were right and one was
+wrong**, and the difference was visible before any of them was measured:
+
+| the guess | reasoned from | result |
+| --- | --- | --- |
+| Find wraps at the end of the document | the box has **no wrap checkbox** where Notepad's has one, so there is no choice to offer | right |
+| Find Next is greyed until a search has been made | the command has **nothing to repeat**, which is the program's own state | right |
+| a failed search says `Cannot find "x"` | **Notepad says something like that** | wrong |
+
+The two that survived were reasoned from **this program's own structure** — a
+control that is absent, a state that cannot exist. The one that failed was
+reasoned from **a sibling program**, and a sibling is seductive evidence: same
+authors, same era, same job, right next door. It is still not evidence.
+
+**And the wrong one was the only one nobody would ever have questioned.** The
+machine says `WordPad has finished searching the document.` — it does not name
+what was searched for, and it is the same message whether or not anything was
+found, which is the only sentence a *wrapping* search can honestly say.
+`Cannot find "x"` is not a worse wording of that; **it is a different claim**,
+it names the thing you searched for, and it therefore looks *more* helpful
+than the truth. Nobody files a bug against a message that reads better than
+the right one.
+
+So, before shipping a guess: **ask what it is reasoned from.** From this
+program's own structure, ship it labelled. From another program, do not ship
+it — go and measure, or leave the behaviour out, because when that kind of
+guess is wrong it is wrong in a way that reads as correct.
 
 ### Window geometry, without a window system
 
