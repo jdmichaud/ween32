@@ -84,11 +84,11 @@ count() { # name reference our-png expected
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=$tmp/s.bmp ./examples/controls >/dev/null 2>&1
 magick "$tmp/s.bmp" "$tmp/s.png" 2>/dev/null
-count "wine sampler" "$R/reference.png" "$tmp/s.png" 14178
+count "wine sampler" "$R/reference.png" "$tmp/s.png" 14877
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=$tmp/m.bmp ./examples/menu >/dev/null 2>&1
 magick "$tmp/m.bmp" "$tmp/m.png" 2>/dev/null
-count "wine menu" "$R/menu-reference.png" "$tmp/m.png" 4397
+count "wine menu" "$R/menu-reference.png" "$tmp/m.png" 4162
 
 # The explorer's dialogs, each driven from the keyboard by the script that
 # opens it. The shot wanted is the last one of the reference's own size --

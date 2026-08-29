@@ -142,12 +142,12 @@ make clean && make
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/ours.bmp ./examples/controls
 magick /tmp/ours.bmp /tmp/ours.png
-tools/refcapture/pxdiff.py                  # expect 14178 / 298596 — 4.7%
+tools/refcapture/pxdiff.py                  # expect 14877 / 298596 — 5.0%
 
 WEEN32_HEADLESS=1 WEEN32_DPI=96 WEEN32_BMP=/tmp/m.bmp ./examples/menu
 magick /tmp/m.bmp /tmp/m.png
 PXDIFF_REF=tools/refcapture/menu-reference.png PXDIFF_OUR=/tmp/m.png \
-  tools/refcapture/pxdiff.py                # expect 4397 / 39200 — 11.2%
+  tools/refcapture/pxdiff.py                # expect 4162 / 39200 — 10.6%
 ```
 
 Most of both — 3170 of the menu's and about 6300 of the sampler's — is one
@@ -1460,14 +1460,35 @@ eighteen. That is not the ramp — it is the *window*. The machine's WordPad
 has an icon in its caption and ours has not been given one yet, and the two
 columns past the icon's room are what an icon earns.
 
-**One thing still not measured, and marked here rather than guessed**: a
-window that keeps the icon's room without an icon of its own — a system menu
-and nothing hung on it. Every capture we have is of a window that has one.
-Wine holds eighteen either way, and the menu sampler is 235 pixels closer to
-wine if we do the same, which is a reason to look but not a reason to change:
-the way to settle it is a capture of a captioned window with a system menu
-and nothing hung on it, at a width where the ramp is long enough to show the
-two columns.
+**The fifth width settles the window that has no icon of its own.**
+`caption-460-noicon-machine.png` is `tools/vm/ctlprobe.c`'s own window on the
+machine — `WS_OVERLAPPEDWINDOW`, 460 wide, and a class whose `hIcon` is NULL,
+since the whole `WNDCLASS` is memset and nothing puts one there. Its ramp is
+the same rule with the same hold of **eighteen**, every one of its 452
+columns. So the hold does not depend on the window having an icon, and
+`icon_w` no longer asks: a caption that keeps the icon's room keeps the two
+columns past it as well.
+
+**Why it holds eighteen is worth knowing, because it is a job not done.** The
+room is not empty on the machine. Subtract the ramp from that capture and 99
+pixels are left in it — a small dithered thing with the four colours of the
+Windows flag in its right half — and the title starts at the caption's left
+plus twenty, not hard against the frame. That is Windows 2000 drawing *its*
+default icon for a window whose class has none. This library draws nothing
+there and puts the title hard left, so a system-menu window without an icon
+comes out with a gap where the machine has a picture. The machine's pixels
+for it are kept as `tools/refcapture/caption-default-icon-machine.png` — 16x16,
+transparent where the ramp showed through, lifted off a single capture. They
+are evidence, not a resource: what to do with them is draw the icon and move
+`title_x` with it, and then every capture of a window in that state moves.
+
+**What the hold cost against wine, deliberately.** Wine holds sixteen for
+such a window, so the controls sampler goes 14,178 → **14,877**, all 699 of
+them in rows 4..21 and nothing else in the window touched; the menu sampler
+goes the other way, 4,397 → **4,162**, which says wine's two samplers do not
+agree with each other about this. Every comparison against the machine is
+unchanged. When wine and five machine captures disagree, this repository
+follows the machine.
 
 
 ### The toolbar, asked rather than looked at

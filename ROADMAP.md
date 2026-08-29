@@ -644,12 +644,15 @@ PXDIFF_REF=tools/refcapture/menu-reference.png \
 PXDIFF_OUR=/tmp/menu_ween.png tools/refcapture/pxdiff.py   # the menu sampler
 ```
 
-The two samplers differ from their wine renders by 14178 of 298596 pixels and
-4397 of 39200, and most of both is *deliberate*: where wine and a Windows 2000
-disagree, ween32 follows the machine. The newest hundred are the option
-buttons: wine draws the circle at its control's left edge and Windows draws
-it one column in, which the guest's own GetWindowRect settles in two dialogs
-at once. [docs/testing.md](docs/testing.md) keeps
+The two samplers differ from their wine renders by 14877 of 298596 pixels and
+4162 of 39200, and most of both is *deliberate*: where wine and a Windows 2000
+disagree, ween32 follows the machine. The newest 699 are the caption's ramp: it
+holds eighteen columns whether or not the window has an icon of its own,
+which the machine's own icon-less window says at 460 wide and wine's two
+samplers cannot agree on. The hundred before them are the option buttons:
+wine draws the circle at its control's left edge and Windows draws it one
+column in, which the guest's own GetWindowRect settles in two dialogs at
+once. [docs/testing.md](docs/testing.md) keeps
 the current numbers and what every band of them is; the section below is why
 the deliberate ones are there.
 

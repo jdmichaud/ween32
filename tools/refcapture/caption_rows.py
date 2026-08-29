@@ -35,6 +35,12 @@ SOURCES = (
     (654, os.path.join(HERE, "caption-654-machine.png")),
     (768, os.path.join(HERE, "..", "..", "..", "wordpad", "reference",
                        "shots", "win.png")),
+    # A fifth, and the one that answers a question the other four cannot:
+    # tools/vm/ctlprobe.c's own window, whose class icon is NULL. Its ramp
+    # holds the same eighteen columns as WordPad's -- because the machine
+    # draws its own default icon in that room, which is visible in the
+    # capture and lifted out into caption-default-icon-machine.png.
+    (460, os.path.join(HERE, "caption-460-noicon-machine.png")),
 )
 WIDTHS = tuple(w for w, _ in SOURCES)
 

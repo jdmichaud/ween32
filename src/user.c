@@ -3361,14 +3361,16 @@ LRESULT DefWindowProcA(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int shows_icon = !(wnd->ex_style & WS_EX_TOOLWINDOW) &&
                          (wnd->icon ||
                           ((wnd->style & WS_SYSMENU) && !wnd->is_dialog));
-        /* The room the icon takes, and the two columns past it where the
-         * ramp begins. The two are measured on a window that has an icon;
-         * whether a window that keeps the room without one of its own also
-         * keeps them is not, so it does not -- see the note in
-         * docs/testing.md, which says what to capture to settle it. */
-        int icon_w = shows_icon ? ween_ncm(WEEN_NC_SMICON) +
-                                      (wnd->icon ? ween_ncm(2) : 0)
-                                : 0;
+        /* The room the icon takes and the two columns past it, which is
+         * where the ramp begins -- eighteen at 96 dpi, whether or not this
+         * window has an icon of its own. Both cases are measured:
+         * `caption-400-machine.png` and its neighbours are WordPad, which
+         * has one, and `caption-460-noicon-machine.png` is ctlprobe's own
+         * window, whose class icon is NULL. Their ramps hold the same
+         * eighteen columns -- because the machine puts its own default icon
+         * in that room rather than leaving it empty, which is a thing this
+         * library does not do yet: see docs/testing.md. */
+        int icon_w = shows_icon ? ween_ncm(WEEN_NC_SMICON) + ween_ncm(2) : 0;
         /* The gradient stops short of every caption button, not just the
          * close one: on the machine it has reached its end colour three
          * pixels before the leftmost of the three. A caption with only a

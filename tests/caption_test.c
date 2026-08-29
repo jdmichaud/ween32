@@ -1,16 +1,19 @@
 /* The caption's gradient, against the machine's own.
  *
- * `tools/refcapture/caption-400-machine.png` and its two neighbours are the
- * top thirty rows of a WordPad frame, sized from inside the guest with
+ * `tools/refcapture/caption-400-machine.png` and its neighbours are the top
+ * thirty rows of a WordPad frame, sized from inside the guest with
  * SetWindowPos, so what is in them is the machine's ramp at three widths and
- * nothing else. Row 4 of each is a caption row clear of the icon and the
- * title, which makes it the ramp and only the ramp.
+ * nothing else; the fourth is the machine's WordPad at 768 and the fifth is
+ * ctlprobe's own window at 460, whose class icon is NULL. Row 4 of each is a
+ * caption row clear of the icon and the title, which makes it the ramp and
+ * only the ramp.
  *
  * The rule under it, which cost several attempts to find and is worth
  * stating once here as well as in docs/testing.md:
  *
  *   - the start colour is held across the icon's room and the two columns
- *     past it -- eighteen at 96 dpi;
+ *     past it -- eighteen at 96 dpi, and eighteen whether or not the window
+ *     has an icon of its own, since the machine draws a default one there;
  *   - the ramp then runs to fifty-five pixels before the client's right
  *     edge, which is the room the three caption buttons take;
  *   - and a channel at distance d along a span is
@@ -23,7 +26,7 @@
  *     twelve. The plain floor of the same division misses those and nothing
  *     else; a step worked out once and added up misses far more.
  *
- * This draws the ramp with those numbers and holds it against all three
+ * This draws the ramp with those numbers and holds it against all five
  * captures, so a change to any part of it has to say so here.
  */
 
