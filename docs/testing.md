@@ -10,11 +10,18 @@ make clean && make
 make test
 ```
 
-Expect **1023 `ok` lines and no `FAIL`**. The count only goes up — if it has
-dropped, a test file stopped being built rather than a test starting to pass.
-The number here is written by hand and so is wrong between the commit that
-adds a test and the commit that remembers this line; `tools/verify.sh` prints
-what the suite actually says, and that is the one to quote.
+Expect **no `FAIL`, and more `ok` lines than last time**. The count only goes
+up — if it has dropped, a test file stopped being built rather than a test
+starting to pass.
+
+**There is no number in that sentence any more, and its absence is the
+point.** There was one, and it said **1023** while the suite said **1095** —
+seventy-two behind, across a day and a good many commits. The paragraph that
+carried it *already said* it was written by hand and would be wrong between
+the commit that adds a test and the commit that remembers the line: a
+disclaimer on a number is not a check on it, and the number was believed
+anyway because it was specific. `tools/verify.sh` prints what the suite
+actually says, and that is the one to quote.
 
 Then the four things `make test` does not cover:
 
@@ -1947,8 +1954,11 @@ Two more, both about what a gate is *shaped* to notice:
 - **the binding gate is a spell-checker, not a dictionary.** It checks that
   what `zig/ween32.zig` declares agrees with the header, which is one
   direction. A name the module never mentions is a name it never disagrees
-  with, and absences are reported only as a total -- "361 of the header's not
-  declared in Zig yet". `STATUSCLASSNAMEA` sat in that total, so a Zig program
+  with, and absences are reported only as a **total in the hundreds** --
+  the gate's own last line. (It said 361 when this was written and says fewer
+  now; the figure is deliberately not repeated here, because a number in a
+  document beside a tool that prints one is a number with nothing checking
+  it.) `STATUSCLASSNAMEA` sat in that total, so a Zig program
   could create every common control except a status bar and every gate stayed
   green. One missing entry inside a count of hundreds is not a signal anybody
   can act on;
