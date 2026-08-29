@@ -55,7 +55,36 @@ struct rich_line {
     int start;  /* offset of the line's first character */
     int len;    /* its length, not counting the break */
     int top;    /* pixels from the top of the document */
-    int height; /* pixels, which one font makes all the same */
+    int height; /* pixels: the tallest run on the line */
+    int ascent; /* where the runs' baselines meet, from the line's top */
+};
+
+/* ---- runs ----------------------------------------------------------------
+ *
+ * The formatting the document carries, kept beside the text rather than in
+ * it: a run is a first character and the formatting from there until the
+ * next run begins. Every attribute has a value -- there is no mask in a
+ * stored run, since a mask is what a *caller* means and not what a character
+ * is -- and the first run always starts at nought, so every character has a
+ * format without a search failing.
+ *
+ * Two rules, both read off the machine's own riched20 with
+ * tools/vm/ctlprobe.c and written up in docs/testing.md: setting a format
+ * over part of a run splits it, and a run left identical to its neighbour is
+ * merged with it. Splitting without merging is what turns a document into
+ * thousands of runs that all say the same thing. */
+typedef struct {
+    DWORD effects; /* CFE_BOLD | CFE_ITALIC | ... and CFE_AUTOCOLOR */
+    LONG height;   /* twips, as CHARFORMAT states a size */
+    LONG offset;   /* yOffset, twips */
+    COLORREF color;
+    BYTE charset, pitch;
+    char face[LF_FACESIZE];
+} ween_rfmt;
+
+struct rich_run {
+    int start;
+    ween_rfmt fmt;
 };
 
 typedef struct {
@@ -81,6 +110,17 @@ typedef struct {
     int goal_x, goal_set;
     struct rich_line *line;
     int lines, line_cap;
+    struct rich_run *run;
+    int runs, run_cap;
+    /* What the next character typed will carry. A rich edit takes it from
+     * the character *before* the caret -- an X typed at the end of a bold
+     * run comes out bold -- unless a program has just set a format on an
+     * empty selection, which arms this instead. Measured; see docs. */
+    ween_rfmt insert;
+    int insert_armed;
+    /* The selection as the parent last heard it, so that EN_SELCHANGE is
+     * sent when it moves and not every time something asks. */
+    int said_from, said_to;
 } ween_rich;
 
 static void rich_free(void *p)
@@ -91,8 +131,11 @@ static void rich_free(void *p)
     free(e->text);
     free(e->undo);
     free(e->line);
+    free(e->run);
     free(e);
 }
+
+static void runs_reset(HWND wnd, ween_rich *e);
 
 static ween_rich *rich_state(HWND w)
 {
@@ -105,6 +148,8 @@ static ween_rich *rich_state(HWND w)
         }
         w->ctl = e;
         w->ctl_free = rich_free;
+        if (e)
+            runs_reset(w, e);
     }
     return w->ctl;
 }
@@ -126,6 +171,286 @@ static int rich_reserve(ween_rich *e, int len)
     return 1;
 }
 
+/* ---- what a run is made of ----------------------------------------------- */
+
+/* A face name copied into a fixed field: bounded, and always terminated.
+ * win32 spells this lstrcpynA; this library has not got it and the one place
+ * that wants it is here. */
+static void face_copy(char *out, const char *in)
+{
+    int i;
+    for (i = 0; i < LF_FACESIZE - 1 && in && in[i]; i++)
+        out[i] = in[i];
+    out[i] = 0;
+}
+
+/* Twips are a twentieth of a point; a point is a seventy-second of an inch.
+ * What the screen shows is pixels, so a height converts through the dpi --
+ * 165 twips is eleven pixels at 96, which is the face a fresh control is
+ * lettered in. */
+static int rfmt_px(LONG twips)
+{
+    int px = (int)((twips * ween_render_dpi() + 720) / 1440);
+    return px > 0 ? px : 1;
+}
+
+static LONG rfmt_twips(int px)
+{
+    return (LONG)((px * 1440 + ween_render_dpi() / 2) / ween_render_dpi());
+}
+
+/* The strike a run is drawn in: its face at its size, and the bold cut when
+ * it asks for one. The slant and the rule under are not in the glyphs and go
+ * on at drawing time. */
+static const ween_strike *rfmt_strike(const ween_rfmt *f)
+{
+    return ween_font_create(f->face[0] ? f->face : "MS Shell Dlg",
+                            -rfmt_px(f->height),
+                            (f->effects & CFE_BOLD) ? 700 : 400);
+}
+
+static int rfmt_same(const ween_rfmt *a, const ween_rfmt *b)
+{
+    return a->effects == b->effects && a->height == b->height &&
+           a->offset == b->offset && a->color == b->color &&
+           a->charset == b->charset && a->pitch == b->pitch &&
+           strcmp(a->face, b->face) == 0;
+}
+
+/* What a control with nothing said to it is lettered in: the font it was
+ * given, at the size that font is, in the window text colour. The machine's
+ * fresh control answers Tahoma at 165 twips with CFE_AUTOCOLOR, which is the
+ * message font -- so this is that, read from the strike rather than named. */
+static void rfmt_default(HWND wnd, ween_rfmt *f)
+{
+    const ween_strike *s = wnd->font ? wnd->font : ween_gui_font();
+    memset(f, 0, sizeof *f);
+    f->effects = CFE_AUTOCOLOR;
+    f->height = rfmt_twips(s ? s->ascent - s->descent : 11);
+    f->color = GetSysColor(COLOR_WINDOWTEXT);
+    f->charset = 1; /* DEFAULT_CHARSET */
+    face_copy(f->face, "MS Shell Dlg");
+}
+
+static int runs_reserve(ween_rich *e, int n)
+{
+    struct rich_run *grown;
+    int cap = e->run_cap ? e->run_cap : 8;
+    if (n <= e->run_cap)
+        return 1;
+    while (cap < n)
+        cap *= 2;
+    grown = realloc(e->run, (size_t)cap * sizeof *grown);
+    if (!grown)
+        return 0;
+    e->run = grown;
+    e->run_cap = cap;
+    return 1;
+}
+
+/* One run over everything, in the control's own face. */
+static void runs_reset(HWND wnd, ween_rich *e)
+{
+    if (!runs_reserve(e, 1))
+        return;
+    e->runs = 1;
+    e->run[0].start = 0;
+    rfmt_default(wnd, &e->run[0].fmt);
+}
+
+static int run_at(const ween_rich *e, int at)
+{
+    int lo = 0, hi = e->runs - 1;
+    while (lo < hi) {
+        int mid = (lo + hi + 1) / 2;
+        if (e->run[mid].start <= at)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    return lo < 0 ? 0 : lo;
+}
+
+/* A boundary at `at`, made if it is not there. Answers the run that begins
+ * there. */
+static int runs_split(ween_rich *e, int at)
+{
+    int i = run_at(e, at);
+    if (e->run[i].start == at)
+        return i;
+    if (!runs_reserve(e, e->runs + 1))
+        return i;
+    memmove(&e->run[i + 2], &e->run[i + 1],
+            (size_t)(e->runs - i - 1) * sizeof *e->run);
+    e->run[i + 1] = e->run[i];
+    e->run[i + 1].start = at;
+    e->runs++;
+    return i + 1;
+}
+
+/* Neighbours that say the same thing become one, and a run with nothing left
+ * in it goes. */
+static void runs_coalesce(ween_rich *e)
+{
+    int i = 1;
+    while (i < e->runs) {
+        int empty = e->run[i].start <= e->run[i - 1].start;
+        if (empty || rfmt_same(&e->run[i].fmt, &e->run[i - 1].fmt)) {
+            memmove(&e->run[i], &e->run[i + 1],
+                    (size_t)(e->runs - i - 1) * sizeof *e->run);
+            e->runs--;
+        } else {
+            i++;
+        }
+    }
+}
+
+/* Text put in at `at`, carrying `f`. Everything from there moves along --
+ * including a run that began exactly there, since what is typed at a
+ * boundary belongs to the run before it -- and the new characters become a
+ * run of their own, which is then merged back if it says what its
+ * neighbour says. */
+static void runs_insert(ween_rich *e, int at, int n, const ween_rfmt *f)
+{
+    int i;
+    for (i = 1; i < e->runs; i++)
+        if (e->run[i].start >= at)
+            e->run[i].start += n;
+    i = runs_split(e, at);
+    if (at + n < e->len)
+        runs_split(e, at + n);
+    if (i < e->runs)
+        e->run[i].fmt = *f;
+    runs_coalesce(e);
+}
+
+/* Text taken out: what began inside the hole begins at its start, and what
+ * began after it comes back by as much as was removed. A run left with
+ * nothing in it goes in the coalesce. */
+static void runs_delete(ween_rich *e, int from, int to)
+{
+    int n = to - from, i;
+    for (i = 1; i < e->runs; i++) {
+        if (e->run[i].start >= to)
+            e->run[i].start -= n;
+        else if (e->run[i].start > from)
+            e->run[i].start = from;
+    }
+    runs_coalesce(e);
+}
+
+/* Put a caller's CHARFORMAT over a range: only the fields its mask names. */
+static void rfmt_apply(ween_rfmt *f, const CHARFORMATA *cf)
+{
+    DWORD m = cf->dwMask;
+    if (m & CFM_BOLD)
+        f->effects = (f->effects & ~(DWORD)CFE_BOLD) |
+                     (cf->dwEffects & CFE_BOLD);
+    if (m & CFM_ITALIC)
+        f->effects = (f->effects & ~(DWORD)CFE_ITALIC) |
+                     (cf->dwEffects & CFE_ITALIC);
+    if (m & CFM_UNDERLINE)
+        f->effects = (f->effects & ~(DWORD)CFE_UNDERLINE) |
+                     (cf->dwEffects & CFE_UNDERLINE);
+    if (m & CFM_STRIKEOUT)
+        f->effects = (f->effects & ~(DWORD)CFE_STRIKEOUT) |
+                     (cf->dwEffects & CFE_STRIKEOUT);
+    if (m & CFM_PROTECTED)
+        f->effects = (f->effects & ~(DWORD)CFE_PROTECTED) |
+                     (cf->dwEffects & CFE_PROTECTED);
+    if (m & CFM_LINK)
+        f->effects = (f->effects & ~(DWORD)CFE_LINK) |
+                     (cf->dwEffects & CFE_LINK);
+    if (m & CFM_SIZE)
+        f->height = cf->yHeight;
+    if (m & CFM_OFFSET)
+        f->offset = cf->yOffset;
+    if (m & CFM_COLOR) {
+        /* CFE_AUTOCOLOR in the effects means "the window's colour", and the
+         * colour field is then not read at all. */
+        f->effects = (f->effects & ~(DWORD)CFE_AUTOCOLOR) |
+                     (cf->dwEffects & CFE_AUTOCOLOR);
+        if (!(cf->dwEffects & CFE_AUTOCOLOR))
+            f->color = cf->crTextColor;
+    }
+    if (m & CFM_CHARSET)
+        f->charset = cf->bCharSet;
+    if (m & CFM_FACE) {
+        face_copy(f->face, cf->szFaceName);
+        f->pitch = cf->bPitchAndFamily;
+    }
+}
+
+static void runs_set(ween_rich *e, int from, int to, const CHARFORMATA *cf)
+{
+    int i, last;
+    if (from >= to)
+        return;
+    i = runs_split(e, from);
+    if (to < e->len)
+        runs_split(e, to);
+    last = run_at(e, to > from ? to - 1 : from);
+    for (; i <= last && i < e->runs; i++)
+        rfmt_apply(&e->run[i].fmt, cf);
+    runs_coalesce(e);
+}
+
+/* What a range carries, and what the control is sure of.
+ *
+ * Two halves, and the machine settles both. The *mask* is what is the same
+ * throughout: an attribute that differs anywhere in the range has its bit
+ * cleared, which is how a format bar knows to show Bold as neither in nor
+ * out. The *values* are the character before the range's end -- not the
+ * first one, which is what this had until the answers came back. Asked over
+ * characters 4 to 6 of a text bold from 5, riched20 answers with the bold
+ * bit set in dwEffects and cleared in dwMask; asked over the whole text it
+ * answers with it clear in both. Both are "the character before the caret",
+ * which is the same rule that decides what the next character typed will
+ * carry. */
+static void runs_get(ween_rich *e, int from, int to, CHARFORMATA *cf)
+{
+    int i, first = run_at(e, from), last = run_at(e, to > from ? to - 1 : from);
+    const ween_rfmt *a = &e->run[last].fmt;
+    DWORD mask = CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE | CFM_STRIKEOUT |
+                 CFM_PROTECTED | CFM_LINK | CFM_SIZE | CFM_COLOR | CFM_FACE |
+                 CFM_OFFSET | CFM_CHARSET;
+    for (i = first; i < last && i + 1 < e->runs; i++) {
+        const ween_rfmt *p = &e->run[i].fmt;
+        const ween_rfmt *b = &e->run[i + 1].fmt;
+        DWORD diff = p->effects ^ b->effects;
+        if (diff & CFE_BOLD)
+            mask &= ~(DWORD)CFM_BOLD;
+        if (diff & CFE_ITALIC)
+            mask &= ~(DWORD)CFM_ITALIC;
+        if (diff & CFE_UNDERLINE)
+            mask &= ~(DWORD)CFM_UNDERLINE;
+        if (diff & CFE_STRIKEOUT)
+            mask &= ~(DWORD)CFM_STRIKEOUT;
+        if (diff & CFE_PROTECTED)
+            mask &= ~(DWORD)CFM_PROTECTED;
+        if (diff & CFE_LINK)
+            mask &= ~(DWORD)CFM_LINK;
+        if (p->height != b->height)
+            mask &= ~(DWORD)CFM_SIZE;
+        if (p->offset != b->offset)
+            mask &= ~(DWORD)CFM_OFFSET;
+        if (p->color != b->color || (diff & CFE_AUTOCOLOR))
+            mask &= ~(DWORD)CFM_COLOR;
+        if (strcmp(p->face, b->face) != 0)
+            mask &= ~(DWORD)CFM_FACE;
+        if (p->charset != b->charset)
+            mask &= ~(DWORD)CFM_CHARSET;
+    }
+    cf->dwMask = mask;
+    cf->dwEffects = a->effects;
+    cf->yHeight = a->height;
+    cf->yOffset = a->offset;
+    cf->crTextColor = a->color;
+    cf->bCharSet = a->charset;
+    cf->bPitchAndFamily = a->pitch;
+    face_copy(cf->szFaceName, a->face);
+}
+
 /* ---- the line table ------------------------------------------------------
  *
  * One pass over the text. A break is CRLF or a bare LF and counts as one
@@ -138,19 +463,50 @@ static int rich_line_height(HWND wnd)
     return f ? f->ascent - f->descent : 13;
 }
 
+/* How tall a line is: the tallest run on it, since a run may carry a size of
+ * its own. With one size throughout -- which is every line until a program
+ * says otherwise -- it is the font's own height, and the table then says
+ * exactly what multiplying a row by one line height would have said.
+ *
+ * Where the runs sit *within* that height, when they differ, is not measured
+ * yet: the baselines are lined up here, which is what every text engine
+ * does, and 4a will have to ask the machine when it wraps. */
+static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
+                            int *ascent)
+{
+    int i = run_at(e, start), tall = 0, asc = 0;
+    for (;;) {
+        const ween_strike *f = rfmt_strike(&e->run[i].fmt);
+        int h = f ? f->ascent - f->descent : rich_line_height(wnd);
+        int a = f ? f->ascent : h;
+        if (h > tall)
+            tall = h;
+        if (a > asc)
+            asc = a;
+        if (i + 1 >= e->runs || e->run[i + 1].start >= start + len)
+            break;
+        i++;
+    }
+    if (!tall)
+        tall = rich_line_height(wnd);
+    if (ascent)
+        *ascent = asc;
+    return tall;
+}
+
 static void rich_relines(HWND wnd, ween_rich *e)
 {
-    int height = rich_line_height(wnd);
     int at = 0, top = 0, n = 0;
     if (!e)
         return;
     for (;;) {
-        int start = at, len;
+        int start = at, len, height, ascent = 0;
         while (at < e->len && e->text[at] != '\n')
             at++;
         len = at - start;
         if (len && e->text[start + len - 1] == '\r')
             len--; /* the break is not part of the line */
+        height = rich_line_extent(wnd, e, start, len, &ascent);
         if (n >= e->line_cap) {
             int cap = e->line_cap ? e->line_cap * 2 : 32;
             struct rich_line *grown =
@@ -164,6 +520,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
         e->line[n].len = len;
         e->line[n].top = top;
         e->line[n].height = height;
+        e->line[n].ascent = ascent;
         top += height;
         n++;
         if (at >= e->len)
@@ -220,6 +577,33 @@ static void rich_notify(HWND wnd, UINT code, DWORD mask)
                  (LPARAM)wnd);
 }
 
+/* EN_SELCHANGE, which is a WM_NOTIFY and not a WM_COMMAND: it carries where
+ * the selection is now and what kind of thing is in it, and it is what keeps
+ * a format bar's buttons in step with the caret. Like every other
+ * notification a rich edit sends, it waits on the mask. */
+static void rich_selchange(HWND wnd, ween_rich *e)
+{
+    SELCHANGE sc;
+    int from, to;
+    rich_range(e, &from, &to);
+    if (from == e->said_from && to == e->said_to)
+        return;
+    e->said_from = from;
+    e->said_to = to;
+    if (!wnd->parent || !(e->events & ENM_SELCHANGE))
+        return;
+    memset(&sc, 0, sizeof sc);
+    sc.nmhdr.hwndFrom = wnd;
+    sc.nmhdr.idFrom = wnd->id;
+    sc.nmhdr.code = EN_SELCHANGE;
+    sc.chrg.cpMin = from;
+    sc.chrg.cpMax = to;
+    sc.seltyp = (WORD)(from == to ? SEL_EMPTY
+                                  : (to - from > 1 ? SEL_TEXT | SEL_MULTICHAR
+                                                   : SEL_TEXT));
+    SendMessageA(wnd->parent, WM_NOTIFY, (WPARAM)wnd->id, (LPARAM)&sc);
+}
+
 static void rich_changed(HWND wnd, ween_rich *e)
 {
     e->modified = 1;
@@ -237,6 +621,7 @@ static int rich_delete_range(HWND wnd, ween_rich *e, int from, int to)
     memmove(e->text + from, e->text + to, (size_t)(e->len - to) + 1);
     e->len -= to - from;
     e->caret = e->anchor = from;
+    runs_delete(e, from, to);
     rich_relines(wnd, e);
     return 1;
 }
@@ -248,9 +633,23 @@ static int rich_delete_selection(HWND wnd, ween_rich *e)
     return rich_delete_range(wnd, e, from, to);
 }
 
+/* What the next characters will carry: what a program armed with a set on an
+ * empty selection, or else what the character *before* the caret carries --
+ * an X typed at the end of a bold run comes out bold, which is riched20's
+ * own rule and is measured. */
+static void rich_insert_fmt(ween_rich *e, ween_rfmt *out)
+{
+    if (e->insert_armed) {
+        *out = e->insert;
+        return;
+    }
+    *out = e->run[run_at(e, e->caret > 0 ? e->caret - 1 : 0)].fmt;
+}
+
 static void rich_insert(HWND wnd, ween_rich *e, const char *text)
 {
-    int n = (int)strlen(text);
+    int n = (int)strlen(text), at = e->caret;
+    ween_rfmt f;
     if (!n)
         return;
     if (e->limit && e->len + n > e->limit) {
@@ -262,12 +661,15 @@ static void rich_insert(HWND wnd, ween_rich *e, const char *text)
     }
     if (!rich_reserve(e, e->len + n))
         return;
+    rich_insert_fmt(e, &f);
     memmove(e->text + e->caret + n, e->text + e->caret,
             (size_t)(e->len - e->caret) + 1);
     memcpy(e->text + e->caret, text, (size_t)n);
     e->len += n;
     e->caret += n;
     e->anchor = e->caret;
+    runs_insert(e, at, n, &f);
+    e->insert_armed = 0; /* it armed one insertion, not every one after it */
     rich_relines(wnd, e);
 }
 
@@ -282,6 +684,10 @@ static int rich_set_text(HWND wnd, ween_rich *e, const char *text)
     e->len = n;
     e->caret = e->anchor = 0;
     e->first_visible = 0;
+    /* Text given whole is text without formatting: one run again, in the
+     * control's own face. RTF arrives through EM_STREAMIN and not here. */
+    runs_reset(wnd, e);
+    e->insert_armed = 0;
     rich_relines(wnd, e);
     return 1;
 }
@@ -368,55 +774,39 @@ static ween_sbstate rich_sbstate(HWND wnd)
     return st;
 }
 
-/* The offset a point lands on. x is client, already past the margin. */
-static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
+/* How far along a line a column stands, in pixels, measured run by run --
+ * since two runs of one line may be in different faces and sizes. */
+static int rich_x_of(ween_rich *e, int row, int col)
 {
-    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
-    int line = rich_line_height(wnd), inset = rich_inset(wnd);
-    int row, i, best = 0, bestd = -1;
-    if (!e || !e->lines)
-        return 0;
-    row = (y - inset) / (line > 0 ? line : 13) + e->first_visible;
-    if (row < 0)
-        row = 0;
-    if (row >= e->lines)
-        row = e->lines - 1;
-    if (!f)
-        return e->line[row].start;
-    for (i = 0; i <= e->line[row].len; i++) {
-        int px = ween_strike_pen(f, e->text + e->line[row].start, i);
-        int d = px - x;
-        if (d < 0)
-            d = -d;
-        if (bestd < 0 || d < bestd) {
-            bestd = d;
-            best = e->line[row].start + i;
-        }
+    int start = e->line[row].start, end = start + col;
+    int at = start, i = run_at(e, start), x = 0;
+    while (at < end) {
+        int next = (i + 1 < e->runs && e->run[i + 1].start < end)
+                       ? e->run[i + 1].start
+                       : end;
+        const ween_strike *f = rfmt_strike(&e->run[i].fmt);
+        x += f ? ween_strike_pen(f, e->text + at, next - at) : next - at;
+        at = next;
+        i++;
     }
-    return best;
+    return x;
 }
 
-/* How far along its line the caret stands, in pixels. */
+/* How far along its line the caret stands. */
 static int rich_caret_x(HWND wnd, ween_rich *e)
 {
-    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     int row = rich_line_of(e, e->caret);
-    if (!f)
-        return e->caret - e->line[row].start;
-    return ween_strike_pen(f, e->text + e->line[row].start,
-                           e->caret - e->line[row].start);
+    (void)wnd;
+    return rich_x_of(e, row, e->caret - e->line[row].start);
 }
 
 /* The character on a line that stands nearest a pixel. */
 static int rich_index_at_x(HWND wnd, ween_rich *e, int row, int x)
 {
-    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     int i, best = 0, bestd = 1 << 30;
-    if (!f)
-        return e->line[row].start +
-               (x > e->line[row].len ? e->line[row].len : x);
+    (void)wnd;
     for (i = 0; i <= e->line[row].len; i++) {
-        int pen = ween_strike_pen(f, e->text + e->line[row].start, i);
+        int pen = rich_x_of(e, row, i);
         int d = pen > x ? pen - x : x - pen;
         if (d < bestd) {
             bestd = d;
@@ -424,6 +814,27 @@ static int rich_index_at_x(HWND wnd, ween_rich *e, int row, int x)
         }
     }
     return e->line[row].start + best;
+}
+
+/* Which character a point lands on: the row from the line table, since the
+ * lines are no longer all one height, and then the nearest column on it. */
+
+static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
+{
+    int inset = rich_inset(wnd), row, top;
+    if (!e || !e->lines)
+        return 0;
+    top = e->line[e->first_visible].top;
+    for (row = e->first_visible; row < e->lines; row++) {
+        int at = inset + e->line[row].top - top;
+        if (y < at + e->line[row].height || row == e->lines - 1)
+            break;
+    }
+    if (row < e->first_visible)
+        row = e->first_visible;
+    if (row >= e->lines)
+        row = e->lines - 1;
+    return rich_index_at_x(wnd, e, row, x);
 }
 
 /* Bring the caret into view, scrolling by lines the way win32 does. */
@@ -455,12 +866,10 @@ static void rich_show_caret(HWND wnd, ween_rich *e)
 
 static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 {
-    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
     struct ween_wnd *top = ween_top_level(wnd);
     ween_rich *e = rich_state(wnd);
     RECT r = ps->rcPaint, cr;
     int ox, oy, inset = rich_inset(wnd), sb = rich_bar(wnd);
-    int line = rich_line_height(wnd);
     int from = 0, to = 0, row;
     ween_color ink = (wnd->style & WS_DISABLED) ? WEEN_SHADOW : WEEN_BLACK;
 
@@ -470,7 +879,7 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                               (wnd->style & ES_READONLY)
                                           ? COLOR_BTNFACE
                                           : COLOR_WINDOW));
-    if (!e || !f)
+    if (!e || !e->lines)
         return;
 
     /* A control hides its selection when the keyboard leaves it, unless it
@@ -481,44 +890,70 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         rich_range(e, &from, &to);
 
     for (row = e->first_visible; row < e->lines; row++) {
-        int y = inset + (row - e->first_visible) * line;
+        int y = inset + e->line[row].top - e->line[e->first_visible].top;
         int x = inset;
-        const char *p = e->text + e->line[row].start;
-        int n = e->line[row].len;
-        int a = from - e->line[row].start, b = to - e->line[row].start;
-        if (y + line > cr.bottom - inset && (wnd->style & ES_MULTILINE))
+        int at = e->line[row].start, end = at + e->line[row].len;
+        int i = run_at(e, at);
+        if ((wnd->style & ES_MULTILINE) &&
+            y + e->line[row].height > cr.bottom - inset)
             break;
-        if (a < 0)
-            a = 0;
-        if (b > n)
-            b = n;
-        if (a >= b) {
-            ween_strike_draw(f, &top->surface, ox + x, oy + y, p, n, ink);
-        } else {
-            /* the selected run sits on a highlight bar, in its colour, on
-             * every line it crosses */
-            int xa = ween_strike_pen(f, p, a);
-            int xb = ween_strike_pen(f, p, b);
-            ween_strike_draw(f, &top->surface, ox + x, oy + y, p, a, ink);
-            ween_surface_fill(&top->surface, ox + x + xa, oy + y, xb - xa,
-                              line, WEEN_CAP_LEFT);
-            ween_strike_draw(f, &top->surface, ox + x + xa, oy + y, p + a,
-                             b - a, WEEN_WHITE);
-            ween_strike_draw(f, &top->surface, ox + x + xb, oy + y, p + b,
-                             n - b, ink);
+        /* A line is drawn run by run, and a run in two or three pieces where
+         * the selection crosses it. Each piece is in its own face, size,
+         * slant, rule and colour; they sit on one baseline, the tallest
+         * run's, so a big letter and a small one on the same line stand on
+         * the same line rather than each in the middle of its own box. */
+        while (at < end) {
+            int rend = (i + 1 < e->runs && e->run[i + 1].start < end)
+                           ? e->run[i + 1].start
+                           : end;
+            const ween_rfmt *fmt = &e->run[i].fmt;
+            const ween_strike *sf = rfmt_strike(fmt);
+            int seg = rend, selected, w, by;
+            ween_color col;
+            if (at < from && from < seg)
+                seg = from;
+            else if (at >= from && at < to && to < seg)
+                seg = to;
+            selected = at >= from && at < to;
+            w = sf ? ween_strike_pen(sf, e->text + at, seg - at) : seg - at;
+            by = y + e->line[row].ascent - (sf ? sf->ascent : 0);
+            col = selected ? WEEN_WHITE
+                  : (fmt->effects & CFE_AUTOCOLOR)
+                      ? ink
+                      : ween_cr_to_px(fmt->color);
+            if (selected)
+                ween_surface_fill(&top->surface, ox + x, oy + y, w,
+                                  e->line[row].height, WEEN_CAP_LEFT);
+            if (sf)
+                ween_strike_draw_styled(sf, &top->surface, ox + x, oy + by,
+                                        e->text + at, seg - at, col,
+                                        (fmt->effects & CFE_ITALIC) != 0,
+                                        (fmt->effects & CFE_UNDERLINE) != 0);
+            /* A line through the middle, which no strike carries and GDI
+             * draws for itself. Where exactly it sits is not measured; half
+             * the cell is where it lands here. */
+            if ((fmt->effects & CFE_STRIKEOUT) && sf)
+                ween_surface_fill(&top->surface, ox + x,
+                                  oy + by + (sf->ascent - sf->descent) / 2, w,
+                                  1, col);
+            x += w;
+            at = seg;
+            if (at >= rend)
+                i++;
         }
         if (!(wnd->style & ES_MULTILINE))
             break;
     }
 
+    /* The caret: as tall as the line it is on, where the run it stands in
+     * puts it. */
     if (ween_focus_get() == wnd && !(wnd->style & WS_DISABLED) && e->caret_on) {
         int crow = rich_line_of(e, e->caret);
-        int cy = inset + (crow - e->first_visible) * line;
-        int cx = inset + ween_strike_pen(f, e->text + e->line[crow].start,
-                                         e->caret - e->line[crow].start);
-        if (cy >= inset && cy + line <= cr.bottom - inset)
-            ween_surface_vline(&top->surface, ox + cx, oy + cy, line,
-                               WEEN_BLACK);
+        int cy = inset + e->line[crow].top - e->line[e->first_visible].top;
+        int cx = inset + rich_x_of(e, crow, e->caret - e->line[crow].start);
+        if (cy >= inset && cy + e->line[crow].height <= cr.bottom - inset)
+            ween_surface_vline(&top->surface, ox + cx, oy + cy,
+                               e->line[crow].height, WEEN_BLACK);
     }
 
     /* The bar last, so a line long enough to reach it is covered by it. */
@@ -577,6 +1012,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             e->anchor = e->len;
         e->caret = to > e->len ? e->len : to;
         e->goal_set = 0;
+        rich_selchange(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -603,6 +1039,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (e->caret > e->len)
             e->caret = e->len;
         rich_show_caret(wnd, e);
+        rich_selchange(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return e->caret;
     }
@@ -653,6 +1090,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rich_insert(wnd, e, text);
         rich_changed(wnd, e);
         rich_show_caret(wnd, e);
+        rich_selchange(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -754,6 +1192,94 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case EM_CANPASTE:
         return TRUE;
+    case EM_POSFROMCHAR: {
+        /* A rich edit fills in a POINTL the caller passes and takes the
+         * index in lParam, where an EDIT takes the index in wParam and packs
+         * the answer into its return. Same message, two conventions; this is
+         * the rich edit's. */
+        POINTL *pt = (POINTL *)wp;
+        int at = (int)lp, row;
+        if (!pt || !e->lines)
+            return 0;
+        if (at < 0)
+            at = 0;
+        if (at > e->len)
+            at = e->len;
+        row = rich_line_of(e, at);
+        pt->x = rich_inset(wnd) + rich_x_of(e, row, at - e->line[row].start);
+        pt->y = rich_inset(wnd) + e->line[row].top -
+                e->line[e->first_visible].top;
+        return 0;
+    }
+
+    /* ---- the formatting a run carries ---- */
+    case EM_SETCHARFORMAT: {
+        const CHARFORMATA *cf = (const CHARFORMATA *)lp;
+        int from, to;
+        if (!cf)
+            return FALSE;
+        if (wp & SCF_ALL) {
+            from = 0;
+            to = e->len;
+        } else {
+            rich_range(e, &from, &to);
+        }
+        if (from == to) {
+            /* Nothing selected: what is set is what the next character
+             * typed will carry, and the text does not change. That is how a
+             * format bar's Bold works with an empty selection, and it is
+             * measured -- a Z typed after one comes out bold. */
+            if (!e->insert_armed) {
+                rich_insert_fmt(e, &e->insert);
+                e->insert_armed = 1;
+            }
+            rfmt_apply(&e->insert, cf);
+            return TRUE;
+        }
+        rich_remember(e);
+        runs_set(e, from, to, cf);
+        e->insert_armed = 0;
+        rich_relines(wnd, e);
+        rich_notify(wnd, EN_CHANGE, ENM_CHANGE);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
+    }
+    case EM_GETCHARFORMAT: {
+        CHARFORMATA *cf = (CHARFORMATA *)lp;
+        int from, to;
+        if (!cf)
+            return 0;
+        if (wp & SCF_SELECTION) {
+            rich_range(e, &from, &to);
+            /* With nothing selected the answer is what the next character
+             * would be typed in, which is the run before the caret unless a
+             * program has armed something else. */
+            if (from == to) {
+                ween_rfmt f;
+                if (e->insert_armed)
+                    f = e->insert;
+                else
+                    rich_insert_fmt(e, &f);
+                cf->dwMask = CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE |
+                             CFM_STRIKEOUT | CFM_PROTECTED | CFM_LINK |
+                             CFM_SIZE | CFM_COLOR | CFM_FACE | CFM_OFFSET |
+                             CFM_CHARSET;
+                cf->dwEffects = f.effects;
+                cf->yHeight = f.height;
+                cf->yOffset = f.offset;
+                cf->crTextColor = f.color;
+                cf->bCharSet = f.charset;
+                cf->bPitchAndFamily = f.pitch;
+                face_copy(cf->szFaceName, f.face);
+                return (LRESULT)cf->dwEffects;
+            }
+        } else {
+            from = 0;
+            to = e->len;
+        }
+        runs_get(e, from, to, cf);
+        return (LRESULT)cf->dwEffects;
+    }
 
     case WM_GETDLGCODE:
         /* Everything typed, including the arrows; and Return too when the
@@ -839,6 +1365,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
         e->goal_set = 0;
+        rich_selchange(wnd, e);
         rich_show_caret(wnd, e);
         SetCapture(wnd);
         if (!had)
@@ -867,6 +1394,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                          GET_Y_LPARAM(lp));
             if (at != e->caret) {
                 e->caret = at; /* a drag extends from the anchor */
+                rich_selchange(wnd, e);
                 InvalidateRect(wnd, NULL, FALSE);
             }
         }
@@ -883,6 +1411,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                                            GET_Y_LPARAM(lp));
             rich_select_word(e);
             rich_show_caret(wnd, e);
+            rich_selchange(wnd, e);
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
@@ -994,6 +1523,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         rich_show_caret(wnd, e);
         rich_changed(wnd, e);
+        rich_selchange(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -1015,6 +1545,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             case 'A':
                 e->anchor = 0;
                 e->caret = e->len;
+                rich_selchange(wnd, e);
                 InvalidateRect(wnd, NULL, FALSE);
                 return 0;
             case 'Z':
@@ -1114,12 +1645,20 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (!keeps_goal) /* anything but a vertical move forgets where it set out from */
             e->goal_set = 0;
         rich_show_caret(wnd, e);
+        rich_selchange(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
     default:
         return DefWindowProcA(wnd, msg, wp, lp);
     }
+}
+
+/* For the test: see ween_internal.h. */
+int ween_rich_run_count(HWND w)
+{
+    ween_rich *e = w ? rich_state(w) : NULL;
+    return e ? e->runs : 0;
 }
 
 void ween_register_richedit(void)

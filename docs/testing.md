@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **912 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **944 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -1075,6 +1075,33 @@ format bar's Bold button works with nothing selected.
 `EM_POSFROMCHAR` puts the rich edit's caret three pixels left of the EDIT's
 at the same offset: the EDIT has half an average character and the rich edit
 has none. Which is what ween32 does — see `edit_default_margin`.
+
+### The runs, and what a test can see of them
+
+`EM_SETCHARFORMAT` and `EM_GETCHARFORMAT` are checked in
+`tests/richedit_test.c` against the answers riched20 gave the probe, and
+three of those checks need something a message cannot show:
+
+- **How many runs the document is in.** Merging a run with an identical
+  neighbour has no outward sign -- a document that splits and never merges
+  draws exactly the same and grows without bound -- so the library carries
+  `ween_rich_run_count`, which nothing but the test calls. Bolding the middle
+  of a run gives three; bolding what follows the bold run gives three again
+  and not four; taking bold off the middle of that stretch gives five.
+- **Where a character landed.** `EM_POSFROMCHAR` is the rich edit's own
+  answer to that, and the test uses it to see a bigger run take more room
+  along its line and make the line taller. Note the two conventions: an EDIT
+  takes the index in wParam and packs the point into what it returns, a rich
+  edit fills in a `POINTL` the caller passes and takes the index in lParam.
+- **That nothing is said until it is asked for.** `EN_SELCHANGE` arrives as a
+  `WM_NOTIFY` carrying a `SELCHANGE`, and only when `ENM_SELCHANGE` is in the
+  mask; the test sets the mask without it, moves the selection, and expects
+  silence.
+
+`SELCHANGE` is one of the structs the win32 gate earns its keep on: the whole
+of `<richedit.h>` is inside `pshpack4.h`, so a `WORD` after a `CHARRANGE`
+leaves two bytes of padding and not six, and the struct is thirty-six bytes
+rather than forty. Nothing in a compile would have said so.
 
 ### What a text control does with the column, when the line below is short
 

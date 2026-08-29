@@ -607,6 +607,11 @@ int ween_text_line_length(const char *text, int start);
 
 /* The rich edit's class, registered beside the other controls. */
 void ween_register_richedit(void);
+/* How many runs of formatting the document is in. Nothing in the library
+ * asks: the test does, because coalescing a run with an identical neighbour
+ * is a property with no other outward sign -- a document that splits and
+ * never merges draws exactly the same and grows without bound. */
+int ween_rich_run_count(HWND w);
 
 int ween_scroll_metric(void); /* SM_CXVSCROLL at the system dpi */
 void ween_draw_scrollbar(ween_surface *s, int x, int y, int w, int h, int vert,

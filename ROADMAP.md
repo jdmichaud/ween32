@@ -282,10 +282,21 @@ and ES_NOHIDESEL. The event mask is the one place it is meant to differ from
 the EDIT: a rich edit says nothing to its parent until `EM_SETEVENTMASK` asks
 it to, where an EDIT sends EN_CHANGE whether or not anybody wanted it.
 
-What it has not got is what makes it rich: runs carrying a `CHARFORMAT`,
-paragraphs carrying a `PARAFORMAT`, wrapping, and RTF through
-`EM_STREAMIN`/`EM_STREAMOUT`. Those are the next four pieces of WordPad's
-plan. `tests/richedit_test.c` asks it the same questions
+**The runs are there too**, which is the second piece: a run is a first
+character and the formatting from there on, kept beside the text rather than
+in it. `EM_SETCHARFORMAT` splits the run it lands inside and merges what it
+leaves identical to its neighbour; `EM_GETCHARFORMAT` clears the mask bit of
+anything that differs across the range and answers with the character before
+its end; a character typed takes the formatting of the character before the
+caret, and a set on an empty selection arms the next one. Every one of those
+is riched20's own behaviour, asked of it with `tools/vm/ctlprobe.c`. Bold,
+italic, underline, strikeout, size, face and colour are drawn, each run in
+its own, on the line's own baseline; `EM_POSFROMCHAR` says where a character
+landed, and `EN_SELCHANGE` tells a format bar the caret has moved.
+
+What it has not got is paragraphs carrying a `PARAFORMAT`, wrapping, and RTF
+through `EM_STREAMIN`/`EM_STREAMOUT`. Those are the next three pieces of
+WordPad's plan. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot
 come to disagree about a behaviour they share.
 

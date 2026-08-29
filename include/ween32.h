@@ -102,6 +102,12 @@ typedef struct tagPOINT {
     LONG y;
 } POINT;
 
+/* The same two numbers under the name the rich edit's messages use. */
+typedef struct _POINTL {
+    LONG x;
+    LONG y;
+} POINTL, *PPOINTL;
+
 typedef struct tagRECT {
     LONG left;
     LONG top;
@@ -612,6 +618,13 @@ typedef struct {
  * font by default; a control that puts an edit inside itself says otherwise,
  * which is how a combo box lines its field up with what it draws beside it. */
 #define EM_SETMARGINS 0x00D3
+/* Where a character is drawn, and which character is at a point. One number
+ * each, and two conventions: an EDIT takes the index in wParam and packs the
+ * point into what it answers, a rich edit takes a POINTL to fill in and the
+ * index in lParam. Same message, and the rich edit's own header leaves
+ * winuser's number alone. */
+#define EM_POSFROMCHAR 0x00D6
+#define EM_CHARFROMPOS 0x00D7
 #define EC_LEFTMARGIN 0x0001
 #define EC_RIGHTMARGIN 0x0002
 
@@ -658,6 +671,60 @@ typedef struct _textrange {
     CHARRANGE chrg;
     LPSTR lpstrText;
 } TEXTRANGEA;
+
+/* ---- character formatting -------------------------------------------------
+ *
+ * The formatting a run of characters carries. dwMask is what the caller
+ * means, or -- coming back from EM_GETCHARFORMAT over a range -- what the
+ * control is sure of: an attribute that differs somewhere in the range has
+ * its bit cleared, and dwEffects still carries the first run's value. A
+ * format bar reads the mask to decide whether Bold is in, out, or neither;
+ * reading the effect alone shows it in. Measured on the machine's own
+ * riched20 -- see docs/testing.md.
+ *
+ * A height is in twips, a twentieth of a point: 165 is the eight and a
+ * quarter points a fresh control is lettered in at 96 dpi. */
+#define EM_GETCHARFORMAT (WM_USER + 58)
+#define EM_SETCHARFORMAT (WM_USER + 68)
+#define SCF_DEFAULT 0x0000
+#define SCF_SELECTION 0x0001
+#define SCF_WORD 0x0002
+#define SCF_ALL 0x0004
+#define CFM_BOLD 0x00000001
+#define CFM_ITALIC 0x00000002
+#define CFM_UNDERLINE 0x00000004
+#define CFM_STRIKEOUT 0x00000008
+#define CFM_PROTECTED 0x00000010
+#define CFM_LINK 0x00000020
+#define CFM_SIZE 0x80000000
+#define CFM_COLOR 0x40000000
+#define CFM_FACE 0x20000000
+#define CFM_OFFSET 0x10000000
+#define CFM_CHARSET 0x08000000
+#define CFE_BOLD 0x00000001
+#define CFE_ITALIC 0x00000002
+#define CFE_UNDERLINE 0x00000004
+#define CFE_STRIKEOUT 0x00000008
+#define CFE_PROTECTED 0x00000010
+#define CFE_LINK 0x00000020
+#define CFE_AUTOCOLOR 0x40000000
+/* What EN_SELCHANGE carries: where the selection is now, and what kind of
+ * thing is in it, which is how a format bar knows to grey what cannot apply. */
+#define SEL_EMPTY 0x0000
+#define SEL_TEXT 0x0001
+#define SEL_OBJECT 0x0002
+#define SEL_MULTICHAR 0x0004
+#define SEL_MULTIOBJECT 0x0008
+/* Packed to four, because the whole of win32's <richedit.h> is: it opens
+ * with pshpack4.h and closes with poppack.h, so a WORD after a CHARRANGE
+ * leaves two bytes of padding and not six. Thirty-six bytes either side. */
+#pragma pack(push, 4)
+typedef struct _selchange {
+    NMHDR nmhdr;
+    CHARRANGE chrg;
+    WORD seltyp;
+} SELCHANGE;
+#pragma pack(pop)
 
 /* trackbar (comctl32) */
 #define TRACKBAR_CLASSA "msctls_trackbar32"
@@ -1612,6 +1679,21 @@ typedef struct tagLOGFONTA {
     BYTE lfPitchAndFamily;
     CHAR lfFaceName[LF_FACESIZE];
 } LOGFONTA, *PLOGFONTA, *LPLOGFONTA;
+
+/* A run of characters' formatting, which needs a face name and so waits for
+ * the one constant that says how long one is. The rest of the rich edit's
+ * declarations are above, with its messages. */
+typedef struct _charformat {
+    UINT cbSize;
+    DWORD dwMask;
+    DWORD dwEffects;
+    LONG yHeight;
+    LONG yOffset;
+    COLORREF crTextColor;
+    BYTE bCharSet;
+    BYTE bPitchAndFamily;
+    char szFaceName[LF_FACESIZE];
+} CHARFORMATA;
 HFONT CreateFontIndirectA(const LOGFONTA *lf);
 
 /* What a font comes out as once it is realised: the numbers a program lays
@@ -3251,6 +3333,7 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define TRACKBAR_CLASS TRACKBAR_CLASSA
 #define RICHEDIT_CLASS RICHEDIT_CLASSA
 #define TEXTRANGE TEXTRANGEA
+#define CHARFORMAT CHARFORMATA
 #define PROGRESS_CLASS PROGRESS_CLASSA
 #define SB_SETTEXT SB_SETTEXTA
 #define SB_GETTEXT SB_GETTEXTA

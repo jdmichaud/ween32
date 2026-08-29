@@ -37,6 +37,7 @@ static int g_failures = 0;
     } while (0)
 
 static int g_change, g_update, g_maxtext, g_vscroll;
+static int g_selchange, g_sel_from, g_sel_to, g_seltyp;
 
 static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -47,6 +48,16 @@ static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case EN_MAXTEXT: g_maxtext++; break;
         case EN_VSCROLL: g_vscroll++; break;
         default: break;
+        }
+    }
+    if (msg == WM_NOTIFY) {
+        const NMHDR *nm = (const NMHDR *)lp;
+        if (nm && nm->code == EN_SELCHANGE) {
+            const SELCHANGE *sc = (const SELCHANGE *)lp;
+            g_selchange++;
+            g_sel_from = (int)sc->chrg.cpMin;
+            g_sel_to = (int)sc->chrg.cpMax;
+            g_seltyp = sc->seltyp;
         }
     }
     return DefWindowProcA(wnd, msg, wp, lp);
@@ -414,6 +425,281 @@ int main(void)
         SendMessageA(re, EM_SCROLLCARET, 0, 0);
         CHECK(SendMessageA(re, EM_GETFIRSTVISIBLELINE, 0, 0) > 0,
               "and the caret at the end brings the view down to it");
+    }
+
+    /* ---- runs of formatting ----
+     *
+     * Every number and rule below is riched20's own answer, read with
+     * tools/vm/ctlprobe.c and written up in docs/testing.md. */
+
+    {
+        CHARFORMATA cf;
+        CHARRANGE cr;
+        SetWindowTextA(re, "abcdefghijklmnopqrst");
+        CHECK(ween_rich_run_count(re) == 1,
+              "a document with nothing said about it is one run");
+
+        /* Bolding the middle of a run splits it into three. */
+        cr.cpMin = 5;
+        cr.cpMax = 10;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(ween_rich_run_count(re) == 3,
+              "and formatting the middle of it makes three");
+
+        cr.cpMin = 4;
+        cr.cpMax = 5;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && !(cf.dwEffects & CFE_BOLD),
+              "the character before the run is not in it");
+        cr.cpMin = 5;
+        cr.cpMax = 6;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && (cf.dwEffects & CFE_BOLD),
+              "the first character of it is");
+        cr.cpMin = 10;
+        cr.cpMax = 11;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && !(cf.dwEffects & CFE_BOLD),
+              "and the one after it is not");
+
+        /* A selection spanning two runs: the mask says what it is sure of
+         * and the effects carry the character before the end -- both of
+         * which the machine answers and neither of which is obvious. */
+        cr.cpMin = 4;
+        cr.cpMax = 6;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(!(cf.dwMask & CFM_BOLD),
+              "over two runs the bold bit is cleared in the mask, which is "
+              "how a format bar knows to show Bold as neither in nor out");
+        CHECK((cf.dwEffects & CFE_BOLD),
+              "while the effects carry the character before the end, which "
+              "here is bold");
+        cr.cpMin = 0;
+        cr.cpMax = 20;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(!(cf.dwMask & CFM_BOLD) && !(cf.dwEffects & CFE_BOLD),
+              "and over the whole text they carry the last character, which "
+              "is not");
+
+        /* Making the neighbour identical merges the two. */
+        cr.cpMin = 10;
+        cr.cpMax = 15;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(ween_rich_run_count(re) == 3,
+              "bolding what follows a bold run leaves three runs and not "
+              "four: a run identical to its neighbour is merged with it");
+        cr.cpMin = 5;
+        cr.cpMax = 15;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && (cf.dwEffects & CFE_BOLD),
+              "and the ten characters are one bold stretch");
+
+        /* And taking it away from the middle of that stretch splits it
+         * again, five runs where riched20 has five. */
+        cr.cpMin = 8;
+        cr.cpMax = 12;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = 0;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(ween_rich_run_count(re) == 5,
+              "unbolding the middle of the bold stretch gives five runs");
+    }
+
+    {
+        /* What a character typed takes with it. */
+        CHARFORMATA cf;
+        CHARRANGE cr;
+        SetWindowTextA(re, "abcdefghij");
+        cr.cpMin = 0;
+        cr.cpMax = 5;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        cr.cpMin = cr.cpMax = 5; /* between the bold run and the plain one */
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        typed(re, "X");
+        cr.cpMin = 5;
+        cr.cpMax = 6;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_BOLD),
+              "a character typed at a boundary takes the formatting of the "
+              "character before the caret, not the one after");
+
+        /* And what a program arms with a set on an empty selection. */
+        SetWindowTextA(re, "plain");
+        cr.cpMin = cr.cpMax = 5;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(strcmp(text_of(re), "plain") == 0,
+              "setting a format with nothing selected changes no text");
+        typed(re, "Z");
+        cr.cpMin = 5;
+        cr.cpMax = 6;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_BOLD),
+              "and the next character typed is the one it was armed for");
+        cr.cpMin = cr.cpMax = 6; /* the caret at the end, nothing selected */
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        typed(re, "z");
+        cr.cpMin = 6;
+        cr.cpMax = 7;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_BOLD),
+              "and the one after that carries on from it, being now the "
+              "character before the caret");
+    }
+
+    {
+        /* A size and a colour, and what they do to the drawing: a run in a
+         * bigger face makes its line taller and pushes what follows it
+         * along, which EM_POSFROMCHAR is the way to see. */
+        CHARFORMATA cf;
+        CHARRANGE cr;
+        POINTL a, b;
+        SetWindowTextA(re, "small BIG\r\nnext line");
+        a.x = a.y = b.x = b.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&a, 9);  /* end of line 1 */
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&b, 11); /* line 2 */
+        cr.cpMin = 6;
+        cr.cpMax = 9;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_SIZE;
+        cf.yHeight = 400; /* twenty points, against the default's eight */
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        {
+            POINTL a2, b2;
+            a2.x = a2.y = b2.x = b2.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&a2, 9);
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&b2, 11);
+            CHECK(a2.x > a.x,
+                  "a run set in a bigger size takes more room along the line");
+            CHECK(b2.y > b.y, "and makes the line it is on taller");
+        }
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_SIZE) && cf.yHeight == 400,
+              "and the size comes back as it was set, in twips");
+
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_COLOR;
+        cf.crTextColor = RGB(255, 0, 0);
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_COLOR) && cf.crTextColor == RGB(255, 0, 0) &&
+                  !(cf.dwEffects & CFE_AUTOCOLOR),
+              "a colour set is a colour kept, and turns the automatic one off");
+    }
+
+    {
+        /* SCF_ALL is the whole document whatever is selected. */
+        CHARFORMATA cf;
+        SetWindowTextA(re, "one two three");
+        SendMessageA(re, EM_SETSEL, 0, 3);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_ITALIC;
+        cf.dwEffects = CFE_ITALIC;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+        CHECK(ween_rich_run_count(re) == 1,
+              "SCF_ALL puts one formatting over everything, which is one run");
+        SendMessageA(re, EM_SETSEL, 9, 13);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_ITALIC),
+              "including the part that was not selected when it was set");
+    }
+
+    {
+        /* Text put in and taken out moves the runs with it. */
+        CHARFORMATA cf;
+        CHARRANGE cr;
+        SetWindowTextA(re, "one two three");
+        cr.cpMin = 4;
+        cr.cpMax = 7;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        SendMessageA(re, EM_SETSEL, 0, 0);
+        typed(re, "XX"); /* two characters before the bold run */
+        cr.cpMin = 6;
+        cr.cpMax = 9; /* where "two" is now */
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && (cf.dwEffects & CFE_BOLD),
+              "text put in before a run carries the run along with it");
+        SendMessageA(re, EM_SETSEL, 0, 2);
+        SendMessageA(re, WM_CLEAR, 0, 0);
+        cr.cpMin = 4;
+        cr.cpMax = 7;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwMask & CFM_BOLD) && (cf.dwEffects & CFE_BOLD),
+              "and taking it out again brings the run back where it was");
+    }
+
+    {
+        /* EN_SELCHANGE, which is what keeps a format bar in step with the
+         * caret -- and, like everything else here, waits on the mask. */
+        SetWindowTextA(re, "one two three");
+        SendMessageA(re, EM_SETEVENTMASK, 0, ENM_CHANGE | ENM_UPDATE);
+        g_selchange = 0;
+        SendMessageA(re, EM_SETSEL, 2, 5);
+        CHECK(g_selchange == 0,
+              "a selection that moves says nothing until it is asked to");
+        SendMessageA(re, EM_SETEVENTMASK, 0,
+                     ENM_CHANGE | ENM_UPDATE | ENM_SELCHANGE);
+        g_selchange = 0;
+        SendMessageA(re, EM_SETSEL, 4, 9);
+        CHECK(g_selchange == 1 && g_sel_from == 4 && g_sel_to == 9,
+              "and then says where it is now");
+        CHECK(g_seltyp == (SEL_TEXT | SEL_MULTICHAR),
+              "with what kind of thing is in it: more than one character of "
+              "text");
+        g_selchange = 0;
+        SendMessageA(re, EM_SETSEL, 4, 9);
+        CHECK(g_selchange == 0, "a selection set where it already is says nothing");
+        g_selchange = 0;
+        SendMessageA(re, EM_SETSEL, 6, 6);
+        CHECK(g_selchange == 1 && g_seltyp == SEL_EMPTY,
+              "and an empty one says so");
+        SendMessageA(re, EM_SETEVENTMASK, 0, ENM_CHANGE | ENM_UPDATE);
     }
 
     /* ---- what the dialog manager is told, and what the bar does ---- */
