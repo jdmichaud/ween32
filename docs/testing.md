@@ -2616,6 +2616,87 @@ because everywhere else the window and the buffer are the same size. If you
 change anything about `ween_letterbox`, check that test still bites by
 breaking it on purpose.
 
+## 2a. The editor's invariants — what a monkey may assert
+
+jd: *"There are many bugs around the editor. Adding text, filling up the
+editor, removing text, selecting text. Doing those actions **in combination**
+brings many bugs."*
+
+A monkey test needs an oracle, and **an invariant nobody measured is a bug
+report waiting to be filed against the wrong program.** This is the list of
+what has actually been established, and — more usefully — which
+plausible-sounding invariants are **false**.
+
+Every entry says where it came from. `machine` means Windows 2000 through
+`tools/vm/probe.c` or `ctlprobe.c`; `ours` means a test in this repository.
+
+### Measured, and safe to assert
+
+- **`EM_EXLIMITTEXT` truncates and tells the parent.** With a limit of 4,
+  typing `abcdef` leaves `abcd` and the parent receives `EN_MAXTEXT`.
+  *(ours, `richedit_test.c`)*
+- **A `cpMax` of -1 in `EM_EXSETSEL` means the end of the document**, and the
+  control reports back the resolved value, not the -1. *(ours)*
+- **The control raises and lowers `WS_VSCROLL` on itself.** On the machine's
+  `RichEdit20W`, three states in one document: empty `550081C4`, overflowing
+  `552081C4`, emptied again `550081C4`. **It is not a latch.** *(machine)*
+- **A vertical bar takes room from the client and does not overlay.** The
+  editor's white ran to screen x 915 without the bar and x 900 with it,
+  against `SM_CXVSCROLL` 16. *(machine)*
+
+### Measured to be **false** — do not assert these
+
+- **"`EM_POSFROMCHAR` agrees with where the caret is drawn."** It does not, at
+  the two positions a monkey will hit most:
+
+  ```
+  empty control, index 0      -> -1, -1
+  "abc\r\ndef", index 8 (len) -> -1, -1
+  ```
+
+  **The caret is drawn at both**, and the message answers -1. Asserted as
+  written, this fires on every empty document and after every append.
+  *(machine — **but of an `EDIT`, not a `RichEdit20W`**; whether riched20
+  agrees is unmeasured, and that is a reading somebody should take before
+  relying on either answer.)*
+
+- **"Distinct indices have distinct positions."** `"abc\r\ndef"` indices **3
+  and 4** — the `\r` and the `\n` — both answer `21,1`. A line break is two
+  characters at one place. *(machine, same caveat)*
+
+- **"After an insert of n the length rises by exactly n."** True until the
+  text limit, where the insert is truncated and `EN_MAXTEXT` fires. The
+  invariant needs *unless `EN_MAXTEXT` fired since the last check*. *(ours)*
+
+- **"The wrap points of existing text are stable when text is appended."**
+  **This is the one that will bite.** Appending enough to raise the scrollbar
+  narrows the client by a scrollbar's width, which re-wraps **every line
+  already in the document** — so an append at the end changes where the first
+  line breaks. *(machine)*
+
+### Not measured — assert only as our own design, and say so
+
+- `0 <= sel.start <= sel.end <= length`. **Whether the control normalises a
+  backwards range is unmeasured**; only the -1 case has been read.
+- The caret's index lies within the text.
+- `EM_LINEFROMCHAR(length) == EM_GETLINECOUNT - 1`. Related and measured: a
+  document ending in a break has an empty last line that counts.
+- First visible line <= line count.
+- **Whether the bar appears at exactly-fits or only at exceeds.** Three states
+  were read — empty, well over, empty again — and the boundary was not one of
+  them, so *iff* is stronger than the reading.
+
+### And the rule this list exists to enforce
+
+**Six of today's defects were a true sentence restated one level stronger than
+its source** — a function's name read as its behaviour, a picture read as a
+program, a colour count read as a cause, a user's *should not* read as a
+measurement. **A monkey applies its oracle thousands of times**, so an
+invariant that is wrong at one boundary is not a small error; it is a failure
+report per run, in the wrong file, drowning the real ones.
+
+**When the monkey fails, the first question is which of these it used.**
+
 ## 3. By hand, on screen
 
 ```sh
