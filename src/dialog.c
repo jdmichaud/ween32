@@ -529,9 +529,25 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     case VK_RETURN: {
         /* The keyboard carries the default with it: Enter presses the button
          * the focus is on, and the template's default only when the focus is
-         * somewhere else. That is the same rule the black ring is drawn by. */
+         * somewhere else. That is the same rule the black ring is drawn by.
+         *
+         * **Unless the control wants the key.** This asked nothing and
+         * pressed a button every time, so a combo box with its list dropped
+         * never received the Enter that takes what the highlight is on --
+         * the list closed because OK closed the dialog, which looks like a
+         * selection being made and is not one. WordPad's `Files of type` is
+         * where it showed: the type never committed and `Unicode Text
+         * Document` could not be asked for.
+         *
+         * `DLGC_WANTMESSAGE` is the win32 answer to that question and this
+         * file already asks a neighbouring one -- `dlg_focus` asks for
+         * `DLGC_HASSETSEL` thirty lines up. */
         HWND focus = ween_focus_get();
         int inside = 0;
+        if (focus &&
+            (SendMessageA(focus, WM_GETDLGCODE, VK_RETURN, 0) &
+             DLGC_WANTMESSAGE))
+            return FALSE; /* it is the control's key, not the dialog's */
         for (HWND p = focus; p; p = p->parent)
             if (p == dlg) {
                 inside = 1;

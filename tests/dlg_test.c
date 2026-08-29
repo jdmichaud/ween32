@@ -306,6 +306,48 @@ int main(void)
     CHECK(IsDialogMessageA(dlg, &m), "IsDialogMessage consumes Enter");
     CHECK(g_ok_clicks == 1, "Enter fired the default command (ID_OK)");
 
+    /* **Unless the focused control wants the key.** A combo box with its
+     * list dropped answers `DLGC_WANTMESSAGE`, and the dialog has to let the
+     * Enter through -- otherwise the default button fires, the dialog closes,
+     * and the list closing with it looks exactly like a selection being made.
+     *
+     * That is what WordPad's `Files of type` did: the list dropped, the
+     * arrows moved the highlight, and the type never committed, so one of
+     * the two formats it can write could not be asked for. **Fixing the
+     * combo alone was not enough** -- its handler was correct and the key
+     * never reached it. The check for the control's half is in
+     * tests/views_test.c; this is the half that lets it arrive. */
+    {
+        HWND cb = CreateWindowExA(0, "COMBOBOX", "",
+                                  WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST |
+                                      WS_TABSTOP,
+                                  10, 60, 120, 21, dlg, (HMENU)(UINT_PTR)991,
+                                  NULL, NULL);
+        int before = g_ok_clicks;
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "alpha");
+        SendMessageA(cb, CB_ADDSTRING, 0, (LPARAM) "beta");
+        SendMessageA(cb, CB_SETCURSEL, 0, 0);
+        SetFocus(cb);
+        SendMessageA(cb, WM_KEYDOWN, VK_DOWN, 0); /* opens the list */
+        SendMessageA(cb, WM_KEYDOWN, VK_DOWN, 0); /* highlight on "beta" */
+        CHECK(SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
+              "a dropped combo in a dialog is dropped");
+        CHECK((SendMessageA(cb, WM_GETDLGCODE, VK_RETURN, 0) &
+               DLGC_WANTMESSAGE) != 0,
+              "and says it wants the Enter for itself");
+        memset(&m, 0, sizeof(m));
+        m.hwnd = dlg;
+        m.message = WM_KEYDOWN;
+        m.wParam = VK_RETURN;
+        IsDialogMessageA(dlg, &m);
+        CHECK(g_ok_clicks == before,
+              "so Enter does not press the dialog's default button");
+        SendMessageA(cb, WM_KEYDOWN, VK_RETURN, 0);
+        CHECK(SendMessageA(cb, CB_GETCURSEL, 0, 0) == 1,
+              "and the selection it commits is the one under the highlight");
+        DestroyWindow(cb);
+    }
+
     /* Click OK: client (10,30)+edges -> window coords via the client origin. */
     int ox, oy;
     ween_client_origin(ok, &ox, &oy);

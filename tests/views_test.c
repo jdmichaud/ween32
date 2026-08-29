@@ -787,6 +787,38 @@ int main(void)
         CHECK(!SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
               "and Escape puts the list away");
 
+        /* **And Enter takes what the highlight is on -- in the list-only
+         * kind as much as the editable one.**
+         *
+         * The editable combo has handled Enter all along, through its
+         * field's own procedure. The **list-only** kind has no field, so its
+         * keys go straight to the combo, and that handler had `VK_DOWN`,
+         * `VK_UP`, `VK_PRIOR`, `VK_NEXT` and `VK_ESCAPE` and **no
+         * `VK_RETURN`** -- Enter fell to `default: return 0`. Its own
+         * comment said *"Enter takes what is under the highlight"*, so the
+         * code disagreed with the sentence directly above it.
+         *
+         * Sam found it from the outside, in WordPad's Save As box: the list
+         * drops, the arrows move the highlight, **and nothing ever takes**.
+         * `Unicode Text Document` is one of the two formats that program can
+         * write and it could not be asked for. A control that looks like it
+         * works is the expensive kind of broken. */
+        SendMessageA(list_only, CB_ADDSTRING, 0, (LPARAM) "alpha");
+        SendMessageA(list_only, CB_ADDSTRING, 0, (LPARAM) "beta");
+        SendMessageA(list_only, CB_ADDSTRING, 0, (LPARAM) "gamma");
+        SendMessageA(list_only, CB_SETCURSEL, 0, 0);
+        SendMessageA(list_only, WM_KEYDOWN, VK_DOWN, 0); /* opens it */
+        SendMessageA(list_only, WM_KEYDOWN, VK_DOWN, 0); /* on "beta" */
+        CHECK(SendMessageA(list_only, CB_GETCURSEL, 0, 0) == 0,
+              "walking a list-only combo does not change the selection yet");
+        SendMessageA(list_only, WM_KEYDOWN, VK_RETURN, 0);
+        CHECK(!SendMessageA(list_only, CB_GETDROPPEDSTATE, 0, 0),
+              "Enter closes a list-only combo's list");
+        CHECK(SendMessageA(list_only, CB_GETCURSEL, 0, 0) == 1,
+              "and takes what the highlight was on, which is the whole "
+              "point of walking it");
+        SendMessageA(list_only, CB_RESETCONTENT, 0, 0);
+
         /* More than it can show: the list stops at eight rows and puts a bar
          * down its side, and the highlight walking past the bottom scrolls
          * it rather than running off. */

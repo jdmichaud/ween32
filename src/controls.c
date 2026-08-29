@@ -3154,6 +3154,22 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             combo_damage(wnd);
         }
         return 0;
+    case WM_GETDLGCODE:
+        /* **A dropped list wants the Enter for itself**, and a dialog has to
+         * be told so rather than guess. `ween_dialog_key` takes VK_RETURN
+         * unconditionally and presses the default button, so inside a dialog
+         * a combo never saw the key at all -- the handler below could be
+         * perfectly correct and the selection would still not commit, which
+         * is what a first fix here produced.
+         *
+         * This is win32's own arrangement and it is already used in this
+         * repository: src/richedit.c answers DLGC_WANTMESSAGE when
+         * ES_WANTRETURN is on, for exactly the same reason. Asking is
+         * `dlg_focus`'s pattern too -- src/dialog.c:233 asks for
+         * DLGC_HASSETSEL. So nothing new is invented here; a control that
+         * had no answer is given one. */
+        return DLGC_WANTARROWS |
+               (g_dropped == wnd ? DLGC_WANTMESSAGE : 0);
     case WM_KEYDOWN: {
         /* Walking the list from the keyboard, whether the combo has a field
          * or is the list-only kind: Down opens it and moves through it, Up
@@ -3191,6 +3207,27 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     it->track = 0;
             }
             break;
+        case VK_RETURN:
+            /* **The sentence above this switch already said so.** It reads
+             * "Enter takes what is under the highlight", and there was no
+             * `VK_RETURN` here -- Enter fell to `default: return 0`. The
+             * editable kind has handled it all along in its field's own
+             * procedure, so only the **list-only** combo was affected, and
+             * only when walked from the keyboard, which is why every render
+             * of one looked right.
+             *
+             * Sam found it from outside, in WordPad's Save As box: the list
+             * drops, the arrows move the highlight, and nothing ever takes
+             * -- so `Unicode Text Document`, one of the two formats that
+             * program can write, could not be asked for at all.
+             *
+             * `combo_commit` is the same call the field's Enter makes, so
+             * the two kinds now end a walk the same way rather than each
+             * having their own idea of it. */
+            if (g_dropped != wnd || it->track < 0 || it->track >= it->count)
+                return 0;
+            combo_commit(wnd, it);
+            return 0;
         case VK_ESCAPE:
             if (g_dropped != wnd)
                 return 0;
