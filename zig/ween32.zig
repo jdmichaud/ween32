@@ -523,6 +523,11 @@ pub extern fn ChooseColorA(cc: *CHOOSECOLORA) callconv(.c) BOOL;
 
 pub extern fn InitCommonControlsEx(icc: *const INITCOMMONCONTROLSEX) callconv(.c) BOOL;
 pub extern fn InitCommonControls() callconv(.c) void;
+/// A BITMAP a program keeps in its script: a strip of toolbar art is the
+/// usual reason to want one.
+/// Returns null when the script has not got it, which HBITMAP -- an
+/// unadorned `*opaque{}` here -- cannot say on its own.
+pub extern fn LoadBitmapA(inst: HINSTANCE, name: LPCSTR) callconv(.c) ?HBITMAP;
 pub extern fn ImageList_Create(cx: c_int, cy: c_int, flags: UINT, initial: c_int, grow: c_int) callconv(.c) HIMAGELIST;
 pub extern fn ImageList_Destroy(il: HIMAGELIST) callconv(.c) BOOL;
 pub extern fn ImageList_Add(il: HIMAGELIST, image: HBITMAP, mask: ?HBITMAP) callconv(.c) c_int;

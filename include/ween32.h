@@ -3083,6 +3083,8 @@ BOOL IsClipboardFormatAvailable(UINT format);
 #define ILD_TRANSPARENT 0x0001
 
 HBITMAP CreateBitmap(int w, int h, UINT planes, UINT bpp, const void *bits);
+/* A BITMAP a program keeps in its script: one lookup, no file on disk. */
+HBITMAP LoadBitmapA(HINSTANCE inst, LPCSTR name);
 HANDLE LoadImageA(HINSTANCE inst, LPCSTR name, UINT type, int cx, int cy,
                   UINT flags);
 HIMAGELIST ImageList_Create(int cx, int cy, UINT flags, int initial, int grow);
@@ -3285,6 +3287,7 @@ typedef const char *LPCTSTR, *PCTSTR;
 #define GetDlgItemInt GetDlgItemIntA
 #define MessageBox MessageBoxA
 #define LoadCursor LoadCursorA
+#define LoadBitmap LoadBitmapA
 #define LoadIcon LoadIconA
 #define LoadString LoadStringA
 #define LoadMenu LoadMenuA

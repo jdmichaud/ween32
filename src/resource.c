@@ -31,6 +31,7 @@ extern const unsigned char ween_app_resource_data[];
 extern const unsigned int ween_app_resource_len;
 
 /* Resource types, by the numbers winuser.h gives them. */
+#define WEEN_RT_BITMAP 2
 #define WEEN_RT_ICON 3
 #define WEEN_RT_MENU 4
 #define WEEN_RT_DIALOG 5
@@ -325,6 +326,26 @@ HWND CreateDialogParamA(HINSTANCE inst, LPCSTR name, HWND owner, DLGPROC proc,
         return NULL;
     return CreateDialogIndirectParamA(inst, (LPCDLGTEMPLATEA)p, owner, proc,
                                       param);
+}
+
+/* A bitmap a program keeps in its script.
+ *
+ * One lookup and no directory: a BITMAP resource is a .bmp with its
+ * fourteen-byte file header taken off, which is a plain DIB, and that is what
+ * the image reader takes. A toolbar's strip of button pictures is the usual
+ * reason to want one. */
+HBITMAP LoadBitmapA(HINSTANCE inst, LPCSTR name)
+{
+    unsigned size = 0;
+    int ok, id = res_number(name, &ok);
+    const unsigned char *p;
+    (void)inst;
+    if (!ok || id <= 0)
+        return NULL;
+    p = res_find(WEEN_RT_BITMAP, id, &size);
+    if (!p || !size)
+        return NULL;
+    return ween_bitmap_from_dib(p, size);
 }
 
 /* An icon a program keeps in its script.

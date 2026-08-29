@@ -577,10 +577,36 @@ static void statusbar(HWND parent)
                   r.left, r.right);
         emit(buf);
     }
-    /* And whether a part can be asked to drop its border, which is what
-     * WordPad's message pane looks like it has done. */
-    SendMessageA(sb, SB_SETTEXTA, 0 | SBT_NOBORDERS, (LPARAM)"first");
-    emit("  part 0 set with SBT_NOBORDERS; see the capture\r\n");
+    /* Two parts with the same text, one bordered and one not, so a capture
+     * says whether losing the border moves the text. ween32 puts a borderless
+     * part's text one row above where the machine puts WordPad's, and its
+     * vertical rule was measured on bordered parts only. */
+    SendMessageA(sb, SB_SETTEXTA, 1, (LPARAM)"Ay");
+    SendMessageA(sb, SB_SETTEXTA, 2 | SBT_NOBORDERS, (LPARAM)"Ay");
+    emit("  part 1 bordered and part 2 not, both \"Ay\"; read the capture\r\n");
+
+    /* And WordPad's own bar, to the pixel: 18 tall, one borderless part, the
+     * string the machine's shows. ween32 puts that text one row above where
+     * the machine's WordPad puts it, and this says whether the machine's row
+     * is plain comctl32's or something MFC does on top. */
+    {
+        static const int one[1] = { 300 };
+        HWND wp = CreateWindowExA(0, STATUSCLASSNAMEA, NULL,
+                                  WS_CHILD | WS_VISIBLE | CCS_NORESIZE |
+                                  CCS_NOPARENTALIGN,
+                                  0, 300, 400, 18, parent,
+                                  (HMENU)(UINT_PTR)380, NULL, NULL);
+        RECT r;
+        SendMessageA(wp, SB_SETPARTS, 1, (LPARAM)one);
+        SendMessageA(wp, SB_SETTEXTA, 0 | SBT_NOBORDERS,
+                     (LPARAM)"For Help, press F1");
+        r.left = r.top = r.right = r.bottom = 0;
+        SendMessageA(wp, SB_GETRECT, 0, (LPARAM)&r);
+        wsprintfA(buf,
+                  "  an 18-tall bar at window y=300: part 0 %ld,%ld %ldx%ld\r\n",
+                  r.left, r.top, r.right - r.left, r.bottom - r.top);
+        emit(buf);
+    }
 }
 
 /* A toolbar in a rebar band, which is where explorer's menu band lives and
@@ -1167,7 +1193,7 @@ static void probe_main(void)
                         /* 300 tall, not 230: the two state bars go below the
                          * measuring one and a control off the client is a
                          * control that was never drawn. */
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 380,
+                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 420,
                         NULL, NULL, wc.hInstance, NULL);
 
     /* The same font the dialogs use, because a control's size is measured in

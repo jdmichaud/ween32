@@ -55,6 +55,75 @@ HBITMAP CreateBitmap(int w, int h, UINT planes, UINT bpp, const void *bits)
 /* A .bmp, which is the only image format ween32 reads — and the one it
  * writes, so a headless screenshot can be loaded straight back in. 24- and
  * 32-bit uncompressed only, which is what BI_RGB means in practice. */
+/* A DIB in memory: a BITMAPINFOHEADER, whatever palette follows it, and the
+ * rows. That is a .bmp file with its fourteen-byte file header taken off,
+ * which is exactly what a BITMAP resource is -- the compiler strips it -- so
+ * this is what LoadBitmapA reads and what load_bmp uses once it has read the
+ * file header for the offset.
+ *
+ * 4 and 8 bits go through the palette; 24 and 32 are already colours. */
+HBITMAP ween_bitmap_from_dib(const unsigned char *dib, size_t len)
+{
+#define D32(o) ((unsigned)dib[o] | ((unsigned)dib[(o) + 1] << 8) |             \
+                ((unsigned)dib[(o) + 2] << 16) | ((unsigned)dib[(o) + 3] << 24))
+    unsigned hdr, ncol;
+    int w, h, bpp, flip, stride;
+    ween_gdiobj *b;
+    const unsigned char *bits;
+
+    if (!dib || len < 40)
+        return NULL;
+    hdr = D32(0);
+    w = (int)D32(4);
+    h = (int)D32(8);
+    bpp = dib[14] | (dib[15] << 8);
+    if (D32(16) != 0) /* compressed: not something a toolbar strip is */
+        return NULL;
+    ncol = D32(32);
+    if (!ncol && bpp <= 8)
+        ncol = 1u << bpp;
+    flip = h > 0; /* a positive height means the rows run bottom-up */
+    if (h < 0)
+        h = -h;
+    if (w <= 0 || h <= 0 || hdr < 40 || hdr > len)
+        return NULL;
+    if (bpp != 4 && bpp != 8 && bpp != 24 && bpp != 32)
+        return NULL;
+    bits = dib + hdr + (size_t)ncol * 4;
+    stride = (((w * bpp + 7) / 8) + 3) & ~3;
+    if ((size_t)(bits - dib) + (size_t)stride * h > len)
+        return NULL;
+
+    b = calloc(1, sizeof(*b));
+    if (!b || !ween_surface_init(&b->bitmap, w, h)) {
+        free(b);
+        return NULL;
+    }
+    b->kind = WEEN_OBJ_BITMAP;
+    for (int i = 0; i < h; i++) {
+        int y = flip ? h - 1 - i : i;
+        const unsigned char *row = bits + (size_t)i * stride;
+        for (int x = 0; x < w; x++) {
+            ween_color c;
+            if (bpp <= 8) {
+                unsigned idx = bpp == 4
+                                   ? (x & 1 ? row[x / 2] & 15 : row[x / 2] >> 4)
+                                   : row[x];
+                const unsigned char *e = dib + hdr + idx * 4;
+                if (idx >= ncol)
+                    e = dib + hdr;
+                c = WEEN_RGBX(e[2], e[1], e[0]);
+            } else {
+                const unsigned char *e = row + (size_t)x * (bpp / 8);
+                c = WEEN_RGBX(e[2], e[1], e[0]);
+            }
+            b->bitmap.px[(size_t)y * w + x] = c;
+        }
+    }
+    return b;
+#undef D32
+}
+
 static HBITMAP load_bmp(const char *path)
 {
     unsigned char hdr[54];
