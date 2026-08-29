@@ -99,12 +99,62 @@ static void dump(HWND w, int depth)
  * and once for the toolbar. A control's insides are measured off the pixels
  * instead, or by a program running inside that process. */
 
+/* ...but a control message that takes *no* pointer is safe, and there is a
+ * useful family of them. The answer comes back in the return value, nothing
+ * is marshalled, and what they report is how the program *configured* its
+ * control rather than how a control we built behaves. That is the difference
+ * between "comctl32 does this" and "MFC asked for this", which is exactly
+ * what a picture cannot tell you. */
+static void ask_toolbar(HWND w)
+{
+    LRESULT size = SendMessageA(w, TB_GETBUTTONSIZE, 0, 0);
+    LRESULT pad = SendMessageA(w, TB_GETPADDING, 0, 0);
+    emit("    -- asked, no pointer either way --\r\n");
+    wsprintfA(buf, "    button size %dx%d   padding %dx%d\r\n",
+              (int)LOWORD(size), (int)HIWORD(size), (int)LOWORD(pad),
+              (int)HIWORD(pad));
+    emit(buf);
+    wsprintfA(buf, "    buttons %d   rows %d   text rows %d\r\n",
+              (int)SendMessageA(w, TB_BUTTONCOUNT, 0, 0),
+              (int)SendMessageA(w, TB_GETROWS, 0, 0),
+              (int)SendMessageA(w, TB_GETTEXTROWS, 0, 0));
+    emit(buf);
+    wsprintfA(buf, "    bitmap flags %08lX   style %08lX   image list %s\r\n",
+              (unsigned long)SendMessageA(w, TB_GETBITMAPFLAGS, 0, 0),
+              (unsigned long)SendMessageA(w, TB_GETSTYLE, 0, 0),
+              SendMessageA(w, TB_GETIMAGELIST, 0, 0) ? "set" : "none");
+    emit(buf);
+}
+
+static void ask_status(HWND w)
+{
+    /* SB_GETPARTS with a null pointer is the documented way to ask how many
+     * parts there are, and it is the one status-bar getter that hands nothing
+     * across. */
+    int n = (int)SendMessageA(w, SB_GETPARTS, 0, 0);
+    int i;
+    emit("    -- asked, no pointer either way --\r\n");
+    wsprintfA(buf, "    parts %d   simple %d\r\n", n,
+              (int)SendMessageA(w, SB_ISSIMPLE, 0, 0));
+    emit(buf);
+    for (i = 0; i < n && i < 8; i++) {
+        LRESULT len = SendMessageA(w, SB_GETTEXTLENGTHA, (WPARAM)i, 0);
+        wsprintfA(buf, "    part %d text %d chars, type %04X\r\n", i,
+                  (int)LOWORD(len), (int)HIWORD(len));
+        emit(buf);
+    }
+}
+
 static BOOL CALLBACK child(HWND w, LPARAM lp)
 {
     char cls[64];
     cls[0] = 0;
     dump(w, (int)lp);
     GetClassNameA(w, cls, sizeof cls);
+    if (lstrcmpiA(cls, TOOLBARCLASSNAMEA) == 0)
+        ask_toolbar(w);
+    else if (lstrcmpiA(cls, STATUSCLASSNAMEA) == 0)
+        ask_status(w);
     return TRUE;
 }
 

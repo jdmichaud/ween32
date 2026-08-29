@@ -7931,12 +7931,18 @@ static void toolbar_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                      shift;
             int iy = by + (h - 16) / 2 + shift;
             if (!flat && !b->text) {
-                /* On a raised button the picture is centred in what the edge
-                 * leaves: a pixel in on the top and left, and the middle of
-                 * the rest. Sixteen in twenty-three by twenty-two comes out
-                 * at four and three, which is where the machine's are. */
-                ix = bx + 1 + (b->w - 1 - 16) / 2 + shift;
-                iy = by + 1 + (h - 1 - 16) / 2 + shift;
+                /* On a raised button the picture is centred in the button,
+                 * with the odd column falling on the left: sixteen in
+                 * twenty-three by twenty-two comes out at three and three.
+                 *
+                 * Asked of real comctl32 rather than worked out -- a solid
+                 * black 16x16 in a 23x22 button, so the capture needs no
+                 * arithmetic -- and the answer is (3,3) on a flat bar and a
+                 * classic one alike. What was here before was
+                 * `1 + (w - 1 - 16) / 2`, which is four, and claimed the
+                 * machine's name for it. */
+                ix = bx + (b->w - 16) / 2 + shift;
+                iy = by + (h - 16) / 2 + shift;
             }
             if (from && b->image >= 0) {
                 if (enabled) {

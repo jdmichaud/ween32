@@ -736,6 +736,8 @@ static void imageinset(HWND parent)
  * pixels wrong. So the rule depends on the height in a way the formula does
  * not capture, and four heights with the same string in each will say how.
  */
+static HFONT the_font;
+
 static void statusheights(HWND parent)
 {
     static const int heights[4] = { 18, 20, 23, 26 };
@@ -750,6 +752,12 @@ static void statusheights(HWND parent)
                              CCS_NOPARENTALIGN,
                              0, y, 200, heights[j], parent,
                              (HMENU)(UINT_PTR)(400 + j), NULL, NULL);
+        /* The message font, which is what a real program's bar has and what
+         * the first run of this did *not*: every one of its four answers came
+         * out a row below the machine's own WordPad and Paint, by exactly the
+         * one row a different font moves a line. Set it and the two are
+         * comparable. */
+        SendMessageA(sb, WM_SETFONT, (WPARAM)the_font, TRUE);
         SendMessageA(sb, SB_SETPARTS, 1, (LPARAM)one);
         SendMessageA(sb, SB_SETTEXTA, 0 | SBT_NOBORDERS, (LPARAM)"Hg");
         r.left = r.top = r.right = r.bottom = 0;
@@ -1301,6 +1309,7 @@ static void probe_main(void)
         SystemParametersInfoA(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0);
     }
     font = CreateFontIndirectA(&ncm.lfMessageFont);
+    the_font = font;
     wsprintfA(buf, "== font ==\r\nmessage font \"%s\" height %ld weight %ld\r\n",
               ncm.lfMessageFont.lfFaceName, ncm.lfMessageFont.lfHeight,
               ncm.lfMessageFont.lfWeight);
