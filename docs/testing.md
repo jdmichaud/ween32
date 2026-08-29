@@ -16,10 +16,18 @@ dropped, a test file stopped being built rather than a test starting to pass.
 Then the four things `make test` does not cover:
 
 ```sh
-# that the same example source still builds against the real windows.h, and
-# that every constant ween32 declares is the number Windows gives it
+# that the same example source still builds against the real windows.h, that
+# every constant ween32 declares is the number Windows gives it, and that
+# `zig build` still links a program against this library on this machine
 make win32
 ```
+
+That last one is there because `build.zig` keeps its own list of the
+library's sources and `make` does not read it. A file added to the Makefile
+and not to `build.zig` leaves `make` green and every Zig program that depends
+on ween32 -- paint, notepad, WordPad -- failing to link on a symbol it cannot
+find. `src/richedit.c` did exactly that, and the line that says so now is
+`zig build paint` with no target.
 
 This is the half of the promise the suite cannot see. It has caught the
 explorer failing to compile against win32 at all (GET_X_LPARAM lives in

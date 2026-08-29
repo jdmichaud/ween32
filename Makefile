@@ -149,6 +149,12 @@ ZIGWIN = $(ZIG) cc -target x86_64-windows-gnu -std=c99 -Iinclude
 ZIG ?= zig
 ZIG_NEEDS = 0.17
 
+# The same source both ways, and both of them built. The Windows half is what
+# this target was written for; the host half is here because build.zig keeps
+# its own list of the library's sources and `make` does not read it -- a file
+# added to one and not the other leaves every Zig program that depends on
+# ween32 failing to link while `make` stays green. That is exactly what
+# happened to src/richedit.c, and this line is what would have said so.
 win32:
 	@command -v $(ZIG) >/dev/null || { echo "win32: zig not installed, skipped"; exit 0; }
 	@for src in $(EXAMPLES:%=%.c); do \
@@ -172,7 +178,9 @@ win32:
 	   && echo "  zig binding agrees with the header"
 	@case "$$($(ZIG) version)" in \
 	   $(ZIG_NEEDS)*) echo "  win32 examples/paint (zig)"; \
-	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1;; \
+	      $(ZIG) build paint -Dtarget=x86_64-windows-gnu || exit 1; \
+	      echo "  ween32 examples/paint (zig)"; \
+	      $(ZIG) build paint || exit 1;; \
 	   *) echo "  win32 examples/paint: needs zig $(ZIG_NEEDS), skipped";; \
 	 esac
 

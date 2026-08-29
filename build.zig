@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) void {
             "src/menu.c",
             "src/imagelist.c",
             "src/user.c",
+            "src/richedit.c",
             "src/dialog.c",
             "src/registry.c",
             "src/resource.c",
