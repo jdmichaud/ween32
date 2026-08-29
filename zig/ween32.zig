@@ -126,6 +126,17 @@ pub const NMHDR = extern struct {
     code: UINT,
 };
 
+/// What a tooltip asks its owner for, through WM_NOTIFY. Point `lpszText` at
+/// your own string or fill `szText`; the control reads whichever you set.
+pub const NMTTDISPINFOA = extern struct {
+    hdr: NMHDR,
+    lpszText: ?[*:0]u8,
+    szText: [80]u8,
+    hinst: HINSTANCE,
+    uFlags: UINT,
+    lParam: LPARAM,
+};
+
 pub const TRACKMOUSEEVENT = extern struct {
     cbSize: DWORD,
     dwFlags: DWORD,
@@ -370,6 +381,7 @@ pub extern fn WriteFile(file: HANDLE, buf: [*]const u8, to_write: u32, written: 
 pub extern fn SetFilePointer(file: HANDLE, distance: i32, high: ?*i32, method: u32) callconv(.c) u32;
 pub extern fn GetFileSize(file: HANDLE, high: ?*u32) callconv(.c) u32;
 pub extern fn CloseHandle(h: HANDLE) callconv(.c) BOOL;
+pub extern fn IsWindowVisible(wnd: HWND) callconv(.c) BOOL;
 pub extern fn GetWindowLongA(wnd: HWND, index: c_int) callconv(.c) LONG;
 pub extern fn SetWindowLongA(wnd: HWND, index: c_int, value: LONG) callconv(.c) LONG;
 pub extern fn GetWindowLongPtrA(wnd: HWND, index: c_int) callconv(.c) LONG_PTR;
@@ -1232,6 +1244,10 @@ pub const WEEN32_HAS_TREEVIEW = 1;
 pub const WEEN32_HAS_LISTVIEW = 1;
 pub const WEEN32_HAS_TRACKBAR = 1;
 pub const TOOLBARCLASSNAMEA = "ToolbarWindow32";
+pub const TTN_FIRST = (0 - 520);
+pub const TTN_GETDISPINFOA = (TTN_FIRST - 0);
+pub const TBSTYLE_TOOLTIPS = 0x0100;
+pub const TB_GETTOOLTIPS = (WM_USER + 35);
 pub const STATUSCLASSNAMEA = "msctls_statusbar32";
 
 /// One button on a toolbar, as TB_ADDBUTTONS takes them.
