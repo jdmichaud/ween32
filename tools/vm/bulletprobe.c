@@ -132,6 +132,13 @@ static void set_bullet(HWND re, int at)
     SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
 }
 
+#ifndef A_START
+#define A_START 0
+#endif
+#ifndef A_OFFSET
+#define A_OFFSET 720
+#endif
+
 static const char *P0 = "alpha beta gamma";
 static const char *P2 =
     "the quick brown fox jumps over the lazy dog and the quick brown fox "
@@ -255,7 +262,72 @@ static void probe_main(void)
     }
     emit("\r\n  A wrapped line starting at the same x as the first line means\r\n"
          "  the bullet hangs outside the text block. A smaller x means it\r\n"
-         "  does not.\r\n");
+         "  does not.\r\n\r\n");
+
+    /* ---- which two fields make WordPad's geometry -----------------------
+     *
+     * The machine's Format > Paragraph reports `Left 0.5", First line -0.5"`
+     * for a bulleted paragraph. **That is a dialog's language and PARAFORMAT
+     * has three fields that could carry it**, so writing it straight into
+     * code is a guess with three ways to be wrong. The mapping win32 states
+     * is that `dxStartIndent` is the FIRST line's indent and `dxOffset` is
+     * the second and later lines RELATIVE to it -- which makes the dialog's
+     * pair `Left = dxStartIndent + dxOffset` and `First line = -dxOffset`,
+     * so 0.5"/-0.5" is `dxStartIndent 0, dxOffset 720`.
+     *
+     * **That reasoning was wrong and the measurement corrected it.** I
+     * expected the first line to stay at 0 and only the wrap to move out, and
+     * both moved -- which I first read as the mapping being the other way
+     * about. It is not. **WordPad's first line does not stay at 0 either:**
+     * only the *bullet* sits on the margin, and the first line's TEXT is at
+     * +0.5" exactly like the wrap. `EM_POSFROMCHAR` reports characters, and
+     * the bullet is not one, so "both at 720" is WordPad's picture and not a
+     * contradiction of it.
+     *
+     * Both combinations are built, so the answer is a comparison rather than
+     * an argument:
+     *
+     *   dxStartIndent 0   dxOffset 720   text x 49, wrap x 49  <- WordPad's
+     *   dxStartIndent 720 dxOffset -720  text x 60, wrap x 1
+     *
+     * and the dialog's two numbers therefore mean `Left = dxOffset` and
+     * `First line = dxStartIndent - dxOffset`, which is 0.5" and -0.5" for
+     * the pair below. Build with -DA_START= and -DA_OFFSET= to ask another. */
+    wsprintfA(buf, "== dxStartIndent %d, dxOffset %d ==\r\n", A_START, A_OFFSET);
+    emit(buf);
+    {
+        PARAFORMAT pf;
+        select_at(re, p2_start);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_STARTINDENT | PFM_OFFSET;
+        pf.dxStartIndent = A_START;
+        pf.dxOffset = A_OFFSET;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        pump(300);
+    }
+    para_at(re, p2_start, "para 2, indents set");
+    pos_at(re, p2_start, "para 2 first char");
+    {
+        POINTL first, p;
+        int at;
+        first.x = first.y = 0x7BAD;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&first, (LPARAM)p2_start);
+        for (at = p2_start + 1; at < n; at++) {
+            p.x = p.y = 0x7BAD;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, (LPARAM)at);
+            if (p.y != first.y) {
+                wsprintfA(buf, "  wraps at index %d: x %ld (first line x %ld)"
+                               "\r\n", at, (long)p.x, (long)first.x);
+                emit(buf);
+                break;
+            }
+        }
+    }
+    emit("\r\n  Both lines at 720 twips is WordPad's picture: its bullet is on\r\n"
+         "  the margin and its text -- first line and wrap alike -- is half\r\n"
+         "  an inch in. EM_POSFROMCHAR reports characters and a bullet is\r\n"
+         "  not one, so do not read `both moved` as a contradiction.\r\n");
 
     CloseHandle(out_file);
     ExitProcess(0);
