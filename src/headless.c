@@ -36,12 +36,31 @@ const ween_surface *ween_headless_surface(void)
 }
 
 /* WEEN32_SCRIPT: space-separated scripted input, e.g. "d:110,146 u:110,146
- * k:27" — d/u/m = mouse down/up/move at window coordinates, k = a virtual-key
- * press, K = the same with Shift held, c = with Control held, C = with both
- * (which is how an accelerator is reached) and a = with Alt, h = hold a
- * modifier over the presses that follow (h:s, h:c, h:sc, and h: for none),
- * w = milliseconds of timer time to let pass. Lets any example run and be screenshotted with no
- * display. */
+ * k:27". Lets any example be driven and screenshotted with no display.
+ *
+ *   d/u/m:X,Y   mouse down, up, move, at window coordinates
+ *   D/U:X,Y     the same with the right button
+ *   k:N         a virtual-key press
+ *   K:N         the same with Shift held — Tab against Shift+Tab
+ *   c:N / C:N   with Control, and with Control and Shift: an accelerator
+ *   a:N         with Alt, which is how the menu bar is reached
+ *   h:s h:c h:sc h:      hold a modifier over the presses that follow
+ *   t:TEXT      **type it**, a character at a time. `_` is a space, and the
+ *               run ends at the first real one. This is how a file name gets
+ *               into a common dialog, which is the whole of what a program's
+ *               Open and Save can be driven with
+ *   r:W,H       the window system hands the app a new size
+ *   w:MS        milliseconds of timer time to let pass
+ *
+ * `t:` and `r:` were missing from *this* list while being in the one in
+ * docs/testing.md, and the gap cost something: I read this one, concluded a
+ * file name could not be typed into a common dialog without a machine, and
+ * said so on the record. Both were wrong and the docs had it right.
+ *
+ * The lesson is not "read the docs" -- it is that **a list that gives eight
+ * of its ten words is worse than one that gives none**, because the eight
+ * make it look complete and nobody goes to look for the other two. If you add
+ * a command here, add it in both places or in neither. */
 static void inject_script(const char *script)
 {
     const char *p = script;
