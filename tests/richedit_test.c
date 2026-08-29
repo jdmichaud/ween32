@@ -2381,21 +2381,18 @@ int main(void)
         GetWindowTextA(t, buf, sizeof buf);
         CHECK(!strcmp(buf, "abcdef"), "six characters typed");
 
+        /* **One undo, not six.** A typed run is one step -- riched20 calls
+         * it UID_TYPING, and Sam measured "hello" and "ab cd" each coming
+         * back in a single undo, a space not breaking the run. This file
+         * asserted one-per-character until that reading existed, on a
+         * comment that said so and called it unmeasured. */
         SendMessageA(t, EM_UNDO, 0, 0);
         GetWindowTextA(t, buf, sizeof buf);
-        CHECK(!strcmp(buf, "abcde"), "one undo takes the last one back");
-        SendMessageA(t, EM_UNDO, 0, 0);
-        GetWindowTextA(t, buf, sizeof buf);
-        CHECK(!strcmp(buf, "abcd"),
-              "and the second goes further back rather than putting it "
-              "again, which is what a swap does");
-        for (i = 0; i < 10; i++)
-            SendMessageA(t, EM_UNDO, 0, 0);
-        GetWindowTextA(t, buf, sizeof buf);
-        CHECK(!strcmp(buf, ""), "undoing everything empties the document");
+        CHECK(!strcmp(buf, ""),
+              "one undo takes back the whole typed run, not the last "
+              "character of it");
         CHECK(!SendMessageA(t, EM_CANUNDO, 0, 0),
-              "and then there is nothing left to undo, which a swap could "
-              "never say");
+              "and there is nothing behind it, because it was one step");
         SendMessageA(t, EM_UNDO, 0, 0);
         GetWindowTextA(t, buf, sizeof buf);
         CHECK(!strcmp(buf, ""), "an undo with nothing to undo changes nothing");

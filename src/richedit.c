@@ -120,13 +120,33 @@ typedef struct {
     int modified;
     int limit;    /* the most characters it will hold, 0 for no limit */
     DWORD events; /* which notifications the program asked for */
-    /* **A stack, because a rich edit's undo is one and an EDIT's is not.**
-     * This kept a single string and swapped it, which is exactly right for
-     * the EDIT in src/controls.c and wrong here: the second EM_UNDO put
-     * back what the first took, for ever, and EM_CANUNDO answered TRUE for
-     * ever with it. jd reported it as Undo not working. */
-    char **undo;
-    int *undo_caret;
+    /* **A stack of transactions, and a transaction is the whole document.**
+     *
+     * It began as one string that EM_UNDO swapped -- right for the EDIT in
+     * src/controls.c, wrong here -- and became a stack of strings, which
+     * fixed jd's first report and not his second: *"if you change the style
+     * and type something, only the style is undone."* A style alters runs
+     * and not text, so a record made of text cannot hold it.
+     *
+     * Sam read riched20 for the shape rather than any of us guessing it
+     * (tools/vm/undoprobe.txt):
+     *
+     *     "hello" typed a character at a time   -> 1 undo, empty
+     *     "ab cd" typed a character at a time   -> 1 undo, empty
+     *     EM_GETUNDONAME for that step          -> UID_TYPING
+     *     120 formatting changes                -> 100 undos, then no more
+     *     bold 0..3, type XY, undo, undo        -> the typing, then the style
+     *
+     * So: a step holds text **and** runs; a typed run is one step however
+     * many characters it is; a formatting change is a step of its own; and
+     * the stack is a hundred deep. */
+    struct rich_step {
+        char *text;
+        struct rich_run *run;
+        int runs;
+        int caret;
+        int typing; /* still absorbing characters, per UID_TYPING */
+    } *undo;
     int undos, undo_cap;
     int first_visible; /* the top line drawn */
     int sb_grab;       /* where in the thumb a drag took hold, or -1 */
@@ -1066,37 +1086,75 @@ static void rich_range(const ween_rich *e, int *from, int *to)
 
 /* Keep what is there, so that the change about to be made can be taken back.
  * One step is what a text control keeps, and undoing swaps the two. */
+static void rich_step_free(struct rich_step *st)
+{
+    free(st->text);
+    free(st->run);
+    st->text = NULL;
+    st->run = NULL;
+}
+
 static void rich_undo_clear(ween_rich *e)
 {
     while (e->undos > 0)
-        free(e->undo[--e->undos]);
+        rich_step_free(&e->undo[--e->undos]);
     free(e->undo);
-    free(e->undo_caret);
     e->undo = NULL;
-    e->undo_caret = NULL;
     e->undo_cap = 0;
 }
 
-static void rich_remember(ween_rich *e)
+/* **A hundred, which is riched20's and not a round number somebody liked.**
+ * Sam filled the stack with formatting changes to measure it -- typed
+ * characters cannot, because they group, and his first attempt asked for 120
+ * of them and got one undo, which is the grouping answer restated. */
+#define RICH_UNDO_MAX 100
+
+/* `typing` says this edit is a character going in, which may join the step
+ * before it rather than making one of its own -- riched20's `UID_TYPING`.
+ *
+ * **A paragraph break is not grouped, and that is unmeasured rather than
+ * decided.** Sam read that a *space* does not break a typed run; a newline
+ * was not asked. Enter therefore starts a step here, which is the
+ * conservative half: too many undos is a nuisance and too few loses work.
+ * The reading that would settle it is one line -- type a word, Enter, type
+ * another, and count. */
+static void rich_remember_as(ween_rich *e, int typing)
 {
-    char *copy;
+    struct rich_step st;
+    if (typing && e->undos > 0 && e->undo[e->undos - 1].typing)
+        return; /* the run is already recorded, from before it began */
     if (e->undos >= e->undo_cap) {
         int cap = e->undo_cap ? e->undo_cap * 2 : 16;
-        char **g = realloc(e->undo, (size_t)cap * sizeof *g);
-        int *c;
+        struct rich_step *g;
+        if (cap > RICH_UNDO_MAX)
+            cap = RICH_UNDO_MAX;
+        g = realloc(e->undo, (size_t)cap * sizeof *g);
         if (!g)
             return; /* out of memory loses the undo, not the edit */
         e->undo = g;
-        c = realloc(e->undo_caret, (size_t)cap * sizeof *c);
-        if (!c)
-            return;
-        e->undo_caret = c;
         e->undo_cap = cap;
     }
-    copy = malloc((size_t)e->len + 1);
-    if (!copy)
+    if (e->undos >= RICH_UNDO_MAX) {
+        /* The oldest goes, which is what a hundred-deep stack means. */
+        rich_step_free(&e->undo[0]);
+        memmove(e->undo, e->undo + 1,
+                (size_t)(e->undos - 1) * sizeof *e->undo);
+        e->undos--;
+    }
+    memset(&st, 0, sizeof st);
+    st.text = malloc((size_t)e->len + 1);
+    if (!st.text)
         return;
-    memcpy(copy, e->text, (size_t)e->len + 1);
+    st.run = malloc((size_t)(e->runs > 0 ? e->runs : 1) * sizeof *st.run);
+    if (!st.run) {
+        free(st.text);
+        return;
+    }
+    memcpy(st.text, e->text, (size_t)e->len + 1);
+    memcpy(st.run, e->run, (size_t)e->runs * sizeof *st.run);
+    st.runs = e->runs;
+    st.caret = e->caret;
+    st.typing = typing;
     /* **The depth is ours and is not measured.** riched20 keeps many steps
      * and this keeps them all; what nobody has read off the machine is how
      * many it keeps before it forgets, so no limit is invented here.
@@ -1106,10 +1164,19 @@ static void rich_remember(ween_rich *e)
      * is the obvious next question and it wants a reading rather than a
      * guess: type a word into the machine's editor and count the EM_UNDOs
      * back to empty. */
-    e->undo[e->undos] = copy;
-    e->undo_caret[e->undos] = e->caret;
-    e->undos++;
+    e->undo[e->undos++] = st;
 }
+
+/* Everything that is not a character going in -- and any of them closes a
+ * typed run, so the next character starts a step of its own rather than
+ * joining one from before the interruption. */
+static void rich_remember(ween_rich *e)
+{
+    if (e->undos > 0)
+        e->undo[e->undos - 1].typing = 0;
+    rich_remember_as(e, 0);
+}
+
 
 /* The parent hears, if it asked to. */
 static void rich_notify(HWND wnd, UINT code, DWORD mask)
@@ -1340,6 +1407,18 @@ static void rich_move_selection(HWND wnd, ween_rich *e, int dst)
 static int rich_set_text(HWND wnd, ween_rich *e, const char *text)
 {
     int n = text ? (int)strlen(text) : 0;
+    /* **A typed run ends here even though nothing is recorded.** Text set
+     * whole is not the user's change -- EM_GETMODIFY stays 0 and no undo
+     * step is pushed -- but leaving the run *open* means the next character
+     * typed joins a step from before the text was replaced, and undoing it
+     * jumps back past the replacement.
+     *
+     * Found by a test that had been green for months: set "start", type "!",
+     * set "before", type "!", undo -- and the undo went back to "start"
+     * instead of "before". The coalescing was right and its boundary was
+     * missing. */
+    if (e->undos > 0)
+        e->undo[e->undos - 1].typing = 0;
     if (!rich_reserve(e, n))
         return 0;
     if (n)
@@ -2818,21 +2897,35 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rich_undo_clear(e);
         return 0;
     case EM_UNDO: {
+        struct rich_step st;
         char *was;
         int caret;
         if (e->undos <= 0)
             return FALSE;
-        was = e->undo[--e->undos];
-        caret = e->undo_caret[e->undos];
+        st = e->undo[--e->undos];
+        was = st.text;
+        caret = st.caret;
         /* **Undoing is no longer itself undoable**, which is what made the
          * second undo redo the first. Putting the current text back on the
          * stack here is a redo, and riched20 has a separate EM_REDO for
          * that -- one message doing both is the toggle jd reported. */
         if (!rich_set_text(wnd, e, was)) {
-            free(was);
+            rich_step_free(&st);
             return FALSE;
         }
-        free(was);
+        /* **And the runs come back with it**, which is jd's second report:
+         * `rich_set_text` puts every run back to the control's own face, so
+         * restoring the characters alone loses the formatting they were in.
+         * On the machine the two unwind separately and most-recent-first --
+         * bold 0..3, type XY, undo, undo gives back the typing and then the
+         * style -- and a step here holds both because it holds the
+         * document. */
+        if (st.runs > 0 && runs_reserve(e, st.runs)) {
+            memcpy(e->run, st.run, (size_t)st.runs * sizeof *e->run);
+            e->runs = st.runs;
+            rich_relines(wnd, e);
+        }
+        rich_step_free(&st);
         e->caret = e->anchor = caret > e->len ? e->len : caret;
         rich_changed(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
@@ -3532,7 +3625,12 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             }
             one[0] = ch;
             one[1] = 0;
-            rich_remember(e);
+            /* **A typed run is one step, however many characters it is** --
+             * riched20 calls it UID_TYPING and Sam measured "hello" and
+             * "ab cd" each coming back in a single undo. This joins the step
+             * before it when that one is also typing; anything else closes
+             * the run. */
+            rich_remember_as(e, 1);
             rich_delete_selection(wnd, e);
             rich_insert(wnd, e, one);
         } else {
