@@ -1148,8 +1148,15 @@ static INT_PTR CALLBACK file_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
          * is why it is a pixel taller than the type box below it */
         part(dlg, 0, WC_COMBOBOXEXA, "", WS_TABSTOP | CBS_DROPDOWN, 195, 263,
              246, 22, IDC_FILE_NAME);
-        part(dlg, 0, "STATIC", "Files of &type:", SS_LEFT, 101, 294, 87, 13,
-             IDC_FILE_TYPE_LABEL);
+        /* **The two dialogs do not say the same thing here**, and this said
+         * the Open one's words in both. Measured on the machine's WordPad,
+         * File > Save As: `Save as type:`, against `Files of type:` in File >
+         * Open. The button beside it already knew which dialog this was --
+         * `g_fd.saving` picks `&Save` or `&Open` six lines down -- so the
+         * label was the only thing still speaking for both. */
+        part(dlg, 0, "STATIC",
+             g_fd.saving ? "Save as &type:" : "Files of &type:", SS_LEFT, 101,
+             294, 87, 13, IDC_FILE_TYPE_LABEL);
         type = part(dlg, 0, "COMBOBOX", "", WS_TABSTOP | CBS_DROPDOWNLIST, 195,
                     291, 246, 21, IDC_FILE_TYPE);
         part(dlg, 0, "BUTTON", g_fd.saving ? "&Save" : "&Open",
