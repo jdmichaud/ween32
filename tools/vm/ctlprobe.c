@@ -326,6 +326,213 @@ static void toolbar(HWND parent, int size_cx)
         wsprintfA(buf, "item  8 after that            %ld,%ld %ldx%ld\r\n",
                   r.left, r.top, r.right - r.left, r.bottom - r.top);
         emit(buf);
+
+        /* One field or two? The rectangle is the same either way, so it
+         * cannot tell us -- and an implementation still has to choose. If
+         * comctl32 keeps a separator's width *in* iBitmap, which is where it
+         * reads that width from at add time, then TBIF_SIZE wrote there and
+         * TB_GETBUTTON will say 20. If they are two fields with the later set
+         * winning, iBitmap is still the 0 it was added with. */
+        {
+            TBBUTTON g;
+            TBBUTTONINFOA q;
+            memset(&g, 0, sizeof g);
+            SendMessageA(tb, TB_GETBUTTON, 7, (LPARAM)&g);
+            wsprintfA(buf, "item  7 TB_GETBUTTON iBitmap=%d style=%02x\r\n",
+                      g.iBitmap, g.fsStyle);
+            emit(buf);
+            memset(&q, 0, sizeof q);
+            q.cbSize = sizeof q;
+            q.dwMask = TBIF_SIZE | TBIF_IMAGE | TBIF_BYINDEX;
+            SendMessageA(tb, TB_GETBUTTONINFOA, (WPARAM)7, (LPARAM)&q);
+            wsprintfA(buf, "item  7 TB_GETBUTTONINFO cx=%d iImage=%d\r\n",
+                      q.cx, q.iImage);
+            emit(buf);
+            /* And the same question from the other side: a separator told
+             * through iBitmap and never through TBIF_SIZE. If they are one
+             * field, this one's cx comes back 14. */
+            memset(&q, 0, sizeof q);
+            q.cbSize = sizeof q;
+            q.dwMask = TBIF_SIZE | TBIF_IMAGE | TBIF_BYINDEX;
+            SendMessageA(tb, TB_GETBUTTONINFOA, (WPARAM)5, (LPARAM)&q);
+            wsprintfA(buf, "item  5 TB_GETBUTTONINFO cx=%d iImage=%d\r\n",
+                      q.cx, q.iImage);
+            emit(buf);
+        }
+    }
+}
+
+/* What a button *looks* like in each of its states, which no rectangle can
+ * say. Two bars, because the answer differs between them and WordPad needs
+ * the one the shell does not use:
+ *
+ *   the flat bar   TBSTYLE_FLAT, which is explorer's -- a button wears no
+ *                  edge until the pointer is on it
+ *   the classic    no TBSTYLE_FLAT, which is WordPad's -- every button wears
+ *                  a raised edge all the time, so "hot" has nowhere obvious
+ *                  left to go, and whether it goes anywhere is the question
+ *
+ * Four buttons on each: ordinary, hot, checked, disabled. The images are
+ * comctl32's own standard set, so the art is Windows' and not something this
+ * file drew. The rectangles are emitted so a capture is read against numbers
+ * rather than counted along by eye.
+ */
+static void barstates(HWND parent)
+{
+    static const struct { const char *what; DWORD extra; int y; } bars[2] = {
+        { "flat", TBSTYLE_FLAT, 170 },
+        { "classic", 0, 205 },
+    };
+    int k;
+
+    for (k = 0; k < 2; k++) {
+        TBBUTTON b[4];
+        TBADDBITMAP ab;
+        HWND tb;
+        int i;
+
+        memset(b, 0, sizeof b);
+        for (i = 0; i < 4; i++) {
+            b[i].iBitmap = i;
+            b[i].idCommand = 400 + k * 10 + i;
+            b[i].fsStyle = i == 2 ? TBSTYLE_CHECK : TBSTYLE_BUTTON;
+            /* the fourth is the disabled one: no TBSTATE_ENABLED */
+            b[i].fsState = i == 3 ? 0 : TBSTATE_ENABLED;
+            if (i == 2)
+                b[i].fsState |= TBSTATE_CHECKED;
+        }
+
+        tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                             WS_CHILD | WS_VISIBLE | CCS_NODIVIDER |
+                             CCS_NORESIZE | CCS_NOPARENTALIGN | bars[k].extra,
+                             0, bars[k].y, 400, 30, parent,
+                             (HMENU)(UINT_PTR)(310 + k), NULL, NULL);
+        SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        SendMessageA(tb, TB_SETBITMAPSIZE, 0, MAKELPARAM(16, 16));
+        SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+        ab.hInst = HINST_COMMCTRL;
+        ab.nID = IDB_STD_SMALL_COLOR;
+        SendMessageA(tb, TB_ADDBITMAP, 0, (LPARAM)&ab);
+        SendMessageA(tb, TB_ADDBUTTONS, 4, (LPARAM)b);
+        /* The hot one is the second, and it is set rather than hovered: a
+         * capture taken with the pointer somewhere is a capture that also
+         * says where the pointer was. */
+        SendMessageA(tb, TB_SETHOTITEM, 1, 0);
+
+        wsprintfA(buf, "== %s bar states, at window y=%d ==\r\n",
+                  bars[k].what, bars[k].y);
+        emit(buf);
+        for (i = 0; i < 4; i++) {
+            static const char *what[4] = { "ordinary", "hot", "checked",
+                                           "disabled" };
+            RECT r;
+            r.left = r.top = r.right = r.bottom = 0;
+            SendMessageA(tb, TB_GETITEMRECT, (WPARAM)i, (LPARAM)&r);
+            wsprintfA(buf, "  %-8s  %ld,%ld %ldx%ld\r\n", what[i],
+                      r.left, r.top, r.right - r.left, r.bottom - r.top);
+            emit(buf);
+        }
+        wsprintfA(buf, "  hot item is now %d\r\n",
+                  (int)SendMessageA(tb, TB_GETHOTITEM, 0, 0));
+        emit(buf);
+    }
+
+    /* Where in the bar's height does the button sit? ween32 centres it, which
+     * is right for a bar exactly a button tall and cannot be told apart from
+     * anything else there. Four heights, both styles: centring gives
+     * (h-22)/2 and a fixed inset gives the same number every time. */
+    {
+        static const int heights[4] = { 22, 26, 30, 32 };
+        int k, j;
+        for (k = 0; k < 2; k++) {
+            for (j = 0; j < 4; j++) {
+                TBBUTTON b;
+                HWND tb;
+                RECT r;
+                memset(&b, 0, sizeof b);
+                b.iBitmap = 0;
+                b.idCommand = 500 + k * 10 + j;
+                b.fsState = TBSTATE_ENABLED;
+                b.fsStyle = TBSTYLE_BUTTON;
+                tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                                     WS_CHILD | CCS_NODIVIDER | CCS_NORESIZE |
+                                     CCS_NOPARENTALIGN |
+                                     (k ? 0 : TBSTYLE_FLAT),
+                                     0, 0, 200, heights[j], parent,
+                                     (HMENU)(UINT_PTR)(330 + k * 4 + j), NULL,
+                                     NULL);
+                SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+                SendMessageA(tb, TB_SETBITMAPSIZE, 0, MAKELPARAM(16, 16));
+                SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+                SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+                r.left = r.top = r.right = r.bottom = 0;
+                SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+                wsprintfA(buf, "  %-7s bar %2d tall -> button y=%ld h=%ld\r\n",
+                          k ? "classic" : "flat", heights[j], r.top,
+                          r.bottom - r.top);
+                emit(buf);
+                DestroyWindow(tb);
+            }
+        }
+        /* And the same classic bar *without* CCS_NODIVIDER, which is what
+         * WordPad's frame creates: if the divider costs two rows, the button
+         * moves down by two and the two grey-and-white rows appear above it. */
+        for (j = 0; j < 4; j++) {
+            TBBUTTON b;
+            HWND tb;
+            RECT r;
+            memset(&b, 0, sizeof b);
+            b.iBitmap = 0;
+            b.idCommand = 520 + j;
+            b.fsState = TBSTATE_ENABLED;
+            b.fsStyle = TBSTYLE_BUTTON;
+            tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                                 WS_CHILD | CCS_NORESIZE | CCS_NOPARENTALIGN,
+                                 0, 0, 200, heights[j], parent,
+                                 (HMENU)(UINT_PTR)(340 + j), NULL, NULL);
+            SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            SendMessageA(tb, TB_SETBITMAPSIZE, 0, MAKELPARAM(16, 16));
+            SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(23, 22));
+            SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+            r.left = r.top = r.right = r.bottom = 0;
+            SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+            wsprintfA(buf, "  divider bar %2d tall -> button y=%ld h=%ld\r\n",
+                      heights[j], r.top, r.bottom - r.top);
+            emit(buf);
+            DestroyWindow(tb);
+        }
+        /* And the case the sweep above cannot see, because every button in it
+         * is as tall as the button size given: a button *shorter* than the
+         * bar. explorer's menu band is 19 in a bar of 22, and if the inset is
+         * a plain 0 that button sits at the top with three spare rows under
+         * it; if anything centres, it sits at 1. */
+        for (k = 0; k < 2; k++) {
+            TBBUTTON b;
+            HWND tb;
+            RECT r;
+            memset(&b, 0, sizeof b);
+            b.iBitmap = -1;
+            b.idCommand = 560 + k;
+            b.fsState = TBSTATE_ENABLED;
+            b.fsStyle = TBSTYLE_BUTTON;
+            b.iString = (INT_PTR)"File";
+            tb = CreateWindowExA(0, TOOLBARCLASSNAMEA, NULL,
+                                 WS_CHILD | CCS_NODIVIDER | CCS_NORESIZE |
+                                 CCS_NOPARENTALIGN | TBSTYLE_LIST |
+                                 (k ? 0 : TBSTYLE_FLAT),
+                                 0, 0, 200, 22, parent,
+                                 (HMENU)(UINT_PTR)(350 + k), NULL, NULL);
+            SendMessageA(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+            SendMessageA(tb, TB_SETPADDING, 0, MAKELPARAM(16, 0));
+            SendMessageA(tb, TB_SETBUTTONSIZE, 0, MAKELPARAM(0, 19));
+            SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
+            r.left = r.top = r.right = r.bottom = 0;
+            SendMessageA(tb, TB_GETITEMRECT, 0, (LPARAM)&r);
+            wsprintfA(buf, "  %-7s menu-band button, bar 22 -> y=%ld h=%ld\r\n",
+                      k ? "classic" : "flat", r.top, r.bottom - r.top);
+            emit(buf);
+            DestroyWindow(tb);
+        }
     }
 }
 
@@ -647,7 +854,10 @@ static void probe_main(void)
     wc.lpszClassName = "ctlprobe";
     RegisterClassA(&wc);
     w = CreateWindowExA(0, "ctlprobe", "ctlprobe",
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 230,
+                        /* 300 tall, not 230: the two state bars go below the
+                         * measuring one and a control off the client is a
+                         * control that was never drawn. */
+                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 40, 40, 460, 300,
                         NULL, NULL, wc.hInstance, NULL);
 
     /* The same font the dialogs use, because a control's size is measured in
@@ -673,6 +883,7 @@ static void probe_main(void)
     units(w, dlg = dialog());
     toolbar(w, 23);
     richedit(w, font);
+    barstates(w);
     CloseHandle(out_file);
 
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {
