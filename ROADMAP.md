@@ -315,6 +315,12 @@ the edge taking the line with it, and a click inside one landing at whichever
 end is nearer. Every number in `tests/richedit_test.c`'s tab block is
 `EM_POSFROMCHAR`'s own out of the machine.
 
+**And it has a selection bar.** `ES_SELECTIONBAR` insets the text by eight
+pixels -- the strip where a click takes a whole line -- which is measured on
+riched20 with the same control either way, and is what put WordPad's text out
+of line with its own ruler. It is a style bit and not a margin:
+`EM_GETMARGINS` answers nought with the bar on.
+
 **And it searches.** `EM_FINDTEXT` and `EM_FINDTEXTEX` answer what riched20
 answers, row for row: the direction is `FR_DOWN` and not the order of the
 range, the whole match has to lie inside that range at both ends, backwards

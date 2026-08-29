@@ -649,6 +649,11 @@ typedef struct {
  * EDIT, where WS_VSCROLL alone means the bar is always there. The machine's
  * WordPad has no bar at all on an empty document. */
 #define ES_DISABLENOSCROLL 0x00002000
+/* The strip down the left of a rich edit where the pointer becomes an arrow
+ * and a click takes a whole line. WordPad's editor has it -- its style word
+ * on the machine is 550081C4 -- and it is what puts that editor's text eight
+ * pixels further in than a plain control's. */
+#define ES_SELECTIONBAR 0x01000000
 #define EM_CANPASTE (WM_USER + 50)
 #define EM_EXGETSEL (WM_USER + 52)
 #define EM_EXLIMITTEXT (WM_USER + 53)

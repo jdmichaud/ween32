@@ -1253,6 +1253,7 @@ static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
 static void wrapping(HWND parent, HFONT font);
 static void tabs(HWND parent, HFONT font);
 static void finding(HWND parent, HFONT font);
+static void selection_bar(HWND parent, HFONT font);
 
 static void richedit(HWND parent, HFONT font)
 {
@@ -1351,6 +1352,7 @@ static void richedit(HWND parent, HFONT font)
     wrapping(parent, font);
     tabs(parent, font);
     finding(parent, font);
+    selection_bar(parent, font);
 
     DestroyWindow(re);
 }
@@ -1460,6 +1462,131 @@ static void find_row(HWND re, const char *what, DWORD flags, int from, int to,
     wsprintfA(buf, "  %-40s -> %ld, range %ld..%ld\r\n", what, (long)r,
               ft.chrgText.cpMin, ft.chrgText.cpMax);
     emit(buf);
+}
+
+/* The selection bar, which is where WordPad's seven missing pixels come
+ * from: its editor's style word carries ES_SELECTIONBAR (0x01000000) --
+ * probe.c read 550081C4 off the machine -- and a rich edit with it inset
+ * its text. How far is what this asks, with the same control either way so
+ * nothing but the bit differs. */
+static void selection_bar(HWND parent, HFONT font)
+{
+    static const DWORD styles[2] = { 0, 0x01000000 };
+    int k;
+    emit("== the selection bar ==\r\n");
+    for (k = 0; k < 2; k++) {
+        HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                                  WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                      ES_AUTOVSCROLL | styles[k],
+                                  10, 430, 300, 40, parent, NULL, NULL, NULL);
+        POINTL p;
+        RECT rc;
+        if (!re)
+            continue;
+        SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+        SetWindowTextA(re, "cat\r\ndog");
+        GetClientRect(re, &rc);
+        p.x = p.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        wsprintfA(buf, "  style %08lX: client %ld wide, first character at "
+                       "%ld,%ld\r\n",
+                  (unsigned long)styles[k], rc.right, p.x, p.y);
+        emit(buf);
+        p.x = p.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, 4);
+        wsprintfA(buf, "    and the second line's first at %ld,%ld\r\n", p.x,
+                  p.y);
+        emit(buf);
+        {
+            LRESULT m = SendMessageA(re, EM_GETMARGINS, 0, 0);
+            wsprintfA(buf, "    EM_GETMARGINS left %d right %d\r\n",
+                      (int)LOWORD(m), (int)HIWORD(m));
+            emit(buf);
+        }
+        DestroyWindow(re);
+    }
+    /* WordPad's own style word, exactly as probe.c read it off the machine:
+     * 550081C4 with ex 210. If a control built like that puts its first
+     * character where WordPad's does, the whole of the difference is in the
+     * style; if it does not, WordPad is doing something else as well. The
+     * variants below take the two bits that could be responsible off one at
+     * a time. */
+    {
+        static const struct {
+            DWORD style;
+            const char *what;
+        } like[] = {
+            { 0x550081C4, "WordPad's own style word" },
+            { 0x550081C4 & ~0x01000000u, "the same without ES_SELECTIONBAR" },
+            { 0x550081C4 & ~0x04000000u, "the same without 0x04000000" },
+            { 0x550081C4 & ~0x00008000u, "the same without ES_SAVESEL" },
+        };
+        LOGFONTA lf;
+        HFONT arial;
+        int j;
+        memset(&lf, 0, sizeof lf);
+        lf.lfHeight = -13;
+        lf.lfWeight = FW_NORMAL;
+        lf.lfCharSet = DEFAULT_CHARSET;
+        lstrcpyA(lf.lfFaceName, "Arial");
+        arial = CreateFontIndirectA(&lf);
+        for (j = 0; j < 4; j++) {
+            HWND re = CreateWindowExA(0x210, "RichEdit20W", NULL,
+                                      like[j].style, 10, 480, 760, 40, parent,
+                                      NULL, NULL, NULL);
+            POINTL p;
+            if (!re) {
+                wsprintfA(buf, "  %s: would not be created\r\n", like[j].what);
+                emit(buf);
+                continue;
+            }
+            if (arial)
+                SendMessageA(re, WM_SETFONT, (WPARAM)arial, FALSE);
+            SetWindowTextA(re, "cat");
+            p.x = p.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, 0);
+            wsprintfA(buf, "  %-34s first character at %ld,%ld\r\n",
+                      like[j].what, p.x, p.y);
+            emit(buf);
+            DestroyWindow(re);
+        }
+        if (arial)
+            DeleteObject(arial);
+    }
+
+    /* And whether the bar's width follows the font, which is what would
+     * explain WordPad's own editor sitting further in than this one: its
+     * text is Arial 10 where the probe's is the message font. */
+    {
+        LOGFONTA lf;
+        HFONT big;
+        memset(&lf, 0, sizeof lf);
+        lf.lfHeight = -13; /* ten points at 96 dpi */
+        lf.lfWeight = FW_NORMAL;
+        lf.lfCharSet = DEFAULT_CHARSET;
+        lstrcpyA(lf.lfFaceName, "Arial");
+        big = CreateFontIndirectA(&lf);
+        if (big) {
+            HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                                      WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                          ES_AUTOVSCROLL | 0x01000000,
+                                      330, 430, 300, 40, parent, NULL, NULL,
+                                      NULL);
+            if (re) {
+                POINTL p;
+                SendMessageA(re, WM_SETFONT, (WPARAM)big, FALSE);
+                SetWindowTextA(re, "cat");
+                p.x = p.y = 0;
+                SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, 0);
+                wsprintfA(buf, "  with a selection bar and Arial 10: first "
+                               "character at %ld,%ld\r\n",
+                          p.x, p.y);
+                emit(buf);
+                DestroyWindow(re);
+            }
+            DeleteObject(big);
+        }
+    }
 }
 
 static void finding(HWND parent, HFONT font)

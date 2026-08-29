@@ -1635,6 +1635,74 @@ int main(void)
         }
     }
 
+    {
+        /* The selection bar, which is where jd's misaligned text came from
+         * and which is a style bit rather than a margin. The machine, asked
+         * with the same control either way and nothing but the bit
+         * different: the first character stands at x=1 without it and x=9
+         * with it -- and at 9 with WordPad's own style word, with Arial 10
+         * instead of the message font, and with 0x04000000 and ES_SAVESEL
+         * taken off one at a time. Eight pixels, and not a function of the
+         * font. */
+        static const struct {
+            DWORD extra;
+            int want;
+            const char *what;
+        } bars[] = {
+            { 0, 1, "a rich edit without a selection bar starts its text at "
+                    "one, as the machine's does" },
+            { ES_SELECTIONBAR, 9,
+              "and with ES_SELECTIONBAR at nine -- eight pixels, which is "
+              "the machine's bar" },
+            { 0x550081C4 & ~0x50000000u, 9,
+              "WordPad's own style word puts it at nine too, every other bit "
+              "of it making no difference" },
+        };
+        int k;
+        for (k = 0; k < 3; k++) {
+            HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                     WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                         ES_AUTOVSCROLL | bars[k].extra,
+                                     0, 0, 300, 60, host, NULL, NULL, NULL);
+            POINTL p;
+            SetWindowTextA(t, "cat\r\ndog");
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+            CHECK(p.x == bars[k].want, bars[k].what);
+            if (p.x != bars[k].want)
+                printf("     wanted %d, got %d\n", bars[k].want, (int)p.x);
+            /* the second line as well, since a bar that only moved the first
+             * would pass the check above */
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 4);
+            CHECK(p.x == bars[k].want, "and its second line with it");
+            DestroyWindow(t);
+        }
+        {
+            /* The bar takes its eight pixels out of the width there is to
+             * wrap in -- reasoned rather than measured, since WordPad's own
+             * right edge carries five pixels this library does not explain,
+             * but it is the only reading that leaves the right edge where
+             * the client's is. */
+            HWND a = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                     WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+                                     0, 0, 120, 60, host, NULL, NULL, NULL);
+            HWND b = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                     WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                         ES_SELECTIONBAR,
+                                     0, 0, 120, 60, host, NULL, NULL, NULL);
+            const char *many = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            SetWindowTextA(a, many);
+            SetWindowTextA(b, many);
+            CHECK(SendMessageA(b, EM_LINEINDEX, 1, 0) <
+                      SendMessageA(a, EM_LINEINDEX, 1, 0),
+                  "and the same text breaks earlier in a control that has "
+                  "one, the bar coming out of the width it may wrap in");
+            DestroyWindow(a);
+            DestroyWindow(b);
+        }
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

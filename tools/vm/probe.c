@@ -23,6 +23,7 @@
  */
 #include <windows.h>
 #include <commctrl.h>
+#include <richedit.h>
 
 /* With no CRT, the two the compiler still calls for itself. */
 void *memset(void *d, int c, unsigned n)
@@ -145,6 +146,30 @@ static void ask_status(HWND w)
     }
 }
 
+/* A rich edit's own getters that hand nothing across a process boundary.
+ * EM_GETMARGINS answers in its return value -- left in the low word, right
+ * in the high one -- which is what decides whether a frame moved its text
+ * with a margin or with a paragraph indent. The indent needs a PARAFORMAT
+ * and a pointer, so it cannot be asked from here; the Paragraph box shows
+ * it instead. */
+static void ask_richedit(HWND w)
+{
+    LRESULT m = SendMessageA(w, EM_GETMARGINS, 0, 0);
+    emit("    -- asked, no pointer either way --\r\n");
+    wsprintfA(buf, "    margins left %d right %d\r\n", (int)LOWORD(m),
+              (int)HIWORD(m));
+    emit(buf);
+    wsprintfA(buf, "    text length %ld   lines %ld   first visible %ld\r\n",
+              SendMessageA(w, WM_GETTEXTLENGTH, 0, 0),
+              SendMessageA(w, EM_GETLINECOUNT, 0, 0),
+              SendMessageA(w, EM_GETFIRSTVISIBLELINE, 0, 0));
+    emit(buf);
+    wsprintfA(buf, "    event mask %08lX   modified %ld\r\n",
+              (unsigned long)SendMessageA(w, EM_GETEVENTMASK, 0, 0),
+              SendMessageA(w, EM_GETMODIFY, 0, 0));
+    emit(buf);
+}
+
 static BOOL CALLBACK child(HWND w, LPARAM lp)
 {
     char cls[64];
@@ -155,6 +180,10 @@ static BOOL CALLBACK child(HWND w, LPARAM lp)
         ask_toolbar(w);
     else if (lstrcmpiA(cls, STATUSCLASSNAMEA) == 0)
         ask_status(w);
+    else if (lstrcmpiA(cls, "RichEdit20W") == 0 ||
+             lstrcmpiA(cls, "RichEdit20A") == 0 ||
+             lstrcmpiA(cls, "RICHEDIT") == 0)
+        ask_richedit(w);
     return TRUE;
 }
 

@@ -725,6 +725,7 @@ static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
 }
 
 static int rich_inset(HWND wnd);
+static int rich_selbar(HWND wnd);
 static int rich_bar(HWND wnd);
 static int rich_visible_lines(HWND wnd);
 static int rich_next_tab_stop(ween_rich *e, int at, int x);
@@ -737,7 +738,8 @@ static int rich_wrap_width(HWND wnd, ween_rich *e)
     if (e->nowrap)
         return 0; /* nothing to break to */
     GetClientRect(wnd, &r);
-    w = r.right - r.left - 2 * rich_inset(wnd) - rich_bar(wnd);
+    w = r.right - r.left - 2 * rich_inset(wnd) - rich_bar(wnd) -
+        rich_selbar(wnd);
     return w > 0 ? w : 0;
 }
 
@@ -1255,6 +1257,27 @@ static int rich_inset(HWND wnd)
     return ween_border_width(wnd) ? 1 : 0;
 }
 
+/* The selection bar: the strip down the left where the pointer becomes an
+ * arrow and a click takes a whole line. It is where WordPad's text sits
+ * further in than a plain control's, and it is a style bit rather than a
+ * margin -- which is what took a boot to find, since EM_GETMARGINS answers
+ * nought either way and the paragraph's indents are nought too.
+ *
+ * Measured on the machine with the same control either way and nothing but
+ * the bit different: the first character stands at x=1 without it and x=9
+ * with it. Eight pixels, and eight with the message font and with Arial 10
+ * alike, so it does not follow the font. WordPad's own editor is at 14 --
+ * five pixels this does not explain and which are the frame's, not the
+ * control's: see docs/testing.md.
+ *
+ * Eight is the machine's number at 96 dpi, scaled here the way every other
+ * measured metric in this library is. What the bar is at another dpi has not
+ * been asked. */
+static int rich_selbar(HWND wnd)
+{
+    return (wnd->style & ES_SELECTIONBAR) ? ween_ncm(8) : 0;
+}
+
 static int rich_bar(HWND wnd)
 {
     ween_rich *e = rich_state(wnd);
@@ -1384,7 +1407,7 @@ static int rich_line_left(HWND wnd, ween_rich *e, int row)
      * the rest do, against it -- which is what riched20's own RTF says: a
      * paragraph set to 720 and -360 comes out "\li360\fi360", a left indent
      * of 360 with the first line 360 further in. */
-    int left = inset + rfmt_px_twips(pf->start_indent) +
+    int left = inset + rich_selbar(wnd) + rfmt_px_twips(pf->start_indent) +
                (e->line[row].first ? 0 : rfmt_px_twips(pf->offset));
     RECT cr;
     int right, width;

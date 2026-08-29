@@ -1215,6 +1215,67 @@ top byte of a stop -- its alignment and leader in Rich Edit 2.0's
 documentation -- does, since nothing here has set one. The position is taken
 and the rest dropped.
 
+### The selection bar, and jd's seven pixels
+
+**Driving the program by hand found what four instruments could not**: the
+text in WordPad's editor does not line up with the ruler above it. What it
+turned out to be is not a margin and not an indent but a **style bit**, and
+it was sitting in the style word this repository has quoted all day.
+
+```
+EM_GETMARGINS on the machine's own WordPad editor    left 0  right 0
+Format > Paragraph                                   Left 0"  Right 0"  First 0"
+the editor's style word, read by probe.c             550081C4
+                                                     ^ 0x01000000 = ES_SELECTIONBAR
+```
+
+`ES_SELECTIONBAR` is the strip down the left where the pointer becomes an
+arrow and a click takes a whole line. Asked of riched20 with the same
+control either way and nothing but the bit different:
+
+```
+plain RichEdit20A                                    first character at x=1
+with ES_SELECTIONBAR                                 first character at x=9
+WordPad's exact style word, ex 210, Arial 10, 760 wide             x=9
+  the same without ES_SELECTIONBAR                                 x=1
+  the same without 0x04000000, and without ES_SAVESEL              x=9
+with a selection bar and Arial 10 rather than the message font     x=9
+```
+
+**Eight pixels, and not a function of the font.** `EM_GETMARGINS` still
+answers nought with the bar on, so it is not a margin under another name.
+ween32 scales the eight through `ween_ncm` the way it scales every other
+measured metric; what the bar is at another dpi has not been asked.
+
+**Five pixels are still unexplained and belong to the frame, not the
+control.** WordPad's own editor puts its first character at client **x=14**
+-- measured off the ink at screen 175 with the ruler's marker apex at 174 --
+where a control built with its exact style word puts it at 9. Not a margin,
+not an indent, and not the wrap mode: that WordPad's Rich Text page is on
+*Wrap to window* was read off the box. The only standard mechanism left is
+`EM_SETRECT`, and `EM_GETRECT` takes a pointer, so it cannot be asked across
+a process. **Eight of jd's pixels were this library's and five are
+WordPad's.**
+
+### What the machine's WordPad does that no capture shows
+
+Four answers from the same boot, none of them a pixel:
+
+- **Find wraps.** With the caret at the end of "cat dog cat", Ctrl+F, "cat",
+  Find Next selects the **first** one.
+- **A search that fails** puts up a message box titled `WordPad`, with an
+  information icon and one OK button: **"WordPad has finished searching the
+  document."** -- not "cannot find", and the same words whether or not
+  anything was ever found.
+- **Find Next is greyed until a search has been made**, where Find and
+  Replace need only a document with text in it -- and the flag **outlives
+  File > New**, since what the program remembers is the search string rather
+  than the document.
+- **A ruler marker dragged off the ruler** stops: the left indent at zero
+  going left and at the right indent going right; the right indent at **7.25
+  inches**, which is 8.5" of paper less its 1.25" left margin -- the paper's
+  own right edge, not the ruler's end.
+
 ### What a search does
 
 `EM_FINDTEXTEX`'s own answers, out of `ctlprobe.c`'s `finding` block, against

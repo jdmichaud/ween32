@@ -888,6 +888,9 @@ pub const ES_RIGHT = 0x0002;
 pub const ES_MULTILINE = 0x0004;
 pub const ES_AUTOVSCROLL = 0x0040;
 pub const ES_NOHIDESEL = 0x0100;
+/// The strip down the left of a rich edit where the pointer becomes an
+/// arrow and a click takes a whole line -- WordPad's editor has it.
+pub const ES_SELECTIONBAR = 0x01000000;
 pub const ES_AUTOHSCROLL = 0x0080;
 pub const ES_READONLY = 0x0800;
 pub const LBS_NOTIFY = 0x0001;
