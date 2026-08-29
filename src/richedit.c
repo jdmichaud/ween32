@@ -137,6 +137,11 @@ typedef struct {
     /* The display line a drag from the selection bar started on, or -1 when
      * no such drag is running. */
     int bar_anchor_row;
+    /* Auto word selection: a drag inside one word takes characters, and the
+     * moment it leaves that word it takes whole words and goes on doing so.
+     * These are the word the press landed in, and whether the drag has left
+     * it yet. */
+    int drag_word_from, drag_word_to, drag_snapped;
     /* Where a walk up or down the lines set out from, in pixels along the
      * line. A rich edit remembers it: the machine's, asked with
      * tools/vm/ctlprobe.c, walks down from twelve characters into a long
@@ -1161,13 +1166,18 @@ static void rich_select_para(ween_rich *e, int at)
 
 /* A double click takes the word under it, and the run of spaces if it landed
  * on one -- which is what the EDIT does and what the machine does. */
-static void rich_select_word(ween_rich *e)
+/* The word an index is in: what a double click takes, and what a drag snaps
+ * to once it has left the word it started in. One function because both ask
+ * and the two must not drift apart. */
+static void rich_word_bounds(ween_rich *e, int at, int *pfrom, int *pto)
 {
-    int from = e->caret, to = e->caret;
+    int from = at, to = at;
+    *pfrom = *pto = at;
     if (!e->len)
         return;
     if (from >= e->len)
         from = e->len - 1;
+    to = from;
     if (rich_is_word_char(e->text[from])) {
         while (from > 0 && rich_is_word_char(e->text[from - 1]))
             from--;
@@ -1188,6 +1198,14 @@ static void rich_select_word(ween_rich *e)
                e->text[to] != '\n' && e->text[to] != '\r')
             to++;
     }
+    *pfrom = from;
+    *pto = to;
+}
+
+static void rich_select_word(ween_rich *e)
+{
+    int from, to;
+    rich_word_bounds(e, e->caret, &from, &to);
     e->anchor = from;
     e->caret = to;
 }
@@ -2919,6 +2937,11 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
+        /* The word this press landed in, for the drag that may follow: while
+         * a drag stays inside it the selection is character by character,
+         * and the moment it leaves the selection snaps to whole words. */
+        rich_word_bounds(e, e->caret, &e->drag_word_from, &e->drag_word_to);
+        e->drag_snapped = 0;
         e->goal_set = 0;
         rich_selchange(wnd, e);
         rich_show_caret(wnd, e);
@@ -2969,7 +2992,29 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int at = rich_index_at_point(wnd, e,
                                          GET_X_LPARAM(lp),
                                          GET_Y_LPARAM(lp));
-            if (at != e->caret) {
+            int anchor = e->anchor;
+            /* **Auto word selection**, §5: a drag that stays inside the word
+             * it began in takes characters; the moment it crosses out of
+             * that word it takes whole words, and it keeps snapping even if
+             * it comes back. Which is why this is a latch rather than a test
+             * of where the pointer is now. */
+            if (!e->drag_snapped &&
+                (at < e->drag_word_from || at > e->drag_word_to))
+                e->drag_snapped = 1;
+            if (e->drag_snapped) {
+                int wf, wt;
+                rich_word_bounds(e, at < e->len ? at : (e->len ? e->len - 1 : 0),
+                                 &wf, &wt);
+                if (at >= e->drag_word_to) {
+                    anchor = e->drag_word_from;
+                    at = wt > at ? wt : at;
+                } else {
+                    anchor = e->drag_word_to;
+                    at = wf;
+                }
+            }
+            if (at != e->caret || anchor != e->anchor) {
+                e->anchor = anchor;
                 e->caret = at; /* a drag extends from the anchor */
                 rich_selchange(wnd, e);
                 InvalidateRect(wnd, NULL, FALSE);

@@ -1926,6 +1926,59 @@ int main(void)
         DestroyWindow(t);
     }
 
+    {
+        /* §5's dragging: a drag that stays inside one word takes characters,
+         * and the moment it leaves that word it takes whole words and keeps
+         * taking them -- "auto word selection", which the machine has on by
+         * default. */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 300, 60, host, NULL, NULL, NULL);
+        CHARRANGE cr;
+        POINTL a, b, c;
+        SetWindowTextA(t, "alpha bravo charlie");
+        SetFocus(t);
+        a.x = a.y = b.x = b.y = c.x = c.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&a, 1);  /* inside "alpha" */
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&b, 3);  /* still inside it */
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&c, 8);  /* inside "bravo" */
+
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(a.x + 1, a.y + 2));
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(b.x + 1, b.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 1 && cr.cpMax == 3,
+              "a drag inside one word takes characters, exactly as far as it "
+              "has gone");
+
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(c.x + 1, c.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 0 && cr.cpMax == 12,
+              "and the moment it crosses into the next word it takes both "
+              "whole -- \"alpha \" and \"bravo \", trailing spaces and all");
+
+        /* Coming back inside the first word does not un-snap it. */
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(b.x + 1, b.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 0 && cr.cpMax == 6,
+              "and having snapped it keeps snapping, so coming back inside "
+              "the first word still takes the whole of it");
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(b.x + 1, b.y + 2));
+
+        /* A fresh press starts over: characters again until it crosses. */
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(a.x + 1, a.y + 2));
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(b.x + 1, b.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 1 && cr.cpMax == 3,
+              "and a new press starts the snapping over rather than "
+              "inheriting it");
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(b.x + 1, b.y + 2));
+        DestroyWindow(t);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;
