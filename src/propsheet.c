@@ -340,6 +340,7 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     RECT page_area, largest;
     int cx, cy, tab_h, i, n, sheet_w, sheet_h, y, bx;
     int points = 8;
+    int no_apply, has_help;
     char face[64] = "MS Shell Dlg";
     INT_PTR r;
 
@@ -348,6 +349,9 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
     n = (int)header->nPages;
     if (n > PS_MAX_PAGES)
         n = PS_MAX_PAGES;
+
+    no_apply = (header->dwFlags & PSH_NOAPPLYNOW) != 0;
+    has_help = (header->dwFlags & PSH_HASHELP) != 0;
 
     memset(&ps, 0, sizeof(ps));
     ps.count = n;
@@ -396,7 +400,7 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
      * what comctl32 does and what the machine's Folder Options has. */
     ps_d(&b, (header->dwFlags & PSH_NOCONTEXTHELP) ? 0
                                                   : (DWORD)WS_EX_CONTEXTHELP);
-    ps_w(&b, (WORD)(1 + 3)); /* the tab control and three buttons */
+    ps_w(&b, (WORD)(1 + 4)); /* the tab control and four buttons */
     ps_w(&b, 0);
     ps_w(&b, 0);
     ps_w(&b, (WORD)sheet_w);
@@ -415,8 +419,36 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
             50, 14, IDOK, PS_ATOM_BUTTON, NULL, "OK");
     ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP, bx + 55, y, 50, 14,
             IDCANCEL, PS_ATOM_BUTTON, NULL, "Cancel");
-    ps_item(&b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED, bx + 110, y,
-            50, 14, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "&Apply");
+    /* **All four exist; the flags decide which are seen.** §8.6 of WordPad's
+     * specification is probe.exe's reading of the machine's own Options sheet,
+     * and it has four children where a person sees two:
+     *
+     *     OK      id 1      50030000   visible
+     *     Cancel  id 2      50010000   visible
+     *     Apply   id 12321  48010000   WS_DISABLED, **no WS_VISIBLE**
+     *     Help    id 9      40030000                **no WS_VISIBLE**
+     *
+     * Both invisible ones sit at 648, which is one button slot past Cancel
+     * and one past the client's own right edge.
+     *
+     * So a sheet that asked for PSH_NOAPPLYNOW does not *lack* an Apply
+     * button -- it has one nobody can see. That distinction is not pedantry
+     * and it is not us copying an implementation: **a program can tell.**
+     * `GetDlgItem(sheet, IDD_APPLYNOW)` answers a window in one case and
+     * nothing in the other, and MFC's own CPropertySheet reaches for that id
+     * to light the button when a page goes dirty. A program built against
+     * real win32 finds it; against a library that did not create it, it would
+     * not.
+     *
+     * The two instruments disagree here and both are right -- the probe reads
+     * what the program stores and the capture shows what the user sees -- so
+     * both are reproduced. */
+    ps_item(&b, WS_CHILD | WS_TABSTOP | WS_DISABLED |
+                    (no_apply ? 0 : WS_VISIBLE),
+            bx + 110, y, 50, 14, IDD_APPLYNOW, PS_ATOM_BUTTON, NULL, "&Apply");
+    ps_item(&b, WS_CHILD | WS_GROUP | WS_TABSTOP |
+                    (has_help ? WS_VISIBLE : 0),
+            bx + 165, y, 50, 14, IDHELP, PS_ATOM_BUTTON, NULL, "&Help");
     if (b.p > b.end)
         return -1;
 
@@ -477,15 +509,38 @@ INT_PTR PropertySheetA(LPCPROPSHEETHEADERA header)
 
         MoveWindow(ps.tabs, PS_TAB_X, PS_TAB_Y, tab_w, tab_h, FALSE);
         by = PS_TAB_Y + tab_h + PS_BTN_TOP;
-        bx = PS_TAB_X + tab_w - 3 * PS_BTN_W - 2 * PS_BTN_GAP;
-        MoveWindow(GetDlgItem(ps.sheet, IDOK), bx, by, PS_BTN_W, PS_BTN_H,
-                   FALSE);
-        bx += PS_BTN_W + PS_BTN_GAP;
-        MoveWindow(GetDlgItem(ps.sheet, IDCANCEL), bx, by, PS_BTN_W, PS_BTN_H,
-                   FALSE);
-        bx += PS_BTN_W + PS_BTN_GAP;
-        MoveWindow(GetDlgItem(ps.sheet, IDD_APPLYNOW), bx, by, PS_BTN_W,
-                   PS_BTN_H, FALSE);
+        /* **The row is right-aligned on the tab control, and only the buttons
+         * that are *seen* take a slot.** §8.6's machine has OK at client 278
+         * and Cancel at 359 with Cancel's right edge at 434, which is its tab
+         * control's own right edge -- so the rule is the same whether two or
+         * three are showing, and a sheet that asked for PSH_NOAPPLYNOW does
+         * not leave a gap where Apply would have been.
+         *
+         * The hidden ones are parked **one slot past the last visible**, both
+         * at the same place, which is where the machine has them: Apply and
+         * Help are both at 648, which is 359 + 81 and one past the client's
+         * own right edge. They are out of sight either way; putting them
+         * where the machine puts them costs nothing and means a program that
+         * asks a hidden button where it is gets the machine's answer. */
+        {
+            int shown = 2 + (no_apply ? 0 : 1) + (has_help ? 1 : 0);
+            int slot = PS_BTN_W + PS_BTN_GAP;
+            int parked;
+            bx = PS_TAB_X + tab_w - shown * PS_BTN_W - (shown - 1) * PS_BTN_GAP;
+            MoveWindow(GetDlgItem(ps.sheet, IDOK), bx, by, PS_BTN_W, PS_BTN_H,
+                       FALSE);
+            bx += slot;
+            MoveWindow(GetDlgItem(ps.sheet, IDCANCEL), bx, by, PS_BTN_W,
+                       PS_BTN_H, FALSE);
+            bx += slot;
+            parked = PS_TAB_X + tab_w - PS_BTN_W + slot; /* one past the row */
+            MoveWindow(GetDlgItem(ps.sheet, IDD_APPLYNOW),
+                       no_apply ? parked : bx, by, PS_BTN_W, PS_BTN_H, FALSE);
+            if (!no_apply)
+                bx += slot;
+            MoveWindow(GetDlgItem(ps.sheet, IDHELP),
+                       has_help ? bx : parked, by, PS_BTN_W, PS_BTN_H, FALSE);
+        }
         (void)strip;
 
     }

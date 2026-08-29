@@ -38,6 +38,8 @@ static HWND g_placed, g_had_focus;
 /* Gathered while the sheet is still up: it and its pages are gone by the time
  * PropertySheetA returns, which is what makes it modal. */
 static int g_had_tabs, g_same_sheet, g_two_pages;
+/* What PSH_NOAPPLYNOW does to the four buttons, asked from inside a page. */
+static int g_btn_exists[4], g_btn_visible[4], g_ok_x, g_cancel_x, g_apply_x;
 
 /* Both pages answer the same way; which one is telling is in `which`. */
 static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
@@ -62,6 +64,36 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
             g_active[which]++;
             if (PropSheet_GetTabControl(sheet))
                 g_had_tabs = 1;
+            {
+                /* **All four exist whatever the flags say; only some are
+                 * seen.** WordPad's §8.6 read the machine's own Options sheet
+                 * and found four children where a person sees two -- Apply
+                 * disabled and invisible, Help invisible -- so a program that
+                 * asks by id finds them, which is what MFC's CPropertySheet
+                 * does to light Apply when a page goes dirty. */
+                static const int ids[4] = { IDOK, IDCANCEL, IDD_APPLYNOW,
+                                            IDHELP };
+                RECT r, sr;
+                int i;
+                GetWindowRect(sheet, &sr);
+                for (i = 0; i < 4; i++) {
+                    HWND b = GetDlgItem(sheet, ids[i]);
+                    g_btn_exists[i] = b != NULL;
+                    g_btn_visible[i] = b && IsWindowVisible(b);
+                }
+                if (GetDlgItem(sheet, IDOK)) {
+                    GetWindowRect(GetDlgItem(sheet, IDOK), &r);
+                    g_ok_x = r.left - sr.left;
+                }
+                if (GetDlgItem(sheet, IDCANCEL)) {
+                    GetWindowRect(GetDlgItem(sheet, IDCANCEL), &r);
+                    g_cancel_x = r.left - sr.left;
+                }
+                if (GetDlgItem(sheet, IDD_APPLYNOW)) {
+                    GetWindowRect(GetDlgItem(sheet, IDD_APPLYNOW), &r);
+                    g_apply_x = r.left - sr.left;
+                }
+            }
             if (g_page[0] && g_page[1]) {
                 g_two_pages = g_page[0] != g_page[1];
                 g_same_sheet = GetParent(g_page[0]) == GetParent(g_page[1]);
@@ -189,6 +221,52 @@ int main(void)
           "a page that placed the keyboard itself keeps it");
     CHECK(g_had_tabs, "the sheet hands over its tab control");
     CHECK(g_same_sheet, "and both pages hang off the same sheet");
+
+    /* ---- PSH_NOAPPLYNOW ----------------------------------------------------
+     *
+     * Without the flag, three buttons are seen. All four exist either way.
+     */
+    CHECK(g_btn_exists[0] && g_btn_exists[1] && g_btn_exists[2] &&
+              g_btn_exists[3],
+          "all four buttons exist, Help included, whatever is shown");
+    CHECK(g_btn_visible[0] && g_btn_visible[1] && g_btn_visible[2],
+          "OK, Cancel and Apply are seen when the sheet did not say otherwise");
+    CHECK(!g_btn_visible[3], "and Help is not, nothing having asked for it");
+    CHECK(g_cancel_x - g_ok_x == g_apply_x - g_cancel_x,
+          "the three that are seen are evenly spaced");
+    {
+        int ok3 = g_ok_x, cancel3 = g_cancel_x, slot;
+        PROPSHEETPAGEA pages2[2];
+        PROPSHEETHEADERA hdr2;
+        slot = cancel3 - ok3;
+
+        memset(g_btn_exists, 0, sizeof(g_btn_exists));
+        memset(g_btn_visible, 0, sizeof(g_btn_visible));
+        g_step = 0;
+        memcpy(pages2, pages, sizeof(pages2));
+        memset(&hdr2, 0, sizeof(hdr2));
+        hdr2.dwSize = sizeof(hdr2);
+        hdr2.dwFlags = PSH_PROPSHEETPAGE | PSH_NOAPPLYNOW;
+        hdr2.pszCaption = "Folder Options";
+        hdr2.nPages = 2;
+        hdr2.ppsp = pages2;
+        PropertySheetA(&hdr2);
+
+        /* **The picture loses a button and the program does not.** WordPad's
+         * §8.6 is the machine's own Options sheet: two buttons drawn, four
+         * children, Apply disabled and invisible. */
+        CHECK(g_btn_exists[2],
+              "PSH_NOAPPLYNOW still leaves an Apply button to be found");
+        CHECK(!g_btn_visible[2], "it is simply not seen");
+        CHECK(g_btn_visible[0] && g_btn_visible[1],
+              "OK and Cancel still are");
+        /* And the two that remain close up rather than leaving a gap: the row
+         * is right-aligned, so dropping one moves both right by a slot. */
+        CHECK(g_ok_x == ok3 + slot && g_cancel_x == cancel3 + slot,
+              "and the two that are left move up into the space");
+        CHECK(g_apply_x > g_cancel_x,
+              "the hidden one is parked past them, where the machine has it");
+    }
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

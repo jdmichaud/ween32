@@ -1442,6 +1442,9 @@ BOOL GetScrollInfo(HWND wnd, int bar, SCROLLINFO *si);
 /* standard command ids */
 #define IDOK 1
 #define IDCANCEL 2
+/* A property sheet's Help button carries this, which is win32's own number
+ * and is what WordPad's Options sheet reads back as `id=9`. */
+#define IDHELP 9
 
 /* button / static control styles */
 #define BS_PUSHBUTTON 0x00000000L
