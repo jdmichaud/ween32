@@ -103,6 +103,27 @@ struct step {
     int a, b;
 };
 
+/* A gesture goes in whole and is then pumped, because a drain between two
+ * injections is a drain that finishes the gesture -- richdrag_test's header
+ * says the same. */
+static void inject(int kind, int x, int y)
+{
+    ween_event ev;
+    memset(&ev, 0, sizeof ev);
+    ev.kind = kind;
+    ev.button = 1;
+    ev.x = x;
+    ev.y = y;
+    ween_headless_inject(ev);
+}
+
+static void pump(void)
+{
+    MSG m;
+    while (GetMessageA(&m, NULL, 0, 0))
+        DispatchMessageA(&m);
+}
+
 static void do_step(HWND re, const struct step *s)
 {
     switch (s->op) {
@@ -142,47 +163,47 @@ static void do_step(HWND re, const struct step *s)
         SendMessageA(re, EM_SETSEL, 0, -1);
         SendMessageA(re, WM_KEYDOWN, VK_DELETE, 1);
         break;
-    /* **The pointer is driven as messages, not as injected events, and that
-     * is a hole rather than a choice.** An injected gesture reaches the
-     * control exactly once per program: `hl_next_event` answers
-     * `WEEN_EV_END` on an empty queue, `WEEN_EV_END` sets `g_quit` in
-     * src/user.c, and **nothing ever clears it** -- so every later
-     * `GetMessage` returns WM_QUIT and a second injected gesture is silently
-     * discarded. Measured with three identical drags in one program:
+    /* **The pointer goes in as injected events, not as messages**, so this
+     * exercises the route and not only the handler at the end of it -- my own
+     * §5 distinction, and the reason tests/richdrag_test.c exists.
      *
-     *     round 0   selection 0..12
-     *     round 1   selection 0..0     injected, never delivered
-     *     round 2   selection 0..0
+     * It could not, until an hour ago. An injected gesture reached a control
+     * exactly once per program: `hl_next_event` answered `WEEN_EV_END` on an
+     * empty queue, that set `g_quit`, and nothing cleared it. Measured then
+     * and again after Dan's fix, three identical drags in one program:
      *
-     * So the monkey exercises the *handlers* and says nothing about the
-     * route to them, which is my own distinction from §5 and the reason
-     * tests/richdrag_test.c exists -- it covers the route for one gesture.
-     * Reported to Dan, whose harness it is; when a drained queue stops
-     * meaning "this application is finished", these three cases become
-     * injections and the monkey covers both layers. */
+     *     before   0..12, then 0..0, then 0..0
+     *     after    0..12, then 0..6, then 0..20
+     *
+     * **`ev.button` is not optional.** The first version of that probe left
+     * it zero and every drag selected nothing -- a press with no button, which
+     * looks exactly like a harness that does not work. */
     case OP_CLICK: {
         RECT c;
-        int x, y;
+        int x, y, ox, oy;
         GetClientRect(re, &c);
+        ween_client_origin(re, &ox, &oy);
         x = c.right ? s->a % c.right : 0;
         y = c.bottom ? s->b % c.bottom : 0;
-        SendMessageA(re, WM_LBUTTONDOWN, 0, MAKELPARAM(x, y));
-        SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+        inject(WEEN_EV_MOUSE_DOWN, ox + x, oy + y);
+        inject(WEEN_EV_MOUSE_UP, ox + x, oy + y);
+        pump();
         break;
     }
     case OP_DRAG: {
         RECT c;
-        int x0, y0, x1, y1;
+        int x0, y0, x1, y1, ox, oy;
         GetClientRect(re, &c);
+        ween_client_origin(re, &ox, &oy);
         x0 = c.right ? s->a % c.right : 0;
         y0 = c.bottom ? s->b % c.bottom : 0;
         x1 = c.right ? (s->b * 7) % c.right : 0;
         y1 = c.bottom ? (s->a * 3) % c.bottom : 0;
-        SendMessageA(re, WM_LBUTTONDOWN, 0, MAKELPARAM(x0, y0));
-        SendMessageA(re, WM_MOUSEMOVE, MK_LBUTTON,
-                     MAKELPARAM((x0 + x1) / 2, (y0 + y1) / 2));
-        SendMessageA(re, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x1, y1));
-        SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(x1, y1));
+        inject(WEEN_EV_MOUSE_DOWN, ox + x0, oy + y0);
+        inject(WEEN_EV_MOUSE_MOVE, ox + (x0 + x1) / 2, oy + (y0 + y1) / 2);
+        inject(WEEN_EV_MOUSE_MOVE, ox + x1, oy + y1);
+        inject(WEEN_EV_MOUSE_UP, ox + x1, oy + y1);
+        pump();
         break;
     }
     case OP_RESIZE:
@@ -333,6 +354,7 @@ static const char *check_all(HWND re)
 /* ---- running a sequence, and shrinking one that fails --------------------- */
 
 static HWND g_host;
+
 
 static LRESULT CALLBACK host_proc(HWND h, UINT m, WPARAM w, LPARAM l)
 {
@@ -513,6 +535,32 @@ int main(int argc, char **argv)
              * rich_clamp_scroll in src/richedit.c. */
             "resize:230:329,paste:299:333,resize:794:252",
         };
+        /* **A gesture that reaches nothing looks exactly like a gesture that
+         * found no bug.** The pointer ops go in as injected events now, and
+         * two separate faults have made injection silently do nothing today
+         * -- a drained queue that ended the loop, and an `ev.button` left at
+         * zero. So one pinned case asserts the route is live rather than
+         * assuming it: text, then a drag across it, must select something. */
+        {
+            struct step seq[8];
+            const char *why = NULL;
+            int at = 0, n = parse_replay("paste:59:0,drag:5:1", seq, 8);
+            HWND probe;
+            CHARRANGE cr;
+            (void)run_seq(seq, n, &why, &at);
+            probe = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                    WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                    220, 80, g_host, NULL, NULL, NULL);
+            SetFocus(probe);
+            do_step(probe, &seq[0]);
+            do_step(probe, &seq[1]);
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(probe, EM_EXGETSEL, 0, (LPARAM)&cr);
+            CHECK(cr.cpMax > cr.cpMin,
+                  "an injected drag across text selects some of it, so the "
+                  "route from a pixel to the control is live");
+            DestroyWindow(probe);
+        }
         size_t k;
         for (k = 0; k < sizeof pinned / sizeof pinned[0]; k++) {
             struct step seq[64];
