@@ -308,7 +308,14 @@ stating only what changed -- and read back with the two traps a round trip
 finds: `\deff` names a face the font table has not offered yet, and the
 `\par` before the closing brace is a terminator rather than a mark.
 
-What it has not got is tab stops in the drawing, `EM_FINDTEXT`, and the
+**And it draws tabs**, at the stops the machine puts them at: the default
+half-inch grid from the text's left edge, a paragraph's own stops in twips
+ahead of it, the grid again past the last of them, a tab whose stop is past
+the edge taking the line with it, and a click inside one landing at whichever
+end is nearer. Every number in `tests/richedit_test.c`'s tab block is
+`EM_POSFROMCHAR`'s own out of the machine.
+
+What it has not got is `EM_FINDTEXT` and the
 object side of a rich edit -- pictures and OLE, which WordPad's plan does not
 reach. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot

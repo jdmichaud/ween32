@@ -1039,8 +1039,11 @@ static void paragraphs(HWND parent, HFONT font)
     }
     SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
 
-    /* Three paragraphs. "one" 0..3, break 3..5, "two" 5..8, break 8..10,
-     * "three" 10..15, and no break at the end. */
+    /* Three paragraphs. The offsets are the *stored* ones, and a mark is
+     * stored as a single CR whatever was handed in -- which the block at
+     * the end of this function measures and which the first version of the
+     * comment here got wrong, counting two for every break: "one" 0..2, its
+     * mark at 3, "two" 4..6, its mark at 7, "three" 8..12. */
     SetWindowTextA(re, "one\r\ntwo\r\nthree");
     emit("== paragraphs ==\r\n");
     paraformat_of(re, 0, 15, "a fresh control, all of it");
@@ -1056,11 +1059,18 @@ static void paragraphs(HWND parent, HFONT font)
     paraformat_of(re, 0, 15, "across all three");
 
     /* A selection that ends exactly on a paragraph's first character: does
-     * the paragraph it only touches take the command? */
+     * the paragraph it only touches take the command? 0..4 is the question,
+     * since 4 is where "two" begins; 0..5 is a different one -- it has a
+     * character of the second paragraph in it, and the first run of this
+     * asked that one by accident, counting the mark as two characters. */
+    SetWindowTextA(re, "one\r\ntwo\r\nthree");
+    set_align(re, 0, 4, PFA_RIGHT);
+    paraformat_of(re, 0, 1, "0..4 set: the first paragraph");
+    paraformat_of(re, 4, 5, "0..4 set: the second, whose first character it "
+                            "ended on");
     SetWindowTextA(re, "one\r\ntwo\r\nthree");
     set_align(re, 0, 5, PFA_RIGHT);
-    paraformat_of(re, 0, 1, "0..5 set: the first paragraph");
-    paraformat_of(re, 5, 6, "0..5 set: the second");
+    paraformat_of(re, 4, 5, "0..5 set: the second, of which it took one");
 
     /* What a new paragraph inherits: type a return in the middle of a
      * centred one. */
@@ -1241,6 +1251,7 @@ static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
 }
 
 static void wrapping(HWND parent, HFONT font);
+static void tabs(HWND parent, HFONT font);
 
 static void richedit(HWND parent, HFONT font)
 {
@@ -1337,6 +1348,7 @@ static void richedit(HWND parent, HFONT font)
     column_walk(parent, font, "EDIT", 0);
     paragraphs(parent, font);
     wrapping(parent, font);
+    tabs(parent, font);
 
     DestroyWindow(re);
 }
@@ -1375,6 +1387,283 @@ static void lines_of(HWND re, const char *what)
         emit(buf);
     }
     emit("\r\n");
+}
+
+
+/* Where a tab puts the text, which is the last thing this library's rich
+ * edit does not draw. Everything here is a number the control gives back
+ * rather than a picture of it: EM_POSFROMCHAR of the character *after* a tab
+ * is the x the tab advanced to, which is the only thing the drawing needs.
+ *
+ * Twips are the unit a PARAFORMAT tab stop is in -- 1440 to the inch -- so
+ * at 96 dpi a pixel is fifteen of them, and the interesting part is what the
+ * control does with a stop that is not a whole number of pixels. */
+static int rich_x_of(HWND re, int i)
+{
+    POINTL p;
+    p.x = 0;
+    p.y = 0;
+    SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, (LPARAM)i);
+    return (int)p.x;
+}
+
+static void tab_row(HWND re, const char *what, int n)
+{
+    int i;
+    wsprintfA(buf, "  %-30s x:", what);
+    emit(buf);
+    for (i = 0; i < n; i++) {
+        wsprintfA(buf, " %d", rich_x_of(re, i));
+        emit(buf);
+    }
+    emit("\r\n");
+}
+
+static void set_tabs(HWND re, const LONG *tw, int n)
+{
+    PARAFORMAT pf;
+    CHARRANGE cr;
+    int i;
+    cr.cpMin = 0;
+    cr.cpMax = -1;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&pf, 0, sizeof pf);
+    pf.cbSize = sizeof pf;
+    pf.dwMask = PFM_TABSTOPS;
+    pf.cTabCount = (SHORT)n;
+    for (i = 0; i < n; i++)
+        pf.rgxTabs[i] = tw[i];
+    if (!SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf)) {
+        wsprintfA(buf, "  EM_SETPARAFORMAT refused %d stops: %lu\r\n", n,
+                  GetLastError());
+        emit(buf);
+    }
+}
+
+static void tabs(HWND parent, HFONT font)
+{
+    /* Wide, because a default tab is 48 pixels and eight of them do not fit
+     * in the 300 the other blocks use -- and a tab that wraps is a different
+     * measurement, taken separately below. */
+    HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                              WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                  ES_AUTOVSCROLL,
+                              10, 230, 560, 60, parent, NULL, NULL, NULL);
+    LONG tw[8];
+    PARAFORMAT got;
+    RECT rc;
+    if (!re) {
+        wsprintfA(buf, "  no rich edit: %lu\r\n", GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+    emit("== tabs ==\r\n");
+    GetClientRect(re, &rc);
+    wsprintfA(buf, "  client %ld wide, %ld tall\r\n", rc.right, rc.bottom);
+    emit(buf);
+
+    /* Nine tabs and nothing else, so the character after each one is at the
+     * stop itself with nothing pushing it along. Index 0 is the first tab,
+     * so x[1] is where the first tab landed, x[2] the second, and so on. */
+    SetWindowTextA(re, "\t\t\t\t\t\t\t\t\t.");
+    tab_row(re, "nine tabs, default stops", 10);
+
+    /* The same with something before the first tab, to say whether a stop is
+     * measured from the text's left edge or from the last stop passed. */
+    SetWindowTextA(re, "ab\tcd\tef\tgh");
+    tab_row(re, "text between them", 11);
+
+    /* A word wide enough to cover the first stop, then the second, then the
+     * third: does the tab go to the next stop past the pen, and does it ever
+     * refuse to move at all? */
+    SetWindowTextA(re, "wwwwwww\tX");
+    tab_row(re, "a word past the first stop", 9);
+    SetWindowTextA(re, "wwwwwwwwwwwwwwwww\tX");
+    tab_row(re, "a word past the second", 19);
+
+    /* Explicit stops. 300 twips is exactly 20 pixels at 96 dpi; 1000 is
+     * 66 and two thirds and 2137 is 142 and a half, which is what says how
+     * the control rounds. The last tab in the text is past every stop, so
+     * the same text answers what happens after the last one.
+     *
+     * The text goes in *first*: WM_SETTEXT starts a new document and the
+     * paragraph format goes with it. The first run of this set the stops and
+     * then the text, and every row came back at the default 48 with
+     * EM_GETPARAFORMAT saying nought stops -- a probe measuring the default
+     * twice and calling one of them a measurement. */
+    SetWindowTextA(re, "\t\t\t\t\t.");
+    tw[0] = 300;
+    tw[1] = 1000;
+    tw[2] = 2137;
+    set_tabs(re, tw, 3);
+    tab_row(re, "stops 300/1000/2137 twips", 6);
+
+    /* And what comes back, so the store is checked as well as the use. */
+    memset(&got, 0, sizeof got);
+    got.cbSize = sizeof got;
+    got.dwMask = PFM_TABSTOPS;
+    SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&got);
+    wsprintfA(buf, "  EM_GETPARAFORMAT: %d stops, %ld %ld %ld\r\n",
+              (int)got.cTabCount, got.rgxTabs[0], got.rgxTabs[1],
+              got.rgxTabs[2]);
+    emit(buf);
+
+    /* What the RTF says with those stops still on. */
+    dump_rtf(re, "three stops and five tabs");
+
+    /* A single stop, so the run past the last one is long enough to show
+     * whether the default interval starts again from zero or from it. 500
+     * twips is 33 and a third pixels, which no default stop is near. */
+    SetWindowTextA(re, "\t\t\t\t\t.");
+    tw[0] = 500;
+    set_tabs(re, tw, 1);
+    tab_row(re, "one stop at 500 twips", 6);
+
+    /* A stop with text before it that already reaches past it: the same
+     * question as the default stops, asked of an explicit one. */
+    SetWindowTextA(re, "wwwwwww\tX");
+    tw[0] = 300;
+    set_tabs(re, tw, 1);
+    tab_row(re, "a word past a stop at 300", 9);
+
+    /* No stops at all again: does clearing them come back to the default? */
+    SetWindowTextA(re, "\t\t\t.");
+    set_tabs(re, tw, 0);
+    tab_row(re, "stops cleared", 4);
+
+    /* And what a paragraph's stops do to its neighbour: set them on the
+     * first of two and ask both. */
+    SetWindowTextA(re, "\t.\r\n\t.");
+    {
+        PARAFORMAT pf;
+        CHARRANGE cr;
+        cr.cpMin = 0;
+        cr.cpMax = 1;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        pf.cTabCount = 1;
+        pf.rgxTabs[0] = 300;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+    }
+    tab_row(re, "a stop on the first of two", 6);
+    dump_rtf(re, "a stop on the first of two");
+
+    /* Where the caret goes when the mouse lands inside a tab's stretch: a
+     * tab is one character but 48 pixels wide, and a rule that splits every
+     * other character at its middle has to say what it does with this one.
+     * The text is "a<tab>b" with the default stops, so the tab covers 9..49
+     * and the answer is the x at which the index turns from 1 into 2. */
+    SetWindowTextA(re, "a\tb");
+    {
+        int x, last = -1;
+        emit("  a tab's own stretch, EM_CHARFROMPOS:");
+        for (x = 4; x <= 56; x += 2) {
+            POINTL p;
+            int i;
+            p.x = x;
+            p.y = 4;
+            i = (int)SendMessageA(re, EM_CHARFROMPOS, 0, (LPARAM)&p);
+            if (i != last) {
+                wsprintfA(buf, " %d at x=%d", i, x);
+                emit(buf);
+                last = i;
+            }
+        }
+        emit("\r\n");
+    }
+    /* And where a *click* puts the caret, which is the rule the drawing
+     * needs and not necessarily the same one: EM_CHARFROMPOS is documented
+     * as the nearest character, and a click is the nearest place between
+     * two. WM_LBUTTONDOWN is legal here because this is the control's own
+     * process. */
+    {
+        int x, last = -1;
+        emit("  and where a click lands:");
+        for (x = 0; x <= 60; x++) {
+            CHARRANGE cr;
+            SendMessageA(re, WM_LBUTTONDOWN, 0, MAKELPARAM(x, 4));
+            SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(x, 4));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+            if ((int)cr.cpMin != last) {
+                wsprintfA(buf, " %ld at x=%d", cr.cpMin, x);
+                emit(buf);
+                last = (int)cr.cpMin;
+            }
+        }
+        emit("\r\n");
+    }
+    /* The same two questions of ordinary text, so what the tab does can be
+     * told apart from the rule every character follows. */
+    SetWindowTextA(re, "abcdef");
+    tab_row(re, "abcdef", 7);
+    {
+        int x, last = -1;
+        emit("  abcdef, EM_CHARFROMPOS:");
+        for (x = 0; x <= 60; x++) {
+            POINTL p;
+            int i;
+            p.x = x;
+            p.y = 4;
+            i = (int)SendMessageA(re, EM_CHARFROMPOS, 0, (LPARAM)&p);
+            if (i != last) {
+                wsprintfA(buf, " %d at x=%d", i, x);
+                emit(buf);
+                last = i;
+            }
+        }
+        emit("\r\n");
+        last = -1;
+        emit("  abcdef, a click:");
+        for (x = 0; x <= 60; x++) {
+            CHARRANGE cr;
+            SendMessageA(re, WM_LBUTTONDOWN, 0, MAKELPARAM(x, 4));
+            SendMessageA(re, WM_LBUTTONUP, 0, MAKELPARAM(x, 4));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&cr);
+            if ((int)cr.cpMin != last) {
+                wsprintfA(buf, " %ld at x=%d", cr.cpMin, x);
+                emit(buf);
+                last = (int)cr.cpMin;
+            }
+        }
+        emit("\r\n");
+        SetWindowTextA(re, "a\tb");
+    }
+    tab_row(re, "and where a\tb sits", 3);
+
+    DestroyWindow(re);
+
+    /* A tab that would land past the right edge, in a control narrow enough
+     * to make it: does the line wrap at the tab, does the tab stop short, or
+     * does the text run off the end? 120 pixels holds two default stops. */
+    re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                         WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                             ES_AUTOVSCROLL,
+                         10, 300, 120, 60, parent, NULL, NULL, NULL);
+    if (!re)
+        return;
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+    SetWindowTextA(re, "\t\t\t\t.");
+    GetClientRect(re, &rc);
+    wsprintfA(buf, "  narrow client %ld wide\r\n", rc.right);
+    emit(buf);
+    tab_row(re, "four tabs in a narrow one", 5);
+    lines_of(re, "four tabs in a narrow one");
+    {
+        int i;
+        for (i = 0; i < 5; i++) {
+            POINTL p;
+            p.x = p.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&p, (LPARAM)i);
+            wsprintfA(buf, "  char %d at %ld,%ld\r\n", i, p.x, p.y);
+            emit(buf);
+        }
+    }
+    DestroyWindow(re);
 }
 
 static void wrapping(HWND parent, HFONT font)

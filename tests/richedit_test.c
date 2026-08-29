@@ -1231,6 +1231,213 @@ int main(void)
               "box needs of the window behind it");
     }
 
+    {
+        /* Tabs, held to the machine's own numbers.
+         *
+         * Every one of these came off riched20 through EM_POSFROMCHAR in
+         * tools/vm/ctlprobe.c, in a control made the same way as this one:
+         * WS_EX_CLIENTEDGE, no vertical bar, and the message font. Because
+         * the text here is tabs and nothing else, none of it depends on the
+         * strike -- a tab's advance is the stop's, not the glyph's -- so
+         * these are the machine's pixels and not an approximation of them.
+         *
+         *   nine tabs, no stops of their own   1 49 97 145 193 241 ...
+         *   stops at 300, 1000, 2137 twips     1 21 68 143 145 193
+         *   one stop at 500 twips              1 34 49 97 145 193
+         *   cleared again                      1 49 97 145
+         */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                     ES_AUTOVSCROLL,
+                                 0, 0, 560, 60, host, NULL, NULL, NULL);
+        RECT tc;
+        PARAFORMAT pf;
+        POINTL p;
+        int i;
+        static const int plain[6] = { 1, 49, 97, 145, 193, 241 };
+        static const int three[6] = { 1, 21, 68, 143, 145, 193 };
+        static const int one[6] = { 1, 34, 49, 97, 145, 193 };
+        GetClientRect(t, &tc);
+        CHECK(tc.right == 556,
+              "a rich edit 560 wide has the machine's 556 of client");
+        SetWindowTextA(t, "\t\t\t\t\t.");
+        for (i = 0; i < 6; i++) {
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, i);
+            if (p.x != plain[i])
+                break;
+        }
+        CHECK(i == 6, "with no stops of its own a tab goes to the next "
+                      "half-inch: 1, 49, 97, 145, 193, 241");
+
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        pf.cTabCount = 3;
+        pf.rgxTabs[0] = 300;
+        pf.rgxTabs[1] = 1000;
+        pf.rgxTabs[2] = 2137;
+        SendMessageA(t, EM_SETSEL, 0, -1);
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        for (i = 0; i < 6; i++) {
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, i);
+            if (p.x != three[i])
+                break;
+        }
+        CHECK(i == 6, "stops at 300, 1000 and 2137 twips put it at 21, 68 "
+                      "and 143 -- and the two tabs past the last stop go "
+                      "back to the half-inch grid at 145 and 193");
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        SendMessageA(t, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.cTabCount == 3 && pf.rgxTabs[0] == 300 &&
+                  pf.rgxTabs[1] == 1000 && pf.rgxTabs[2] == 2137,
+              "and EM_GETPARAFORMAT gives the three of them back");
+
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        pf.cTabCount = 1;
+        pf.rgxTabs[0] = 500;
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        for (i = 0; i < 6; i++) {
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, i);
+            if (p.x != one[i])
+                break;
+        }
+        CHECK(i == 6, "one stop at 500 twips is 33 pixels in, and the grid "
+                      "past it is measured from the left edge and not from "
+                      "the stop: 34, 49, 97, 145, 193");
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        pf.cTabCount = 0;
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        for (i = 0; i < 4; i++) {
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, i);
+            if (p.x != plain[i])
+                break;
+        }
+        CHECK(i == 4, "and clearing the stops comes back to the half-inch");
+
+        /* Stops belong to a paragraph. The machine: a stop of 300 on the
+         * first of two puts its tab at 21 and leaves the second's at 49. */
+        SetWindowTextA(t, "\t.\r\n\t.");
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_TABSTOPS;
+        pf.cTabCount = 1;
+        pf.rgxTabs[0] = 300;
+        SendMessageA(t, EM_SETSEL, 0, 1);
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        {
+            int x0, x1, x3, x4;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
+            x0 = p.x;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 1);
+            x1 = p.x;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 3);
+            x3 = p.x;
+            p.x = p.y = 0;
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 4);
+            x4 = p.x;
+            CHECK(x0 == 1 && x1 == 21 && x3 == 1 && x4 == 49,
+                  "a stop on the first of two paragraphs leaves the second "
+                  "on the half-inch grid");
+        }
+
+        /* Where a click lands inside a tab. The machine's rule, measured on
+         * "a<tab>b" and on "abcdef" alike, is the nearest place between two
+         * characters with a tie going left: 'a' spans 1..7 and the caret
+         * turns at 5, the tab spans 7..49 and it turns at 29 -- both one
+         * past the middle. Here the tab is the first character, so it spans
+         * 1..49 and the turn is at 26. */
+        SetWindowTextA(t, "\tb");
+        SetFocus(t);
+        for (i = 24; i <= 27; i++) {
+            CHARRANGE cr;
+            SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(i, 4));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(i, 4));
+            memset(&cr, 0, sizeof cr);
+            SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+            if (cr.cpMin != (i <= 25 ? 0 : 1))
+                break;
+        }
+        CHECK(i == 28, "a click in a tab's own stretch goes to whichever end "
+                       "is nearer, and the middle itself goes left");
+        /* And the drawing, since every number above is a measurement and
+         * none of them is a pixel: with the tab selected, the room it makes
+         * is filled, and the fill is the 48 the stop asked for. */
+        SetWindowTextA(t, "\tX");
+        SendMessageA(t, EM_SETSEL, 0, 1);
+        SetFocus(t);
+        InvalidateRect(t, NULL, TRUE);
+        ween_flush_paint();
+        {
+            struct ween_wnd *w = (struct ween_wnd *)host;
+            int y, run = 0, best = 0;
+            for (y = 0; y < 60; y++) {
+                int x, n = 0;
+                for (x = 0; x < 200; x++) {
+                    unsigned px =
+                        w->surface.px
+                            ? w->surface.px[(size_t)y * w->surface.w + x] &
+                                  0xffffff
+                            : 0;
+                    if (px == WEEN_CAP_LEFT) {
+                        n++;
+                        if (n > run)
+                            run = n;
+                    } else {
+                        n = 0;
+                    }
+                }
+                if (run > best)
+                    best = run;
+                run = 0;
+            }
+            CHECK(best == 48, "a selected tab's room is drawn, and it is the "
+                              "48 pixels the stop asked for");
+        }
+        DestroyWindow(t);
+
+        /* A tab that would land past the edge takes the line with it. The
+         * machine, in a control whose client is 116 wide: four tabs and a
+         * stop are two lines, [0,2] and [2,3], and the third tab -- which
+         * would have gone to 145 -- begins the second line at 1 and
+         * advances to 49 from there. */
+        t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                            WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                ES_AUTOVSCROLL,
+                            0, 0, 120, 60, host, NULL, NULL, NULL);
+        GetClientRect(t, &tc);
+        CHECK(tc.right == 116, "and 120 wide has the machine's 116");
+        SetWindowTextA(t, "\t\t\t\t.");
+        CHECK(SendMessageA(t, EM_GETLINECOUNT, 0, 0) == 2,
+              "four tabs in a control 116 wide are two lines");
+        CHECK(SendMessageA(t, EM_LINEINDEX, 1, 0) == 2,
+              "the second of them beginning at the third tab");
+        {
+            static const int narrow[5] = { 1, 49, 1, 49, 97 };
+            for (i = 0; i < 5; i++) {
+                p.x = p.y = 0;
+                SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, i);
+                if (p.x != narrow[i])
+                    break;
+            }
+            CHECK(i == 5, "and the wrapped tab starts the new line at 1 and "
+                          "advances to 49 from there");
+        }
+        DestroyWindow(t);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

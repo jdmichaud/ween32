@@ -1135,8 +1135,68 @@ Two things about paragraphs the probe has *not* been asked, marked so that
 nobody reads them as measured: where the values come from when
 `EM_GETPARAFORMAT` is read across paragraphs that differ (ween32 answers with
 the last one's, as it does for a character format), and whether a selection
-ending exactly on a paragraph's first character takes that paragraph. Both
-want a run of the probe when 4a next boots a machine.
+ending exactly on a paragraph's first character takes that paragraph.
+
+**The second of those has now had a run of the probe that did not answer
+it**, which is worth writing down because the reason is a trap anybody can
+fall into here. The probe set `0..5` on "one\r\ntwo\r\nthree" and reported
+that the second paragraph took the command -- but a mark is stored as a
+*single* CR, so "two" begins at 4 and `0..5` already had a character of the
+second paragraph in it. That is the case ween32 was already built for and
+`tests/richedit_test.c` already asks. The question is `0..4`, and the probe
+now asks that as well as the old one; until it is run, ween32's rule stands
+where it was, `paras_set` taking the paragraph of `to - 1`.
+
+### Where a tab puts the text
+
+Every number here is `EM_POSFROMCHAR`'s, out of `ctlprobe.c`'s `tabs` block,
+in a control whose client is 556 wide and whose text begins at 1. Because
+the texts are tabs and nothing else, none of it depends on the strike.
+
+```
+nine tabs, no stops of their own   1 49 97 145 193 241 289 337 385 433
+stops at 300, 1000, 2137 twips     1 21 68 143 145 193
+one stop at 500 twips              1 34 49 97 145 193
+cleared again                      1 49 97 145
+"ab<tab>cd<tab>ef<tab>gh"          1 7 13 49 54 60 97 103 107 145 151
+seven w's, then a tab              ... 57 97   (with or without a stop at 300)
+a stop of 300 on the first of two  1 21 25 | 1 49 53
+```
+
+- **The default is half an inch**, 48 pixels at 96 dpi, measured from the
+  text's own left edge: hence 1, 49, 97 in a control whose text begins at 1.
+- **A paragraph's own stops come first**, in twips, and the pixel is
+  `rfmt_px_twips`'s: 300 -> 20, 1000 -> **67**, 2137 -> **142**. Not the
+  floor -- 1000 twips is 66 and two thirds and the control puts it at 67 --
+  and not the ceiling either, since 2137 is 142 and a half and it puts it at
+  142. MulDiv's rounding, which is the same rounding a dialog unit takes.
+- **Past the last stop of its own the grid takes over again**, measured from
+  the same left edge and not from that stop: one stop at 500 twips gives 34,
+  and then 49, 97, 145.
+- **A stop the pen has already passed is skipped.** Seven w's reach 57 and
+  the tab after them goes to 97 whether the paragraph's only stop is at 300
+  twips or it has none.
+- **Stops belong to the paragraph.** A stop set on the first of two leaves
+  the second on the default grid, and the RTF riched20 writes says the same:
+  `\pard\tx300\f0\fs17\tab .\par \pard\tab .\par`.
+- **A tab that would land past the edge takes the line with it.** In a
+  control 116 wide, four tabs and a stop are two lines, `[0,2]` and `[2,3]`:
+  the third tab would have gone to 145, so it begins the second line instead
+  -- at 1, and advancing to 49 from there.
+- **A click inside a tab's stretch follows the rule every character
+  follows**: the nearer of the two ends, and the middle itself goes left.
+  Swept a pixel at a time on "a<tab>b", whose 'a' spans 1..7 and whose tab
+  spans 7..49, the caret turns at 5 and at 29 -- one past each middle. The
+  same sweep of "abcdef" turns at 5, 11, 16, 22, 28, 33 against characters
+  at 1, 7, 13, 18, 24, 30, which is that rule and not any other.
+  `EM_CHARFROMPOS` answers the same numbers as a click.
+
+What is *not* measured, and is left as it stands: whether a tab is a place a
+line may break the way a space is (ween32 breaks at the last space, and a
+tab only breaks the line when its own stop is past the edge), and what the
+top byte of a stop -- its alignment and leader in Rich Edit 2.0's
+documentation -- does, since nothing here has set one. The position is taken
+and the rest dropped.
 
 ### Where a line breaks, and what a document looks like written down
 

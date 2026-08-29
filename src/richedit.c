@@ -727,6 +727,7 @@ static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
 static int rich_inset(HWND wnd);
 static int rich_bar(HWND wnd);
 static int rich_visible_lines(HWND wnd);
+static int rich_next_tab_stop(ween_rich *e, int at, int x);
 
 /* How wide the text may be before it has to break, in pixels of client. */
 static int rich_wrap_width(HWND wnd, ween_rich *e)
@@ -761,7 +762,17 @@ static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
         while (run + 1 < e->runs && e->run[run + 1].start <= at)
             run++;
         f = rfmt_strike(&e->run[run].fmt);
-        x += f ? ween_strike_char_advance(f, (unsigned char)e->text[at]) : 6;
+        /* A tab that would land past the edge takes the line with it: in a
+         * control 116 wide, four tabs come out as two lines of two, since
+         * the third would have gone to 145. The tab itself starts the new
+         * line and advances from its left edge, which is what the machine's
+         * EM_POSFROMCHAR says -- 1, 49 on the first line and 1, 49, 97 on
+         * the second. */
+        if (e->text[at] == '\t')
+            x = rich_next_tab_stop(e, at, x);
+        else
+            x += f ? ween_strike_char_advance(f, (unsigned char)e->text[at])
+                   : 6;
         if (e->text[at] == ' ')
             last_space = i;
         if (x > width) {
@@ -1133,6 +1144,71 @@ static ween_sbstate rich_sbstate(HWND wnd)
     return st;
 }
 
+/* Where a tab takes the pen, in pixels from the text's own left edge.
+ *
+ * Measured on the machine with EM_POSFROMCHAR, in a rich edit whose client
+ * is 556 wide and whose font is the message font. With no stops of its own
+ * a tab goes to the next multiple of 48 -- half an inch at 96 dpi -- so
+ * nine of them stand at 49, 97, 145 and so on in a control whose text
+ * begins at 1. With stops at 300, 1000 and 2137 twips the same nine stand
+ * at 21, 68 and 143, which is rfmt_px_twips of each: 20, 67 and 142. Not
+ * the floor of any -- 1000 twips is 66 and two thirds and the control puts
+ * it at 67 -- and not the ceiling either, since 2137 is 142 and a half and
+ * the control puts it at 142.
+ *
+ * Past the last stop of its own the half-inch grid takes over again,
+ * measured from the same left edge and not from that stop: one stop at 500
+ * twips gives 34, then 49, 97, 145 -- 33 and then the ordinary 48s. And a
+ * stop the pen has already passed is skipped: seven w's reach 57 and the
+ * tab after them goes to 97, whether the paragraph's only stop is at 300
+ * twips or it has none at all.
+ *
+ * Stops belong to the paragraph, which the same measurement says twice: a
+ * stop set on the first of two paragraphs leaves the second on the default
+ * grid, and the RTF riched20 writes for it is "\pard\tx300 ... \pard",
+ * the second paragraph's \pard clearing what the first had.
+ *
+ * The top byte of a stop is its alignment and its leader in Rich Edit 2.0's
+ * documentation. Nothing here has measured what the control does with one,
+ * so the position is taken and the rest dropped. */
+static int rich_next_tab_stop(ween_rich *e, int at, int x)
+{
+    const ween_pfmt *pf = &e->para[para_at(e, at)].fmt;
+    int i, step;
+    for (i = 0; i < pf->tabs && i < MAX_TAB_STOPS; i++) {
+        int stop = rfmt_px_twips(pf->tab[i] & 0xffffff);
+        if (stop > x)
+            return stop;
+    }
+    step = rfmt_px_twips(720);
+    if (step < 1)
+        step = 1;
+    return (x / step + 1) * step;
+}
+
+/* How far a span of one run's text carries the pen, from an x that is
+ * already measured from the line's left edge -- which a tab needs and a
+ * letter does not. */
+static int rich_run_pen(ween_rich *e, const ween_strike *f, int at, int n,
+                        int x)
+{
+    int i, run = 0;
+    for (i = 0; i < n; i++) {
+        if (e->text[at + i] == '\t') {
+            if (run)
+                x += f ? ween_strike_pen(f, e->text + at + i - run, run)
+                       : run;
+            run = 0;
+            x = rich_next_tab_stop(e, at + i, x);
+            continue;
+        }
+        run++;
+    }
+    if (run)
+        x += f ? ween_strike_pen(f, e->text + at + n - run, run) : run;
+    return x;
+}
+
 /* How far along a line a column stands, in pixels, measured run by run --
  * since two runs of one line may be in different faces and sizes. */
 static int rich_x_of(ween_rich *e, int row, int col)
@@ -1144,7 +1220,7 @@ static int rich_x_of(ween_rich *e, int row, int col)
                        ? e->run[i + 1].start
                        : end;
         const ween_strike *f = rfmt_strike(&e->run[i].fmt);
-        x += f ? ween_strike_pen(f, e->text + at, next - at) : next - at;
+        x = rich_run_pen(e, f, at, next - at, x);
         at = next;
         i++;
     }
@@ -1282,7 +1358,8 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
 
     for (row = e->first_visible; row < e->lines; row++) {
         int y = inset + e->line[row].top - e->line[e->first_visible].top;
-        int x = rich_line_left(wnd, e, row);
+        int left = rich_line_left(wnd, e, row);
+        int x = left;
         int at = e->line[row].start, end = at + e->line[row].len;
         int i = run_at(e, at);
         if ((wnd->style & ES_MULTILINE) &&
@@ -1299,23 +1376,44 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                            : end;
             const ween_rfmt *fmt = &e->run[i].fmt;
             const ween_strike *sf = rfmt_strike(fmt);
-            int seg = rend, selected, w, by;
+            int seg = rend, selected, w, by, k, tab;
             ween_color col;
             if (at < from && from < seg)
                 seg = from;
             else if (at >= from && at < to && to < seg)
                 seg = to;
+            /* A tab is drawn as the room it makes and nothing else, so it
+             * is a piece of its own: either this piece is one tab, or it
+             * stops at the next one. Where the room ends is rich_next_tab_stop's
+             * to say, measured from the line's own left edge -- a stop is
+             * the paragraph's, not the client's. */
+            tab = e->text[at] == '\t';
+            if (tab) {
+                seg = at + 1;
+            } else {
+                for (k = at; k < seg; k++)
+                    if (e->text[k] == '\t') {
+                        seg = k;
+                        break;
+                    }
+            }
             selected = at >= from && at < to;
-            w = sf ? ween_strike_pen(sf, e->text + at, seg - at) : seg - at;
+            w = tab ? left + rich_next_tab_stop(e, at, x - left) - x
+                    : sf ? ween_strike_pen(sf, e->text + at, seg - at)
+                         : seg - at;
             by = y + e->line[row].ascent - (sf ? sf->ascent : 0);
             col = selected ? WEEN_WHITE
                   : (fmt->effects & CFE_AUTOCOLOR)
                       ? ink
                       : ween_cr_to_px(fmt->color);
+            /* Selected, the tab's room is filled like any other -- which
+             * is what every text control does and what this one has always
+             * done to the space beside it, though no capture here has
+             * measured a selected tab. */
             if (selected)
                 ween_surface_fill(&top->surface, ox + x, oy + y, w,
                                   e->line[row].height, WEEN_CAP_LEFT);
-            if (sf)
+            if (sf && !tab)
                 ween_strike_draw_styled(sf, &top->surface, ox + x, oy + by,
                                         e->text + at, seg - at, col,
                                         (fmt->effects & CFE_ITALIC) != 0,
@@ -1323,7 +1421,7 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
             /* A line through the middle, which no strike carries and GDI
              * draws for itself. Where exactly it sits is not measured; half
              * the cell is where it lands here. */
-            if ((fmt->effects & CFE_STRIKEOUT) && sf)
+            if ((fmt->effects & CFE_STRIKEOUT) && sf && !tab)
                 ween_surface_fill(&top->surface, ox + x,
                                   oy + by + (sf->ascent - sf->descent) / 2, w,
                                   1, col);
