@@ -3405,60 +3405,61 @@ enum {
  * off each group of them. */
 /* Where the Properties page's controls sit, in its own pixels.
  *
- * **The icons, the name field, the rules, the button, the check boxes and
- * every label are the machine's, to the pixel**, from probe.exe over
- * CONFIG.SYS's own sheet -- `captures-sam/properties-config-dlu.txt`.
+ * **Every row is the machine's**, from probe.exe over CONFIG.SYS's own sheet
+ * -- `captures-sam/properties-config-dlu.txt`.
  *
- * **The nine value fields are not, and the reason is a control kind.** The
- * machine's are borderless read-only edits -- style 50000880, no WS_BORDER,
- * ES_READONLY | ES_AUTOHSCROLL -- and ours are SS_LEFTNOWORDWRAP statics
- * standing in for them. An edit insets its text by its own margin and a
- * static does not, so ours sits three to the right to put the *text* where
- * the machine's text is, and is fourteen tall where the edit is
- * twenty-three, a static being no taller than what it draws:
+ * It was not, for an hour, and what it took to finish was a measurement
+ * rather than a decision. Nine of these were statics standing in for the
+ * machine's borderless read-only edits, three pixels right and nine shorter,
+ * because a static's text origin is not an edit's -- five numbers that were
+ * ours and that no capture could see, which is the shape of everything else
+ * removed from this feature. The comment here said so and said the fix was
+ * to make them edits, blocked on one unknown: whether ween32 paints a
+ * read-only borderless edit on the page's face or in COLOR_WINDOW, a white
+ * box down the middle of the page being what a wrong guess looks like.
  *
- *     ours                        the machine
- *     IDC_PROP_TYPE  87,65 160x14     13059  84,65 246x23
- *     IDC_PROP_OPENS 87,91 160x14     13153  84,91 165x23
- *     IDC_PROP_WHERE 87,130 240x14    13065  84,130 246x23
+ * It paints on the face -- d4d0c8 against a window of ffffff, measured with
+ * a control of the machine's own style word. So they are edits, at the
+ * machine's rectangles, and the three pixels are gone with them.
  *
- * **Those five numbers are ours and no capture can see them**, which is the
- * shape every compensation removed from this feature had. They are written
- * down rather than removed because removing them means making the fields
- * borderless read-only edits, and whether ween32's edit paints a read-only
- * one on the page's face rather than in COLOR_WINDOW is not measured -- a
- * white box down the middle of the page is what a wrong guess looks like
- * here. **That is the better fix and this is not it.**
+ * And the rule that could not be taken now composes: the machine holds this
+ * page's Opens-with field's right edge still when it steps aside for an
+ * icon, 84+165 and 106+143 both ending at 249. That was unreachable while
+ * ours was five narrower than the field the rule is about -- taking it then
+ * put boot.ini at 494 against 306 -- and it is exact now.
  *
- * The one thing that follows from it: the machine holds this field's right
- * edge still when it steps aside for an icon -- 84+165 and 106+143 both end
- * at 249 -- and we cannot, because ours is five narrower than the field the
- * rule is about. Taking that rule alone puts boot.ini at 494 against 306.
+ * **No capture can see that last part and it is taken on the machine's word
+ * alone.** Holding the right edge and letting it run both leave boot.ini at
+ * 306, because the text in that field is short enough that the extra
+ * twenty-two pixels contain nothing. It is here because probe.exe read both
+ * states of the machine's own sheet and they end at the same column, not
+ * because a number moved -- which is worth saying where the number is, since
+ * every other line in this table has a capture behind it.
  */
 static const fo_place g_prop_at[] = {
     { IDC_PROP_ICON, 11, 11, 32, 32 },
     { IDC_PROP_NAME, 84, 18, 246, 23 },
     { IDC_PROP_RULE1, 11, 52, 318, 2 },
     { IDC_PROP_L_TYPE, 11, 65, 63, 15 },
-    { IDC_PROP_TYPE, 87, 65, 160, 14 },
+    { IDC_PROP_TYPE, 84, 65, 246, 23 },
     { IDC_PROP_L_OPENS, 11, 91, 63, 15 },
     { IDC_PROP_APPICON, 84, 91, 16, 16 },
-    { IDC_PROP_OPENS, 87, 91, 160, 14 },
+    { IDC_PROP_OPENS, 84, 91, 165, 23 },
     { IDC_PROP_CHANGE, 255, 88, 75, 23 },
     { IDC_PROP_RULE2, 11, 117, 318, 2 },
     { IDC_PROP_L_WHERE, 11, 130, 63, 15 },
-    { IDC_PROP_WHERE, 87, 130, 240, 14 },
+    { IDC_PROP_WHERE, 84, 130, 246, 23 },
     { IDC_PROP_L_SIZE, 11, 156, 63, 15 },
-    { IDC_PROP_SIZE, 87, 156, 240, 14 },
+    { IDC_PROP_SIZE, 84, 156, 246, 23 },
     { IDC_PROP_L_ONDISK, 11, 182, 63, 15 },
-    { IDC_PROP_ONDISK, 87, 182, 240, 14 },
+    { IDC_PROP_ONDISK, 84, 182, 246, 23 },
     { IDC_PROP_RULE3, 11, 208, 318, 2 },
     { IDC_PROP_L_CREATED, 11, 221, 63, 15 },
-    { IDC_PROP_CREATED, 87, 221, 240, 14 },
+    { IDC_PROP_CREATED, 84, 221, 246, 23 },
     { IDC_PROP_L_WHEN, 11, 247, 63, 15 },
-    { IDC_PROP_WHEN, 87, 247, 240, 14 },
+    { IDC_PROP_WHEN, 84, 247, 246, 23 },
     { IDC_PROP_L_ACCESSED, 11, 273, 63, 15 },
-    { IDC_PROP_ACCESSED, 87, 273, 240, 14 },
+    { IDC_PROP_ACCESSED, 84, 273, 246, 23 },
     { IDC_PROP_RULE4, 11, 299, 318, 2 },
     { IDC_PROP_L_ATTRS, 11, 312, 63, 15 },
     { IDC_PROP_READONLY, 84, 312, 76, 16 },
@@ -3558,7 +3559,7 @@ static INT_PTR CALLBACK prop_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                                  STM_SETICON, (WPARAM)icon, 0);
                 /* **The field steps aside from where it already is, by the
                  * icon's width and a gap** -- 16 + 6, the machine's 84 to
-                 * 106 -
+                 * 106,
                  * which is written from the two table rows rather than as a
                  * second literal: a 22 in the source is the difference
                  * between two constants that nothing relates, and it would be
@@ -3575,9 +3576,18 @@ static INT_PTR CALLBACK prop_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                  * 494. See g_prop_at. */
                 const fo_place *ic = prop_place(IDC_PROP_APPICON);
                 const fo_place *fl = prop_place(IDC_PROP_OPENS);
-                if (ic && fl)
-                    MoveWindow(at, fl->x + ic->cx + PROP_ICON_GAP, fl->y,
-                               fl->cx, fl->cy, FALSE);
+                if (ic && fl) {
+                    /* **The right edge stays put**, which is alice's reading
+                     * of the machine and it composes now that the field is
+                     * the machine's: 84+165 and 106+143 both end at 249. It
+                     * could not while ours was a 160-wide static standing in
+                     * for a 165-wide edit -- a rule about where the machine's
+                     * field ends landed five short of where ours had to, and
+                     * taking it then put boot.ini at 494 against 306. */
+                    int x = fl->x + ic->cx + PROP_ICON_GAP;
+                    MoveWindow(at, x, fl->y, fl->x + fl->cx - x, fl->cy,
+                               FALSE);
+                }
             }
         } else {
             SetDlgItemTextA(dlg, IDC_PROP_OPENS, "Unknown application");
@@ -3673,31 +3683,36 @@ static void show_properties(HWND owner)
     } while (0)
 #define LABEL(iid, itx) ITEM(SS_LEFTNOWORDWRAP, iid, ATOM_STATIC, itx)
 #define RULE(iid) ITEM(SS_ETCHEDHORZ, iid, ATOM_STATIC, "")
+/* **A value field is the machine's control, not a label that looks like one.**
+ * probe.exe reads every one of them as style 50000880 -- no WS_BORDER,
+ * ES_READONLY | ES_AUTOHSCROLL -- which paints on the page's face rather than
+ * in COLOR_WINDOW, so it reads as text and is one. */
+#define VALUE(iid) ITEM(ES_READONLY | ES_AUTOHSCROLL, iid, ATOM_EDIT, "")
     ITEM(SS_ICON, IDC_PROP_ICON, ATOM_STATIC, "");
     ITEM(WS_TABSTOP | ES_AUTOHSCROLL, IDC_PROP_NAME, ATOM_EDIT, "");
     items[n - 1].exstyle = WS_EX_CLIENTEDGE; /* a field's own sunken border */
     RULE(IDC_PROP_RULE1);
     LABEL(IDC_PROP_L_TYPE, "Type of file:");
-    LABEL(IDC_PROP_TYPE, "");
+    VALUE(IDC_PROP_TYPE);
     LABEL(IDC_PROP_L_OPENS, "Opens with:");
     ITEM(SS_ICON, IDC_PROP_APPICON, ATOM_STATIC, "");
-    LABEL(IDC_PROP_OPENS, "");
+    VALUE(IDC_PROP_OPENS);
     ITEM(BS_PUSHBUTTON | WS_TABSTOP, IDC_PROP_CHANGE, ATOM_BUTTON,
          "&Change...");
     RULE(IDC_PROP_RULE2);
     LABEL(IDC_PROP_L_WHERE, "Location:");
-    LABEL(IDC_PROP_WHERE, "");
+    VALUE(IDC_PROP_WHERE);
     LABEL(IDC_PROP_L_SIZE, "Size:");
-    LABEL(IDC_PROP_SIZE, "");
+    VALUE(IDC_PROP_SIZE);
     LABEL(IDC_PROP_L_ONDISK, "Size on disk:");
-    LABEL(IDC_PROP_ONDISK, "");
+    VALUE(IDC_PROP_ONDISK);
     RULE(IDC_PROP_RULE3);
     LABEL(IDC_PROP_L_CREATED, "Created:");
-    LABEL(IDC_PROP_CREATED, "");
+    VALUE(IDC_PROP_CREATED);
     LABEL(IDC_PROP_L_WHEN, "Modified:");
-    LABEL(IDC_PROP_WHEN, "");
+    VALUE(IDC_PROP_WHEN);
     LABEL(IDC_PROP_L_ACCESSED, "Accessed:");
-    LABEL(IDC_PROP_ACCESSED, "");
+    VALUE(IDC_PROP_ACCESSED);
     RULE(IDC_PROP_RULE4);
     LABEL(IDC_PROP_L_ATTRS, "Attributes:");
     ITEM(BS_AUTOCHECKBOX | WS_TABSTOP | WS_GROUP, IDC_PROP_READONLY,
