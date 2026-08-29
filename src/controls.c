@@ -7563,7 +7563,7 @@ void ween_register_controls(void)
 #define WEEN_TB_TEXT_X 24
 #define WEEN_TB_PAD_RIGHT 7
 #define WEEN_TB_PAD_DROP 5 /* when an arrow half follows the label */
-#define WEEN_TB_SEP_W 6
+#define WEEN_TB_SEP_W 8
 /* The arrow half a drop-down button reserves: thirteen after a label,
  * twelve after an image on its own. Measured on both. */
 #define WEEN_TB_DROP_W 13
@@ -7680,13 +7680,19 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
         ween_tbbutton *b = &tb->btn[i];
         b->x = x;
         if (b->style & TBSTYLE_SEP) {
-            /* A separator is as wide as it asked to be. win32 puts that width
-             * in iBitmap -- the field that is an image index on a button is a
-             * width on a separator -- and the six below is only what one gets
-             * for not saying: the explorer's separators say nothing and are
-             * six, WordPad's Standard bar says eight and its groups fall
-             * where the machine's do. */
-            b->w = b->image > 0 ? ween_ncm(b->image) : ween_ncm(WEEN_TB_SEP_W);
+            /* A separator is as wide as it asked to be, and there are two ways
+             * of asking. TB_SETBUTTONINFO's cx is one, the same field a button
+             * uses; iBitmap is the other -- the field that is an image index
+             * on a button is a width on a separator. Real comctl32, asked with
+             * TB_GETITEMRECT, honours both: told fourteen through iBitmap it
+             * is fourteen, told twenty afterwards through TBIF_SIZE it is
+             * twenty, and the buttons after it move each time.
+             *
+             * The eight is what one gets for not asking at all, and it is the
+             * machine's eight rather than a number of ours. */
+            b->w = b->fixed ? b->fixed
+                 : b->image > 0 ? ween_ncm(b->image)
+                 : ween_ncm(WEEN_TB_SEP_W);
         } else {
             int text = b->text ? tb_text_width(f, b->text) : 0;
             int drop = tb_drop_w(tb, b);

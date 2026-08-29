@@ -365,11 +365,18 @@ int main(void)
         DestroyWindow(bar);
     }
 
-    /* A separator is as wide as it asks to be. win32 keeps that width in
-     * iBitmap -- the field that is an image index on a button -- and a bar
-     * that says nothing gets the six the shell's separators are. WordPad's
-     * Standard bar asks for eight, which is what puts its five groups where
-     * the machine's are. */
+    /* A separator is as wide as it asks to be, and there are two ways to ask.
+     * All three numbers below are real comctl32's, read off TB_GETITEMRECT by
+     * tools/vm/ctlprobe.c rather than off a picture: told nothing a separator
+     * is eight, told fourteen through iBitmap it is fourteen, and told twenty
+     * afterwards through TB_SETBUTTONINFO it is twenty.
+     *
+     * The eight is worth a word, because this test used to say six and pass.
+     * examples/explorer asks for six outright and ween32 ignored it, so the
+     * shell's separators came out six from a default that was six for no
+     * reason -- a wrong number and a dropped message cancelling, with the
+     * captures standing on both. Honouring the ask is what makes the default
+     * visible, and once it is visible it is eight. */
     {
         HWND sb = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
                                   WS_CHILD | WS_VISIBLE, 0, 0, 300, 30, w,
@@ -383,7 +390,7 @@ int main(void)
         sep[0].fsStyle = TBSTYLE_BUTTON;
         sep[1].fsStyle = TBSTYLE_SEP; /* says nothing: the default */
         sep[2].fsStyle = TBSTYLE_SEP;
-        sep[2].iBitmap = 20; /* and this one asks */
+        sep[2].iBitmap = 14; /* and this one asks, in a separator's field */
         sep[3].idCommand = 502;
         sep[3].fsState = TBSTATE_ENABLED;
         sep[3].fsStyle = TBSTYLE_BUTTON;
@@ -392,12 +399,31 @@ int main(void)
         SendMessageA(sb, TB_GETITEMRECT, 1, (LPARAM)&r1);
         SendMessageA(sb, TB_GETITEMRECT, 2, (LPARAM)&r2);
         SendMessageA(sb, TB_GETITEMRECT, 3, (LPARAM)&r3);
-        CHECK(r1.right - r1.left == 6,
-              "a separator that asks for no width is six");
-        CHECK(r2.right - r2.left == 20,
-              "and one that asks for twenty is twenty");
+        CHECK(r1.right - r1.left == 8,
+              "a separator that asks for no width is eight");
+        CHECK(r2.right - r2.left == 14,
+              "and one that asks for fourteen through iBitmap is fourteen");
         CHECK(r3.left == r2.right && r2.left == r1.right,
               "and what follows each one starts where it ended");
+
+        /* The other way of asking, which ween32 stored and then never read:
+         * TB_SETBUTTONINFO consults `fixed` in the button branch only, so a
+         * separator took the message and ignored it. */
+        {
+            TBBUTTONINFOA bi;
+            RECT s1, b3;
+            memset(&bi, 0, sizeof(bi));
+            bi.cbSize = sizeof(bi);
+            bi.dwMask = TBIF_SIZE | TBIF_BYINDEX;
+            bi.cx = 20;
+            SendMessageA(sb, TB_SETBUTTONINFOA, 1, (LPARAM)&bi);
+            SendMessageA(sb, TB_GETITEMRECT, 1, (LPARAM)&s1);
+            SendMessageA(sb, TB_GETITEMRECT, 3, (LPARAM)&b3);
+            CHECK(s1.right - s1.left == 20,
+                  "a separator told twenty afterwards is twenty");
+            CHECK(b3.left == r3.left + 12,
+                  "and the twelve it grew by moves everything after it");
+        }
         DestroyWindow(sb);
     }
 
