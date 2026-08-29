@@ -1196,6 +1196,7 @@ pub const WEEN32_HAS_TREEVIEW = 1;
 pub const WEEN32_HAS_LISTVIEW = 1;
 pub const WEEN32_HAS_TRACKBAR = 1;
 pub const TOOLBARCLASSNAMEA = "ToolbarWindow32";
+pub const STATUSCLASSNAMEA = "msctls_statusbar32";
 
 /// One button on a toolbar, as TB_ADDBUTTONS takes them.
 pub const TBBUTTON = extern struct {
