@@ -110,7 +110,17 @@ def structs_of(body):
             if not line or line.startswith("#"):
                 continue
             if "(" in line:  # a function pointer member: name is inside it
-                fp = re.search(r"\(\s*\*\s*(\w+)\s*\)", line)
+                # `INT_PTR(CALLBACK *lpfnHook)(HWND, ...)` as well as `(*fn)`.
+                # The calling convention between the parenthesis and the star
+                # is what this used to stop at, and stopping made the whole
+                # struct unreadable: the five comdlg32 structs that carry a
+                # hook -- CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA,
+                # PAGESETUPDLGA, PRINTDLGA -- were reported as not compared,
+                # every one of them for this reason and none for a reason of
+                # its own. tools/zigbind/genstructs.py has always allowed it,
+                # which is why the Zig side of the triangle was checking three
+                # of the five that this side was not.
+                fp = re.search(r"\(\s*\w*\s*\*\s*(\w+)\s*\)", line)
                 if fp:
                     fields.append(fp.group(1))
                     continue

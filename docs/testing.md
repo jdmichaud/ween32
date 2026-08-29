@@ -1902,31 +1902,45 @@ the instrument rather than the code:
   finds `ok   a buffer too small is ERROR_MORE_DATA`. Grep for the
   sanitizer's own words, `AddressSanitizer|LeakSanitizer|runtime error`.
 
-**And the two struct gates read the same header and disagree about which
-structs they can read, because of one word in one regex.**
-`tools/win32check/genstructs.py` reports **five it does not compare** —
-CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA, PAGESETUPDLGA and PRINTDLGA — and it
-says so in its own output, which is the right behaviour. What the line does
-not say is that all five have the same cause and it is not the structs:
+**The two struct gates read the same header with the same regex, and one of
+them used to stop at a word the other allowed.** The C header writes a hook as
+`INT_PTR(CALLBACK *lpfnHook)(HWND, ...)`:
 
 ```
-the C header writes a hook as   INT_PTR(CALLBACK *lpfnHook)(HWND, ...)
-win32check looks for            \(\s*\*\s*(\w+)\s*\)         -- (*name)
-zigbind looks for               \(\s*\w*\s*\*\s*(\w+)\s*\)  -- (CALLBACK *name) too
+win32check looked for   \(\s*\*\s*(\w+)\s*\)         -- (*name) only
+zigbind looks for       \(\s*\w*\s*\*\s*(\w+)\s*\)  -- (CALLBACK *name) too
 ```
 
-So the *Zig* gate reads them and the *win32* gate does not, and the five are
-exactly the five comdlg32 structs that carry a hook. Three of them —
-CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA — are declared in `zig/ween32.zig`, so
-those three are compared against this header field for field and **this header
-is compared against real `windows.h` for none of them**. The triangle has one
-side open. The other two, PAGESETUPDLGA and PRINTDLGA, are declared in no Zig
-at all, so **nothing checks them from either direction.**
+A member it could not read made the **whole struct** unreadable, and it said
+so honestly — `5 not read by the generator, so not compared` — which is easy
+to read past when it sits under a line saying sixty-two were. The five were
+CHOOSECOLORA, CHOOSEFONTA, FINDREPLACEA, PAGESETUPDLGA and PRINTDLGA:
+**exactly the five comdlg32 structs that carry a hook, every one of them for
+that reason and none for a reason of its own.** Three were covered by the Zig
+gate, which had always allowed the calling convention; **PAGESETUPDLGA and
+PRINTDLGA are declared in no Zig, so nothing checked them from either
+direction.**
 
-None of the five is known to be wrong; FINDREPLACEA's offsets were read out of
-the Zig gate's own assertions when it was declared and they are win32's
-standard ones. The point is that being right and being checked are different
-things, and here the difference is a `\w*`.
+`win32check`'s regex now allows it too. **62 structs compared became 67, and
+all five agree with real `windows.h`** — 69 field assertions and five sizes,
+including all seven hook members. Nothing was wrong; the point is that nobody
+could have known, and two of the five had been checked by nothing at all for
+as long as they had existed.
+
+Both of the previously-unchecked two were broken on purpose to prove the new
+assertions are not vacuous: `PRINTDLGA.nCopies` widened from WORD, and
+`PAGESETUPDLGA.Flags` narrowed from DWORD.
+
+```
+_Static_assert(sizeof(((PRINTDLGA *)0)->nCopies) == 4, "PRINTDLGA.nCopies width");
+_Static_assert(sizeof(((PAGESETUPDLGA *)0)->Flags) == 2, "PAGESETUPDLGA.Flags width");
+```
+
+**The lesson is not the regex.** It is that a gate which reports what it could
+not do is only as good as somebody reading that line — and a count of what
+*was* checked, printed beside it, is exactly the thing that stops anybody
+reading it. If a gate can name what it skipped, it can be made to fail on
+what it skipped instead.
 
 Two more, both about what a gate is *shaped* to notice:
 
