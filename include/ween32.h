@@ -749,6 +749,8 @@ typedef struct _editstream {
 #define PFM_ALIGNMENT 0x00000008
 #define PFM_TABSTOPS 0x00000010
 #define PFM_NUMBERING 0x00000020
+/* The only numbering style win32 defines: a bullet. */
+#define PFN_BULLET 1
 #define PFM_OFFSETINDENT 0x80000000
 #define PFA_LEFT 1
 #define PFA_RIGHT 2

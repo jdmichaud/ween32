@@ -2261,7 +2261,13 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return TRUE;
     }
     case EM_CANPASTE:
-        return TRUE;
+        /* Whether there is anything to paste, which is what win32 answers:
+         * with an empty clipboard it is FALSE, and a program that greys its
+         * Paste button by asking gets a grey one. This said TRUE always, so
+         * WordPad's Paste lit up on an empty clipboard the moment anything
+         * started asking. wp is a format to test, or 0 for "any this control
+         * takes", which here is text. */
+        return IsClipboardFormatAvailable(wp ? (UINT)wp : CF_TEXT);
     case EM_STREAMOUT: {
         /* The document handed out in pieces, the way win32 hands one out:
          * the program's callback is called until there is nothing left. */

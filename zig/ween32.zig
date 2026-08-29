@@ -839,6 +839,50 @@ pub const SEL_TEXT = 0x0001;
 pub const SEL_OBJECT = 0x0002;
 pub const SEL_MULTICHAR = 0x0004;
 pub const SEL_MULTIOBJECT = 0x0008;
+/// What a font looks like, as GDI and the Font box describe one.
+/// The Font box's own struct. `lpLogFont` is filled in on the way out, and on
+/// the way in too when the flags say CF_INITTOLOGFONTSTRUCT.
+pub const CHOOSEFONTA = extern struct {
+    lStructSize: DWORD = @sizeOf(CHOOSEFONTA),
+    hwndOwner: ?HWND = null,
+    hDC: ?HDC = null,
+    lpLogFont: ?*LOGFONTA = null,
+    iPointSize: c_int = 0,
+    Flags: DWORD = 0,
+    rgbColors: COLORREF = 0,
+    lCustData: LPARAM = 0,
+    lpfnHook: ?*const fn (HWND, UINT, WPARAM, LPARAM) callconv(.c) INT_PTR = null,
+    lpTemplateName: ?LPCSTR = null,
+    hInstance: HINSTANCE = null,
+    lpszStyle: ?LPSTR = null,
+    nFontType: WORD = 0,
+    ___MISSING_ALIGNMENT__: WORD = 0,
+    nSizeMin: c_int = 0,
+    nSizeMax: c_int = 0,
+};
+pub extern fn ChooseFontA(cf: *CHOOSEFONTA) callconv(.c) BOOL;
+pub const CF_SCREENFONTS = 0x00000001;
+pub const CF_INITTOLOGFONTSTRUCT = 0x00000040;
+pub const CF_EFFECTS = 0x00000100;
+pub const CF_NOSCRIPTSEL = 0x00800000;
+
+pub const LOGFONTA = extern struct {
+    lfHeight: LONG = 0,
+    lfWidth: LONG = 0,
+    lfEscapement: LONG = 0,
+    lfOrientation: LONG = 0,
+    lfWeight: LONG = 0,
+    lfItalic: BYTE = 0,
+    lfUnderline: BYTE = 0,
+    lfStrikeOut: BYTE = 0,
+    lfCharSet: BYTE = 0,
+    lfOutPrecision: BYTE = 0,
+    lfClipPrecision: BYTE = 0,
+    lfQuality: BYTE = 0,
+    lfPitchAndFamily: BYTE = 0,
+    lfFaceName: [LF_FACESIZE]u8 = std.mem.zeroes([LF_FACESIZE]u8),
+};
+
 pub const CHARFORMATA = extern struct {
     cbSize: UINT = @sizeOf(CHARFORMATA),
     dwMask: DWORD = 0,
@@ -854,6 +898,8 @@ pub const POINTL = extern struct {
     x: LONG = 0,
     y: LONG = 0,
 };
+pub const EM_CANUNDO = 0x00C6;
+pub const EM_UNDO = 0x00C7;
 pub const EM_GETPARAFORMAT = (WM_USER + 61);
 pub const EM_SETPARAFORMAT = (WM_USER + 71);
 pub const PFM_STARTINDENT = 0x00000001;
@@ -861,6 +907,7 @@ pub const PFM_RIGHTINDENT = 0x00000002;
 pub const PFM_OFFSET = 0x00000004;
 pub const PFM_ALIGNMENT = 0x00000008;
 pub const PFM_TABSTOPS = 0x00000010;
+pub const PFN_BULLET = 1;
 pub const PFM_NUMBERING = 0x00000020;
 pub const PFM_OFFSETINDENT = 0x80000000;
 pub const PFA_LEFT = 1;
@@ -1392,6 +1439,7 @@ pub const TBSTATE_CHECKED = 0x01;
 pub const TBSTATE_PRESSED = 0x02;
 pub const TBSTATE_ENABLED = 0x04;
 pub const TBSTATE_HIDDEN = 0x08;
+pub const TB_GETBUTTON = (WM_USER + 23);
 pub const TB_ENABLEBUTTON = (WM_USER + 1);
 pub const TB_CHECKBUTTON = (WM_USER + 2);
 pub const TB_ISBUTTONCHECKED = (WM_USER + 10);
