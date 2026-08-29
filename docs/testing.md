@@ -587,16 +587,33 @@ checking that a Tab from the tab control lands on the page.
 — one file with no program registered against it and one with, one hidden and
 one not, one empty and one 203 bytes. Both frames are 367x443.
 
-```sh
-# five downs picks CONFIG.SYS in the fixture's list, Alt+Enter opens it; the
-# 367x443 frame is the sheet. Four downs picks boot.
-WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
+**The recipe below is a `console` block, which means `tools/freshdocs.py`
+re-runs it and compares the output** — and it is written out in full because
+the version that stood here until 2026-08-29 **could not be run**. It rendered
+to `/tmp/pp%d.bmp` and then diffed `/tmp/ours.png`, a file no step in it
+created; whether it failed or silently compared the machine's Properties
+against whatever the *sampler* recipe had left in `/tmp` depended on what you
+had done first. Nobody had run it since it was written.
+
+```console
+$ WEEN32_EXPLORER_FIXTURE=1 WEEN32_HEADLESS=1 WEEN32_DPI=96 \
   WEEN32_BMP=/tmp/pp%d.bmp \
   WEEN32_SCRIPT="w:300 k:40 k:40 k:40 k:40 k:40 w:200 a:13 w:900" \
-  ./examples/explorer
-PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
-  tools/refcapture/pxdiff.py                  # see below: this number moves
+  ./examples/explorer >/dev/null 2>&1; \
+  magick /tmp/pp9.bmp /tmp/props.png; \
+  PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/props.png \
+  tools/refcapture/pxdiff.py | head -2
+reference (367, 443)   ween32 (367, 443)
+differing pixels: 652 of 162581 (0.4%)
 ```
+
+Five downs picks CONFIG.SYS in the fixture's list and Alt+Enter opens it; four
+downs picks boot. **`pp9` is the ninth thing that painted, and it is the sheet
+because it is the only 367x443 one** — every one of these scripts leaves
+several frames behind, and `tools/verify.sh` picks by size rather than by
+index for that reason. The index is written here because a document should be
+runnable by pasting; if it stops being the ninth, this block goes stale and
+says so, which is the whole point of it being a `console` block.
 
 | what | differing | what it is |
 | --- | --- | --- |
