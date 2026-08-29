@@ -38,3 +38,7 @@ tools/refcapture/xclick
 # python bytecode left by a tool that imports drive.py
 __pycache__/
 *.pyc
+
+# tools/package.sh writes the tarball, its fetch cache and the throwaway
+# consumer here.
+build/

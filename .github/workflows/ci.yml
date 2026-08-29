@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -95,3 +96,46 @@ jobs:
           grep -q "zig binding agrees with the header" /tmp/gates.txt
           grep -q "win32 examples/paint (zig)" /tmp/gates.txt
           grep -q "ween32 examples/paint (zig)" /tmp/gates.txt
+
+  package:
+    name: package and build a consumer from it
+    runs-on: ubuntu-latest
+    # The workflow asks for read only; this job writes a release asset when a
+    # tag builds, and a job that cannot do that fails at the last step with a
+    # 403 rather than at the first with a message.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libX11
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: master
+
+      # The artefact is not the thing worth testing. A package that leaves a
+      # file out of `.paths` fetches happily and hashes cleanly, and fails in
+      # the *consumer* -- where this repository's own build cannot see it,
+      # because every job above has the whole tree in front of it whether the
+      # manifest lists it or not. So this job builds a throwaway consumer
+      # from the tarball, once against the host and once against real win32
+      # out of the packaged headers, and the tarball falls out of that.
+      - name: Package, and build a consumer from the package
+        run: tools/package.sh --verify
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ween32-source-package
+          path: build/package/ween32-*.tar.gz
+
+      # On a tag, the same tarball becomes the release asset a consumer's
+      # `.url` points at. The hash to pin is in the step above's output; it is
+      # the tree's, not the archive's, so it does not move if the tarball is
+      # rebuilt.
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/package/ween32-*.tar.gz
