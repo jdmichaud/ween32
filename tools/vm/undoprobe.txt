@@ -31,7 +31,16 @@
   undo taking the text back leaves `old` bold. The first undo
   taking the style back is jd's bug, on the machine.
 
-== the arming route: bold with NOTHING selected, then type ==
+== typed base, then arm, then type: does arming break the run? ==
+  typed abc, arm, typed XY text abcXY      canundo 1  next TYPING   old plain(m003F e0000) new bold (m003F e0001)
+                       text abc        canundo 1  next TYPING   old plain(m003F e0000) new plain(m003F e0000)
+                       text            canundo 0  next unknown  old plain(m003F e0000) new plain(m003F e0000)
+
+  Text "abc" after the first undo means arming BREAKS the
+  typing run and they are two transactions. Empty means it does
+  not and the whole typing session is one.
+
+== the arming route, base set rather than typed ==
   typed XY             text abcXY      canundo 1  next TYPING   old plain(m003F e0000) new bold (m003F e0001)
                        text abc        canundo 0  next unknown  old plain(m003F e0000) new plain(m003F e0000)
 
@@ -50,8 +59,19 @@
 
 == reading the columns above ==
 
-`new` is indices 3..5. After an undo shortens the text to "abc" those
-indices no longer exist, and riched20 answers a read past the end from the
-armed insertion format rather than failing -- bob's phantom index, found the
-same evening from the other side. So `new` on any row where the text is
-"abc" is NOT evidence. The column that carries the answer there is `old`.
+`new` is indices 3..5. After an undo shortens the text those indices no
+longer exist, and riched20 answers a read past the end from the armed
+insertion format rather than failing -- bob's phantom index, found the same
+evening from the other side. So `new` on any row where the text is shorter
+than 5 characters is NOT evidence; `old` is the column that carries the
+answer there.
+
+== and how ours differs, measured through Edit > Undo at 96dpi ==
+
+  no undo             ink 248
+  undo once           ink 132     essentially empty
+  undo twice          ink 120     empty
+  control, just abc   ink 188     what the machine leaves after one undo
+  control, empty      ink 120
+
+One undo empties our document where the machine's leaves "abc".

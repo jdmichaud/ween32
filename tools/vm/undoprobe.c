@@ -381,7 +381,43 @@ static void probe_main(void)
          "  undo taking the text back leaves `old` bold. The first undo\r\n"
          "  taking the style back is jd's bug, on the machine.\r\n\r\n");
 
-    emit("== the arming route: bold with NOTHING selected, then type ==\r\n");
+    /* **The base is TYPED here, not set with WM_SETTEXT, and that is the
+     * whole question.** The section above sets "abc" with WM_SETTEXT and
+     * empties the undo buffer, so the typing of XY is the only typing in the
+     * transaction and one undo can only take XY. A person types "abc" as
+     * keystrokes -- so the real question is whether arming a format BREAKS
+     * the typing run, or whether "abc" and "XY" stay one transaction and a
+     * single undo empties the document.
+     *
+     * Ours empties it. Whether that is a bug depends entirely on this
+     * reading, and the earlier section cannot answer it because it was not
+     * asking it. */
+    emit("== typed base, then arm, then type: does arming break the run? ==\r\n");
+    SendMessageA(re, WM_SETTEXT, 0, (LPARAM)"");
+    SendMessageA(re, EM_EMPTYUNDOBUFFER, 0, 0);
+    type_run(re, "abc");
+    {
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    }
+    type_run(re, "XY");
+    row2(re, "typed abc, arm, typed XY", 0, 3, 3, 5);
+    for (i = 0; i < 8; i++) {
+        if (!SendMessageA(re, EM_CANUNDO, 0, 0))
+            break;
+        SendMessageA(re, EM_UNDO, 0, 0);
+        wsprintfA(buf, "  undo %d", i + 1);
+        row2(re, buf, 0, 3, 3, 5);
+    }
+    emit("\r\n  Text \"abc\" after the first undo means arming BREAKS the\r\n"
+         "  typing run and they are two transactions. Empty means it does\r\n"
+         "  not and the whole typing session is one.\r\n\r\n");
+
+    emit("== the arming route, base set rather than typed ==\r\n");
     SendMessageA(re, WM_SETTEXT, 0, (LPARAM)"abc");
     {
         CHARFORMATA cf;
