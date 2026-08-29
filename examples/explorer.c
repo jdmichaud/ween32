@@ -3170,7 +3170,21 @@ static void folder_options(HWND owner)
     PROPSHEETHEADERA hdr;
 
 #define ITEM(st, ix, iy, iw, ih, iid, icls, itx)                                   do {                                                                               items[n].style = (st) | WS_CHILD | WS_VISIBLE;                                 items[n].x = (short)(ix);                                                      items[n].y = (short)(iy);                                                      items[n].cx = (short)(iw);                                                     items[n].cy = (short)(ih);                                                     items[n].id = (WORD)(iid);                                                     items[n].cls = (WORD)(icls);                                                   items[n].text = (itx);                                                         items[n].clsname = NULL;                                                       n++;                                                                       } while (0)
-/* WS_GROUP on the frame is what makes the option buttons inside it a group of
+/* **The x, y, cx and cy below do not place anything.** Every one of these four
+ * pages calls `fo_layout` from its `WM_INITDIALOG` and that moves each control
+ * to a rectangle from `g_fo_*_at`, in pixels, a couple of hundred lines down.
+ * The dialog units here only have to make the page the right shape before that
+ * runs -- what a control's rectangle *is* lives in the table, and the table is
+ * what the machine was read into.
+ *
+ * This note exists because an hour went into editing these numbers, carefully,
+ * against a probe of the machine, while nothing read them. The template looked
+ * like the source of truth and was not, and nothing said so.
+ *
+ * The page's overall size, in the `build_dialog_template` calls at the end of
+ * each page, **is** live: the property sheet is sized from it.
+ *
+ * WS_GROUP on the frame is what makes the option buttons inside it a group of
  * their own: the run between two WS_GROUP marks is one set, one tab stop and
  * one arrow ring. Without it every option button on the page is in the same
  * set, and setting one clears the other three groups. */
