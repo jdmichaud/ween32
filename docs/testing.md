@@ -839,8 +839,26 @@ Measured that way on Windows 2000:
 | Notepad's **edit** | 132..603 | 13 from 133 | 36 | **35** | a screenful less one |
 | explorer's **tree** | 208..490 | 16 from 208 | 17 | **16** | a screenful less one |
 | explorer's **list view** | 204..439 | 17 from 209 | 13 | **13** | a whole screenful |
+| a **list box** (Notepad's Font) | 289..379 | 13 from 289 | 7 | **6** | a screenful less one |
+| a **combo's dropped list** (Time Zone) | 212..406 | 13 from 212 | 15 | **14** | a screenful less one |
 
-The list view's is Dan's, measured twice at two window heights; the other two
+The last two are the easiest of the five to trust, because **their clients are an
+exact multiple of the row pitch** — 91 = 7x13 and 195 = 15x13 — so there is no
+partial row and the question the other three had to be careful about does not
+arise. Each was measured twice, a second page after the first, and the matching
+strip differed by **0** pixels where every other row differed by hundreds.
+
+**A hazard peculiar to a combo's dropped list: the highlight follows the
+pointer.** A strip can therefore differ from its own earlier self for a reason
+that has nothing to do with scrolling. It is visible in the numbers — matching
+the top strip against each row, the highlighted row came back **4,312** pixels
+different where the ordinary mismatches were 270 to 500. It did not reach the
+answer here, the match being elsewhere and exact, but a run where the highlight
+lands on the row being matched gives a false negative that looks exactly like a
+whole screenful. Keep the pointer on the scroll bar, which a track click does
+anyway.
+
+The list view's is Dan's, measured twice at two window heights; the other four
 are on the strip test above. So the edit and the tree overlap a row and the
 list view does not — two rules in the same window, both read off the same
 machine. ween32 follows each control's own.

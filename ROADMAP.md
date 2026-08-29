@@ -118,6 +118,17 @@ that no application has asked for:
   be named is intolerable; one that is named, kept and listed here is merely
   unfinished.
 
+- [ ] **ween32's list box pages by one row too many.** Measured on the machine,
+  a list box moves a screenful *less one* on a track click — 6 of 7 whole rows,
+  twice, with the client an exact multiple of the row pitch so there is no
+  partial-row ambiguity. ween32's moves a whole screenful: `sb_click` is given
+  `page = visible`, and a probe confirms it, top 0 to 8 with 8 rows showing.
+  The combo's dropped list wants the same reading taken of *our* side before
+  either is changed — its keyboard PageDown is a whole screenful by
+  construction, and a track click is a different path. Changing this moves any
+  capture with a scrolled list in it, so it wants the before-and-after numbers
+  rather than a quiet fix. Measurements in [docs/testing.md](docs/testing.md).
+
 - [ ] **A popup drawn on somebody else's pixels.** The chevron's menu draws a
   clipped, greyed `Ct` at the right edge of one row. It is not accelerator
   text of the menu's own — those items carry no tab — and it is not the Edit
