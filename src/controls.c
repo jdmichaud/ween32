@@ -1784,20 +1784,50 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             break;
         case VK_UP:
         case VK_DOWN: {
-            /* the same many characters along, on the line above or below.
-             * A single-line field has neither, and says so by handing the
-             * key back -- which is how a dialog gets to move the focus. */
-            int row, want, to, start, n;
+            /* The same *place along the line*, on the line above or below --
+             * which is a distance in pixels and not a count of characters.
+             * The machine settles it: with the caret twelve characters into
+             * "long line here" and a five-character line under it, two
+             * presses of Down land on character 6 of the line after, not on
+             * 5. Character 5 is what counting columns gives; 6 is the
+             * character nearest the pixel the caret was standing at, which
+             * is 29 either way. Measured with tools/vm/ctlprobe.c, which
+             * asks the guest's own EDIT and prints EM_POSFROMCHAR beside the
+             * offset.
+             *
+             * An edit takes that pixel from wherever the caret is now. A
+             * rich edit remembers the one it set out from, so that a walk
+             * down through a short line comes back out in the column it
+             * started in; see richedit.c. The two really do differ, and both
+             * are measured.
+             *
+             * A single-line field has no line above or below, and says so by
+             * handing the key back -- which is how a dialog gets to move the
+             * focus. */
+            int row, to, start, n, x, best, bestd, i;
+            const ween_strike *ff = wnd->font ? wnd->font : ween_gui_font();
             if (!multi)
                 return DefWindowProcA(wnd, msg, wp, lp);
             row = ween_text_line_from_char(wnd->text, e->caret);
-            want = e->caret - ween_text_line_start(wnd->text, row);
             to = wp == VK_UP ? row - 1 : row + 1;
             if (to < 0 || to >= ween_text_line_count(wnd->text))
                 break;
+            start = ween_text_line_start(wnd->text, row);
+            x = ff ? ween_strike_pen(ff, wnd->text + start, e->caret - start)
+                   : e->caret - start;
             start = ween_text_line_start(wnd->text, to);
             n = ween_text_line_length(wnd->text, start);
-            e->caret = start + (want > n ? n : want);
+            best = 0;
+            bestd = 1 << 30;
+            for (i = 0; i <= n; i++) {
+                int pen = ff ? ween_strike_pen(ff, wnd->text + start, i) : i;
+                int d = pen > x ? pen - x : x - pen;
+                if (d < bestd) {
+                    bestd = d;
+                    best = i;
+                }
+            }
+            e->caret = start + best;
             break;
         }
         case VK_HOME:

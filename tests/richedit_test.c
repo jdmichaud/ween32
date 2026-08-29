@@ -213,35 +213,68 @@ int main(void)
     key(re, VK_END, 0, 1);
     CHECK(caret_of(re) == 38, "Control and End the end of it");
 
-    /* What happens to the column when the line under the caret is too short
-     * for it is not measured on the machine yet -- Windows is said to
-     * remember where the caret was aiming and neither control here does. So
-     * what is checked is the thing this file exists for: that the two agree.
-     * When it is measured, both change together or this fails. */
+    /* Where a walk up and down the lines comes out, which is the one
+     * behaviour the two controls are *meant* to differ in -- and the
+     * difference is the machine's, read with tools/vm/ctlprobe.c rather
+     * than reasoned about. Its rich edit walks down from twelve characters
+     * into a long line, through a five-character line, and comes out at the
+     * pixel it set out from; two presses of Up put the caret back on the
+     * very character it left. Its EDIT takes the pixel from wherever the
+     * caret is now, so the same walk ends somewhere else and never comes
+     * back. Both are implemented, and both are checked here.
+     *
+     * The landing offsets themselves are the font's -- the machine's are
+     * Tahoma's, ours are this strike's -- so what is asserted is the
+     * property rather than the number: back where it started, or not. */
     {
         HWND ed = CreateWindowExA(0, "EDIT", "",
                                   WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 200,
                                   380, 80, host, (HMENU)(UINT_PTR)11, NULL,
                                   NULL);
         const char *both = "long line here\r\nshort\r\nlong line again";
-        int a, b;
+        int start = 12, back_r, back_e, deep_r, deep_e;
         SetWindowTextA(ed, both);
         SetWindowTextA(re, both);
-        SendMessageA(ed, EM_SETSEL, 12, 12);
-        SendMessageA(re, EM_SETSEL, 12, 12);
-        key(ed, VK_DOWN, 0, 0);
+        SendMessageA(ed, EM_SETSEL, start, start);
+        SendMessageA(re, EM_SETSEL, start, start);
         key(ed, VK_DOWN, 0, 0);
         key(re, VK_DOWN, 0, 0);
+        key(ed, VK_DOWN, 0, 0);
         key(re, VK_DOWN, 0, 0);
+        deep_r = caret_of(re);
         {
             DWORD f = 0, t = 0;
             SendMessageA(ed, EM_GETSEL, (WPARAM)&f, (LPARAM)&t);
-            a = (int)t;
+            deep_e = (int)t;
         }
-        b = caret_of(re);
-        CHECK(a == b,
-              "the two controls put the caret in the same place after a "
-              "short line, whatever that place turns out to be");
+        key(ed, VK_UP, 0, 0);
+        key(re, VK_UP, 0, 0);
+        key(ed, VK_UP, 0, 0);
+        key(re, VK_UP, 0, 0);
+        back_r = caret_of(re);
+        {
+            DWORD f = 0, t = 0;
+            SendMessageA(ed, EM_GETSEL, (WPARAM)&f, (LPARAM)&t);
+            back_e = (int)t;
+        }
+        CHECK(back_r == start,
+              "a rich edit remembers where a walk down the lines set out "
+              "from, so walking back up comes out on the character it left");
+        CHECK(back_e != start && deep_e != deep_r,
+              "and an EDIT does not, which is the machine's difference and "
+              "not ours");
+        /* And the goal is forgotten the moment the caret is moved another
+         * way, or the next Down would set out from somewhere it has left. */
+        SendMessageA(re, EM_SETSEL, start, start);
+        key(re, VK_DOWN, 0, 0);
+        key(re, VK_LEFT, 0, 0);
+        key(re, VK_RIGHT, 0, 0);
+        key(re, VK_DOWN, 0, 0);
+        key(re, VK_UP, 0, 0);
+        key(re, VK_UP, 0, 0);
+        CHECK(caret_of(re) != start,
+              "unless something else moved the caret in between, which "
+              "forgets it");
         DestroyWindow(ed);
     }
     SetWindowTextA(re, "long line here\r\nshort\r\nlong line again");

@@ -195,9 +195,28 @@ int main(void)
               SendMessageA(ed, EM_LINEINDEX, -1, 0) == 7,
           "Down goes to the line below");
     {
+        /* Landing on the character nearest the *pixel* the caret was
+         * standing at, which in a proportional face is not the character
+         * with the same number. "hel" is fourteen pixels wide and "wo" is
+         * fifteen, so the caret lands after "wo" rather than after "wor".
+         * The machine settles it -- see "What a text control does with the
+         * column" in docs/testing.md. */
+        const ween_strike *f = ween_gui_font();
+        int x = ween_strike_pen(f, "hello", 3);
+        int want = 0, bestd = 1 << 30, i;
+        for (i = 0; i <= 5; i++) {
+            int pen = ween_strike_pen(f, "world", i);
+            int d = pen > x ? pen - x : x - pen;
+            if (d < bestd) {
+                bestd = d;
+                want = i;
+            }
+        }
         DWORD from = 0, to = 0;
         SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
-        CHECK(from == 10, "keeping the column it was in");
+        CHECK((int)from == 7 + want,
+              "landing where the caret was standing, which is a pixel and "
+              "not a count of characters");
     }
     key(ed, VK_UP, 0, 0);
     {
@@ -205,6 +224,41 @@ int main(void)
         SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
         CHECK(from == 3, "and Up comes back to it");
     }
+
+    /* And what an EDIT does *not* do, which is the difference between it and
+     * the rich edit: it takes that pixel from where the caret is now rather
+     * than from where the walk set out. Down through a line too short for
+     * the caret's place leaves the walk at the short line's own end, and a
+     * second Down carries that forward instead of the original. Both
+     * numbers are the machine's own, read with tools/vm/ctlprobe.c: 21 and
+     * 29, and Up twice comes out at 6 rather than back at 12. */
+    SetWindowTextA(ed, "long line here\r\nshort\r\nlong line again");
+    SendMessageA(ed, EM_SETSEL, 12, 12);
+    key(ed, VK_DOWN, 0, 0);
+    {
+        DWORD from = 0, to = 0;
+        SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+        CHECK(to == 21, "Down through a short line stops at its end");
+    }
+    key(ed, VK_DOWN, 0, 0);
+    {
+        DWORD from = 0, to = 0;
+        SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+        CHECK(to == 29,
+              "and the line after takes the short line's pixel, not the one "
+              "the walk began at");
+    }
+    key(ed, VK_UP, 0, 0);
+    key(ed, VK_UP, 0, 0);
+    {
+        DWORD from = 0, to = 0;
+        SendMessageA(ed, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+        CHECK(to == 6,
+              "so walking back up does not come out where it started, and "
+              "the machine's does not either");
+    }
+    SetWindowTextA(ed, "hello\r\nworld\r\nagain");
+    SendMessageA(ed, EM_SETSEL, 3, 3);
     key(ed, VK_END, 0, 0);
     {
         DWORD from = 0, to = 0;

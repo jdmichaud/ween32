@@ -45,15 +45,6 @@ that no application has asked for:
   way to ask what else is there. A box offering four faces would be worse
   than none.
 
-- [ ] **What a text control does with the column, when the line below is
-  too short for it.** Windows is said to remember where the caret was
-  aiming, so that Down over a short line and Down again comes back to the
-  column it started in. Neither ween32 control does: both recompute the
-  column from where the caret actually is. `tests/richedit_test.c` checks
-  that the two agree rather than what they agree on, so this can be measured
-  on the machine -- a long line, a short one, a long one, and two presses of
-  Down in Notepad -- and put into both at once.
-
 - [ ] **Where a property sheet puts its page.** The machine's puts it at
   (13, 51) from the sheet's window origin and makes it 360x374; ween32's is
   at (10, 50) and 365x377, and its tab control is at (8, 29) where the
@@ -281,7 +272,9 @@ an EDIT keeps one string in the window's text and draws it in one font, and a
 rich edit keeps a document. What is there is the plain-text half WordPad's
 editor stands on: the class (both the riched20 name and the one Rich Edit 1.0
 answered to), its own storage behind WM_SETTEXT/WM_GETTEXT, a line table
-rebuilt in one pass, typing, the arrows, Home and End and the pages, the
+rebuilt in one pass, typing, the arrows (which move by the pixel the caret
+stands at and remember the one a walk set out from, as riched20 does and an
+EDIT does not), Home and End and the pages, the
 selection in the EDIT's terms and in a `CHARRANGE`, `EM_GETSELTEXT` and
 `EM_GETTEXTRANGE`, one step of undo, the modified flag, `EM_EXLIMITTEXT`, the
 vertical bar with the machine's own paging rule, ES_MULTILINE, ES_WANTRETURN

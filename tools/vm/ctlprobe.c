@@ -17,6 +17,12 @@
  *      part inside its edges?
  *   3. Where in an option button's rectangle does the circle start, and where
  *      does the dialog manager put a control asked for at a given unit?
+ *   4. What a Rich Edit 2.0 does with runs of formatting: where a run's
+ *      boundaries end up, whether identical neighbours are merged, what
+ *      EM_GETCHARFORMAT answers over a selection that spans two, and what a
+ *      character typed at a boundary takes its formatting from. Those decide
+ *      the shape of a text model rather than a pixel, which is why they are
+ *      asked of riched20 rather than reasoned about.
  *
  *   zig cc -target x86-windows-gnu -fno-sanitize=undefined -c \
  *          -o ctlprobe.obj ctlprobe.c
@@ -30,6 +36,7 @@
  */
 #include <windows.h>
 #include <commctrl.h>
+#include <richedit.h>
 
 void *memset(void *d, int c, unsigned n)
 {
@@ -360,6 +367,257 @@ static LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
     return DefWindowProcA(w, m, wp, lp);
 }
 
+/* ---- Rich Edit 2.0: what the runs do -------------------------------------
+ *
+ * Four questions, none of which a picture can answer, and all of which
+ * decide the shape of a text model rather than a pixel. The control is
+ * created here rather than found, so every answer is riched20's own.
+ *
+ * The RTF the control streams out is the clearest of the instruments: it is
+ * the run structure written down, so where a `\b' opens and closes says
+ * where a run begins and ends, and two runs that were merged come out as one
+ * group rather than two.
+ */
+
+static char rtf_buf[4096];
+static int rtf_len;
+
+static DWORD CALLBACK rtf_out(DWORD_PTR cookie, LPBYTE bytes, LONG cb,
+                              LONG *written)
+{
+    LONG i;
+    (void)cookie;
+    for (i = 0; i < cb; i++)
+        if (rtf_len < (int)sizeof rtf_buf - 1)
+            rtf_buf[rtf_len++] = (char)bytes[i];
+    rtf_buf[rtf_len] = 0;
+    *written = cb;
+    return 0;
+}
+
+/* The formatting in force over a range, and which of its bits the control
+ * says are the same throughout it: dwMask is what it is sure of. */
+static void charfmt_of(HWND re, int from, int to, const char *what)
+{
+    CHARFORMATA cf;
+    CHARRANGE cr;
+    cr.cpMin = from;
+    cr.cpMax = to;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&cf, 0, sizeof cf);
+    cf.cbSize = sizeof cf;
+    SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    wsprintfA(buf,
+              "  %-28s %2d..%-2d  mask %08lx  effects %08lx  bold %s  "
+              "italic %s  size %ld  face \"%s\"\r\n",
+              what, from, to, cf.dwMask, cf.dwEffects,
+              (cf.dwMask & CFM_BOLD) ? ((cf.dwEffects & CFE_BOLD) ? "on" : "off")
+                                     : "MIXED",
+              (cf.dwMask & CFM_ITALIC)
+                  ? ((cf.dwEffects & CFE_ITALIC) ? "on" : "off")
+                  : "MIXED",
+              (cf.dwMask & CFM_SIZE) ? cf.yHeight : -1,
+              (cf.dwMask & CFM_FACE) ? cf.szFaceName : "MIXED");
+    emit(buf);
+}
+
+static void set_bold(HWND re, int from, int to, int on)
+{
+    CHARFORMATA cf;
+    CHARRANGE cr;
+    cr.cpMin = from;
+    cr.cpMax = to;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&cf, 0, sizeof cf);
+    cf.cbSize = sizeof cf;
+    cf.dwMask = CFM_BOLD;
+    cf.dwEffects = on ? CFE_BOLD : 0;
+    SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+}
+
+static void dump_rtf(HWND re, const char *what)
+{
+    EDITSTREAM es;
+    int i;
+    rtf_len = 0;
+    rtf_buf[0] = 0;
+    memset(&es, 0, sizeof es);
+    es.pfnCallback = rtf_out;
+    SendMessageA(re, EM_STREAMOUT, SF_RTF, (LPARAM)&es);
+    wsprintfA(buf, "  -- RTF after %s --\r\n", what);
+    emit(buf);
+    /* The header is boilerplate; what matters is from the first \pard on,
+     * and the line breaks in it are the control's own. */
+    for (i = 0; i < rtf_len; i++)
+        if (rtf_buf[i] == '\\' && rtf_buf[i + 1] == 'p' &&
+            rtf_buf[i + 2] == 'a' && rtf_buf[i + 3] == 'r' &&
+            rtf_buf[i + 4] == 'd')
+            break;
+    if (i >= rtf_len)
+        i = 0;
+    emit("  ");
+    emit(rtf_buf + i);
+    emit("\r\n");
+}
+
+/* Down twice over a line too short for the column the caret started in,
+ * asked of both text controls -- because what Windows does with a remembered
+ * column is the same question for each and neither of ween32's does it. */
+/* Where the caret is, and how far along the line in pixels -- which is what
+ * says whether a control remembers a column or an x. EM_POSFROMCHAR answers
+ * differently in the two controls: an EDIT packs the point into the return,
+ * a rich edit fills in a POINTL the caller passes. */
+static void caret_here(HWND w, const char *cls, const char *when, int rich)
+{
+    DWORD from = 0, to = 0;
+    int line, start, x;
+    SendMessageA(w, EM_GETSEL, (WPARAM)&from, (LPARAM)&to);
+    line = (int)SendMessageA(w, EM_LINEFROMCHAR, (WPARAM)to, 0);
+    start = (int)SendMessageA(w, EM_LINEINDEX, (WPARAM)line, 0);
+    if (rich) {
+        POINTL pt;
+        pt.x = pt.y = 0;
+        SendMessageA(w, EM_POSFROMCHAR, (WPARAM)&pt, (LPARAM)to);
+        x = pt.x;
+    } else {
+        LRESULT r = SendMessageA(w, EM_POSFROMCHAR, (WPARAM)to, 0);
+        x = (short)LOWORD(r);
+    }
+    wsprintfA(buf, "  %-12s %-16s caret %lu  line %d  column %lu  x %d\r\n",
+              cls, when, to, line, to - (DWORD)start, x);
+    emit(buf);
+}
+
+static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
+{
+    /* Visible, because an invisible control has not laid anything out and
+     * cannot take the keyboard -- which is how the first run of this got two
+     * numbers that meant nothing. */
+    HWND w = CreateWindowExA(WS_EX_CLIENTEDGE, cls, "",
+                             WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                 ES_AUTOVSCROLL,
+                             10, 10, 300, 100, parent, NULL, NULL, NULL);
+    if (!w) {
+        wsprintfA(buf, "  %s would not be created: %lu\r\n", cls,
+                  GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(w, WM_SETFONT, (WPARAM)font, FALSE);
+    SetWindowTextA(w, "long line here\r\nshort\r\nlong line again");
+    SetFocus(w);
+    wsprintfA(buf, "  %-12s focus %s\r\n", cls,
+              GetFocus() == w ? "taken" : "NOT TAKEN");
+    emit(buf);
+    SendMessageA(w, EM_SETSEL, 12, 12); /* column 12 of the first line */
+    caret_here(w, cls, "at the start", rich);
+    SendMessageA(w, WM_KEYDOWN, VK_DOWN, 0);
+    caret_here(w, cls, "after one Down", rich);
+    SendMessageA(w, WM_KEYDOWN, VK_DOWN, 0);
+    caret_here(w, cls, "after two Downs", rich);
+    SendMessageA(w, WM_KEYDOWN, VK_UP, 0);
+    SendMessageA(w, WM_KEYDOWN, VK_UP, 0);
+    caret_here(w, cls, "and back up twice", rich);
+    DestroyWindow(w);
+}
+
+static void richedit(HWND parent, HFONT font)
+{
+    HWND re;
+    HMODULE lib = LoadLibraryA("riched20.dll");
+    CHARFORMATA cf;
+    CHARRANGE cr;
+    int i;
+
+    emit("== rich edit ==\r\n");
+    wsprintfA(buf, "  riched20.dll %s\r\n", lib ? "loaded" : "NOT FOUND");
+    emit(buf);
+    re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                         WS_CHILD | ES_MULTILINE | ES_AUTOVSCROLL, 0, 0, 300,
+                         120, parent, NULL, NULL, NULL);
+    if (!re) {
+        wsprintfA(buf, "  RichEdit20A would not be created: %lu\r\n",
+                  GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+
+    /* What a fresh control says about itself, before anything is asked of
+     * it: the format a first character would be typed in. */
+    SetWindowTextA(re, "abcdefghijklmnopqrst");
+    charfmt_of(re, 0, 20, "fresh control, all of it");
+
+    /* One run made in the middle of another. 5..10 is "fghij". */
+    set_bold(re, 5, 10, 1);
+    emit("  after bolding 5..10:\r\n");
+    for (i = 0; i < 20; i += 1) {
+        if (i == 0 || i == 4 || i == 5 || i == 9 || i == 10 || i == 11) {
+            char label[32];
+            wsprintfA(label, "character %d", i);
+            charfmt_of(re, i, i + 1, label);
+        }
+    }
+    charfmt_of(re, 4, 6, "across the first boundary");
+    charfmt_of(re, 0, 20, "the whole text");
+    dump_rtf(re, "bolding 5..10");
+
+    /* Now make the neighbour identical and see whether the two become one:
+     * bolding 10..15 leaves 5..15 bold either way, and the RTF says whether
+     * riched20 keeps two runs or one. */
+    set_bold(re, 10, 15, 1);
+    dump_rtf(re, "bolding 10..15 as well");
+
+    /* And take it away again from the middle of the bold stretch, which is
+     * the split a formatting command makes in a run. */
+    set_bold(re, 8, 12, 0);
+    dump_rtf(re, "unbolding 8..12");
+
+    /* What a character typed at a boundary takes its formatting from. The
+     * caret is put between a bold character and a plain one and a letter is
+     * typed; whether it comes out bold is the insertion rule, and it decides
+     * where a run's end is stored. */
+    SetWindowTextA(re, "abcdefghij");
+    set_bold(re, 0, 5, 1);
+    cr.cpMin = cr.cpMax = 5; /* between the bold run and the plain one */
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    SendMessageA(re, WM_CHAR, (WPARAM)'X', 0);
+    charfmt_of(re, 5, 6, "typed at the boundary");
+    dump_rtf(re, "typing X at the boundary");
+
+    /* The other end: a caret inside the bold run rather than at its edge. */
+    SetWindowTextA(re, "abcdefghij");
+    set_bold(re, 0, 5, 1);
+    cr.cpMin = cr.cpMax = 3;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    SendMessageA(re, WM_CHAR, (WPARAM)'Y', 0);
+    charfmt_of(re, 3, 4, "typed inside the run");
+
+    /* What EM_SETCHARFORMAT with no selection does, which is the other way a
+     * format bar's Bold button can be written: SCF_SELECTION with an empty
+     * selection sets the format the next character will be typed in. */
+    SetWindowTextA(re, "plain");
+    cr.cpMin = cr.cpMax = 5;
+    SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+    memset(&cf, 0, sizeof cf);
+    cf.cbSize = sizeof cf;
+    cf.dwMask = CFM_BOLD;
+    cf.dwEffects = CFE_BOLD;
+    SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    SendMessageA(re, WM_CHAR, (WPARAM)'Z', 0);
+    charfmt_of(re, 5, 6, "typed after an empty-selection set");
+    dump_rtf(re, "an empty-selection set then a character");
+
+    emit("== the caret's column over a short line ==\r\n");
+    emit("  (line 2 starts at 16 and is five long; line 3 starts at 23. A\r\n"
+         "   column kept from 12 lands on 35, a column taken from where the\r\n"
+         "   caret actually is on 28.)\r\n");
+    column_walk(parent, font, "RichEdit20A", 1);
+    column_walk(parent, font, "EDIT", 0);
+
+    DestroyWindow(re);
+}
+
 static void probe_main(void);
 void mainCRTStartup(void) { probe_main(); }
 void wWinMainCRTStartup(void) { probe_main(); }
@@ -414,6 +672,7 @@ static void probe_main(void)
     draw_questions(w, font);
     units(w, dlg = dialog());
     toolbar(w, 23);
+    richedit(w, font);
     CloseHandle(out_file);
 
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {

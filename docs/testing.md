@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **903 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **912 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -1006,6 +1006,99 @@ The rounding is confirmed twice over on the way: `MulDiv` rounds a half away
 from zero, and the fields prove it inside these very boxes — Find's at unit
 47 lands on 71 rather than 70, Replace's tick box at unit 5 on 8 rather than
 7.
+
+### What a Rich Edit 2.0 does, asked of riched20 itself
+
+`tools/vm/ctlprobe.c` creates the controls in its own process, so the
+questions that decide a *text model* — where a run of formatting begins and
+ends, what a character typed at a boundary takes its formatting from — can be
+put to riched20 directly and the answers written down. None of them can be
+read off a picture. Built and run the way its header says, with a `richedit`
+section that prints what follows.
+
+**A run split, and identical neighbours merged.** The RTF the control streams
+out is the run structure written down. Bolding characters 5..10 of twenty:
+
+```
+\pard\f0\fs17 abcde\b fghij\b0 klmnopqrst\par
+```
+
+then bolding 10..15 as well:
+
+```
+\pard\f0\fs17 abcde\b fghijklmno\b0 pqrst\par
+```
+
+— one group, not two, so **riched20 merges a run with an identical
+neighbour**. And taking bold away from the middle of that stretch, 8..12,
+gives five runs back:
+
+```
+\pard\f0\fs17 abcde\b fgh\b0 ijkl\b mno\b0 pqrst\par
+```
+
+So a formatting command splits the runs it lands inside and coalesces what it
+leaves the same. A model that only ever splits will drift into thousands of
+runs saying the same thing.
+
+**What `EM_GETCHARFORMAT` says over a selection that spans two runs.** Over
+one run, `dwMask` is `f800003f` — every attribute it knows. Across a
+boundary between bold and plain it is `f800003e`: **`CFM_BOLD` is cleared**,
+and `dwEffects` still carries the first run's value. So a format bar reads
+the *mask* to decide whether Bold is in, out, or neither, and reading
+`dwEffects` alone would show it in.
+
+**What a character typed at a boundary takes.** The caret between a bold run
+and a plain one, and an `X` typed:
+
+```
+\pard\b\f0\fs17 abcdeX\b0 fghij\par
+```
+
+— bold. **The formatting comes from the character before the caret**, not the
+one after. And `EM_SETCHARFORMAT` with `SCF_SELECTION` on an *empty*
+selection sets the format the next character will be typed in, which is how a
+format bar's Bold button works with nothing selected.
+
+**A fresh control's own format** is the message font: face `Tahoma`, `yHeight`
+165 twips, `dwEffects` `40000000` — `CFE_AUTOCOLOR`.
+
+**And a rich edit keeps no margin of its own.** With the same Tahoma in both,
+`EM_POSFROMCHAR` puts the rich edit's caret three pixels left of the EDIT's
+at the same offset: the EDIT has half an average character and the rich edit
+has none. Which is what ween32 does — see `edit_default_margin`.
+
+### What a text control does with the column, when the line below is short
+
+Both controls move the caret up and down by the **pixel it is standing at**,
+not by the character it is counted at. The probe asks each of them the same
+walk — twelve characters into "long line here", down through "short", down
+into "long line again" — and prints `EM_POSFROMCHAR` beside every offset:
+
+```
+RichEdit20A  at the start     caret 12  line 0  column 12  x 55
+RichEdit20A  after one Down   caret 20  line 1  column 5   x 26
+RichEdit20A  after two Downs  caret 33  line 2  column 12  x 55
+RichEdit20A  and back up twice caret 12 line 0  column 12  x 55
+
+EDIT         at the start     caret 12  line 0  column 12  x 58
+EDIT         after one Down   caret 21  line 1  column 5   x 29
+EDIT         after two Downs  caret 29  line 2  column 6   x 29
+EDIT         and back up twice caret 6  line 0  column 6   x 29
+```
+
+**The rich edit remembers the pixel the walk set out from** — 55 at every
+step, and two presses of Up put the caret back on the character it left. **An
+EDIT takes the pixel from wherever the caret is now** — 29 after the short
+line, and it never comes back. The two really do differ, and ween32 now
+differs the same way; anything that moves the caret another way forgets the
+remembered pixel, or the next Down would set out from a place the caret had
+already left.
+
+Counting columns instead — which is what this library did until the probe
+asked — gets the first step right by luck and the second wrong: it puts the
+EDIT's caret on 28 where the machine puts it on 29, and never moves a caret
+to the character *nearest* a pixel in a proportional face at all.
 
 ### The two text controls, held against each other
 

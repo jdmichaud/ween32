@@ -70,6 +70,15 @@ typedef struct {
     int undo_caret;
     int first_visible; /* the top line drawn */
     int sb_grab;       /* where in the thumb a drag took hold, or -1 */
+    /* Where a walk up or down the lines set out from, in pixels along the
+     * line. A rich edit remembers it: the machine's, asked with
+     * tools/vm/ctlprobe.c, walks down from twelve characters into a long
+     * line, through a five-character line, and comes out at the pixel it
+     * started at -- and two presses of Up bring it back to the very
+     * character it left. An EDIT does not; it takes the pixel from wherever
+     * the caret is now, and the two really do differ. Anything that is not
+     * a vertical move forgets it. */
+    int goal_x, goal_set;
     struct rich_line *line;
     int lines, line_cap;
 } ween_rich;
@@ -387,6 +396,36 @@ static int rich_index_at_point(HWND wnd, ween_rich *e, int x, int y)
     return best;
 }
 
+/* How far along its line the caret stands, in pixels. */
+static int rich_caret_x(HWND wnd, ween_rich *e)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int row = rich_line_of(e, e->caret);
+    if (!f)
+        return e->caret - e->line[row].start;
+    return ween_strike_pen(f, e->text + e->line[row].start,
+                           e->caret - e->line[row].start);
+}
+
+/* The character on a line that stands nearest a pixel. */
+static int rich_index_at_x(HWND wnd, ween_rich *e, int row, int x)
+{
+    const ween_strike *f = wnd->font ? wnd->font : ween_gui_font();
+    int i, best = 0, bestd = 1 << 30;
+    if (!f)
+        return e->line[row].start +
+               (x > e->line[row].len ? e->line[row].len : x);
+    for (i = 0; i <= e->line[row].len; i++) {
+        int pen = ween_strike_pen(f, e->text + e->line[row].start, i);
+        int d = pen > x ? pen - x : x - pen;
+        if (d < bestd) {
+            bestd = d;
+            best = i;
+        }
+    }
+    return e->line[row].start + best;
+}
+
 /* Bring the caret into view, scrolling by lines the way win32 does. */
 static int rich_scroll_into_view(HWND wnd, ween_rich *e)
 {
@@ -537,6 +576,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (e->anchor > e->len)
             e->anchor = e->len;
         e->caret = to > e->len ? e->len : to;
+        e->goal_set = 0;
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
     }
@@ -798,6 +838,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp) - rich_inset(wnd),
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
+        e->goal_set = 0;
         rich_show_caret(wnd, e);
         SetCapture(wnd);
         if (!had)
@@ -959,7 +1000,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN: {
         int shift = (lp & 1) != 0;         /* the backend puts Shift in bit 0 */
         int ctrl = (lp & (1L << 28)) != 0; /* and Ctrl in bit 28 */
-        int moved = 1;
+        int moved = 1, keeps_goal = 0;
         if (ctrl) {
             switch (wp) {
             case 'C':
@@ -1000,35 +1041,42 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             break;
         case VK_UP:
         case VK_DOWN: {
-            int row, want, to;
+            int row, to;
             if (!multi)
                 return DefWindowProcA(wnd, msg, wp, lp);
             row = rich_line_of(e, e->caret);
-            want = e->caret - e->line[row].start;
             to = wp == VK_UP ? row - 1 : row + 1;
             if (to < 0 || to >= e->lines)
                 break;
-            e->caret = e->line[to].start +
-                       (want > e->line[to].len ? e->line[to].len : want);
+            if (!e->goal_set) {
+                e->goal_x = rich_caret_x(wnd, e);
+                e->goal_set = 1;
+            }
+            e->caret = rich_index_at_x(wnd, e, to, e->goal_x);
+            keeps_goal = 1;
             break;
         }
         case VK_PRIOR:
         case VK_NEXT: {
-            /* A page is what the window shows, and the caret keeps its
-             * column -- the same rule the arrows follow. */
+            /* A page is what the window shows, and the caret keeps the
+             * place along the line it set out from -- the same rule the
+             * arrows follow. */
             int rows = rich_visible_lines(wnd);
-            int row, want, to;
+            int row, to;
             if (!multi)
                 return DefWindowProcA(wnd, msg, wp, lp);
             row = rich_line_of(e, e->caret);
-            want = e->caret - e->line[row].start;
             to = wp == VK_PRIOR ? row - rows : row + rows;
             if (to < 0)
                 to = 0;
             if (to >= e->lines)
                 to = e->lines - 1;
-            e->caret = e->line[to].start +
-                       (want > e->line[to].len ? e->line[to].len : want);
+            if (!e->goal_set) {
+                e->goal_x = rich_caret_x(wnd, e);
+                e->goal_set = 1;
+            }
+            e->caret = rich_index_at_x(wnd, e, to, e->goal_x);
+            keeps_goal = 1;
             break;
         }
         case VK_HOME:
@@ -1063,6 +1111,8 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         if (moved && !shift) /* moving without Shift drops the selection */
             e->anchor = e->caret;
+        if (!keeps_goal) /* anything but a vertical move forgets where it set out from */
+            e->goal_set = 0;
         rich_show_caret(wnd, e);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
