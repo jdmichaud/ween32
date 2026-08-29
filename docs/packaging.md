@@ -111,9 +111,37 @@ What must not move is the **file set**: the whole repository hashes differently
 from the `.paths` set, so what is served has to be what was hashed.
 
 **A `.path` dependency cannot be a tarball.** Zig wants a directory there and
-says `NotDir`. A package is consumed by URL or not at all -- which is why
-`package.sh` verifies through a `file://` URL rather than a path, and why it
-needs no server to do it.
+says `NotDir`. A package is consumed by URL or not at all.
+
+**And the tarball this writes is flat -- no top-level directory -- because a
+prefixed one fails this gate.** That is the defect that failed a release in
+jd's hands, and what reproduces here is narrower than a rule about zig:
+
+```
+rooted tarball, hash from `zig fetch` into cache C, then build against C
+    manifest declares ween32-0.1.0-jgasIImoOQ...
+    the fetched package is  N-V-__8AAImoOQ...     <- no name, no version
+the same rooted tarball, virgin cache, no `zig fetch` first      builds
+a flat tarball, either way                                       builds
+```
+
+The sentinel means zig saw no `build.zig.zon` at what it took to be the
+package root. **The mechanism is not established**: `zig fetch` and the build
+runner disagree about a top-level directory somewhere, and the ordering above
+is where it shows here. alice ran what she describes as the same combinations
+and saw no failure, so the boundary is narrower than either of us has pinned
+down, and **a GitHub source archive -- root directory and all -- fetches and
+builds from a cold cache**, which she measured directly.
+
+**Flat is what ships** because it works in every combination either of us has
+tried, and the hash is identical either way, so nothing a consumer pins
+depends on the choice.
+
+**A warm cache hides all of this.** The gate was green here for an hour
+because `~/.cache/zig` already held the package from a `zig fetch`, so
+`zig build` found it by hash and never took the fetch path. `package.sh` now
+fetches into a cache of its own, made fresh for each run, so the check cannot
+pass on the strength of what somebody's machine happens to hold.
 
 ## Releasing
 

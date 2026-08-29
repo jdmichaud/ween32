@@ -105,7 +105,26 @@ done
 # have to be the same packaging or the check is comparing this script against
 # a copy of itself that cannot go wrong.
 make_tarball() {
-    git archive --format=tar --prefix="$name/" HEAD -- $paths | gzip -n > "$1"
+    # **Flat: no `--prefix`, no top-level directory.** With one, this gate
+    # fails -- `zig fetch` answers `ween32-0.1.0-jgasI...` and the consumer's
+    # `zig build` resolves `N-V-__8AA...`, zig's "no name, no version"
+    # sentinel, carrying the same size and content. That is what failed jd's
+    # release.
+    #
+    # **The mechanism is not established and this comment will not invent
+    # one.** What reproduces here, every time:
+    #
+    #   rooted, hash from `zig fetch` into cache C, build against C  mismatch
+    #   the same rooted tarball, virgin cache, no fetch first        builds
+    #   flat, either way                                             builds
+    #
+    # So the two tools disagree about a top-level directory somewhere, and
+    # that ordering is where it shows. alice ran what she describes as the
+    # same combinations without a failure, so the boundary is narrower than
+    # either of us has pinned down. Flat is what ships because it works in
+    # every combination either of us has tried, and **the hash is identical
+    # either way** -- so nothing a consumer pins depends on the choice.
+    git archive --format=tar HEAD -- $paths | gzip -n > "$1"
 }
 
 tarball="$out/$name.tar.gz"
@@ -116,8 +135,12 @@ echo "  tarball $tarball"
 
 # zig fetch is what a consumer runs, so it is what says the hash -- computing
 # one here by any other means would be this script agreeing with itself.
-cache="$out/fetch-cache"
-rm -rf "$cache"
+# **Outside the repository as well, and for the same reason as the consumer
+# below**: a zig cache that lives inside another package makes a fetch of
+# that package come back anonymous. Both halves of this check now sit outside
+# the tree they are checking.
+cache=$(mktemp -d "${TMPDIR:-/tmp}/ween32-package-cache-XXXXXX")
+trap 'rm -rf "$cache"' EXIT
 hash=$(zig fetch --global-cache-dir "$cache" "$tarball" 2>/dev/null | tail -1)
 [ -n "$hash" ] || { echo "error: zig fetch printed no hash" >&2; exit 1; }
 echo "  hash $hash"
@@ -139,9 +162,19 @@ fi
 
 echo
 echo "== verify =="
-work="$out/consumer"
-rm -rf "$work"
-mkdir -p "$work"
+# **Outside the repository, and that is not tidiness.** A build root nested
+# inside another zig package cannot fetch a package by URL: with the consumer
+# under `build/package/` the fetch comes back as `N-V-__8AA...`, zig's "no
+# name, no version" sentinel, with the *same size and content* as the real
+# package -- a root with no `build.zig.zon` visible in it. Moved to /tmp,
+# byte for byte the same tarball and the same cache, it builds.
+#
+# That is what broke a release in jd's hands. This gate had been passing here
+# only because ~/.cache/zig already held the package from earlier runs, so
+# zig found it by hash and never took the fetch path at all; a cache without
+# it -- anybody else's -- fetches, and fails.
+work=$(mktemp -d "${TMPDIR:-/tmp}/ween32-package-check-XXXXXX")
+trap 'rm -rf "$work" "$cache"' EXIT
 
 cat > "$work/main.c" <<'EOF'
 /* A consumer of the package: it includes ween32's own header and calls into
@@ -186,6 +219,47 @@ pub fn build(b: *std.Build) void {
 }
 EOF
 
+# **Over HTTP, because `zig build` cannot fetch a `file://` URL.** `zig fetch`
+# can, and answers the right hash; the build runner comes back with
+# `N-V-__8AA...` -- zig's "no name, no version" sentinel, carrying the same
+# size and content as the real package. That is what failed a release in jd's
+# hands, and it is why this gate had been green here: `~/.cache/zig` already
+# held the package from earlier runs, so zig found it by hash and never took
+# the fetch path. A cache without it fetches, and fails.
+#
+# A URL is also what a consumer actually writes, so rehearsing one is the
+# point rather than a workaround: notepad will name an https release asset,
+# and the only thing this changes is which host answers.
+serve_port_file=$(mktemp)
+python3 - "$(dirname "$tarball")" "$serve_port_file" >/dev/null 2>&1 <<'PYEOF' &
+import http.server, socketserver, sys
+directory, port_file = sys.argv[1], sys.argv[2]
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k):
+        super().__init__(*a, directory=directory, **k)
+
+    def log_message(self, *a):
+        pass
+
+
+with socketserver.TCPServer(("127.0.0.1", 0), Handler) as srv:
+    with open(port_file, "w") as f:
+        f.write(str(srv.server_address[1]))
+    srv.serve_forever()
+PYEOF
+serve_pid=$!
+trap 'kill $serve_pid 2>/dev/null; rm -f "$serve_port_file"; rm -rf "$work" "$cache"' EXIT
+port=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    port=$(cat "$serve_port_file" 2>/dev/null || true)
+    [ -n "$port" ] && break
+    sleep 0.2
+done
+[ -n "$port" ] || { echo "  FAILED  could not start a local server to serve the package"
+                    exit 1; }
+
 cat > "$work/build.zig.zon" <<EOF
 .{
     .name = .consumer,
@@ -194,7 +268,7 @@ cat > "$work/build.zig.zon" <<EOF
     .minimum_zig_version = "0.17.0-dev.1158",
     .dependencies = .{
         .ween32 = .{
-            .url = "file://$tarball",
+            .url = "http://127.0.0.1:$port/$name.tar.gz",
             .hash = "$hash",
         },
     },
@@ -202,10 +276,36 @@ cat > "$work/build.zig.zon" <<EOF
 }
 EOF
 
-if ( cd "$work" && zig build > "$out/consumer-native.log" 2>&1 ); then
+# **In the same cache the hash was computed in**, which is the whole of the
+# next paragraph. jd ran `release.sh minor` and this gate failed with a hash
+# mismatch that had nothing to do with the package: the declared and the
+# fetched hash decoded to the same size and the same bytes, differing only in
+# zig's "no name, no version" sentinel -- a package root with no
+# `build.zig.zon` visible in it, which is what a half-unpacked cache entry
+# looks like. The hash above was computed in a pristine cache of our own and
+# the consumer built out of `~/.cache/zig`, which four agents and jd share and
+# which prints `failed deleting temporary directory ... DirNotEmpty` on every
+# fetch on this filesystem.
+#
+# **Two statements about one directory, or the gate cannot say which half was
+# wrong.** The trade is deliberate and worth stating: a real consumer uses the
+# shared cache, so this proves *the package is coherent*, not that anybody's
+# cache is healthy. For a release gate that is the right way round -- a gate
+# that fails on somebody else's cache is one people learn to re-run rather
+# than read.
+if ( cd "$work" && zig build --global-cache-dir "$cache" \
+        > "$out/consumer-native.log" 2>&1 ); then
     echo "  ok      a consumer fetches the package and builds against the host"
 else
     echo "  FAILED  a consumer fetches the package and builds against the host"
+    if grep -q "hash mismatch" "$out/consumer-native.log"; then
+        echo "          both hashes below were made in one cache:"
+        echo "            $cache"
+        echo "          the one this script printed came from \`zig fetch\`"
+        echo "          there, and the one the consumer resolved came from"
+        echo "          \`zig build\` there, so a disagreement is the package"
+        echo "          and not a cache somebody else was writing to."
+    fi
     tail -8 "$out/consumer-native.log"
     exit 1
 fi
@@ -218,10 +318,11 @@ fi
 # package as `p/<hash>.tar.gz` and an older one kept it unpacked, so reaching
 # into the cache would be this script depending on a layout that has already
 # changed once.
-pkg="$out/unpacked/$name"
-rm -rf "$out/unpacked"
-mkdir -p "$out/unpacked"
-tar xzf "$tarball" -C "$out/unpacked"
+# The tarball is flat, so the package *is* the directory it is unpacked into.
+pkg="$out/unpacked"
+rm -rf "$pkg"
+mkdir -p "$pkg"
+tar xzf "$tarball" -C "$pkg"
 if [ ! -d "$pkg/include" ]; then
     echo "  FAILED  the package has no include directory in it"
     exit 1
@@ -265,14 +366,14 @@ plant="src/.package-invariant-$$.o"
 # the cleanup belongs on the path a failure takes**, not on the line after
 # the last success. (The same fault was fixed in the Python instruments the
 # same evening, in the commit that was fixing cleanup.)
-trap 'rm -f "$plant"' EXIT
+trap 'kill $serve_pid 2>/dev/null; rm -f "$plant" "$serve_port_file"; rm -rf "$work" "$cache"' EXIT
 rm -f "$plant"
 printf 'not tracked, must not be packaged\n' > "$plant"
 make_tarball "$out/again.tar.gz"
 again=$(zig fetch --global-cache-dir "$out/again-cache" "$out/again.tar.gz" \
         2>/dev/null | tail -1)
 rm -f "$plant"
-trap - EXIT
+trap 'kill $serve_pid 2>/dev/null; rm -f "$serve_port_file"; rm -rf "$work" "$cache"' EXIT
 rm -rf "$out/again.tar.gz" "$out/again-cache"
 if [ "$again" = "$hash" ]; then
     echo "  ok      an untracked file in a packaged directory does not move"
@@ -287,7 +388,8 @@ else
     exit 1
 fi
 
-[ "$keep" = 1 ] || rm -rf "$work" "$cache" "$out/unpacked"
+[ "$keep" = 1 ] || rm -rf "$out/unpacked"
+[ "$keep" = 1 ] && trap - EXIT && echo "  the consumer is at $work"
 
 echo
 echo "  the hash for a consumer's build.zig.zon:"
