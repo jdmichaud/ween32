@@ -971,7 +971,25 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * measured is a control managing a bit it put up itself. Whether
      * riched20 also takes down one its creator asked for is a fourth state
      * and nobody has looked, so this does not touch it.
-     */
+     *
+     * **This raise is broader than its evidence, and that is not yet
+     * resolved.** Every reading above is of *WordPad's* editor. Sam later
+     * drove a **bare** `RichEdit20W` -- minimal style, no `EM_SETRECT` --
+     * twenty-one lines into an eighty-pixel control, and `WS_VSCROLL` was
+     * never set:
+     *
+     *     machine, bare control, overflowing     WS_VSCROLL not set
+     *     machine, WordPad's editor, overflowing WS_VSCROLL set
+     *     ours, bare control, overflowing        WS_VSCROLL set   <- here
+     *
+     * So *"the control puts its own scrollbar up"* is measured of the editor
+     * WordPad makes and generalised here to every rich edit. **What makes
+     * WordPad's gain the style is not measured** -- `ES_AUTOVSCROLL` and
+     * `EM_SETRECT` are both candidates and reasoning from either name is the
+     * thing this file keeps getting wrong. It is left broad rather than
+     * narrowed to a guess, because jd's editor is the measured case and a
+     * bare control with a bar is a smaller error than WordPad without one;
+     * when somebody reads which bit does it, the condition goes here. */
     if (!(wnd->style & WS_VSCROLL)) {
         if (e->lines <= rich_visible_lines(wnd)) {
             rich_clamp_scroll(e);
