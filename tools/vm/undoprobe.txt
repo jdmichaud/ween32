@@ -20,6 +20,26 @@
   report, and the ORDER is the answer to whether one step can
   hold both.
 
+== jd's sequence: select all, bold, then type (inherits) ==
+  abc, unbolded        text abc        canundo 0  next unknown  old plain(m003F e0000) new plain(m003F e0000)
+  all bolded           text abc        canundo 1  next unknown  old bold (m003F e0001) new bold (m003F e0001)
+  typed XY at the end  text abcXY      canundo 1  next TYPING   old bold (m003F e0001) new bold (m003F e0001)
+                       text abc        canundo 1  next unknown  old bold (m003F e0001) new plain(m003F e0000)
+                       text abc        canundo 0  next unknown  old plain(m003F e0000) new plain(m003F e0000)
+
+  `old` is the original abc; `new` is the typed XY. The first
+  undo taking the text back leaves `old` bold. The first undo
+  taking the style back is jd's bug, on the machine.
+
+== the arming route: bold with NOTHING selected, then type ==
+  typed XY             text abcXY      canundo 1  next TYPING   old plain(m003F e0000) new bold (m003F e0001)
+                       text abc        canundo 0  next unknown  old plain(m003F e0000) new plain(m003F e0000)
+
+  Arming changes no text, so if it pushes no undo step the
+  count here is one lower than above and the shapes differ.
+  Nothing is read between the arm and the typing: looking moves
+  the selection, and moving the caret discards the armed format.
+
 == depth: how many steps does it keep? ==
   120 formatting changes, one step each
   100 undo(s) before it would not undo further
@@ -27,3 +47,11 @@
   120 means it kept every step and the limit is higher.
   Fewer is the depth, and the state left behind is what the
   steps that fell off the bottom would have restored.
+
+== reading the columns above ==
+
+`new` is indices 3..5. After an undo shortens the text to "abc" those
+indices no longer exist, and riched20 answers a read past the end from the
+armed insertion format rather than failing -- bob's phantom index, found the
+same evening from the other side. So `new` on any row where the text is
+"abc" is NOT evidence. The column that carries the answer there is `old`.

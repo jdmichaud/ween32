@@ -146,6 +146,27 @@ static void type_run(HWND re, const char *s)
         type_char(re, *s++);
 }
 
+/* Two ranges, because the whole question in jd's case is whether the text
+ * that *inherited* the bold behaves like the text that was bolded. One
+ * boldness column cannot tell them apart. */
+static void row2(HWND re, const char *what, int a0, int a1, int b0, int b1)
+{
+    static char t[512];
+    static char first[64];
+    int name = (int)SendMessageA(re, EM_GETUNDONAME, 0, 0);
+    int i;
+    const char *p;
+    text_of(re, t, sizeof t);
+    p = boldness(re, a0, a1);
+    for (i = 0; p[i] && i < 63; i++) first[i] = p[i];
+    first[i] = 0;
+    wsprintfA(buf, "  %-20s text %-10s canundo %d  next %-8s "
+                   "old %-18s new %s\r\n",
+              what, t, (int)SendMessageA(re, EM_CANUNDO, 0, 0),
+              undo_name(name), first, boldness(re, b0, b1));
+    emit(buf);
+}
+
 static void row(HWND re, const char *what)
 {
     static char t[512];
@@ -303,6 +324,102 @@ static void probe_main(void)
          "  Whether the style comes back at all is the answer to jd's\r\n"
          "  report, and the ORDER is the answer to whether one step can\r\n"
          "  hold both.\r\n\r\n");
+
+    /* ---- jd's actual sequence, which the case above does not cover ------
+     *
+     * alice found that my `bold 0..3 then type` passes while jd's report
+     * still reproduces, and named the difference exactly: **there the bold is
+     * applied to existing text and the new characters fall outside it; here
+     * the new characters INHERIT the bold.** Two shapes, and only the first
+     * was measured. This is the second, by both routes into it:
+     *
+     *   A  select the text, bold it, put the caret at the end, type
+     *   B  put the caret at the end, bold with nothing selected -- which arms
+     *      an insertion format rather than changing any text -- then type
+     *
+     * B is the case bob flagged as unmeasured when his first invariant
+     * asserted undoability of it. Both are asked, because "typed text comes
+     * out bold" is the same *observation* by two different mechanisms and
+     * they need not undo alike. */
+    emit("== jd's sequence: select all, bold, then type (inherits) ==\r\n");
+    SendMessageA(re, WM_SETTEXT, 0, (LPARAM)"abc");
+    {
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = 0;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+    }
+    SendMessageA(re, EM_EMPTYUNDOBUFFER, 0, 0);
+    row2(re, "abc, unbolded", 0, 3, 0, 3);
+    {
+        CHARFORMATA cf;
+        CHARRANGE r;
+        r.cpMin = 0;
+        r.cpMax = 3;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&r);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        r.cpMin = r.cpMax = 3;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&r);
+    }
+    row2(re, "all bolded", 0, 3, 0, 3);
+    type_run(re, "XY");
+    row2(re, "typed XY at the end", 0, 3, 3, 5);
+    for (i = 0; i < 8; i++) {
+        if (!SendMessageA(re, EM_CANUNDO, 0, 0))
+            break;
+        SendMessageA(re, EM_UNDO, 0, 0);
+        wsprintfA(buf, "  undo %d", i + 1);
+        row2(re, buf, 0, 3, 3, 5);
+    }
+    emit("\r\n  `old` is the original abc; `new` is the typed XY. The first\r\n"
+         "  undo taking the text back leaves `old` bold. The first undo\r\n"
+         "  taking the style back is jd's bug, on the machine.\r\n\r\n");
+
+    emit("== the arming route: bold with NOTHING selected, then type ==\r\n");
+    SendMessageA(re, WM_SETTEXT, 0, (LPARAM)"abc");
+    {
+        CHARFORMATA cf;
+        CHARRANGE r;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = 0;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+        SendMessageA(re, EM_EMPTYUNDOBUFFER, 0, 0);
+        r.cpMin = r.cpMax = 3;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&r);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD;
+        cf.dwEffects = CFE_BOLD;
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    }
+    /* **Nothing is read between arming and typing, and the first version of
+     * this read there.** `boldness` selects the range it is asked about and
+     * puts the selection back afterwards -- and riched20 discards an armed
+     * insertion format when the caret moves, so the act of looking cleared
+     * the thing being looked at. The XY came out plain and the honest reading
+     * of that run is *my probe*, not the control. Nothing may touch the
+     * selection between the arm and the first character. */
+    type_run(re, "XY");
+    row2(re, "typed XY", 0, 3, 3, 5);
+    for (i = 0; i < 8; i++) {
+        if (!SendMessageA(re, EM_CANUNDO, 0, 0))
+            break;
+        SendMessageA(re, EM_UNDO, 0, 0);
+        wsprintfA(buf, "  undo %d", i + 1);
+        row2(re, buf, 0, 3, 3, 5);
+    }
+    emit("\r\n  Arming changes no text, so if it pushes no undo step the\r\n"
+         "  count here is one lower than above and the shapes differ.\r\n"
+         "  Nothing is read between the arm and the typing: looking moves\r\n"
+         "  the selection, and moving the caret discards the armed format.\r\n\r\n");
 
     /* ---- 3. depth ------------------------------------------------------ */
     /* **Typed characters cannot measure depth, because they group.** The
