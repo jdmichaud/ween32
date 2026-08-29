@@ -2113,6 +2113,28 @@ and so compared two buttons rather than two grippers; the other read freed
 memory that happened to survive, and only the sanitizer build could tell.
 Break the library on purpose, watch the assertion go red, put it back.
 
+### Reproduce the state the capture was taken in
+
+§8.6's Word page counted **104** differing pixels the first time it could be
+counted at all, and **77 of them were a focus rectangle** — the machine's
+dotted ring around `Wrap to r&uler`, which its capture has because somebody
+took it by *clicking* the tab, and which our render did not have because the
+script arrived by arrow. A click leaves the keyboard in the page; an arrow
+leaves it on the tabs. One Tab at the end of the script puts it where the
+click would have left it and the page reads **27**.
+
+Every one of those 77 pixels was real, present in the reference, and absent
+from ours. **The count was right and the comparison was not**, because the two
+pictures were of the same controls in two different states.
+
+This is the caret and the mouse pointer from the other end. There the rule is
+to keep the session *out* of a reference — a blinking caret, a hot control, a
+tip that had time to come up. Here it is to put the session *back into* the
+render: **a capture is of a moment, and the moment includes where the keyboard
+was.** Before counting anything against a reference, ask how the reference was
+made and whether the script arrives the same way — and if the reference does
+not say, that is the thing to write down about it.
+
 ### What a guess is reasoned from
 
 Everything above is about numbers that are wrong. This is about numbers that
