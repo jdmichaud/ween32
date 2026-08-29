@@ -2143,10 +2143,19 @@ typedef struct tagCHOOSEFONTA {
 #define CF_ENABLEHOOK 0x00000008
 BOOL ChooseFontA(CHOOSEFONTA *cf);
 
-/* Find and Replace are modeless: the real ones put a window up and send the
- * owner the message RegisterWindowMessage(FINDMSGSTRING) each time the user
- * presses a button. Nothing here puts that window up, so nothing sends that
- * message, and the call answers with no window at all. */
+/* Find and Replace are modeless: the call puts a window up, answers with it,
+ * and sends the owner RegisterWindowMessage(FINDMSGSTRING) each time the user
+ * presses a button. What the box does not do is search -- the searching is
+ * the program's, which is why a text editor and a hex editor can wear the
+ * same dialog.
+ *
+ * This paragraph used to say the opposite: that nothing here put the window
+ * up and the call answered with no window at all. That was true when it was
+ * written and stopped being true when src/comdlg.c grew fr_open, and it went
+ * on being read for a day -- by somebody deciding whether it was worth
+ * trying. A stale comment about what a library cannot do is worse than none:
+ * it is believed, and it is believed by the person who was about to use the
+ * thing it denies. */
 typedef struct tagFINDREPLACEA {
     DWORD lStructSize;
     HWND hwndOwner;
