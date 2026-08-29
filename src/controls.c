@@ -7680,7 +7680,13 @@ static void toolbar_layout(HWND wnd, ween_toolbar *tb)
         ween_tbbutton *b = &tb->btn[i];
         b->x = x;
         if (b->style & TBSTYLE_SEP) {
-            b->w = ween_ncm(WEEN_TB_SEP_W);
+            /* A separator is as wide as it asked to be. win32 puts that width
+             * in iBitmap -- the field that is an image index on a button is a
+             * width on a separator -- and the six below is only what one gets
+             * for not saying: the explorer's separators say nothing and are
+             * six, WordPad's Standard bar says eight and its groups fall
+             * where the machine's do. */
+            b->w = b->image > 0 ? ween_ncm(b->image) : ween_ncm(WEEN_TB_SEP_W);
         } else {
             int text = b->text ? tb_text_width(f, b->text) : 0;
             int drop = tb_drop_w(tb, b);

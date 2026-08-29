@@ -365,6 +365,42 @@ int main(void)
         DestroyWindow(bar);
     }
 
+    /* A separator is as wide as it asks to be. win32 keeps that width in
+     * iBitmap -- the field that is an image index on a button -- and a bar
+     * that says nothing gets the six the shell's separators are. WordPad's
+     * Standard bar asks for eight, which is what puts its five groups where
+     * the machine's are. */
+    {
+        HWND sb = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                  WS_CHILD | WS_VISIBLE, 0, 0, 300, 30, w,
+                                  (HMENU)(UINT_PTR)77, NULL, NULL);
+        TBBUTTON sep[4];
+        RECT r0, r1, r2, r3;
+        SendMessageA(sb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        memset(sep, 0, sizeof(sep));
+        sep[0].idCommand = 501;
+        sep[0].fsState = TBSTATE_ENABLED;
+        sep[0].fsStyle = TBSTYLE_BUTTON;
+        sep[1].fsStyle = TBSTYLE_SEP; /* says nothing: the default */
+        sep[2].fsStyle = TBSTYLE_SEP;
+        sep[2].iBitmap = 20; /* and this one asks */
+        sep[3].idCommand = 502;
+        sep[3].fsState = TBSTATE_ENABLED;
+        sep[3].fsStyle = TBSTYLE_BUTTON;
+        SendMessageA(sb, TB_ADDBUTTONSA, 4, (LPARAM)sep);
+        SendMessageA(sb, TB_GETITEMRECT, 0, (LPARAM)&r0);
+        SendMessageA(sb, TB_GETITEMRECT, 1, (LPARAM)&r1);
+        SendMessageA(sb, TB_GETITEMRECT, 2, (LPARAM)&r2);
+        SendMessageA(sb, TB_GETITEMRECT, 3, (LPARAM)&r3);
+        CHECK(r1.right - r1.left == 6,
+              "a separator that asks for no width is six");
+        CHECK(r2.right - r2.left == 20,
+              "and one that asks for twenty is twenty");
+        CHECK(r3.left == r2.right && r2.left == r1.right,
+              "and what follows each one starts where it ended");
+        DestroyWindow(sb);
+    }
+
     /* A rebar: the bands a shell's toolbars sit in, each a row with a gripper
      * and the control filling what is left of it. */
     {
