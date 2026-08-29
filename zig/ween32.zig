@@ -411,6 +411,19 @@ pub extern fn ShowWindow(wnd: HWND, cmd: c_int) callconv(.c) BOOL;
 pub extern fn SetWindowTextA(wnd: HWND, text: LPCSTR) callconv(.c) BOOL;
 pub extern fn GetWindowTextA(wnd: HWND, out: LPSTR, max: c_int) callconv(.c) c_int;
 pub extern fn GetWindowTextLengthA(wnd: HWND) callconv(.c) c_int;
+
+/// The local time, as a program asks for it rather than as libc gives it.
+pub const SYSTEMTIME = extern struct {
+    wYear: WORD = 0,
+    wMonth: WORD = 0,
+    wDayOfWeek: WORD = 0,
+    wDay: WORD = 0,
+    wHour: WORD = 0,
+    wMinute: WORD = 0,
+    wSecond: WORD = 0,
+    wMilliseconds: WORD = 0,
+};
+pub extern fn GetLocalTime(st: *SYSTEMTIME) callconv(.c) void;
 pub extern fn GetClientRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
 pub extern fn GetWindowRect(wnd: HWND, rect: *RECT) callconv(.c) BOOL;
 pub extern fn AdjustWindowRect(rect: *RECT, style: DWORD, menu: BOOL) callconv(.c) BOOL;
@@ -1018,6 +1031,7 @@ pub const POINTL = extern struct {
     x: LONG = 0,
     y: LONG = 0,
 };
+pub const EM_REPLACESEL = 0x00C2;
 pub const EM_CANUNDO = 0x00C6;
 pub const EM_UNDO = 0x00C7;
 pub const EM_GETPARAFORMAT = (WM_USER + 61);
