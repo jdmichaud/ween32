@@ -2502,6 +2502,30 @@ int main(void)
         CHECK(pf.dxStartIndent == 0 && pf.dxOffset == 0,
               "and says nothing about it through the paragraph format, which "
               "is what the machine does too");
+
+        /* **And a hanging indent takes over from the eleven.** WordPad's
+         * Bullet Style sets `dxOffset` 720 as well as the numbering, and on
+         * the machine the first line's text then lands on the *body* indent
+         * rather than eleven past the bullet -- the ordinary shape of a
+         * list, bullet in the outdent. Ours put it at eleven until Dan's
+         * half landed and isolated the difference to this constant. */
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_NUMBERING | PFM_STARTINDENT | PFM_OFFSET;
+        pf.wNumbering = PFN_BULLET;
+        pf.dxStartIndent = 0;
+        pf.dxOffset = 720; /* half an inch, which is what WordPad sets */
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        p0.x = p0.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p0, 0);
+        second = (int)SendMessageA(t, EM_LINEINDEX, 1, 0);
+        p1.x = p1.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p1, (LPARAM)second);
+        CHECK(p0.x == p1.x,
+              "with a hanging indent the bulleted first line and its wrapped "
+              "line start on the same column");
+        CHECK(p0.x > plain_x + 11,
+              "and it is the body indent rather than the bullet's own eleven");
         DestroyWindow(host6);
     }
 

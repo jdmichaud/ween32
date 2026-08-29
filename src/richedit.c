@@ -102,7 +102,20 @@ typedef struct {
     WORD alignment;    /* PFA_LEFT, PFA_RIGHT, PFA_CENTER */
     LONG start_indent; /* twips */
     LONG right_indent;
-    LONG offset; /* the first line's, against the rest */
+    /* **The *rest's*, against the first line** -- `dxOffset`, and
+     * `rich_line_left` adds it to every line that is not the first, which is
+     * what MSDN says and what riched20's RTF shows. The comment here said
+     * the opposite for months.
+     *
+     * It cost a real detour: handing over the bullet indent I gave the field
+     * values as `dxStartIndent 0, dxOffset 720`, Dan checked them against
+     * this line, and it told him I had them backwards. He trusted the
+     * comment over the measurement and over the header, wrote the ruler's
+     * two markers into each other's fields, and found it only by going to
+     * measure something else. **A comment that is wrong about its own field
+     * is worse than none**, because it is exactly where somebody looks to
+     * check themselves. */
+    LONG offset;
     SHORT tabs;
     LONG tab[MAX_TAB_STOPS];
 } ween_pfmt;
@@ -1890,6 +1903,26 @@ static int rich_bullet_indent(ween_rich *e, int row)
     const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
     if (pf->numbering != PFN_BULLET || !e->line[row].first)
         return 0;
+    /* **A hanging indent takes over from the eleven.** The bare control's
+     * eleven is what it uses when the paragraph says nothing; with a hanging
+     * indent set -- which is what WordPad's Bullet Style does -- the first
+     * line's text goes to the *body* indent and the bullet takes the outdent,
+     * which is the ordinary shape of a list.
+     *
+     * Three readings say so together, and no single one of them does:
+     *
+     *     bare control, no indents     text +11, wrapped back to the margin
+     *     machine's WordPad            bullet on the margin, text +48,
+     *                                  wrapped +48 -- not +48 and +59
+     *     ours with the indents set    the wrapped line already lands on the
+     *                                  machine's, and only the first line
+     *                                  disagreed -- which isolates it here
+     *
+     * The third is Dan's, from wordpad's half, and it is what turns two
+     * readings that merely *fit* this rule into one that points at this
+     * line. */
+    if (pf->offset > 0)
+        return rfmt_px_twips(pf->offset);
     return ween_ncm(11);
 }
 
