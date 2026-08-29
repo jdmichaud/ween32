@@ -1222,6 +1222,51 @@ ween_surface_write_bmp(&((struct ween_wnd *)dlg)->surface, "/tmp/find-ours.bmp")
 circle's column and the field's first ink — so that neither can drift back
 without a test saying so.
 
+### The toolbar, asked rather than looked at
+
+`tools/vm/ctlprobe.c` creates controls in its own process, so the messages
+that take a pointer are legal and a toolbar can be asked what it did instead
+of being photographed doing it. Build line in its header; run it as
+`Z:\ctlprobe.exe Z:\ctl.txt` on a machine of your own. What it has settled so
+far about a toolbar:
+
+| question | win32's answer |
+| --- | --- |
+| `TB_SETBUTTONSIZE cx` | the button's **whole** rectangle. Told 23, buttons are 23x22 at a pitch of 23 |
+| a separator's width | `iBitmap` at add time, `TBIF_SIZE`'s `cx` afterwards, and **8** for saying nothing |
+| ...and what it reports | `TB_GETBUTTON` gives back **8**, not the 0 it was added with: the default is stored, not applied |
+| ...and the two fields | separate. `cx` set afterwards wins the layout and leaves `iBitmap` alone |
+| the button's top in the bar | **flat 0, classic 2** — at every bar height, divider or not. Not a centring |
+| `TB_SETHOTITEM` on a classic bar | refused; `TB_GETHOTITEM` goes on saying -1 |
+
+The last two are worth a warning each.
+
+**A classic bar has no hot item**, and that is not an omission: every button
+on one already wears its raised edge, so there is nowhere for hot to show.
+
+**ween32 centres its buttons, and win32 does not.** `tb_button_y` returns
+`(h - btn_h) / 2`, which agrees with the fixed inset only where the bar is
+exactly a button tall — and every toolbar in this tree was, so the wrong rule
+and the right one gave the same pixel everywhere anybody had looked. Do not
+just change it: putting the measured rule in moves **402 pixels in explorer's
+menu band**, and that band is checked against the machine at 170 differing
+pixels, all of them the shell's animation. Asked for a menu band's own
+configuration — flat, `TBSTYLE_LIST`, `TB_SETPADDING(16,0)`,
+`TB_SETBUTTONSIZE(0,19)`, bar 22 tall — real comctl32 gives its button
+**y=0 h=16** where ween32 gives **y=1 h=19**. Two disagreements that come out
+right together, and until somebody knows which of the two numbers is the
+wrong one, changing either alone makes the picture worse.
+
+`tools/refcapture/tbstates-machine.png` is the four states on both bars,
+comctl32's own standard art, 96x67 taken at the probe's client origin:
+
+    crop y  2   the flat bar     ordinary, hot, checked, disabled at x 0,23,46,69
+    crop y 39   the classic bar  the same four, its buttons two down in their bar
+
+A checked button is a sunken edge over a 50% dither of face and white; a
+disabled one keeps whatever edge its style gives it and draws the image
+embossed. Nothing in ween32 draws either yet.
+
 ### The explorer's commands
 
 The menus and the toolbar do what they say, against the file system the
@@ -1469,7 +1514,24 @@ the instrument rather than the code:
   finds `ok   a buffer too small is ERROR_MORE_DATA`. Grep for the
   sanitizer's own words, `AddressSanitizer|LeakSanitizer|runtime error`.
 
-And the rule under all four: **a test that passes is worth nothing until it has
+Two more, both about what a gate is *shaped* to notice:
+
+- **the binding gate is a spell-checker, not a dictionary.** It checks that
+  what `zig/ween32.zig` declares agrees with the header, which is one
+  direction. A name the module never mentions is a name it never disagrees
+  with, and absences are reported only as a total -- "361 of the header's not
+  declared in Zig yet". `STATUSCLASSNAMEA` sat in that total, so a Zig program
+  could create every common control except a status bar and every gate stayed
+  green. One missing entry inside a count of hundreds is not a signal anybody
+  can act on;
+- **a declaration nobody calls is a declaration nobody has checked.**
+  `LoadMenuA` went in with two optionals on types that were already optional,
+  which is a compile error the moment anything calls it -- and nothing did, so
+  it was merged. The fix existed on disk and was never committed. `git status`
+  before saying a branch is ready, and write the caller in the same commit as
+  the declaration.
+
+And the rule under all six: **a test that passes is worth nothing until it has
 been made to fail.** Two tests written the same day passed with the fix and
 without it — one scanned for a gripper starting on the control's own white edge
 and so compared two buttons rather than two grippers; the other read freed
