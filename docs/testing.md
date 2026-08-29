@@ -2315,6 +2315,52 @@ already to hand. **A wrong cause with a confident sentence on it is the thing
 this section exists to stop**, and it does not stop being that when the
 sentence is one of this section's own.
 
+### An instrument that depends on a flag depends on a version
+
+**A check passed on one machine and failed on another, and the difference was
+neither the code, the tree, nor the cache.** It was which `zig` was first on
+somebody's PATH.
+
+```
+== verify ==
+  FAILED  a consumer fetches the package and builds against the host
+  error: unrecognized argument: --global-cache-dir
+```
+
+The run that failed was jd's, on a release; the run that passed was of the
+same commit, minutes earlier. **And it is not even consistent within one
+binary**: his `zig` accepted `--global-cache-dir` on `zig fetch` and rejected
+it on `zig build`, and the Makefile's `--cache-dir` worked throughout — so a
+fix narrowed to the line that failed would have left two more waiting.
+
+`ZIG_LOCAL_CACHE_DIR` and `ZIG_GLOBAL_CACHE_DIR` say the same thing and **have
+no argument list to be rejected from.** Both `tools/package.sh` here and
+`wordpad`'s `verify.sh` were changed to them; the second had not fired yet and
+would have, on whoever ran it next.
+
+**The general form:** an instrument that depends on a command-line flag
+depends on a version, and a version is a property of the person running it
+rather than of the thing being measured. Where an environment variable will do
+the same job it is the more portable statement.
+
+**And this is the one failure in this section that no amount of care here can
+catch**, which is why it is written down rather than guarded. Every other entry
+is about a number that was wrong for a reason present in this repository; this
+one is about a difference between two shells, and no script can police what is
+on somebody else's PATH. What it *can* do is not depend on it.
+
+**When a variable replaces a flag, check that the variable is honoured.** A
+flag that is rejected says so loudly; a variable that is ignored is silent and
+falls back to the default — which for a cache directory means it lands in
+`.zig-cache` on the checkout, the exact thing the flag existed to prevent. The
+check is to remove both directories, run, and look at where they come back:
+
+```
+both cache directories removed, then a full run
+  /tmp/wordpad-zig-cache and /tmp/wordpad-zig-gcache created
+  no .zig-cache on the checkout
+```
+
 ### A sabotage that does not compile looks exactly like one that failed
 
 This is the entry above at the worst possible moment: **while you are proving
