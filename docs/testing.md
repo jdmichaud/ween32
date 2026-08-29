@@ -1344,11 +1344,26 @@ the next attempt needs no machine. What they say:
   the first step lands at 21, 21, 22, 23 and 24 for widths 400, 500, 654, 768
   and 900, where a ramp from the edge would put it at 3, 4, 5, 5 and 6.
 
-A ramp offset by eighteen and floored fits 52% to 73% of the columns across
-those widths, against 8% for the naive one, and the rest are still ±1. So the
-offset is real and the rounding is still not ours. What is left to find is one
-rule, not five numbers — and the three captures are enough to test a candidate
-without booting anything.
+**And the rule is nearly in hand.** Taken channel by channel rather than all
+three at once, the machine's ramp is the plain linear one with **its first
+nineteen pixels holding the start colour**:
+
+    value(i) = start + floor((i - 19) * (end - start) / (last - 19))
+
+which matches **627 of R's 706 columns, 622 of G's and 638 of B's** — about
+89% each, where the naive ramp from the caption's own left edge matches 8%.
+The nineteen is a constant and not a fraction of the width: it predicts the
+first step at 21, 22, 23, 24 and 25 for widths 400, 500, 654, 768 and 900,
+against the 21, 21, 22, 23 and 24 measured. And it is where the caption's
+**icon** ends — 16 pixels of icon from x 6, plus a column — which is a reason
+rather than a coincidence.
+
+What is left is the last tenth: the columns where floor is off by one. Try
+`MulDiv`'s rounding, or a fixed-point accumulator, against the four captures.
+
+**Whoever takes this should expect it to move every capture that has a
+caption in it** — which is most of them — so it wants its own task with every
+number re-measured, not a line slipped into another change.
 
 ### The toolbar, asked rather than looked at
 
