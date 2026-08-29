@@ -8799,6 +8799,14 @@ static int rb_content_x(const ween_strike *f, const ween_rbband *b)
         return ween_ncm(WEEN_RB_LABEL_X) +
                ween_strike_text_width(f, b->text, (int)strlen(b->text)) +
                ween_ncm(WEEN_RB_LABEL_GAP);
+    /* A band told RBBS_NOGRIPPER has no handle, so it leaves no room for one
+     * and its child starts at nothing. The gripper was already not being
+     * *drawn* for such a band; its ten pixels were still being reserved, so
+     * every child of one sat ten pixels right of where win32 puts it.
+     * Measured with tools/vm/ctlprobe.c: a toolbar in a no-gripper band comes
+     * back at 0,0 in the band, where ween32 answered 10,0. */
+    if (b->style & RBBS_NOGRIPPER)
+        return 0;
     return ween_ncm(WEEN_RB_CONTENT_X);
 }
 

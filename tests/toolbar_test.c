@@ -970,6 +970,50 @@ int main(void)
         DestroyWindow(cw);
     }
 
+    /* A band told RBBS_NOGRIPPER has no handle, so it leaves no room for one.
+     * Real comctl32, asked with tools/vm/ctlprobe.c: a toolbar in a
+     * no-gripper band comes back at **0,0** in the band. ween32 drew no
+     * gripper for such a band and went on reserving its ten pixels, so every
+     * child of one sat ten right of where win32 puts it. */
+    {
+        static const DWORD styles[2] = { 0, RBBS_NOGRIPPER };
+        static const int want_x[2] = { 10, 0 };
+        for (int k = 0; k < 2; k++) {
+            /* A rebar each: two bands in one would sit side by side and the
+             * second one's x would be the first one's width, which is not
+             * what is being asked about. */
+            HWND rb = CreateWindowExA(0, REBARCLASSNAMEA, "",
+                                      WS_CHILD | WS_VISIBLE | RBS_VARHEIGHT |
+                                          CCS_NODIVIDER | CCS_NORESIZE |
+                                          CCS_NOPARENTALIGN,
+                                      0, 0, 400, 26, w,
+                                      (HMENU)(UINT_PTR)(91 + k * 10), NULL,
+                                      NULL);
+            HWND child = CreateWindowExA(0, TOOLBARCLASSNAMEA, "",
+                                         WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT |
+                                             CCS_NORESIZE | CCS_NODIVIDER |
+                                             CCS_NOPARENTALIGN,
+                                         0, 0, 100, 22, rb,
+                                         (HMENU)(UINT_PTR)(92 + k), NULL, NULL);
+            REBARBANDINFOA bi;
+            RECT cw, cb;
+            memset(&bi, 0, sizeof(bi));
+            bi.cbSize = sizeof(bi);
+            bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
+            bi.fStyle = styles[k];
+            bi.hwndChild = child;
+            bi.cxMinChild = 100;
+            bi.cyMinChild = 22;
+            SendMessageA(rb, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
+            GetWindowRect(child, &cw);
+            GetWindowRect(rb, &cb);
+            CHECK(cw.left - cb.left == want_x[k],
+                  k == 0 ? "a band leaves ten pixels for its gripper"
+                         : "and none at all when it is told it has not got one");
+            DestroyWindow(rb);
+        }
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

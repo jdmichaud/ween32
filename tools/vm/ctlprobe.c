@@ -36,6 +36,7 @@
  */
 #include <windows.h>
 #include <commctrl.h>
+#include <stddef.h>
 #include <richedit.h>
 
 void *memset(void *d, int c, unsigned n)
@@ -646,15 +647,35 @@ static void rebarband(HWND parent)
     SendMessageA(tb, TB_ADDBUTTONS, 1, (LPARAM)&b);
 
     memset(&bi, 0, sizeof bi);
-    bi.cbSize = sizeof bi;
+    /* Windows 2000's comctl32 knows a shorter REBARBANDINFO than the header
+     * this is compiled against, and a cbSize it does not recognise makes
+     * RB_INSERTBAND fail outright -- which is why the first run of this
+     * reported the toolbar at 0x0 and I had nothing to read. The classic size
+     * ends at cxHeader; ask for that. Same trap as NONCLIENTMETRICS. */
+    bi.cbSize = (UINT)(offsetof(REBARBANDINFOA, cxHeader) + sizeof(UINT));
     bi.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
     bi.fStyle = RBBS_NOGRIPPER;
     bi.hwndChild = tb;
     bi.cxMinChild = 100;
     bi.cyMinChild = 22;
-    SendMessageA(rb, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
-
-    emit("== a toolbar in a rebar band ==\r\n");
+    {
+        /* Windows 2000's comctl32 knows a shorter REBARBANDINFO than this
+         * header declares, and refuses a cbSize it does not recognise. Rather
+         * than guess which of the historical sizes it wants, try them from
+         * the newest down and report the one that takes -- that answer is
+         * worth as much as the rectangle it unlocks. */
+        static const int sizes[5] = { 80, 68, 60, 56, 52 };
+        LRESULT ok = 0;
+        int j;
+        for (j = 0; j < 5 && !ok; j++) {
+            bi.cbSize = (UINT)sizes[j];
+            ok = SendMessageA(rb, RB_INSERTBANDA, (WPARAM)-1, (LPARAM)&bi);
+            wsprintfA(buf, "  RB_INSERTBAND cbSize %2d -> %s\r\n", sizes[j],
+                      ok ? "ok" : "refused");
+            emit(buf);
+        }
+        emit("== a toolbar in a rebar band ==\r\n");
+    }
     wr.left = wr.top = wr.right = wr.bottom = 0;
     GetWindowRect(tb, &wr);
     cr.left = cr.top = cr.right = cr.bottom = 0;
@@ -1485,6 +1506,15 @@ static void probe_main(void)
     HFONT font;
     NONCLIENTMETRICSA ncm;
 
+    {   /* The rebar is a "cool" class and the old InitCommonControls does not
+         * register it: without this the window is never created, every
+         * RB_ message goes nowhere, and RB_INSERTBAND answers 0 for a reason
+         * that has nothing to do with the cbSize one then goes hunting. */
+        INITCOMMONCONTROLSEX icc;
+        icc.dwSize = sizeof icc;
+        icc.dwICC = ICC_BAR_CLASSES | ICC_COOL_CLASSES | ICC_WIN95_CLASSES;
+        InitCommonControlsEx(&icc);
+    }
     InitCommonControls();
     out_file = CreateFileA(path ? path : "Z:\\ctl.txt", GENERIC_WRITE, 0, NULL,
                            CREATE_ALWAYS, 0, NULL);
