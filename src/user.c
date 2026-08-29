@@ -3689,32 +3689,28 @@ static void cb_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     RECT client = ps->rcPaint, rbox = client, rtext = client;
     int box = MulDiv(12, ween_render_dpi(), 96) + 1;
     int offset = f ? ween_strike_char_advance(f, '0') / 2 : 3;
-    /* A tick box keeps one column more between itself and its label than an
-     * option button does. Both glyphs are the same thirteen pixels and both
-     * are drawn at the control's left edge, which is what the machine's
-     * Folder Options shows — its Offline Files boxes sit one pixel further
-     * from their labels than its General option buttons do.
+    /* An option button's circle is drawn one column inside its control and
+     * on its top row; a tick box's box is drawn on the control's own corner.
+     * Both labels start in the same place, measured from the control -- the
+     * machine's Folder Options looked as though a tick box kept one more
+     * column only because the circle had moved.
      *
-     * Where the *circle* sits inside its control is not settled, and two
-     * captures of the machine disagree about it. Notepad's Find box has two
-     * option buttons whose circles are forty pixels apart, and no pair of
-     * whole dialog units maps to that pair of control edges unless the
-     * circle is one column in — which is also what a click says there: the
-     * column left of the circle takes the button and one further left does
-     * not. But moving the circle in costs Folder Options General 7,577
-     * pixels against its own capture, and no whole unit can hand that page
-     * back the pixel it loses. One rule has to explain both and neither does
-     * yet, so what is here is the one that matches three captures out of
-     * four. docs/testing.md says what is known and what the next measurement
-     * has to be. */
-    int tick = !(button_type(wnd) == BS_RADIOBUTTON ||
-                 button_type(wnd) == BS_AUTORADIOBUTTON);
+     * Windows' own rectangles say so, in two dialogs at once. Asked with
+     * GetWindowRect inside the guest (tools/vm/probe.c), Folder Options
+     * General has its `Use Windows classic desktop' button at x=245 and its
+     * circle's leftmost pixel is 246; Notepad's Find box has `&Up' at 307
+     * and `&Down' at 347 -- dialog units 111 and 138 -- with circles at 308
+     * and 348. The tick box in the same Find box is at 146 and its box's
+     * leftmost pixel is 146. */
+    int radio = button_type(wnd) == BS_RADIOBUTTON ||
+                button_type(wnd) == BS_AUTORADIOBUTTON;
     int lh = label_line(f), delta;
     UINT flags;
 
     FillRect(dc, &client, GetSysColorBrush(COLOR_BTNFACE));
 
-    rtext.left += box + offset + (tick ? 1 : 0);
+    rtext.left += box + offset + 1;
+    rbox.left += radio;
     rbox.right = rbox.left + box;
 
     /* the label is vertically centred, and the box follows it */

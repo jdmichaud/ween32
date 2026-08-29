@@ -45,21 +45,19 @@ that no application has asked for:
   way to ask what else is there. A box offering four faces would be worse
   than none.
 
-- [ ] **The option button's column.** Two captures of the machine disagree
-  about where a circle sits inside its control, and one rule has to explain
-  both: Notepad's Find box has two circles forty pixels apart, which no pair
-  of whole dialog units can produce unless the circle is one column in, and
-  Folder Options General loses 7,577 pixels the moment it is. Neither can be
-  dismissed, because the unit map skips every third pixel. What settles it is
-  one machine measurement -- click-bracket an option button's left edge on
-  the machine's own Folder Options and compare it with the circle's column,
-  as Find's were bracketed. docs/testing.md, "The option button's column,
-  unsettled", has both arguments and the experiment.
+- [ ] **Where a property sheet puts its page.** The machine's puts it at
+  (13, 51) from the sheet's window origin and makes it 360x374; ween32's is
+  at (10, 50) and 365x377, and its tab control is at (8, 29) where the
+  machine's is at (9, 29) -- both sheets being 386x468 with a 380x443
+  client. Every page in `examples/explorer` carries the difference in its
+  own table of pixels, which is why the pages match while the structure does
+  not. `TCM_ADJUSTRECT` and `PS_TAB_X` are where it lives; fixing it means
+  moving all four tables back the same day. Measured with
+  `tools/vm/probe.c`, in docs/testing.md.
 
 - [ ] **The strike's diagonals, and the caption's bold `F`.** Find and
-  Replace are within **261 pixels of 45,360** and **57 of 62,478** of the
-  machine's own boxes; 178 of Find's are the option button above, and every
-  one of the rest is a letter: our `M`, `w`, `N`, `A` and `R` step a diagonal
+  Replace are within **83 pixels of 45,360** and **57 of 62,478** of the
+  machine's own boxes, and every one of those pixels is a letter: our `M`, `w`, `N`, `A` and `R` step a diagonal
   on a different row from the machine's bitmap face, and the caption's bold
   `F` is one column wider, which shifts the whole title. Both are the fonts
   rather than the drawing -- the last thing between these two dialogs and
@@ -277,8 +275,9 @@ read off the controls rather than remembered. What was typed goes back into
 the program's own buffers. The searching is the program's: that is why a text
 editor and a hex editor can wear the same box. Laid out from the machine's
 own rectangles -- every one of them measured off a capture of the machine's
-own Notepad, and both boxes agree with it in everything but one option
-button's column, five letters and the bold `F` of a title.
+own Notepad -- read off the guest with GetWindowRect rather than fitted --
+and both boxes agree with it in everything but five letters and the bold `F`
+of a title.
 
 **The registry** — `RegCreateKeyExA`/`RegOpenKeyExA`/`RegCloseKey`,
 `RegQueryValueExA`/`RegSetValueExA`/`RegDeleteValueA`, which is how a Windows
@@ -580,9 +579,12 @@ PXDIFF_REF=tools/refcapture/menu-reference.png \
 PXDIFF_OUR=/tmp/menu_ween.png tools/refcapture/pxdiff.py   # the menu sampler
 ```
 
-The two samplers differ from their wine renders by 15649 of 298596 pixels and
+The two samplers differ from their wine renders by 15749 of 298596 pixels and
 4397 of 39200, and most of both is *deliberate*: where wine and a Windows 2000
-disagree, ween32 follows the machine. [docs/testing.md](docs/testing.md) keeps
+disagree, ween32 follows the machine. The newest hundred are the option
+buttons: wine draws the circle at its control's left edge and Windows draws
+it one column in, which the guest's own GetWindowRect settles in two dialogs
+at once. [docs/testing.md](docs/testing.md) keeps
 the current numbers and what every band of them is; the section below is why
 the deliberate ones are there.
 
@@ -645,10 +647,10 @@ between a check box and its text than it does between an option button and
 its, with the same font and the same thirteen-pixel glyph. Wine gives the two
 the same offset, so the sampler's check boxes now differ from it by about
 1213 pixels — measured on Folder Options, whose boxes and option buttons sit
-on the same page. Where that column belongs — to the label or to the circle
-— is the open question in docs/testing.md, "The option button's column,
-unsettled": Notepad's Find box says one thing and Folder Options says the
-other, and one rule has to explain both.
+on the same page. What that column really is came out later, when the probe
+asked Windows for its own rectangles: the labels are level measured from the
+control, and it is the circle that sits one column in. docs/testing.md, "The
+option button's column, settled by asking Windows".
 
 The list view is the third. Against the machine, a report row is as tall as
 the tallest thing in it and one more — seventeen with small icons, fourteen

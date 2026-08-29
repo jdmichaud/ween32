@@ -2253,25 +2253,17 @@ static HWND fr_open(FINDREPLACEA *fr, int replace)
 {
     static unsigned char tmpl[2048];
     static const dlg_item find_items[] = {
-        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 8, 44, 8, 0xFFFF, ATOM_STATIC,
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 8, 42, 8, 0xFFFF, ATOM_STATIC,
           NULL, "Fi&nd what:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
           WS_EX_CLIENTEDGE, 47, 7, 128, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 4, 42, 60,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 4, 42, 64,
           12, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
         { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 107, 26, 68, 28,
           0xFFFF, ATOM_BUTTON, NULL, "Direction" },
-        /* The one pair of rectangles in either box that cannot be made to
-         * land: the machine's two circles are forty pixels apart, and at six
-         * quarters of a pixel to the unit no two whole units are. 112 puts
-         * Up's circle exactly where the machine has it; 138 puts Down's one
-         * column left of the machine's, which is where its *control* is if
-         * the circle is drawn one column in -- so if that rule is settled
-         * the way Find argues, this number is already right and only the
-         * library moves. 178 pixels of the count below are these two. */
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON,
-          0, 112, 38, 26, 12, FR_RAD1, ATOM_BUTTON, NULL, "&Up" },
-        { WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON, 0, 138, 38, 34, 12,
+          0, 111, 38, 25, 12, FR_RAD1, ATOM_BUTTON, NULL, "&Up" },
+        { WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON, 0, 138, 38, 35, 12,
           FR_RAD2, ATOM_BUTTON, NULL, "&Down" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
           182, 5, 50, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },
@@ -2279,7 +2271,7 @@ static HWND fr_open(FINDREPLACEA *fr, int replace)
           14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
     };
     static const dlg_item replace_items[] = {
-        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 9, 44, 8, 0xFFFF, ATOM_STATIC,
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 4, 9, 48, 8, 0xFFFF, ATOM_STATIC,
           NULL, "Fi&nd what:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
           WS_EX_CLIENTEDGE, 54, 7, 114, 12, FR_EDT1, ATOM_EDIT, NULL, "" },
@@ -2287,7 +2279,7 @@ static HWND fr_open(FINDREPLACEA *fr, int replace)
           ATOM_STATIC, NULL, "Re&place with:" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
           WS_EX_CLIENTEDGE, 54, 24, 114, 12, FR_EDT2, ATOM_EDIT, NULL, "" },
-        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 5, 62, 60,
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 5, 62, 59,
           12, FR_CHX1, ATOM_BUTTON, NULL, "Match &case" },
         { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
           174, 4, 50, 14, IDOK, ATOM_BUTTON, NULL, "&Find Next" },

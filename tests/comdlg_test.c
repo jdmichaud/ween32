@@ -396,16 +396,12 @@ int main(void)
                 SendMessageA(field, WM_CHAR, (WPARAM)*p2, 0);
         }
 
-        /* Two pixels of the machine's own Find box, kept here so that
-         * neither can drift back without a test saying so. The columns are
-         * the capture's own (tools/refcapture/find-machine.png).
-         *
-         * The Up option button's circle begins at column 171. The Down one
-         * is at 211 on the machine and at 210 here, and that pixel is the
-         * open question written up in docs/testing.md: the two circles are
-         * forty pixels apart and no two whole dialog units are, so one of
-         * them has to be out until the rule for where a circle sits inside
-         * its control is settled on the machine.
+        /* Three columns of the machine's own Find box, kept here so that
+         * none of them can drift back without a test saying so. They are
+         * the capture's (tools/refcapture/find-machine.png) and the guest's
+         * own GetWindowRect agrees with them: the two option buttons are at
+         * dialog units 111 and 138, which put their controls at columns 170
+         * and 210, and each circle begins one column inside its control.
          *
          * The "h" just typed begins at column 78, one pixel inside the
          * field's border, where half an average character would have put it
@@ -413,13 +409,15 @@ int main(void)
          * stands in for a bitmap font. */
         {
             struct ween_wnd *w = (struct ween_wnd *)dlg;
-            unsigned face = 0, rim = 0;
+            unsigned face1 = 0, rim1 = 0, face2 = 0, rim2 = 0;
             int ink = 0;
             ween_flush_paint();
             if (w->surface.px && w->surface.w >= 360 && w->surface.h >= 126) {
                 size_t row = (size_t)91 * w->surface.w;
-                face = w->surface.px[row + 170] & 0xffffff;
-                rim = w->surface.px[row + 171] & 0xffffff;
+                face1 = w->surface.px[row + 170] & 0xffffff;
+                rim1 = w->surface.px[row + 171] & 0xffffff;
+                face2 = w->surface.px[row + 210] & 0xffffff;
+                rim2 = w->surface.px[row + 211] & 0xffffff;
                 for (int y = 36; y < 49 && !ink; y++)
                     for (int x = 76; x < 100; x++)
                         if ((w->surface.px[(size_t)y * w->surface.w + x] &
@@ -428,8 +426,11 @@ int main(void)
                             break;
                         }
             }
-            CHECK(face == WEEN_FACE && rim == WEEN_SHADOW,
-                  "the Up circle stands in the machine's own column");
+            CHECK(face1 == WEEN_FACE && rim1 == WEEN_SHADOW,
+                  "the Up circle begins one column inside its control, as "
+                  "the machine draws it");
+            CHECK(face2 == WEEN_FACE && rim2 == WEEN_SHADOW,
+                  "and the Down circle does the same forty pixels along");
             CHECK(ink == 78,
                   "and the field's text starts where the machine starts it, "
                   "one pixel inside the border");

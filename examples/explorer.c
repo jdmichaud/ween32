@@ -2626,23 +2626,32 @@ static void fo_set_icon(HWND dlg, int id, int which)
 
 /* The General page. A group box's etched frame is drawn one pixel in from
  * its rectangle and five below the top, so these are the frames the machine
- * draws, put back. An option button's circle sits at its left edge and one
- * below its top. */
+ * draws, put back.
+ *
+ * The option buttons are the machine's own rectangles rather than fitted
+ * ones: `tools/vm/probe.c' asked the guest for them with GetWindowRect, and
+ * they are what it answered, moved by the three across and one down between
+ * where this property sheet puts a page and where the machine's puts one --
+ * a difference of ours, written up in docs/testing.md. They were a pixel
+ * right and a pixel up of these, and thirteen tall rather than sixteen,
+ * because the library drew a circle at its control's left edge and a row
+ * lower; it draws it where the machine does now, so the compensation is
+ * gone and the rectangles are the real ones. */
 static const fo_place g_fo_general_at[] = {
     { IDC_FO_G1, 12, 12, 341, 62 },
-    { IDC_FO_WEB_DESKTOP, 66, 29, 282, 16 },
-    { IDC_FO_CLASSIC_DESKTOP, 66, 47, 282, 16 },
+    { IDC_FO_WEB_DESKTOP, 65, 30, 278, 13 },
+    { IDC_FO_CLASSIC_DESKTOP, 65, 48, 278, 13 },
     { IDC_FO_G2, 14, 87, 339, 60 },
-    { IDC_FO_WEB_FOLDERS, 66, 104, 282, 16 },
-    { IDC_FO_CLASSIC_FOLDERS, 66, 122, 282, 16 },
+    { IDC_FO_WEB_FOLDERS, 65, 105, 278, 13 },
+    { IDC_FO_CLASSIC_FOLDERS, 65, 123, 278, 13 },
     { IDC_FO_G3, 14, 159, 339, 62 },
-    { IDC_FO_SAME_WINDOW, 66, 177, 282, 16 },
-    { IDC_FO_OWN_WINDOW, 66, 195, 282, 16 },
+    { IDC_FO_SAME_WINDOW, 65, 178, 278, 13 },
+    { IDC_FO_OWN_WINDOW, 65, 196, 278, 13 },
     { IDC_FO_G4, 14, 232, 339, 98 },
-    { IDC_FO_SINGLE, 66, 250, 282, 16 },
-    { IDC_FO_UNDERLINE_ALWAYS, 85, 268, 263, 16 },
-    { IDC_FO_UNDERLINE_POINT, 85, 286, 263, 16 },
-    { IDC_FO_DOUBLE, 66, 304, 282, 16 },
+    { IDC_FO_SINGLE, 65, 251, 261, 13 },
+    { IDC_FO_UNDERLINE_ALWAYS, 84, 269, 258, 13 },
+    { IDC_FO_UNDERLINE_POINT, 84, 287, 258, 13 },
+    { IDC_FO_DOUBLE, 65, 305, 278, 13 },
     { IDC_FO_DEFAULTS, 245, 342, 108, 23 },
     { IDC_FO_I1, 24, 30, 32, 32 },
     { IDC_FO_I2, 24, 105, 32, 32 },
