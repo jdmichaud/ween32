@@ -385,8 +385,8 @@ pub extern fn LoadImageA(inst: HINSTANCE, name: LPCSTR, kind: UINT, cx: c_int, c
 /// header has had them since the .res reader landed and the Zig module had
 /// not, and a missing declaration here is a compile error in the application
 /// rather than a wrong answer -- which is the right way round.
-pub extern fn LoadMenuA(instance: ?HINSTANCE, name: LPCSTR) callconv(.c) ?HMENU;
-pub extern fn LoadAcceleratorsA(instance: ?HINSTANCE, name: LPCSTR) callconv(.c) ?HACCEL;
+pub extern fn LoadMenuA(instance: HINSTANCE, name: LPCSTR) callconv(.c) HMENU;
+pub extern fn LoadAcceleratorsA(instance: HINSTANCE, name: LPCSTR) callconv(.c) HACCEL;
 pub extern fn MessageBoxA(owner: ?HWND, text: LPCSTR, caption: LPCSTR, kind: UINT) callconv(.c) c_int;
 
 pub extern fn GetMessageA(msg: *MSG, wnd: ?HWND, min: UINT, max: UINT) callconv(.c) BOOL;
