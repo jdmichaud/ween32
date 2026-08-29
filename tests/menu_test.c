@@ -27,8 +27,26 @@ enum { ID_NEW = 300, ID_OPEN, ID_EXIT, ID_SUB_A, ID_EDIT_A };
 static HMENU g_bar, g_file, g_sub;
 static int g_command, g_rbuttons;
 
+/* The last WM_MENUSELECT the host was told about, so a test can ask what the
+ * highlight said rather than what it looked like. */
+static WPARAM g_menuselect_wp;
+static LPARAM g_menuselect_lp;
+static int g_menuselect_seen;
+
 static LRESULT CALLBACK host_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+    if (msg == WM_MENUSELECT) {
+        /* The *first* since it was cleared. Opening a menu reports the bar
+         * title and then, once an item lights, reports that too -- and the
+         * question here is about the title, so the last one is the wrong one
+         * to keep. */
+        if (!g_menuselect_seen) {
+            g_menuselect_wp = wp;
+            g_menuselect_lp = lp;
+            g_menuselect_seen = 1;
+        }
+        return 0;
+    }
     if (msg == WM_COMMAND) {
         g_command = LOWORD(wp);
         return 0;
@@ -412,6 +430,37 @@ int main(void)
      * that is win32's rule, and destroying it here as well would be a double
      * free there as much as here. */
     DestroyWindow(w);
+    /* **A highlighted bar title is a WM_MENUSELECT too.** It was sent from
+     * two places -- the highlight moving inside a popup, and the menu closing
+     * -- and neither is a title on the bar, so an application describing the
+     * highlight in its status bar went on describing the last item of the
+     * last menu while `File` itself was lit. WordPad's pane is blank at that
+     * moment, which bob read off the machine on File, Edit and View, and it
+     * cannot be blank without this.
+     *
+     * win32 sends the item's **index** where an id would go, because a title
+     * has none, with `MF_POPUP` in the flags and the bar's own handle. */
+    {
+        HMENU bar = CreateMenu();
+        HMENU pop = CreatePopupMenu();
+        AppendMenuA(pop, MF_STRING, 4321, "Item");
+        AppendMenuA(bar, MF_POPUP | MF_STRING, (UINT_PTR)pop, "&File");
+        SetMenu(w, bar);
+        g_menuselect_wp = 0;
+        g_menuselect_lp = 0;
+        g_menuselect_seen = 0;
+        /* Alt, then Down: the bar title lights before the popup opens */
+        DefWindowProcA(w, WM_KEYDOWN, VK_MENU, 0);
+        SendMessageA(w, WM_KEYDOWN, VK_DOWN, 0);
+        CHECK(HIWORD(g_menuselect_wp) & MF_POPUP,
+              "a highlighted bar title is reported with MF_POPUP");
+        CHECK((HMENU)(INT_PTR)g_menuselect_lp == bar,
+              "and against the bar's own menu, not the popup's");
+        SendMessageA(w, WM_KEYDOWN, VK_ESCAPE, 0);
+        SendMessageA(w, WM_KEYDOWN, VK_ESCAPE, 0);
+        SetMenu(w, NULL);
+    }
+
 
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);

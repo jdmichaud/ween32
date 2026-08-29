@@ -978,6 +978,20 @@ static void bar_open(menu_session *s, int index)
     s->bar_index = index;
     s->bar_wnd->menu_hot = index;
     ween_damage_all(s->bar_wnd);
+    /* The owner is told about a highlighted **bar title** too, and was not.
+     * win32 sends WM_MENUSELECT for one with `MF_POPUP` set and the item's
+     * index where an id would go -- a title has no id -- and the bar's own
+     * handle in lParam.
+     *
+     * This was sent from two places, neither of them here, so an application
+     * describing the highlight in its status bar went on describing the last
+     * item of the last menu while the bar's own title was lit. WordPad's pane
+     * is **blank** at that moment, which bob read off the machine with File,
+     * Edit and View, and it could not be blank without this. */
+    if (s->owner)
+        SendMessageA(s->owner, WM_MENUSELECT,
+                     MAKEWPARAM((WORD)index, (WORD)(it->flags | MF_POPUP)),
+                     (LPARAM)s->bar);
     frame = ween_frame_width(s->bar_wnd);
     bar_y = frame + ween_caption_height(s->bar_wnd);
     /* Where the window actually is, not where it asked to be: under a window
