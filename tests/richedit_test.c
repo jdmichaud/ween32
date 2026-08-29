@@ -2126,7 +2126,9 @@ int main(void)
      * to take a height from and fell back to the control's own face.
      *
      * Measured at 96 dpi: the machine's empty-document caret is 16 tall
-     * (captures-sam/caret-machine.png, rows 11..26) where ours was 13.
+     * (tools/refcapture/caret-machine.png, rows 11..26) where ours was 13 --
+     * Sam's capture, taken for wordpad and kept here instead, because what it
+     * evidences is this control's line height rather than that program's.
      *
      * **This is a drawn test because the fault is only visible drawn.** The
      * control answers EM_POSFROMCHAR with y = 1 for character zero whatever
