@@ -2643,6 +2643,20 @@ Every entry says where it came from. `machine` means Windows 2000 through
 - **A vertical bar takes room from the client and does not overlay.** The
   editor's white ran to screen x 915 without the bar and x 900 with it,
   against `SM_CXVSCROLL` 16. *(machine)*
+- **But the wrap width does not change with it.** Text appended until the bar
+  came up, and the first line's band compared over the columns that are text
+  in *both* states:
+
+  ```
+  line 1's ink ends     no bar  x 877      bar up  x 877
+  differing pixels      16 of 13230, and they are the caret
+  ink under the bar     none; the longest line reaches 894, inside 899
+  ```
+
+  **So wrap points of existing text ARE stable under append**, even across the
+  bar appearing. WordPad's wrap width already allows for the bar, or is not
+  the client width at all — which of those is unmeasured, and only the
+  behaviour is asserted here. *(machine, `captures-sam/wrap-line1-*.png`)*
 
 ### Measured to be **false** — do not assert these
 
@@ -2654,17 +2668,14 @@ Every entry says where it came from. `machine` means Windows 2000 through
   text limit, where the insert is truncated and `EN_MAXTEXT` fires. The
   invariant needs *unless `EN_MAXTEXT` fired since the last check*. *(ours)*
 
-- **"The wrap points of existing text are stable when text is appended."**
-  **This is the one that will bite.** Appending enough to raise the scrollbar
-  narrows the client by a scrollbar's width, which re-wraps **every line
-  already in the document** — so an append at the end changes where the first
-  line breaks. *(machine)*
+### The two that were on this list as *false* and are not
 
-### The one that was on this list as *false* and is not
+**Two entries here were wrong, both of them mine, and both were found by
+measuring what the entry asserted.** They are kept rather than deleted because
+the way each was wrong is different and worth having.
 
-**`EM_POSFROMCHAR` does agree with where the caret is drawn — in a rich
-edit.** This section said the opposite for several hours, and the correction
-is the most useful entry here.
+**1. `EM_POSFROMCHAR` does agree with where the caret is drawn — in a rich
+edit.**
 
 ```
 EDIT         empty, index 0         -> -1
@@ -2695,6 +2706,18 @@ signature that differs is the tell, and it is the same shape as reading
 They also break lines differently: for `"abc\r\ndef"` the EDIT puts indices 3
 and 4 both at the end of line 1, and riched20 puts index 3 at the end of line
 1 and index 4 at the **start of line 2**.
+
+**2. The wrap points of existing text are stable under append** — the entry
+above under *measured and safe*. This section said the opposite: that raising
+the scrollbar re-wraps the document. **The client narrowing was measured and
+the re-wrap was inferred from it**, and the inference was written in the same
+voice as the reading.
+
+**The first was a reading carried between two controls; the second was a
+reading carried one step further than it went.** Neither was a wrong number.
+Both were a true measurement asserted about something it was not of — which
+is the failure this whole section exists to catch, committed twice in the
+file that catches it.
 
 ### Not measured — assert only as our own design, and say so
 
