@@ -83,6 +83,55 @@ static const char *text_of(HWND w)
     return buf;
 }
 
+/* The two ends of a stream, as a program writes them. */
+static char g_stream[8192];
+static int g_stream_len, g_stream_at;
+
+static DWORD CALLBACK stream_out(DWORD_PTR cookie, LPBYTE bytes, LONG cb,
+                                 LONG *written)
+{
+    LONG i;
+    (void)cookie;
+    for (i = 0; i < cb && g_stream_len < (int)sizeof g_stream - 1; i++)
+        g_stream[g_stream_len++] = (char)bytes[i];
+    g_stream[g_stream_len] = 0;
+    *written = i;
+    return 0;
+}
+
+static DWORD CALLBACK stream_in(DWORD_PTR cookie, LPBYTE bytes, LONG cb,
+                                LONG *read)
+{
+    LONG i = 0;
+    (void)cookie;
+    while (i < cb && g_stream_at < g_stream_len)
+        bytes[i++] = (BYTE)g_stream[g_stream_at++];
+    *read = i;
+    return 0;
+}
+
+static const char *streamed_out(HWND w, WPARAM how)
+{
+    EDITSTREAM es;
+    memset(&es, 0, sizeof es);
+    es.pfnCallback = stream_out;
+    g_stream_len = 0;
+    g_stream[0] = 0;
+    SendMessageA(w, EM_STREAMOUT, how, (LPARAM)&es);
+    return g_stream;
+}
+
+static void stream_into(HWND w, WPARAM how, const char *text)
+{
+    EDITSTREAM es;
+    memset(&es, 0, sizeof es);
+    es.pfnCallback = stream_in;
+    g_stream_len = (int)strlen(text);
+    memcpy(g_stream, text, (size_t)g_stream_len + 1);
+    g_stream_at = 0;
+    SendMessageA(w, EM_STREAMIN, how, (LPARAM)&es);
+}
+
 static int caret_of(HWND w)
 {
     DWORD from = 0, to = 0;
@@ -886,6 +935,191 @@ int main(void)
         CHECK(indented.x == flush.x + 96,
               "and an indent of a whole inch moves it ninety-six pixels at "
               "ninety-six dots to the inch");
+    }
+
+    /* ---- wrapping ----
+     *
+     * The machine's rule, read off riched20 in a control 200 pixels wide: a
+     * line breaks at the last space that fits and the space stays on the
+     * line that broke, a word too long for a line of its own breaks at the
+     * character that fits, and EM_SETTARGETDEVICE with any width at all
+     * turns the breaking off. */
+    {
+        HWND w = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 200, 90, host, (HMENU)(UINT_PTR)12, NULL,
+                                 NULL);
+        const char *sentence = "the quick brown fox jumps over the lazy dog";
+        int lines, i, broke_after_space = 1;
+        SetWindowTextA(w, sentence);
+        lines = (int)SendMessageA(w, EM_GETLINECOUNT, 0, 0);
+        CHECK(lines > 1, "a sentence too long for the control is broken");
+        for (i = 0; i + 1 < lines; i++) {
+            int start = (int)SendMessageA(w, EM_LINEINDEX, i, 0);
+            int len = (int)SendMessageA(w, EM_LINELENGTH, start, 0);
+            if (start + len - 1 < 0 || sentence[start + len - 1] != ' ')
+                broke_after_space = 0;
+        }
+        CHECK(broke_after_space,
+              "and every break is after a space, which stays on the line it "
+              "broke -- as the machine's does");
+        CHECK(SendMessageA(w, EM_LINEINDEX, 1, 0) ==
+                  SendMessageA(w, EM_LINEINDEX, 0, 0) +
+                      SendMessageA(w, EM_LINELENGTH, 0, 0),
+              "the next line begins where the last one ended, there being no "
+              "mark between them");
+
+        SetWindowTextA(w, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        CHECK(SendMessageA(w, EM_GETLINECOUNT, 0, 0) > 1,
+              "a word too long for a line of its own is broken anyway");
+
+        SetWindowTextA(w, sentence);
+        lines = (int)SendMessageA(w, EM_GETLINECOUNT, 0, 0);
+        SendMessageA(w, EM_SETTARGETDEVICE, 0, 1);
+        CHECK(SendMessageA(w, EM_GETLINECOUNT, 0, 0) == 1,
+              "EM_SETTARGETDEVICE with a width and no device stops the "
+              "breaking, which is what No Wrap sends");
+        SendMessageA(w, EM_SETTARGETDEVICE, 0, 0);
+        CHECK(SendMessageA(w, EM_GETLINECOUNT, 0, 0) == lines,
+              "and nought brings it back to the window's own width");
+
+        /* Two paragraphs, so that the count is of the lines they are drawn
+         * on and not of the paragraphs themselves. */
+        SetWindowTextA(w, "the quick brown fox jumps over the lazy dog\r\nand "
+                          "again");
+        CHECK(SendMessageA(w, EM_GETLINECOUNT, 0, 0) > 2,
+              "a paragraph that breaks counts for more than one line");
+        DestroyWindow(w);
+    }
+
+    /* ---- RTF ---- */
+
+    {
+        /* What the writer puts out, in the shape riched20 puts it: the
+         * header, the two tables, then the paragraphs. */
+        CHARFORMATA cf;
+        PARAFORMAT pf;
+        const char *rtf;
+        SetWindowTextA(re, "plain and formatted");
+        SendMessageA(re, EM_SETSEL, 10, 19);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE | CFM_STRIKEOUT |
+                    CFM_SIZE | CFM_COLOR;
+        cf.dwEffects = CFE_BOLD | CFE_ITALIC | CFE_UNDERLINE | CFE_STRIKEOUT;
+        cf.yHeight = 240;
+        cf.crTextColor = RGB(255, 0, 0);
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT | PFM_STARTINDENT;
+        pf.wAlignment = PFA_CENTER;
+        pf.dxStartIndent = 720;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+
+        rtf = streamed_out(re, SF_RTF);
+        CHECK(strncmp(rtf, "{\\rtf1\\ansi", 11) == 0,
+              "an RTF document opens the way the machine's does");
+        CHECK(strstr(rtf, "{\\fonttbl") && strstr(rtf, "{\\colortbl ;"),
+              "with a font table and a colour table whose first entry is the "
+              "automatic one");
+        CHECK(strstr(rtf, "\\red255\\green0\\blue0"),
+              "the colour a run was given is in the table");
+        CHECK(strstr(rtf, "\\pard") && strstr(rtf, "\\qc") &&
+                  strstr(rtf, "\\li720"),
+              "the paragraph states its alignment and its indent");
+        CHECK(strstr(rtf, "\\b\\i") || strstr(rtf, "\\b") ,
+              "and the run its bold");
+        CHECK(strstr(rtf, "\\fs24"),
+              "a size goes out in half-points: 240 twips is \\fs24");
+        CHECK(strstr(rtf, "plain and ") && strstr(rtf, "formatted"),
+              "the text is in there, in its pieces");
+        CHECK(strstr(rtf, "\\par"), "and the paragraph ends with a \\par");
+    }
+
+    {
+        /* Out and back in: what the writer wrote, the reader has to
+         * understand. */
+        char keep[4096];
+        CHARFORMATA cf;
+        PARAFORMAT pf;
+        {
+            const char *w = streamed_out(re, SF_RTF);
+            size_t n = strlen(w);
+            if (n > sizeof keep - 1)
+                n = sizeof keep - 1;
+            memcpy(keep, w, n);
+            keep[n] = 0;
+        }
+        SetWindowTextA(re, "");
+        stream_into(re, SF_RTF, keep);
+        CHECK(strcmp(text_of(re), "plain and formatted") == 0,
+              "a document read back has the text it was written from");
+        SendMessageA(re, EM_SETSEL, 12, 14);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_BOLD) && (cf.dwEffects & CFE_ITALIC) &&
+                  (cf.dwEffects & CFE_UNDERLINE) &&
+                  (cf.dwEffects & CFE_STRIKEOUT),
+              "and the formatting of its runs");
+        CHECK(cf.yHeight == 240, "including the size");
+        CHECK(!(cf.dwEffects & CFE_AUTOCOLOR) &&
+                  cf.crTextColor == RGB(255, 0, 0),
+              "and the colour");
+        SendMessageA(re, EM_SETSEL, 0, 1);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER && pf.dxStartIndent == 720,
+              "and what its paragraphs carried");
+    }
+
+    {
+        /* And a document written by hand, which is what a file is: the very
+         * one the machine was given, with the answers it gave. */
+        CHARFORMATA cf;
+        PARAFORMAT pf;
+        stream_into(re, SF_RTF,
+                    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}"
+                    "{\\colortbl;\\red0\\green0\\blue255;}"
+                    "\\pard\\qc\\li720\\fs28 centred \\b bold \\b0\\cf1 blue\\par}");
+        CHECK(strncmp(text_of(re), "centred bold blue", 17) == 0,
+              "a hand-written document comes in as its text");
+        SendMessageA(re, EM_SETSEL, 0, 7);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(cf.yHeight == 280 && strcmp(cf.szFaceName, "Arial") == 0,
+              "in the size and face its header named: 280 twips, Arial");
+        SendMessageA(re, EM_SETSEL, 8, 12);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK((cf.dwEffects & CFE_BOLD), "with the bold word bold");
+        SendMessageA(re, EM_SETSEL, 13, 17);
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(!(cf.dwEffects & CFE_AUTOCOLOR) &&
+                  cf.crTextColor == RGB(0, 0, 255),
+              "and the blue one blue, out of the colour table");
+        SendMessageA(re, EM_SETSEL, 0, 5);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.wAlignment == PFA_CENTER && pf.dxStartIndent == 720,
+              "and the paragraph centred and indented, as the machine "
+              "answered for the same document");
+    }
+
+    {
+        /* Plain text, which is the other half of what WordPad saves. */
+        const char *text;
+        SetWindowTextA(re, "one\r\ntwo");
+        text = streamed_out(re, SF_TEXT);
+        CHECK(strcmp(text, "one\r\ntwo") == 0,
+              "SF_TEXT hands the text out with both characters of every mark");
+        stream_into(re, SF_TEXT, "back\r\nagain");
+        CHECK(strcmp(text_of(re), "back\r\nagain") == 0 &&
+                  SendMessageA(re, EM_GETLINECOUNT, 0, 0) == 2,
+              "and takes one in the same way");
     }
 
     /* ---- what the dialog manager is told, and what the bar does ---- */

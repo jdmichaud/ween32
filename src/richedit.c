@@ -57,6 +57,8 @@ struct rich_line {
     int top;    /* pixels from the top of the document */
     int height; /* pixels: the tallest run on the line */
     int ascent; /* where the runs' baselines meet, from the line's top */
+    int first;  /* whether it is the first line of its paragraph, which is
+                 * the one the start indent applies to on its own */
 };
 
 /* ---- runs ----------------------------------------------------------------
@@ -143,6 +145,13 @@ typedef struct {
      * empty selection, which arms this instead. Measured; see docs. */
     ween_rfmt insert;
     int insert_armed;
+    /* Whether the text is broken to the window's width. EM_SETTARGETDEVICE
+     * with a width -- any width, with no device to measure it against --
+     * turns it off, which is what WordPad's No Wrap sends; with nought it
+     * comes back. Measured: a paragraph of ninety-one characters is three
+     * lines in a control 200 wide and one line after
+     * EM_SETTARGETDEVICE(0, 1440). */
+    int nowrap;
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
@@ -709,16 +718,66 @@ static int rich_line_extent(HWND wnd, ween_rich *e, int start, int len,
     return tall;
 }
 
+static int rich_inset(HWND wnd);
+static int rich_bar(HWND wnd);
+
+/* How wide the text may be before it has to break, in pixels of client. */
+static int rich_wrap_width(HWND wnd, ween_rich *e)
+{
+    RECT r;
+    int w;
+    if (e->nowrap)
+        return 0; /* nothing to break to */
+    GetClientRect(wnd, &r);
+    w = r.right - r.left - 2 * rich_inset(wnd) - rich_bar(wnd);
+    return w > 0 ? w : 0;
+}
+
+/* Where a paragraph's next display line begins, and how long this one is.
+ *
+ * The machine's rule, read off riched20 in a control two hundred pixels
+ * wide: a line breaks at the last space that fits, and **the space stays on
+ * the line that broke** -- "the quick brown fox jumps over the lazy " is
+ * forty characters and the next line begins at 40, on the "d" of "dog". A
+ * word too long for a line of its own breaks at the character that fits:
+ * forty-eight a's in that control are 32 and then 16. */
+static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
+                         int width)
+{
+    int i, x = 0, last_space = -1, run = run_at(e, start);
+    const ween_strike *f;
+    (void)wnd;
+    if (width <= 0)
+        return para_len;
+    for (i = 0; i < para_len; i++) {
+        int at = start + i;
+        while (run + 1 < e->runs && e->run[run + 1].start <= at)
+            run++;
+        f = rfmt_strike(&e->run[run].fmt);
+        x += f ? ween_strike_char_advance(f, (unsigned char)e->text[at]) : 6;
+        if (e->text[at] == ' ')
+            last_space = i;
+        if (x > width) {
+            if (last_space >= 0)
+                return last_space + 1; /* the space goes with this line */
+            return i > 0 ? i : 1;      /* a word too long breaks anyway */
+        }
+    }
+    return para_len;
+}
+
 static void rich_relines(HWND wnd, ween_rich *e)
 {
     int at = 0, top = 0, n = 0;
+    int width = rich_wrap_width(wnd, e);
     if (!e)
         return;
     for (;;) {
-        int start = at, len, height, ascent = 0;
+        int start = at, len, height, ascent = 0, para_len;
         while (at < e->len && e->text[at] != '\r')
             at++;
-        len = at - start; /* the mark is not part of the line */
+        para_len = at - start; /* the mark is not part of the line */
+        len = rich_wrap_len(wnd, e, start, para_len, width);
         height = rich_line_extent(wnd, e, start, len, &ascent);
         if (n >= e->line_cap) {
             int cap = e->line_cap ? e->line_cap * 2 : 32;
@@ -734,8 +793,14 @@ static void rich_relines(HWND wnd, ween_rich *e)
         e->line[n].top = top;
         e->line[n].height = height;
         e->line[n].ascent = ascent;
+        e->line[n].first = start == e->para[para_at(e, start)].start;
         top += height;
         n++;
+        if (len < para_len) {
+            /* the rest of the paragraph, on lines of its own */
+            at = start + len;
+            continue;
+        }
         if (at >= e->len)
             break;
         at++; /* past the mark */
@@ -1066,8 +1131,12 @@ static int rich_line_left(HWND wnd, ween_rich *e, int row)
 {
     int inset = rich_inset(wnd), sb = rich_bar(wnd);
     const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
+    /* dxStartIndent is where the *first* line begins and dxOffset is where
+     * the rest do, against it -- which is what riched20's own RTF says: a
+     * paragraph set to 720 and -360 comes out "\li360\fi360", a left indent
+     * of 360 with the first line 360 further in. */
     int left = inset + rfmt_px_twips(pf->start_indent) +
-               rfmt_px_twips(pf->offset);
+               (e->line[row].first ? 0 : rfmt_px_twips(pf->offset));
     RECT cr;
     int right, width;
     if (pf->alignment == PFA_LEFT || !pf->alignment)
@@ -1256,6 +1325,569 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                             ween_sb_maxpos(&st) > st.min, st.pos, st.page,
                             st.min, st.max);
     }
+}
+
+/* ---- RTF, in and out ------------------------------------------------------
+ *
+ * A document's formats are the control's business and not the
+ * application's: WordPad hands a file to EM_STREAMIN and asks for one back
+ * with EM_STREAMOUT, and everything between the braces is here.
+ *
+ * What is written is the shape riched20 writes, read off the machine with
+ * tools/vm/ctlprobe.c -- header, font table, colour table, then the
+ * paragraphs:
+ *
+ *   {\rtf1\ansi\ansicpg1252\deff0\deflang1033{\fonttbl{\f0\fnil\fcharset0 Tahoma;}}
+ *   {\colortbl ;\red255\green0\blue0;}
+ *   \viewkind4\uc1\pard\fi360\li360\ri360\qc\tx1440\tx2880\f0\fs17 plain and
+ *   \cf1\ul\b\i\strike\f1\fs24 formatted\cf0\ulnone\b0\i0\strike0\f0\fs17\par
+ *   }
+ *
+ * A size is in half-points -- \fs17 for the 165 twips a fresh control is
+ * lettered in -- an indent is in twips, and a run states only what changed
+ * since the one before it, everything being put back at the paragraph's end.
+ */
+
+typedef struct {
+    char *buf;
+    int len, cap;
+    int failed;
+} rtf_out;
+
+static void rtf_put(rtf_out *o, const char *text, int n)
+{
+    if (o->failed)
+        return;
+    if (o->len + n + 1 > o->cap) {
+        int cap = o->cap ? o->cap : 256;
+        char *grown;
+        while (cap < o->len + n + 1)
+            cap *= 2;
+        grown = realloc(o->buf, (size_t)cap);
+        if (!grown) {
+            o->failed = 1;
+            return;
+        }
+        o->buf = grown;
+        o->cap = cap;
+    }
+    memcpy(o->buf + o->len, text, (size_t)n);
+    o->len += n;
+    o->buf[o->len] = 0;
+}
+
+static void rtf_puts(rtf_out *o, const char *text)
+{
+    rtf_put(o, text, (int)strlen(text));
+}
+
+static void rtf_word(rtf_out *o, const char *word, long n)
+{
+    char num[32];
+    int i = 0, neg = n < 0;
+    unsigned long v = neg ? (unsigned long)-n : (unsigned long)n;
+    rtf_puts(o, word);
+    if (neg)
+        rtf_puts(o, "-");
+    do {
+        num[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    } while (v && i < 30);
+    while (i--)
+        rtf_put(o, &num[i], 1);
+}
+
+/* The tables: every face and every colour the document uses, once each. */
+static int rtf_face_index(char faces[][LF_FACESIZE], int *n, const char *face)
+{
+    int i;
+    for (i = 0; i < *n; i++)
+        if (strcmp(faces[i], face) == 0)
+            return i;
+    if (*n < 32) {
+        face_copy(faces[*n], face);
+        return (*n)++;
+    }
+    return 0;
+}
+
+static int rtf_color_index(COLORREF *cols, int *n, COLORREF c)
+{
+    int i;
+    for (i = 0; i < *n; i++)
+        if (cols[i] == c)
+            return i + 1; /* index 0 is the automatic colour */
+    if (*n < 32) {
+        cols[*n] = c;
+        return ++(*n);
+    }
+    return 0;
+}
+
+static void rtf_text(rtf_out *o, const char *text, int n)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)text[i];
+        if (c == '\\' || c == '{' || c == '}') {
+            rtf_puts(o, "\\");
+            rtf_put(o, (const char *)&c, 1);
+        } else if (c == '\t') {
+            rtf_puts(o, "\\tab ");
+        } else if (c >= 0x80) {
+            static const char hex[] = "0123456789abcdef";
+            char esc[5];
+            esc[0] = '\\';
+            esc[1] = '\'';
+            esc[2] = hex[c >> 4];
+            esc[3] = hex[c & 15];
+            esc[4] = 0;
+            rtf_puts(o, esc);
+        } else {
+            rtf_put(o, (const char *)&c, 1);
+        }
+    }
+}
+
+static void rtf_write(HWND wnd, ween_rich *e, rtf_out *o, int from, int to)
+{
+    static char faces[32][LF_FACESIZE];
+    COLORREF cols[32];
+    int nfaces = 0, ncols = 0, i, para, at;
+    ween_rfmt cur;
+    int have_cur = 0;
+    (void)wnd;
+
+    /* the tables first, since they are written before the text */
+    for (i = 0; i < e->runs; i++) {
+        rtf_face_index(faces, &nfaces, e->run[i].fmt.face);
+        if (!(e->run[i].fmt.effects & CFE_AUTOCOLOR))
+            rtf_color_index(cols, &ncols, e->run[i].fmt.color);
+    }
+    if (!nfaces)
+        rtf_face_index(faces, &nfaces, "MS Shell Dlg");
+
+    rtf_puts(o, "{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl");
+    for (i = 0; i < nfaces; i++) {
+        rtf_word(o, "{\\f", i);
+        rtf_puts(o, "\\fnil\\fcharset0 ");
+        rtf_puts(o, faces[i]);
+        rtf_puts(o, ";}");
+    }
+    rtf_puts(o, "}\r\n{\\colortbl ;");
+    for (i = 0; i < ncols; i++) {
+        rtf_word(o, "\\red", GetRValue(cols[i]));
+        rtf_word(o, "\\green", GetGValue(cols[i]));
+        rtf_word(o, "\\blue", GetBValue(cols[i]));
+        rtf_puts(o, ";");
+    }
+    rtf_puts(o, "}\r\n\\viewkind4\\uc1");
+
+    for (para = 0; para < e->paras; para++) {
+        const ween_pfmt *pf = &e->para[para].fmt;
+        int pstart = e->para[para].start;
+        int pend = para + 1 < e->paras ? e->para[para + 1].start - 1 : e->len;
+        if (pend < from || pstart > to)
+            continue;
+        if (pstart < from)
+            pstart = from;
+        if (pend > to)
+            pend = to;
+        rtf_puts(o, "\\pard");
+        if (pf->offset)
+            rtf_word(o, "\\fi", -pf->offset);
+        if (pf->start_indent + pf->offset)
+            rtf_word(o, "\\li", pf->start_indent + pf->offset);
+        if (pf->right_indent)
+            rtf_word(o, "\\ri", pf->right_indent);
+        if (pf->alignment == PFA_CENTER)
+            rtf_puts(o, "\\qc");
+        else if (pf->alignment == PFA_RIGHT)
+            rtf_puts(o, "\\qr");
+        for (i = 0; i < pf->tabs; i++)
+            rtf_word(o, "\\tx", pf->tab[i]);
+        have_cur = 0;
+        at = pstart;
+        while (at <= pend) {
+            int r = run_at(e, at);
+            const ween_rfmt *f = &e->run[r].fmt;
+            int next = (r + 1 < e->runs && e->run[r + 1].start <= pend)
+                           ? e->run[r + 1].start
+                           : pend;
+            /* what changed since the run before, and everything on the
+             * first run of a paragraph */
+            if (!have_cur || (cur.effects & CFE_AUTOCOLOR) !=
+                                 (f->effects & CFE_AUTOCOLOR) ||
+                cur.color != f->color) {
+                if (f->effects & CFE_AUTOCOLOR)
+                    rtf_puts(o, "\\cf0");
+                else
+                    rtf_word(o, "\\cf",
+                             rtf_color_index(cols, &ncols, f->color));
+            }
+            if (!have_cur || (cur.effects & CFE_UNDERLINE) !=
+                                 (f->effects & CFE_UNDERLINE))
+                rtf_puts(o, (f->effects & CFE_UNDERLINE) ? "\\ul"
+                                                         : "\\ulnone");
+            if (!have_cur ||
+                (cur.effects & CFE_BOLD) != (f->effects & CFE_BOLD))
+                rtf_puts(o, (f->effects & CFE_BOLD) ? "\\b" : "\\b0");
+            if (!have_cur ||
+                (cur.effects & CFE_ITALIC) != (f->effects & CFE_ITALIC))
+                rtf_puts(o, (f->effects & CFE_ITALIC) ? "\\i" : "\\i0");
+            if (!have_cur ||
+                (cur.effects & CFE_STRIKEOUT) != (f->effects & CFE_STRIKEOUT))
+                rtf_puts(o, (f->effects & CFE_STRIKEOUT) ? "\\strike"
+                                                         : "\\strike0");
+            if (!have_cur || strcmp(cur.face, f->face) != 0)
+                rtf_word(o, "\\f", rtf_face_index(faces, &nfaces, f->face));
+            if (!have_cur || cur.height != f->height)
+                rtf_word(o, "\\fs", (f->height + 5) / 10); /* half-points */
+            rtf_puts(o, " ");
+            cur = *f;
+            have_cur = 1;
+            if (next > at)
+                rtf_text(o, e->text + at, next - at);
+            if (next == pend)
+                break;
+            at = next;
+        }
+        rtf_puts(o, "\\par\r\n");
+    }
+    rtf_puts(o, "}\r\n");
+}
+
+/* ---- reading one ---------------------------------------------------------
+ *
+ * Enough of RTF to read back what is written above, and what WordPad will
+ * put in a file: the two tables, the paragraph words, the character words,
+ * and the escapes. A group it does not know -- {\*\generator ...} and its
+ * kind -- is skipped whole, which is what the specification says to do with
+ * anything after \*. */
+
+/* No colour at all, which is what the first entry of a colour table is. */
+#define WEEN_RTF_AUTOCOLOR 0xFFFFFFFFu
+
+typedef struct {
+    char faces[32][LF_FACESIZE];
+    int nfaces;
+    COLORREF cols[32];
+    int ncols;
+} rtf_tables;
+
+static int rtf_is_alpha(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+/* One control word, its number if it has one, and where the text goes on. */
+static const char *rtf_control(const char *p, const char *end, char *word,
+                               int *has_num, long *num)
+{
+    int n = 0;
+    *has_num = 0;
+    *num = 0;
+    while (p < end && rtf_is_alpha(*p) && n < 31)
+        word[n++] = *p++;
+    word[n] = 0;
+    if (p < end && (*p == '-' || (*p >= '0' && *p <= '9'))) {
+        int neg = *p == '-';
+        long v = 0;
+        if (neg)
+            p++;
+        while (p < end && *p >= '0' && *p <= '9')
+            v = v * 10 + (*p++ - '0');
+        *has_num = 1;
+        *num = neg ? -v : v;
+    }
+    if (p < end && *p == ' ')
+        p++; /* one space after a word is the word's own, not text */
+    return p;
+}
+
+/* The two tables, read out of the header. */
+static const char *rtf_read_fonttbl(const char *p, const char *end,
+                                    rtf_tables *t)
+{
+    int depth = 1;
+    while (p < end && depth) {
+        if (*p == '{') {
+            int index = 0, n = 0;
+            char face[LF_FACESIZE];
+            p++;
+            face[0] = 0;
+            while (p < end && *p != '}' && *p != ';') {
+                if (*p == '\\') {
+                    char word[32];
+                    int has;
+                    long num;
+                    p = rtf_control(p + 1, end, word, &has, &num);
+                    if (!strcmp(word, "f") && has)
+                        index = (int)num;
+                } else {
+                    if (n < LF_FACESIZE - 1)
+                        face[n++] = *p;
+                    p++;
+                }
+            }
+            face[n] = 0;
+            while (n > 0 && face[n - 1] == ' ')
+                face[--n] = 0;
+            if (index >= 0 && index < 32) {
+                face_copy(t->faces[index], face);
+                if (index >= t->nfaces)
+                    t->nfaces = index + 1;
+            }
+            while (p < end && *p != '}')
+                p++;
+            if (p < end)
+                p++;
+        } else if (*p == '}') {
+            depth--;
+            p++;
+        } else {
+            p++;
+        }
+    }
+    return p;
+}
+
+static const char *rtf_read_colortbl(const char *p, const char *end,
+                                     rtf_tables *t)
+{
+    int r = 0, g = 0, b = 0, any = 0;
+    while (p < end && *p != '}') {
+        if (*p == '\\') {
+            char word[32];
+            int has;
+            long num;
+            p = rtf_control(p + 1, end, word, &has, &num);
+            if (!strcmp(word, "red"))
+                r = (int)num, any = 1;
+            else if (!strcmp(word, "green"))
+                g = (int)num, any = 1;
+            else if (!strcmp(word, "blue"))
+                b = (int)num, any = 1;
+        } else if (*p == ';') {
+            /* Every entry in the order it comes, the empty one included:
+             * \cf0 is the first of them and it is the automatic colour, so
+             * the numbering only works if it is kept. */
+            if (t->ncols < 32)
+                t->cols[t->ncols++] = any ? RGB(r, g, b) : WEEN_RTF_AUTOCOLOR;
+            r = g = b = 0;
+            any = 0;
+            p++;
+        } else {
+            p++;
+        }
+    }
+    if (p < end)
+        p++;
+    return p;
+}
+
+/* Read a document in, replacing everything. */
+static int rtf_read(HWND wnd, ween_rich *e, const char *text, int len)
+{
+    static rtf_tables t;
+    const char *p = text, *end = text + len;
+    ween_rfmt cf;
+    ween_pfmt pf;
+    int skip_depth = 0, depth = 0, pending_mark = 0, deff = -1;
+    char *out = malloc((size_t)len + 1);
+    int n = 0;
+
+    if (!out)
+        return 0;
+    memset(&t, 0, sizeof t);
+    rfmt_default(wnd, &cf);
+    pfmt_default(&pf);
+
+    /* The text is built first and the formats recorded against it, then the
+     * whole lot is put in at once -- a run and a paragraph array cannot be
+     * grown character by character without quadratic work. */
+    rich_set_text(wnd, e, "");
+    e->runs = 0;
+    e->paras = 0;
+    while (p < end) {
+        if (*p == '{') {
+            depth++;
+            p++;
+            if (p + 1 < end && *p == '\\' && p[1] == '*')
+                skip_depth = depth; /* a group nobody has to understand */
+            continue;
+        }
+        if (*p == '}') {
+            if (skip_depth && depth == skip_depth)
+                skip_depth = 0;
+            depth--;
+            p++;
+            continue;
+        }
+        if (skip_depth) {
+            p++;
+            continue;
+        }
+        if (*p == '\\') {
+            char word[32];
+            int has;
+            long num;
+            p++;
+            if (p < end && (*p == '\\' || *p == '{' || *p == '}')) {
+                if (n <= len)
+                    out[n++] = *p;
+                p++;
+                continue;
+            }
+            if (p < end && *p == '\'') {
+                int v = 0, i;
+                p++;
+                for (i = 0; i < 2 && p < end; i++, p++) {
+                    char c = *p;
+                    v = v * 16 + (c >= '0' && c <= '9'   ? c - '0'
+                                  : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                                  : c >= 'A' && c <= 'F' ? c - 'A' + 10
+                                                         : 0);
+                }
+                if (n <= len)
+                    out[n++] = (char)v;
+                continue;
+            }
+            p = rtf_control(p, end, word, &has, &num);
+            if (!strcmp(word, "deff") && has)
+                deff = (int)num; /* which of the table's faces is the default */
+            else if (!strcmp(word, "fonttbl")) {
+                p = rtf_read_fonttbl(p, end, &t);
+                /* The default face is named before the table that has it,
+                 * so it is applied once the table is read -- which is how
+                 * riched20 letters a document whose text names no font: the
+                 * machine reads "{\deff0{\fonttbl{\f0 Arial;}}...}" as
+                 * Arial throughout. */
+                if (deff >= 0 && deff < t.nfaces && t.faces[deff][0])
+                    face_copy(cf.face, t.faces[deff]);
+            }
+            else if (!strcmp(word, "colortbl"))
+                p = rtf_read_colortbl(p, end, &t);
+            else if (!strcmp(word, "par") || !strcmp(word, "line")) {
+                /* The paragraph that ends here, with what it carried. The
+                 * mark itself waits: riched20's own documents end with a
+                 * \par before the closing brace and the text it reads back
+                 * has no empty paragraph after it, so a mark is only written
+                 * when something follows it. */
+                if (paras_reserve(e, e->paras + 1)) {
+                    e->para[e->paras].start = 0;
+                    e->para[e->paras].fmt = pf;
+                    e->paras++;
+                }
+                if (pending_mark && n <= len)
+                    out[n++] = '\r';
+                pending_mark = 1;
+            } else if (!strcmp(word, "tab")) {
+                if (n <= len)
+                    out[n++] = '\t';
+            } else if (!strcmp(word, "pard")) {
+                pfmt_default(&pf);
+            } else if (!strcmp(word, "ql"))
+                pf.alignment = PFA_LEFT;
+            else if (!strcmp(word, "qc"))
+                pf.alignment = PFA_CENTER;
+            else if (!strcmp(word, "qr"))
+                pf.alignment = PFA_RIGHT;
+            else if (!strcmp(word, "li") && has)
+                pf.start_indent = num;
+            else if (!strcmp(word, "fi") && has) {
+                /* \li is the paragraph's left and \fi the first line's, from
+                 * it; a PARAFORMAT states the first line's and the offset of
+                 * the rest. */
+                pf.start_indent += num;
+                pf.offset = -num;
+            } else if (!strcmp(word, "ri") && has)
+                pf.right_indent = num;
+            else if (!strcmp(word, "tx") && has) {
+                if (pf.tabs < MAX_TAB_STOPS)
+                    pf.tab[pf.tabs++] = num;
+            } else if (!strcmp(word, "b"))
+                cf.effects = (cf.effects & ~(DWORD)CFE_BOLD) |
+                             (has && !num ? 0 : CFE_BOLD);
+            else if (!strcmp(word, "i"))
+                cf.effects = (cf.effects & ~(DWORD)CFE_ITALIC) |
+                             (has && !num ? 0 : CFE_ITALIC);
+            else if (!strcmp(word, "strike"))
+                cf.effects = (cf.effects & ~(DWORD)CFE_STRIKEOUT) |
+                             (has && !num ? 0 : CFE_STRIKEOUT);
+            else if (!strcmp(word, "ul"))
+                cf.effects |= CFE_UNDERLINE;
+            else if (!strcmp(word, "ulnone"))
+                cf.effects &= ~(DWORD)CFE_UNDERLINE;
+            else if (!strcmp(word, "fs") && has)
+                cf.height = num * 10; /* half-points to twips */
+            else if (!strcmp(word, "f") && has) {
+                if (num >= 0 && num < t.nfaces && t.faces[num][0])
+                    face_copy(cf.face, t.faces[num]);
+            } else if (!strcmp(word, "cf") && has) {
+                if (num < 0 || num >= t.ncols ||
+                    t.cols[num] == WEEN_RTF_AUTOCOLOR) {
+                    cf.effects |= CFE_AUTOCOLOR;
+                } else {
+                    cf.effects &= ~(DWORD)CFE_AUTOCOLOR;
+                    cf.color = t.cols[num];
+                }
+            }
+            continue;
+        }
+        if (*p == '\r' || *p == '\n') {
+            p++; /* the line breaks in the file are not the document's */
+            continue;
+        }
+        /* an ordinary character, in the formatting in force */
+        if (pending_mark) {
+            if (n <= len)
+                out[n++] = '\r';
+            pending_mark = 0;
+        }
+        if (n <= len)
+            out[n++] = *p;
+        if (!e->runs || !rfmt_same(&e->run[e->runs - 1].fmt, &cf)) {
+            if (runs_reserve(e, e->runs + 1)) {
+                e->run[e->runs].start = n - 1;
+                e->run[e->runs].fmt = cf;
+                e->runs++;
+            }
+        }
+        p++;
+    }
+    out[n] = 0;
+
+    if (rich_reserve(e, n)) {
+        memcpy(e->text, out, (size_t)n + 1);
+        e->len = n;
+    }
+    free(out);
+    if (!e->runs) {
+        runs_reset(wnd, e);
+    } else {
+        e->run[0].start = 0;
+        runs_coalesce(e);
+    }
+    /* the paragraphs, in the order their marks came, and one for the tail */
+    {
+        int i, at = 0, k = 0;
+        struct rich_para *got = e->para;
+        int ngot = e->paras;
+        e->para = NULL;
+        e->paras = e->para_cap = 0;
+        paras_reset(e);
+        for (i = 0; i < e->paras && k < ngot; i++, k++)
+            e->para[i].fmt = got[k].fmt;
+        if (e->paras && ngot && e->paras > ngot)
+            e->para[e->paras - 1].fmt = got[ngot - 1].fmt;
+        free(got);
+        (void)at;
+    }
+    e->caret = e->anchor = 0;
+    e->first_visible = 0;
+    rich_relines(wnd, e);
+    return 1;
 }
 
 /* ---- the class ----------------------------------------------------------- */
@@ -1501,6 +2133,99 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case EM_CANPASTE:
         return TRUE;
+    case EM_STREAMOUT: {
+        /* The document handed out in pieces, the way win32 hands one out:
+         * the program's callback is called until there is nothing left. */
+        EDITSTREAM *es = (EDITSTREAM *)lp;
+        rtf_out o;
+        int from = 0, to = e->len, at = 0;
+        if (!es || !es->pfnCallback)
+            return 0;
+        memset(&o, 0, sizeof o);
+        if (wp & SFF_SELECTION)
+            rich_range(e, &from, &to);
+        if ((wp & 0x0f) == SF_RTF) {
+            rtf_write(wnd, e, &o, from, to);
+        } else {
+            /* SF_TEXT: the marks go out as a program expects them. */
+            int i;
+            for (i = from; i < to; i++) {
+                if (e->text[i] == '\r')
+                    rtf_puts(&o, "\r\n");
+                else
+                    rtf_put(&o, e->text + i, 1);
+            }
+        }
+        if (o.failed) {
+            free(o.buf);
+            es->dwError = 1;
+            return 0;
+        }
+        es->dwError = 0;
+        while (at < o.len) {
+            LONG done = 0;
+            LONG want = o.len - at > 4096 ? 4096 : o.len - at;
+            DWORD r = es->pfnCallback(es->dwCookie, (LPBYTE)o.buf + at, want,
+                                      &done);
+            if (r || done <= 0) {
+                es->dwError = r;
+                break;
+            }
+            at += done;
+        }
+        free(o.buf);
+        return at;
+    }
+    case EM_STREAMIN: {
+        EDITSTREAM *es = (EDITSTREAM *)lp;
+        char *got = NULL;
+        int len = 0, cap = 0;
+        if (!es || !es->pfnCallback)
+            return 0;
+        for (;;) {
+            LONG done = 0;
+            DWORD r;
+            if (len + 4096 + 1 > cap) {
+                int want = cap ? cap * 2 : 8192;
+                char *grown = realloc(got, (size_t)want);
+                if (!grown)
+                    break;
+                got = grown;
+                cap = want;
+            }
+            r = es->pfnCallback(es->dwCookie, (LPBYTE)got + len, 4096, &done);
+            if (r) {
+                es->dwError = r;
+                break;
+            }
+            if (done <= 0)
+                break;
+            len += done;
+        }
+        if (got)
+            got[len] = 0;
+        es->dwError = 0;
+        if ((wp & 0x0f) == SF_RTF) {
+            if (got)
+                rtf_read(wnd, e, got, len);
+        } else {
+            if (got)
+                rich_set_text(wnd, e, got);
+        }
+        free(got);
+        e->modified = 0;
+        rich_changed(wnd, e);
+        InvalidateRect(wnd, NULL, TRUE);
+        return len;
+    }
+    case EM_SETTARGETDEVICE:
+        /* With a device this says what to break the text to; with none, a
+         * width at all means do not break it, which is what WordPad's No
+         * Wrap sends and what the machine does with it. */
+        e->nowrap = lp != 0;
+        rich_relines(wnd, e);
+        InvalidateRect(wnd, NULL, FALSE);
+        return TRUE;
     case EM_POSFROMCHAR: {
         /* A rich edit fills in a POINTL the caller passes and takes the
          * index in lParam, where an EDIT takes the index in wParam and packs
@@ -1654,9 +2379,12 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         rich_relines(wnd, e);
         return r;
     }
-    case WM_SIZE:
+    case WM_SIZE: {
+        /* A narrower window breaks the text in more places. */
+        LRESULT r = DefWindowProcA(wnd, msg, wp, lp);
         rich_relines(wnd, e);
-        return DefWindowProcA(wnd, msg, wp, lp);
+        return r;
+    }
 
     /* ---- the mouse ---- */
     case WM_LBUTTONDOWN: {

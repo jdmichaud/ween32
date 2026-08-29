@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **974 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **1006 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 
 Then the four things `make test` does not cover:
@@ -1131,6 +1131,64 @@ nobody reads them as measured: where the values come from when
 the last one's, as it does for a character format), and whether a selection
 ending exactly on a paragraph's first character takes that paragraph. Both
 want a run of the probe when 4a next boots a machine.
+
+### Where a line breaks, and what a document looks like written down
+
+**Wrapping**, measured in a control two hundred pixels wide:
+
+```
+"the quick brown fox jumps over the lazy dog"   2 lines: [0,40] [40,3]
+   line 0 = "the quick brown fox jumps over the lazy "
+forty-eight a's                                 2 lines: [0,32] [32,16]
+a paragraph of ninety-one characters            3 lines: [0,40] [40,42] [82,9]
+   after EM_SETTARGETDEVICE(0, 1440)            1 line:  [0,91]
+   and after EM_SETTARGETDEVICE(0, 0)           3 lines again
+```
+
+A line breaks at the last space that fits and **the space stays on the line
+that broke** -- the next line begins on the "d" of "dog". A word too long for
+a line of its own breaks at the character that fits. And
+`EM_SETTARGETDEVICE` with a width and no device stops the breaking
+altogether, whatever the width: 1440 twips is an inch and would have broken
+that paragraph five times if it were a width to break to. That is what
+WordPad's No Wrap sends, and nought brings the window's own width back.
+
+**The RTF riched20 writes**, which is what ween32's writer is shaped to:
+
+```
+{\rtf1\ansi\ansicpg1252\deff0\deflang1033{\fonttbl{\f0\fnil\fcharset0 Tahoma;}{\f1\fnil\fcharset0 Courier New;}}
+{\colortbl ;\red255\green0\blue0;}
+\viewkind4\uc1\pard\fi360\li360\ri360\qc\tx1440\tx2880\f0\fs17 plain and \cf1\ul\b\i\strike\f1\fs24 formatted\cf0\ulnone\b0\i0\strike0\f0\fs17\par
+}
+```
+
+Four things to read off it, each of which the writer had to be told:
+
+- A size is in **half-points**: `\fs24` for 240 twips, `\fs17` for the 165 a
+  fresh control is lettered in.
+- The colour table's **first entry is empty** and is the automatic colour, so
+  `\cf0` is "no colour of its own" and `\cf1` is the first real one. Reading
+  it as a list of colours puts every index one out.
+- `\li` is the paragraph's left indent and `\fi` the **first line's, against
+  it**; a PARAFORMAT states the first line's indent and the offset of the
+  rest. The pair that came out of `dxStartIndent 720, dxOffset -360` was
+  `\li360\fi360`.
+- A run states **only what changed**, and the paragraph's end puts everything
+  back.
+
+**And what it reads.** Handed a document written by hand -- `\deff0`, a font
+table naming Arial, a colour table with one blue in it, `\qc\li720\fs28` and
+a `\b` in the middle -- the machine answers with the text "centred bold
+blue", Arial at 280 twips throughout, the middle word bold, the last one
+blue and not automatic, and a paragraph centred with an indent of 720. The
+same document is in `tests/richedit_test.c` with the same expectations.
+
+Two details of the reader that only a round trip finds: **`\deff` names a
+face that the font table has not been read yet**, so it is applied when the
+table closes; and **the `\par` before the closing brace is a terminator, not
+a mark** -- riched20's own documents end with one and the text it reads back
+has no empty paragraph after it, so a mark is only written when something
+follows it.
 
 ### The runs, and what a test can see of them
 

@@ -716,6 +716,23 @@ typedef struct _textrange {
  * half a paragraph being centred -- and read back over several that differ
  * it clears the mask bit of whatever is not the same throughout, exactly as
  * a CHARFORMAT does. Measured on the machine; see docs/testing.md. */
+#define EM_SETTARGETDEVICE (WM_USER + 72)
+#define EM_STREAMIN (WM_USER + 73)
+#define EM_STREAMOUT (WM_USER + 74)
+#define SF_TEXT 0x0001
+#define SF_RTF 0x0002
+#define SFF_SELECTION 0x8000
+typedef DWORD (CALLBACK *EDITSTREAMCALLBACK)(DWORD_PTR, LPBYTE, LONG, LONG *);
+/* Packed to four with the rest of <richedit.h>, which puts the callback at
+ * twelve rather than sixteen: an eight-byte pointer after a DWORD, with no
+ * padding to align it. */
+#pragma pack(push, 4)
+typedef struct _editstream {
+    DWORD_PTR dwCookie;
+    DWORD dwError;
+    EDITSTREAMCALLBACK pfnCallback;
+} EDITSTREAM;
+#pragma pack(pop)
 #define EM_GETPARAFORMAT (WM_USER + 61)
 #define EM_SETPARAFORMAT (WM_USER + 71)
 #define PFM_STARTINDENT 0x00000001

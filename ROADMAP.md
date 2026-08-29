@@ -303,9 +303,19 @@ whatever differs across them; a paragraph split in two leaves both halves
 carrying what the whole one carried, and a join keeps the first one's.
 Alignment and the indents are drawn.
 
-What it has not got is wrapping, tab stops and RTF through
-`EM_STREAMIN`/`EM_STREAMOUT`. Those are the next two pieces of WordPad's
-plan. `tests/richedit_test.c` asks it the same questions
+**And it wraps and streams**, which is the fourth piece: a line breaks at the
+last space that fits with the space staying on the line that broke, a word
+too long breaks at the character, and `EM_SETTARGETDEVICE` with a width and
+no device stops the breaking as WordPad's No Wrap asks. `EM_STREAMIN` and
+`EM_STREAMOUT` do `SF_TEXT` and `SF_RTF`, the RTF written in the shape
+riched20 writes it -- header, font table, colour table, paragraphs, a run
+stating only what changed -- and read back with the two traps a round trip
+finds: `\deff` names a face the font table has not offered yet, and the
+`\par` before the closing brace is a terminator rather than a mark.
+
+What it has not got is tab stops in the drawing, `EM_FINDTEXT`, and the
+object side of a rich edit -- pictures and OLE, which WordPad's plan does not
+reach. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot
 come to disagree about a behaviour they share.
 

@@ -885,19 +885,13 @@ static void dump_rtf(HWND re, const char *what)
     memset(&es, 0, sizeof es);
     es.pfnCallback = rtf_out;
     SendMessageA(re, EM_STREAMOUT, SF_RTF, (LPARAM)&es);
-    wsprintfA(buf, "  -- RTF after %s --\r\n", what);
+    wsprintfA(buf, "  -- RTF after %s (%d bytes) --\r\n", what, rtf_len);
     emit(buf);
-    /* The header is boilerplate; what matters is from the first \pard on,
-     * and the line breaks in it are the control's own. */
-    for (i = 0; i < rtf_len; i++)
-        if (rtf_buf[i] == '\\' && rtf_buf[i + 1] == 'p' &&
-            rtf_buf[i + 2] == 'a' && rtf_buf[i + 3] == 'r' &&
-            rtf_buf[i + 4] == 'd')
-            break;
-    if (i >= rtf_len)
-        i = 0;
+    /* All of it, header and all: what a writer has to produce is the whole
+     * document and not the part after \pard. */
+    (void)i;
     emit("  ");
-    emit(rtf_buf + i);
+    emit(rtf_buf);
     emit("\r\n");
 }
 
@@ -1163,6 +1157,8 @@ static void column_walk(HWND parent, HFONT font, const char *cls, int rich)
     DestroyWindow(w);
 }
 
+static void wrapping(HWND parent, HFONT font);
+
 static void richedit(HWND parent, HFONT font)
 {
     HWND re;
@@ -1257,6 +1253,157 @@ static void richedit(HWND parent, HFONT font)
     column_walk(parent, font, "RichEdit20A", 1);
     column_walk(parent, font, "EDIT", 0);
     paragraphs(parent, font);
+    wrapping(parent, font);
+
+    DestroyWindow(re);
+}
+
+/* ---- wrapping, and what the control writes -------------------------------
+ *
+ * Where a line breaks, what the break does with the space it broke at, and
+ * what EM_GETLINECOUNT counts once there are more lines than paragraphs.
+ * Then the RTF: the writer's own output for everything ween32 can hold, and
+ * a small document read back in, which is the only way to know what the
+ * reader will accept from a file WordPad saved. */
+
+static const char *rtf_in_text;
+static int rtf_in_at;
+
+static DWORD CALLBACK rtf_in(DWORD_PTR cookie, LPBYTE bytes, LONG cb,
+                             LONG *read)
+{
+    LONG i = 0;
+    (void)cookie;
+    while (i < cb && rtf_in_text[rtf_in_at])
+        bytes[i++] = (BYTE)rtf_in_text[rtf_in_at++];
+    *read = i;
+    return 0;
+}
+
+static void lines_of(HWND re, const char *what)
+{
+    int n = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0), i;
+    wsprintfA(buf, "  %-34s %d lines:", what, n);
+    emit(buf);
+    for (i = 0; i < n && i < 12; i++) {
+        wsprintfA(buf, " [%ld,%ld]", SendMessageA(re, EM_LINEINDEX, i, 0),
+                  SendMessageA(re, EM_LINELENGTH,
+                               SendMessageA(re, EM_LINEINDEX, i, 0), 0));
+        emit(buf);
+    }
+    emit("\r\n");
+}
+
+static void wrapping(HWND parent, HFONT font)
+{
+    /* A control 200 pixels wide, so a line of ordinary words has to break
+     * more than once and the numbers are small enough to read. */
+    HWND re = CreateWindowExA(WS_EX_CLIENTEDGE, "RichEdit20A", "",
+                              WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                  ES_MULTILINE | ES_AUTOVSCROLL,
+                              320, 10, 200, 90, parent, NULL, NULL, NULL);
+    EDITSTREAM es;
+    if (!re) {
+        wsprintfA(buf, "  no rich edit: %lu\r\n", GetLastError());
+        emit(buf);
+        return;
+    }
+    SendMessageA(re, WM_SETFONT, (WPARAM)font, FALSE);
+    emit("== wrapping, in a control 200 wide ==\r\n");
+
+    SetWindowTextA(re, "the quick brown fox jumps over the lazy dog");
+    lines_of(re, "one paragraph of nine words");
+    {
+        char line[64];
+        int i, n = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0);
+        for (i = 0; i < n && i < 6; i++) {
+            int got;
+            *(WORD *)line = (WORD)sizeof line;
+            got = (int)SendMessageA(re, EM_GETLINE, i, (LPARAM)line);
+            line[got > 0 && got < (int)sizeof line ? got : 0] = 0;
+            wsprintfA(buf, "    line %d = \"%s\" (%d)\r\n", i, line, got);
+            emit(buf);
+        }
+    }
+
+    /* A word longer than the line has to break somewhere. */
+    SetWindowTextA(re, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    lines_of(re, "one word of forty-eight letters");
+
+    /* Two paragraphs, so that the count says whether it is counting
+     * paragraphs or the lines they are drawn on. */
+    SetWindowTextA(re, "the quick brown fox jumps\r\nover the lazy dog again");
+    lines_of(re, "two paragraphs");
+    wsprintfA(buf, "    EM_LINEFROMCHAR of 30 is %ld\r\n",
+              SendMessageA(re, EM_LINEFROMCHAR, 30, 0));
+    emit(buf);
+
+    /* And what EM_SETTARGETDEVICE does, on a paragraph long enough to feel
+     * it: lParam is a line width in twips, and nought means the window. */
+    SetWindowTextA(re, "the quick brown fox jumps over the lazy dog again and "
+                       "again until it has to break somewhere");
+    lines_of(re, "a long paragraph, wrapped to the window");
+    SendMessageA(re, EM_SETTARGETDEVICE, 0, 1440);
+    lines_of(re, "EM_SETTARGETDEVICE(0, 1440) -- an inch");
+    SendMessageA(re, EM_SETTARGETDEVICE, 0, 14400);
+    lines_of(re, "EM_SETTARGETDEVICE(0, 14400) -- ten inches");
+    SendMessageA(re, EM_SETTARGETDEVICE, 0, 0);
+    lines_of(re, "and back to (0, 0)");
+
+    /* ---- what it writes ---- */
+    emit("== RTF ==\r\n");
+    SetWindowTextA(re, "plain and formatted");
+    {
+        CHARFORMATA cf;
+        PARAFORMAT pf;
+        CHARRANGE cr;
+        cr.cpMin = 10;
+        cr.cpMax = 19;
+        SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&cr);
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE | CFM_STRIKEOUT |
+                    CFM_SIZE | CFM_COLOR | CFM_FACE;
+        cf.dwEffects = CFE_BOLD | CFE_ITALIC | CFE_UNDERLINE | CFE_STRIKEOUT;
+        cf.yHeight = 240;
+        cf.crTextColor = RGB(255, 0, 0);
+        lstrcpyA(cf.szFaceName, "Courier New");
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_ALIGNMENT | PFM_STARTINDENT | PFM_RIGHTINDENT |
+                    PFM_OFFSET | PFM_TABSTOPS;
+        pf.wAlignment = PFA_CENTER;
+        pf.dxStartIndent = 720;
+        pf.dxRightIndent = 360;
+        pf.dxOffset = -360;
+        pf.cTabCount = 2;
+        pf.rgxTabs[0] = 1440;
+        pf.rgxTabs[1] = 2880;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+    }
+    dump_rtf(re, "one run formatted every way, in a paragraph likewise");
+
+    /* ---- and what it reads ---- */
+    rtf_in_text = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}"
+                  "{\\colortbl;\\red0\\green0\\blue255;}"
+                  "\\pard\\qc\\li720\\fs28 centred \\b bold \\b0\\cf1 blue\\par}";
+    rtf_in_at = 0;
+    memset(&es, 0, sizeof es);
+    es.pfnCallback = rtf_in;
+    SendMessageA(re, EM_STREAMIN, SF_RTF, (LPARAM)&es);
+    {
+        char text[128] = "";
+        GetWindowTextA(re, text, sizeof text);
+        wsprintfA(buf, "  after EM_STREAMIN the text is \"%s\", error %lu\r\n",
+                  text, es.dwError);
+        emit(buf);
+    }
+    charfmt_of(re, 0, 8, "what came in: the first word");
+    charfmt_of(re, 8, 12, "the bold one");
+    charfmt_of(re, 13, 17, "and the blue one");
+    paraformat_of(re, 0, 5, "the paragraph it made");
+    dump_rtf(re, "reading that in and writing it out again");
 
     DestroyWindow(re);
 }

@@ -855,6 +855,20 @@ pub const PFA_LEFT = 1;
 pub const PFA_RIGHT = 2;
 pub const PFA_CENTER = 3;
 pub const MAX_TAB_STOPS = 32;
+pub const EM_SETTARGETDEVICE = (WM_USER + 72);
+pub const EM_STREAMIN = (WM_USER + 73);
+pub const EM_STREAMOUT = (WM_USER + 74);
+pub const SF_TEXT = 0x0001;
+pub const SF_RTF = 0x0002;
+pub const SFF_SELECTION = 0x8000;
+pub const EDITSTREAMCALLBACK = *const fn (usize, [*]u8, LONG, *LONG) callconv(.c) DWORD;
+// Packed to four the way <richedit.h> is, which puts the callback at twelve
+// rather than sixteen: an eight-byte pointer straight after a DWORD.
+pub const EDITSTREAM = extern struct {
+    dwCookie: usize align(4) = 0,
+    dwError: DWORD = 0,
+    pfnCallback: ?EDITSTREAMCALLBACK align(4) = null,
+};
 pub const PARAFORMAT = extern struct {
     cbSize: UINT = @sizeOf(PARAFORMAT),
     dwMask: DWORD = 0,
