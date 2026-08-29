@@ -33,3 +33,7 @@ tools/refcapture/xclick
 
 # what a FUSE mount leaves behind when a running binary is rebuilt
 .fuse_hidden*
+
+# python bytecode left by a tool that imports drive.py
+__pycache__/
+*.pyc
