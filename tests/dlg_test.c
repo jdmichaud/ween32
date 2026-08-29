@@ -306,6 +306,62 @@ int main(void)
     CHECK(IsDialogMessageA(dlg, &m), "IsDialogMessage consumes Enter");
     CHECK(g_ok_clicks == 1, "Enter fired the default command (ID_OK)");
 
+    /* **A bare letter presses the button that letter marks.** A message box
+     * draws `&Yes` and `&No` with the mnemonic underlined, and win32 answers
+     * a plain `Y` as well as `Alt+Y` -- Sam drove that on the machine:
+     * WordPad, a dirty document, Alt+F, x, then a bare `Y`, and its Save As
+     * opened. Ours dispatched mnemonics inside `if (alt)` only, so the
+     * underline promised a key that did nothing and the box could be
+     * answered with Tab or the mouse alone.
+     *
+     * **The reason it is safe is the same question the Enter above asks.**
+     * A dialog must not take letters from a field -- typing `y` into a file
+     * name has to type a `y` -- and the field already says so:
+     * `src/controls.c` answers `WM_GETDLGCODE` with `DLGC_WANTCHARS`. The
+     * guard was in place and nothing asked it. */
+    {
+        /* Its own id, not ID_OK: a button that reports to the dialog's
+         * counter would make every later assertion about that counter an
+         * assertion about this test as well. The first draft did exactly
+         * that and broke "clicking OK routed a second WM_COMMAND" three
+         * hundred lines further down. */
+        HWND yes = CreateWindowExA(0, "BUTTON", "&Yes",
+                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 100,
+                                   60, 23, dlg, (HMENU)(UINT_PTR)993, NULL,
+                                   NULL);
+        HWND field = CreateWindowExA(0, "EDIT", "",
+                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP, 80,
+                                     100, 80, 21, dlg, (HMENU)(UINT_PTR)992,
+                                     NULL, NULL);
+        char typed[32];
+        /* The dispatch gives the button the focus and then clicks it, so
+         * where the focus went says the letter was routed -- without a
+         * counter that anything else reads. */
+        SetFocus(field);
+        memset(&m, 0, sizeof(m));
+        m.hwnd = dlg;
+        m.message = WM_KEYDOWN;
+        m.wParam = 'Y';
+        IsDialogMessageA(dlg, &m);
+        CHECK(GetFocus() == field,
+              "a field keeps its letters -- the mnemonic is not taken");
+        SendMessageA(field, WM_CHAR, 'y', 1);
+        GetWindowTextA(field, typed, sizeof typed);
+        CHECK(!strcmp(typed, "y"), "and the letter lands in the field");
+
+        SetFocus(yes);
+        memset(&m, 0, sizeof(m));
+        m.hwnd = dlg;
+        m.message = WM_KEYDOWN;
+        m.wParam = 'Y';
+        CHECK(IsDialogMessageA(dlg, &m),
+              "a bare letter is taken when the focus does not want it");
+        CHECK(GetFocus() == yes,
+              "and it goes to the button whose label marks that letter");
+        DestroyWindow(field);
+        DestroyWindow(yes);
+    }
+
     /* **Unless the focused control wants the key.** A combo box with its
      * list dropped answers `DLGC_WANTMESSAGE`, and the dialog has to let the
      * Enter through -- otherwise the default button fires, the dialog closes,

@@ -488,6 +488,45 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
         return FALSE;
     }
 
+    /* **A bare letter is a mnemonic too, unless the focus wants letters.**
+     * This dispatched them only with Alt down, so a message box drawing
+     * `&Yes` and `&No` with the mnemonic underlined could not be answered
+     * with Y or N -- only Tab, Enter or the mouse. **The underline promised
+     * a key that did nothing**, which is the same complaint as a menu item
+     * that is black and inert.
+     *
+     * Sam drove the machine for the rule rather than us remembering it:
+     * WordPad with a dirty document, Alt+F, x, then a bare `Y`, and its Save
+     * As opened.
+     *
+     * **The danger is obvious and the guard was already there, unbuilt.** A
+     * dialog must not take letters from a field -- typing `y` into a file
+     * name has to type a `y` -- and `src/controls.c` has answered
+     * `WM_GETDLGCODE` with `DLGC_WANTCHARS` all along. Nothing asked it.
+     * That is the third time tonight this message turned out to be the
+     * answer to a key routing question, after the dropped combo's Enter and
+     * the rich edit's ES_WANTRETURN.
+     *
+     * Ctrl+letter is left alone: those are accelerators, and a dialog that
+     * pressed Cancel on Ctrl+C would be worse than one that ignored it. */
+    if (!ctrl) {
+        unsigned ch = (unsigned)(msg->lParam >> 16) & 0xff;
+        unsigned key = ch ? ch : (unsigned)msg->wParam;
+        LRESULT code = focus ? SendMessageA(focus, WM_GETDLGCODE,
+                                            msg->wParam, 0)
+                             : 0;
+        if (!(code & (DLGC_WANTCHARS | DLGC_WANTALLKEYS)) &&
+            ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z') ||
+             (key >= '0' && key <= '9'))) {
+            HWND target = ween_mnemonic_target(dlg, key);
+            if (target) {
+                dlg_focus(target);
+                SendMessageA(target, BM_CLICK, 0, 0);
+                return TRUE;
+            }
+        }
+    }
+
     switch (msg->wParam) {
     case VK_TAB: {
         HWND nx;
