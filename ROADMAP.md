@@ -38,12 +38,7 @@ that no application has asked for:
   follows the caret and the bar drives it — and what is missing is the
   sideways offset that would go with it, `WS_HSCROLL`, and `EM_LINESCROLL`'s
   first argument, which is taken and ignored today.
-- [ ] **ChooseFont.** The dialog links and answers as a cancelled one does,
-  since a program with a Font item on its menu cannot be built without it.
-  What it wants underneath is font enumeration: the box lists the faces
-  installed and previews each, and this library carries four strikes and no
-  way to ask what else is there. A box offering four faces would be worse
-  than none.
+
 
 - [ ] **Where a property sheet puts its page.** The machine's puts it at
   (13, 51) from the sheet's window origin and makes it 360x374; ween32's is
@@ -318,6 +313,23 @@ object side of a rich edit -- pictures and OLE, which WordPad's plan does not
 reach. `tests/richedit_test.c` asks it the same questions
 `tests/edit_test.c` asks the EDIT, in the same words, so that the two cannot
 come to disagree about a behaviour they share.
+
+**ChooseFont** — the common Font dialog, every rectangle the machine's own
+out of `reference/probe/font.txt`: the three combos, the Effects group with
+its two ticks and its colour, the Sample, the note, and OK, Cancel, Apply and
+Help down the right, at the ids a program that hooks the box addresses them
+by. `CF_INITTOLOGFONTSTRUCT` selects what the program handed in -- including
+the size its `lfHeight` works out to -- `CF_EFFECTS` decides whether the
+effects are there at all, `CF_APPLY` whether Apply is, and `CF_ENABLEHOOK`
+lets a program see the messages first, which is also how the test drives a
+modal box.
+
+What the lists hold is this library's rather than the machine's, and said out
+loud rather than implied: there is no rasteriser here, so the box offers the
+faces it can actually draw and the sizes their strikes carry -- the way the
+machine's own box offers a bitmap face's own sizes rather than every number.
+A box offering a face it would then draw in another one would be worse than
+none.
 
 **Find and Replace** — `FindTextA` and `ReplaceTextA`, modeless as win32 has
 them: the call puts the box up and answers with its window, and every press

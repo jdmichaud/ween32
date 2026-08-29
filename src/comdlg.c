@@ -2109,10 +2109,363 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
  * Find and Replace are below, and are no longer among them.
  */
 
+/* ---- ChooseFont -----------------------------------------------------------
+ *
+ * Every rectangle is the machine's own, out of `reference/probe/font.txt` in
+ * the WordPad repository -- the probe walked a running Font box and printed
+ * what Windows answered, so the units below are read rather than fitted. The
+ * client is 431x319, which is 287 by 196 of them.
+ *
+ * The control ids are win32's, because a program that hooks this dialog
+ * addresses them by number: 1136 is the face, 1137 the style, 1138 the size,
+ * 1139 the colour, 1040 and 1041 the two effects, 1092 the sample.
+ *
+ * What the list *holds* is the honest part. This library has no rasteriser:
+ * a face carries a handful of bitmap strikes and a request lands on the
+ * nearest of them, which is how GDI treats a bitmap face too. So the box
+ * offers the faces it can actually draw and the sizes their strikes carry,
+ * the way the machine's own box offers a bitmap font's own sizes rather than
+ * every number. A box offering a face it would then draw in another one
+ * would be worse than none.
+ */
+
+#define CF_FACE 1136
+#define CF_STYLE 1137
+#define CF_SIZE 1138
+#define CF_COLOR 1139
+#define CF_STRIKEOUT 1040
+#define CF_UNDERLINE 1041
+#define CF_SAMPLE 1092
+#define CF_SCRIPT 1140
+#define CF_APPLYBTN 1026
+
+/* The faces this library can draw, and the point sizes their strikes hold.
+ * Tahoma carries eight to sixteen pixels, which at 96 dpi is six points to
+ * twelve; MS Sans Serif carries thirteen, sixteen and twenty. */
+static const struct {
+    const char *face;
+    const int *sizes;
+    int n;
+} font_faces[] = {
+    { "MS Sans Serif", (const int[]){ 8, 10, 12, 14, 18, 24 }, 6 },
+    { "Tahoma", (const int[]){ 6, 7, 8, 9, 10, 11, 12 }, 7 },
+};
+
+/* The colours the machine's box offers, in its own order. */
+static const struct {
+    const char *name;
+    COLORREF rgb;
+} font_colors[] = {
+    { "Black", RGB(0, 0, 0) },         { "Maroon", RGB(128, 0, 0) },
+    { "Green", RGB(0, 128, 0) },       { "Olive", RGB(128, 128, 0) },
+    { "Navy", RGB(0, 0, 128) },        { "Purple", RGB(128, 0, 128) },
+    { "Teal", RGB(0, 128, 128) },      { "Gray", RGB(128, 128, 128) },
+    { "Silver", RGB(192, 192, 192) },  { "Red", RGB(255, 0, 0) },
+    { "Lime", RGB(0, 255, 0) },        { "Yellow", RGB(255, 255, 0) },
+    { "Blue", RGB(0, 0, 255) },        { "Fuchsia", RGB(255, 0, 255) },
+    { "Aqua", RGB(0, 255, 255) },      { "White", RGB(255, 255, 255) },
+};
+
+static const char *const font_styles[] = { "Regular", "Italic", "Bold",
+                                           "Bold Italic" };
+
+static struct {
+    CHOOSEFONTA *cf;
+    HFONT sample;
+} g_cf;
+
+static int cf_face_index(const char *face)
+{
+    for (int i = 0; i < (int)(sizeof font_faces / sizeof font_faces[0]); i++)
+        if (face && !strcmp(font_faces[i].face, face))
+            return i;
+    return 0;
+}
+
+/* What the three lists say, as a LOGFONT. */
+static void cf_read(HWND dlg, LOGFONTA *lf)
+{
+    char buf[LF_FACESIZE];
+    int style = (int)SendDlgItemMessageA(dlg, CF_STYLE, CB_GETCURSEL, 0, 0);
+    int points = 10;
+    memset(lf, 0, sizeof *lf);
+    GetDlgItemTextA(dlg, CF_FACE, buf, sizeof buf);
+    memcpy(lf->lfFaceName, buf, sizeof lf->lfFaceName - 1);
+    GetDlgItemTextA(dlg, CF_SIZE, buf, sizeof buf);
+    if (buf[0])
+        points = atoi(buf);
+    if (points <= 0)
+        points = 10;
+    /* A negative height is the character height GDI asks for, which is what
+     * a point size means: points times the dpi over seventy-two. */
+    lf->lfHeight = -MulDiv(points, ween_render_dpi(), 72);
+    lf->lfWeight = (style == 2 || style == 3) ? 700 : 400;
+    lf->lfItalic = (BYTE)(style == 1 || style == 3);
+    lf->lfUnderline = (BYTE)(IsDlgButtonChecked(dlg, CF_UNDERLINE) != 0);
+    lf->lfStrikeOut = (BYTE)(IsDlgButtonChecked(dlg, CF_STRIKEOUT) != 0);
+    lf->lfCharSet = 1; /* DEFAULT_CHARSET */
+}
+
+static void cf_sample(HWND dlg)
+{
+    LOGFONTA lf;
+    HFONT was = g_cf.sample;
+    cf_read(dlg, &lf);
+    g_cf.sample = CreateFontIndirectA(&lf);
+    SendDlgItemMessageA(dlg, CF_SAMPLE, WM_SETFONT, (WPARAM)g_cf.sample, TRUE);
+    if (was)
+        DeleteObject(was);
+    InvalidateRect(GetDlgItem(dlg, CF_SAMPLE), NULL, TRUE);
+}
+
+static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    CHOOSEFONTA *cf = g_cf.cf;
+    /* A program that asked to see the messages sees them first, and what it
+     * says it has dealt with is not dealt with again. WM_INITDIALOG is the
+     * exception it always gets: the box has to fill its own lists before
+     * anybody can look at them, so the hook is called after that and its
+     * answer decides only who sets the focus. */
+    if (cf && (cf->Flags & CF_ENABLEHOOK) && cf->lpfnHook &&
+        msg != WM_INITDIALOG) {
+        INT_PTR r = cf->lpfnHook(dlg, msg, wp, lp);
+        if (r)
+            return r;
+    }
+    (void)lp;
+    switch (msg) {
+    case WM_INITDIALOG: {
+        int face = 0, i;
+        if (!cf)
+            return TRUE;
+        for (i = 0; i < (int)(sizeof font_faces / sizeof font_faces[0]); i++)
+            SendDlgItemMessageA(dlg, CF_FACE, CB_ADDSTRING, 0,
+                                (LPARAM)font_faces[i].face);
+        for (i = 0; i < (int)(sizeof font_styles / sizeof font_styles[0]); i++)
+            SendDlgItemMessageA(dlg, CF_STYLE, CB_ADDSTRING, 0,
+                                (LPARAM)font_styles[i]);
+        for (i = 0; i < (int)(sizeof font_colors / sizeof font_colors[0]); i++)
+            SendDlgItemMessageA(dlg, CF_COLOR, CB_ADDSTRING, 0,
+                                (LPARAM)font_colors[i].name);
+        SendDlgItemMessageA(dlg, CF_SCRIPT, CB_ADDSTRING, 0,
+                            (LPARAM) "Western");
+        SendDlgItemMessageA(dlg, CF_SCRIPT, CB_SETCURSEL, 0, 0);
+        EnableWindow(GetDlgItem(dlg, CF_SCRIPT), FALSE);
+
+        if ((cf->Flags & CF_INITTOLOGFONTSTRUCT) && cf->lpLogFont) {
+            const LOGFONTA *lf = cf->lpLogFont;
+            int style = (lf->lfWeight > 500 ? 2 : 0) + (lf->lfItalic ? 1 : 0);
+            face = cf_face_index(lf->lfFaceName);
+            SendDlgItemMessageA(dlg, CF_STYLE, CB_SETCURSEL, (WPARAM)style, 0);
+            CheckDlgButton(dlg, CF_UNDERLINE,
+                           lf->lfUnderline ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(dlg, CF_STRIKEOUT,
+                           lf->lfStrikeOut ? BST_CHECKED : BST_UNCHECKED);
+        } else {
+            SendDlgItemMessageA(dlg, CF_STYLE, CB_SETCURSEL, 0, 0);
+        }
+        SendDlgItemMessageA(dlg, CF_FACE, CB_SETCURSEL, (WPARAM)face, 0);
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(CF_FACE, CBN_SELCHANGE),
+                     (LPARAM)GetDlgItem(dlg, CF_FACE));
+        /* The size the program asked for, if it is one this face has. It
+         * comes from the LOGFONT's height when the program filled one in --
+         * which is what CF_INITTOLOGFONTSTRUCT means -- and from iPointSize
+         * otherwise; a height is in pixels and negative for the character
+         * cell, a point size is in tenths. */
+        {
+            int points = 0;
+            if ((cf->Flags & CF_INITTOLOGFONTSTRUCT) && cf->lpLogFont &&
+                cf->lpLogFont->lfHeight)
+                points = MulDiv(cf->lpLogFont->lfHeight < 0
+                                    ? -cf->lpLogFont->lfHeight
+                                    : cf->lpLogFont->lfHeight,
+                                72, ween_render_dpi());
+            else if (cf->iPointSize)
+                points = cf->iPointSize / 10;
+            if (points > 0) {
+                char want[16];
+                sprintf(want, "%d", points);
+                i = (int)SendDlgItemMessageA(dlg, CF_SIZE,
+                                             CB_FINDSTRINGEXACT, (WPARAM)-1,
+                                             (LPARAM)want);
+                if (i >= 0)
+                    SendDlgItemMessageA(dlg, CF_SIZE, CB_SETCURSEL,
+                                        (WPARAM)i, 0);
+            }
+        }
+        {   /* the colour, by its value */
+            int sel = 0;
+            for (i = 0; i < (int)(sizeof font_colors / sizeof font_colors[0]);
+                 i++)
+                if (font_colors[i].rgb == cf->rgbColors)
+                    sel = i;
+            SendDlgItemMessageA(dlg, CF_COLOR, CB_SETCURSEL, (WPARAM)sel, 0);
+        }
+        /* The effects and the colour are only there when the program asked
+         * for them, and Apply only when it will answer. */
+        if (!(cf->Flags & CF_EFFECTS)) {
+            static const int hide[] = { 1072, CF_STRIKEOUT, CF_UNDERLINE,
+                                        1091, CF_COLOR };
+            for (i = 0; i < (int)(sizeof hide / sizeof hide[0]); i++)
+                ShowWindow(GetDlgItem(dlg, hide[i]), SW_HIDE);
+        }
+        if (!(cf->Flags & CF_APPLY))
+            ShowWindow(GetDlgItem(dlg, CF_APPLYBTN), SW_HIDE);
+        if (!(cf->Flags & CF_SHOWHELP))
+            ShowWindow(GetDlgItem(dlg, 1038), SW_HIDE);
+        cf_sample(dlg);
+        if ((cf->Flags & CF_ENABLEHOOK) && cf->lpfnHook)
+            return cf->lpfnHook(dlg, msg, wp, lp);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case CF_FACE:
+            if (HIWORD(wp) == CBN_SELCHANGE) {
+                /* a face's own sizes, which is what a bitmap face offers */
+                int f = (int)SendDlgItemMessageA(dlg, CF_FACE, CB_GETCURSEL, 0,
+                                                 0);
+                char keep[16];
+                int i;
+                GetDlgItemTextA(dlg, CF_SIZE, keep, sizeof keep);
+                if (f < 0)
+                    f = 0;
+                SendDlgItemMessageA(dlg, CF_SIZE, CB_RESETCONTENT, 0, 0);
+                for (i = 0; i < font_faces[f].n; i++) {
+                    char num[16];
+                    sprintf(num, "%d", font_faces[f].sizes[i]);
+                    SendDlgItemMessageA(dlg, CF_SIZE, CB_ADDSTRING, 0,
+                                        (LPARAM)num);
+                }
+                i = keep[0] ? (int)SendDlgItemMessageA(dlg, CF_SIZE,
+                                                      CB_FINDSTRINGEXACT,
+                                                      (WPARAM)-1, (LPARAM)keep)
+                            : -1;
+                SendDlgItemMessageA(dlg, CF_SIZE, CB_SETCURSEL,
+                                    (WPARAM)(i >= 0 ? i : 0), 0);
+                cf_sample(dlg);
+            }
+            return TRUE;
+        case CF_STYLE:
+        case CF_SIZE:
+        case CF_COLOR:
+            if (HIWORD(wp) == CBN_SELCHANGE)
+                cf_sample(dlg);
+            return TRUE;
+        case CF_STRIKEOUT:
+        case CF_UNDERLINE:
+            cf_sample(dlg);
+            return TRUE;
+        case CF_APPLYBTN:
+            /* Apply hands the program what is chosen without closing the
+             * box, which is how a program that shows the change as it is
+             * made is written. */
+            if (cf && cf->lpLogFont) {
+                cf_read(dlg, cf->lpLogFont);
+                cf->iPointSize = -cf->lpLogFont->lfHeight * 720 /
+                                 ween_render_dpi();
+                cf->rgbColors =
+                    font_colors[SendDlgItemMessageA(dlg, CF_COLOR,
+                                                    CB_GETCURSEL, 0, 0) &
+                                15]
+                        .rgb;
+            }
+            return TRUE;
+        case IDOK:
+            if (cf && cf->lpLogFont) {
+                int c = (int)SendDlgItemMessageA(dlg, CF_COLOR, CB_GETCURSEL,
+                                                 0, 0);
+                cf_read(dlg, cf->lpLogFont);
+                /* iPointSize is in tenths of a point, which is the one place
+                 * this structure states a size that way. */
+                cf->iPointSize = -cf->lpLogFont->lfHeight * 720 /
+                                 ween_render_dpi();
+                if (c >= 0 && c < (int)(sizeof font_colors /
+                                        sizeof font_colors[0]))
+                    cf->rgbColors = font_colors[c].rgb;
+                cf->nFontType = 0x0004; /* SCREEN_FONTTYPE */
+            }
+            EndDialog(dlg, IDOK);
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(dlg, IDCANCEL);
+            return TRUE;
+        default:
+            break;
+        }
+        return FALSE;
+    default:
+        return FALSE;
+    }
+}
+
 BOOL ChooseFontA(CHOOSEFONTA *cf)
 {
-    (void)cf;
-    return FALSE;
+    static unsigned char tmpl[4096];
+    const DWORD child = WS_CHILD | WS_VISIBLE;
+    const DWORD combo = child | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST;
+    static const dlg_item items[] = {
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 7, 7, 40, 9, 1088, ATOM_STATIC,
+          NULL, "&Font:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0, 7,
+          16, 98, 72, CF_FACE, ATOM_COMBOBOX, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 110, 7, 44, 9, 1089,
+          ATOM_STATIC, NULL, "Font st&yle:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0,
+          110, 16, 74, 76, CF_STYLE, ATOM_COMBOBOX, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 189, 7, 30, 9, 1090,
+          ATOM_STATIC, NULL, "&Size:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN, 0,
+          190, 16, 36, 72, CF_SIZE, ATOM_COMBOBOX, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 7, 97, 98, 72,
+          1072, ATOM_BUTTON, NULL, "Effects" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 13, 110, 49,
+          10, CF_STRIKEOUT, ATOM_BUTTON, NULL, "Stri&keout" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 13, 123, 51,
+          10, CF_UNDERLINE, ATOM_BUTTON, NULL, "&Underline" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 13, 136, 30, 9, 1091,
+          ATOM_STATIC, NULL, "&Color:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+          0, 13, 146, 82, 60, CF_COLOR, ATOM_COMBOBOX, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP | BS_GROUPBOX, 0, 110, 97, 116, 43,
+          1073, ATOM_BUTTON, NULL, "Sample" },
+        { WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 118, 111, 100, 23, CF_SAMPLE,
+          ATOM_STATIC, NULL, "AaBbYyZz" },
+        { WS_CHILD | WS_VISIBLE, 0, 7, 172, 219, 20, 1093, ATOM_STATIC, NULL,
+          "" },
+        { WS_CHILD | WS_VISIBLE | WS_GROUP, 0, 110, 147, 30, 9, 1094,
+          ATOM_STATIC, NULL, "Sc&ript:" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+          0, 110, 157, 116, 60, CF_SCRIPT, ATOM_COMBOBOX, NULL, "" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_GROUP | BS_DEFPUSHBUTTON, 0,
+          231, 16, 45, 14, IDOK, ATOM_BUTTON, NULL, "OK" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 231, 32, 45,
+          14, IDCANCEL, ATOM_BUTTON, NULL, "Cancel" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 231, 48, 45,
+          14, CF_APPLYBTN, ATOM_BUTTON, NULL, "&Apply" },
+        { WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 231, 64, 45,
+          14, 1038, ATOM_BUTTON, NULL, "&Help" },
+    };
+    DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME |
+                  DS_SETFONT | DS_3DLOOK | DS_CONTEXTHELP;
+    DLGTEMPLATE *t;
+    INT_PTR r;
+    (void)child;
+    (void)combo;
+
+    if (!cf || cf->lStructSize != sizeof(CHOOSEFONTA) || !cf->lpLogFont)
+        return FALSE;
+    g_cf.cf = cf;
+    t = build(tmpl, style, 287, 196, "Font", items,
+              (int)(sizeof items / sizeof items[0]));
+    r = DialogBoxIndirectParamA(cf->hInstance, (LPCDLGTEMPLATEA)t,
+                                cf->hwndOwner, cf_proc, 0);
+    if (g_cf.sample) {
+        DeleteObject(g_cf.sample);
+        g_cf.sample = NULL;
+    }
+    g_cf.cf = NULL;
+    return r == IDOK;
 }
 
 /* ---- Find, and Replace ----------------------------------------------------

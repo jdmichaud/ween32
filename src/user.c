@@ -1028,6 +1028,12 @@ BOOL ShowWindow(HWND wnd, int cmd)
     return was;
 }
 
+LRESULT SendDlgItemMessageA(HWND dlg, int id, UINT msg, WPARAM wp, LPARAM lp)
+{
+    HWND c = GetDlgItem(dlg, id);
+    return c ? SendMessageA(c, msg, wp, lp) : 0;
+}
+
 BOOL SetWindowTextA(HWND wnd, LPCSTR text)
 {
     if (!wnd)

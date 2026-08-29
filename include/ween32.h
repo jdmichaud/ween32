@@ -557,6 +557,9 @@ typedef struct tagCOMBOBOXEXITEMA {
     LPARAM lParam;
 } COMBOBOXEXITEMA;
 #define CB_SETCURSEL 0x014E
+/* The string a program looks for, whole rather than by its start -- which is
+ * what a box that has just been refilled uses to keep what was chosen. */
+#define CB_FINDSTRINGEXACT 0x0158
 /* Drop the list, or put it away, without the button being pressed — which is
  * how a list of suggestions comes up as you type. */
 #define CB_SHOWDROPDOWN 0x014F
@@ -2117,6 +2120,8 @@ typedef struct tagCHOOSEFONTA {
 #define CF_TTONLY 0x00040000
 #define CF_NOFACESEL 0x00080000
 #define CF_NOSCRIPTSEL 0x00800000
+#define CF_SHOWHELP 0x00000004
+#define CF_ENABLEHOOK 0x00000008
 BOOL ChooseFontA(CHOOSEFONTA *cf);
 
 /* Find and Replace are modeless: the real ones put a window up and send the
@@ -2685,6 +2690,10 @@ BOOL SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy,
 BOOL InvalidateRect(HWND wnd, const RECT *rect, BOOL erase);
 BOOL UpdateWindow(HWND wnd);
 HWND GetDlgItem(HWND dlg, int id);
+/* A message to a control by its id, which is how a dialog talks to what is
+ * in it. The T-name for it has been in this header for a while with nothing
+ * behind it -- a program that used it built here and did not link. */
+LRESULT SendDlgItemMessageA(HWND dlg, int id, UINT msg, WPARAM wp, LPARAM lp);
 /* A control's text by its id, which is how a dialog reads what was typed. */
 UINT GetDlgItemTextA(HWND dlg, int id, LPSTR out, int max);
 BOOL SetDlgItemTextA(HWND dlg, int id, LPCSTR text);

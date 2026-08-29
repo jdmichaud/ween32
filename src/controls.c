@@ -3256,6 +3256,37 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case CB_ADDSTRING:
         return items_add(wnd, (const char *)lp);
+    case CB_FINDSTRINGEXACT: {
+        /* The row whose text is the one asked for, whole and without regard
+         * to case, searching on from the row named -- which is how a box
+         * that has just been refilled finds what was chosen in it before.
+         * wParam of -1 means from the beginning. */
+        const char *want = (const char *)lp;
+        ween_items *list = items_of(wnd);
+        int n = list ? list->count : 0, start = (int)(short)wp, i;
+        if (!want || !list || n <= 0)
+            return -1;
+        if (start < -1 || start >= n)
+            start = -1;
+        for (i = 0; i < n; i++) {
+            int at = (start + 1 + i) % n;
+            const char *text = list->item[at];
+            const char *a = text, *b = want;
+            if (!text)
+                continue;
+            while (*a && *b) {
+                char ca = *a >= 'A' && *a <= 'Z' ? (char)(*a + 32) : *a;
+                char cb = *b >= 'A' && *b <= 'Z' ? (char)(*b + 32) : *b;
+                if (ca != cb)
+                    break;
+                a++;
+                b++;
+            }
+            if (!*a && !*b)
+                return at;
+        }
+        return -1; /* CB_ERR */
+    }
     case CB_GETITEMHEIGHT:
         /* how tall one row of the dropped list is, which is what anyone
          * sizing a combo box to a number of rows has to ask */

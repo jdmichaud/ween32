@@ -10,7 +10,7 @@ make clean && make
 make test
 ```
 
-Expect **1013 `ok` lines and no `FAIL`**. The count only goes up — if it has
+Expect **1023 `ok` lines and no `FAIL`**. The count only goes up — if it has
 dropped, a test file stopped being built rather than a test starting to pass.
 The number here is written by hand and so is wrong between the commit that
 adds a test and the commit that remembers this line; `tools/verify.sh` prints
@@ -1268,6 +1268,33 @@ It costs two passes over the lines, because the bar and the wrapping each
 depend on the other: measure without a bar, and again with one if the text
 turned out not to fit. Adding the bar can only take width away, which can
 only add lines, so the second answer stands.
+
+### The Font box, whose rectangles are the machine's and whose lists are ours
+
+`wordpad/reference/probe/font.txt` is the probe's walk of a running Font
+dialog, so every control in ween32's is at the unit the machine has it at:
+the client is 431x319, which is **287 x 196** dialog units, and the three
+combos, the Effects group, the Sample and the four buttons follow from it.
+The ids are win32's — 1136 the face, 1137 the style, 1138 the size, 1139 the
+colour, 1040 and 1041 the effects — because a program that hooks the box
+addresses them by number.
+
+**The lists are the other half, and they are ours.** This library has no
+rasteriser: a face carries a handful of bitmap strikes and a request lands on
+the nearest of them. So the box offers the two faces it can actually draw and
+the sizes those strikes hold — six to twelve points for Tahoma, and MS Sans
+Serif's own six — which is what the machine's box does for a bitmap face
+anyway. Offering a face it would then draw in another one would be worse than
+none, and enumerating the host's fonts would make a render depend on what is
+installed, which is the one thing every capture here has been protected from.
+
+There is no capture of the box yet, so what is checked is behaviour rather
+than pixels: `tests/comdlg_test.c` drives it through the **hook** a program
+would install, which is the only way into a modal dialog and is itself worth
+checking. It asserts that the face, size, style and effects the program hands
+in are the ones selected, that OK writes them back with `iPointSize` in
+tenths of a point, that Cancel writes nothing, and that choosing the other
+face refills the size list with that face's own sizes.
 
 ### The two text controls, held against each other
 

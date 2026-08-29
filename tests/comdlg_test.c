@@ -98,6 +98,50 @@ static int g_fr_told;
 static DWORD g_fr_flags;
 static const FINDREPLACEA *g_fr_ptr;
 
+/* The hook a program installs on the Font box, which is how this test looks
+ * inside a modal dialog and presses its buttons. */
+static int g_cf_seen, g_cf_ok, g_cf_press, g_cf_check_sizes;
+static int g_cf_sizes_tahoma, g_cf_sizes_sans;
+
+static INT_PTR CALLBACK cf_hook(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+    (void)wp;
+    (void)lp;
+    if (msg != WM_INITDIALOG)
+        return 0;
+    g_cf_seen = 1;
+    g_cf_ok = 0;
+    {
+        char buf[64] = "";
+        GetDlgItemTextA(dlg, 1136, buf, sizeof buf);
+        if (strcmp(buf, "Tahoma") == 0)
+            g_cf_ok |= 1;
+        GetDlgItemTextA(dlg, 1138, buf, sizeof buf);
+        if (strcmp(buf, "12") == 0)
+            g_cf_ok |= 2;
+        if (SendDlgItemMessageA(dlg, 1137, CB_GETCURSEL, 0, 0) == 3)
+            g_cf_ok |= 4;
+        if (IsDlgButtonChecked(dlg, 1041) && !IsDlgButtonChecked(dlg, 1040))
+            g_cf_ok |= 8;
+    }
+    if (g_cf_check_sizes) {
+        int i;
+        g_cf_sizes_tahoma = (int)SendDlgItemMessageA(dlg, 1138, CB_GETCOUNT, 0,
+                                                     0);
+        i = (int)SendDlgItemMessageA(dlg, 1136, CB_FINDSTRINGEXACT,
+                                     (WPARAM)-1, (LPARAM) "MS Sans Serif");
+        SendDlgItemMessageA(dlg, 1136, CB_SETCURSEL, (WPARAM)i, 0);
+        SendMessageA(dlg, WM_COMMAND, MAKEWPARAM(1136, CBN_SELCHANGE),
+                     (LPARAM)GetDlgItem(dlg, 1136));
+        g_cf_sizes_sans = (int)SendDlgItemMessageA(dlg, 1138, CB_GETCOUNT, 0,
+                                                   0);
+    }
+    /* press what the test wants pressed, once the box is up */
+    PostMessageA(dlg, WM_COMMAND, MAKEWPARAM(g_cf_press, BN_CLICKED),
+                 (LPARAM)GetDlgItem(dlg, g_cf_press));
+    return 0; /* the box may put the focus where it likes */
+}
+
 static LRESULT CALLBACK fr_owner_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (g_fr_msg && msg == g_fr_msg) {
@@ -513,6 +557,70 @@ int main(void)
             DestroyWindow(second);
         }
         DestroyWindow(owner);
+    }
+
+    /* ---- ChooseFont ----
+     *
+     * Every rectangle in the box is the machine's own, out of the probe's
+     * walk of a running Font dialog; what its lists hold is ours, because
+     * this library has no rasteriser and offering a face it would then draw
+     * in another one would be worse than none. Both halves are in
+     * docs/testing.md.
+     *
+     * The box is modal, so the test drives it through the hook a program
+     * would use -- which also checks that the hook works at all. */
+    {
+        LOGFONTA lf;
+        CHOOSEFONTA cf;
+        BOOL ok;
+
+        memset(&lf, 0, sizeof lf);
+        strcpy(lf.lfFaceName, "Tahoma");
+        lf.lfHeight = -16; /* twelve points at 96 dpi */
+        lf.lfWeight = 700;
+        lf.lfItalic = 1;
+        lf.lfUnderline = 1;
+        memset(&cf, 0, sizeof cf);
+        cf.lStructSize = sizeof cf;
+        cf.hwndOwner = NULL;
+        cf.lpLogFont = &lf;
+        cf.rgbColors = RGB(255, 0, 0);
+        cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_EFFECTS |
+                   CF_ENABLEHOOK;
+        cf.lpfnHook = cf_hook;
+        g_cf_press = IDOK;
+        ok = ChooseFontA(&cf);
+        CHECK(ok == TRUE, "the Font box comes up and OK closes it");
+        CHECK(g_cf_seen,
+              "the hook a program installs is called, WM_INITDIALOG and all");
+        CHECK(g_cf_ok & 1,
+              "the face the program asked for is the one selected");
+        CHECK(g_cf_ok & 2,
+              "the size its height works out to is chosen, not the first in "
+              "the list");
+        CHECK(g_cf_ok & 4, "the style is Bold Italic, being weight and slant");
+        CHECK(g_cf_ok & 8, "and the effects are ticked as they were given");
+        CHECK(strcmp(lf.lfFaceName, "Tahoma") == 0 && lf.lfHeight == -16 &&
+                  lf.lfWeight == 700 && lf.lfItalic && lf.lfUnderline,
+              "what comes back is what went in, nobody having changed it");
+        CHECK(cf.iPointSize == 120,
+              "with the size in tenths of a point, which is the one place "
+              "this structure states one that way");
+
+        lf.lfWeight = 400;
+        g_cf_press = IDCANCEL;
+        ok = ChooseFontA(&cf);
+        CHECK(ok == FALSE && lf.lfWeight == 400,
+              "Cancel answers FALSE and writes nothing back");
+
+        g_cf_press = IDCANCEL;
+        g_cf_check_sizes = 1;
+        ChooseFontA(&cf);
+        g_cf_check_sizes = 0;
+        CHECK(g_cf_sizes_tahoma == 7 && g_cf_sizes_sans == 6,
+              "each face offers the sizes its own strikes hold -- seven for "
+              "Tahoma and six for MS Sans Serif -- the way a bitmap face's "
+              "own sizes are what the machine's box lists");
     }
 
     if (g_failures) {
