@@ -2148,6 +2148,14 @@ typedef struct {
     short x, y, cx, cy;
 } fo_place;
 
+/* Six pixels between the picture that opens a file and the name of the
+ * program: the machine's field starts at 106 where the icon ends at 100. */
+#define PROP_ICON_GAP 6
+
+/* A row of the Properties page's table, by id, so a rule about two controls
+ * can be written from the two of them rather than as a third number. */
+static const fo_place *prop_place(int id);
+
 static void fo_layout(HWND dlg, const fo_place *at, int n)
 {
     for (int i = 0; i < n; i++) {
@@ -3395,36 +3403,78 @@ enum {
  * own General page the way Folder Options' pages are. Every row of the middle
  * is a label at 14 and its value at 90, twenty-six apart, and a line rules
  * off each group of them. */
+/* Where the Properties page's controls sit, in its own pixels.
+ *
+ * **The icons, the name field, the rules, the button, the check boxes and
+ * every label are the machine's, to the pixel**, from probe.exe over
+ * CONFIG.SYS's own sheet -- `captures-sam/properties-config-dlu.txt`.
+ *
+ * **The nine value fields are not, and the reason is a control kind.** The
+ * machine's are borderless read-only edits -- style 50000880, no WS_BORDER,
+ * ES_READONLY | ES_AUTOHSCROLL -- and ours are SS_LEFTNOWORDWRAP statics
+ * standing in for them. An edit insets its text by its own margin and a
+ * static does not, so ours sits three to the right to put the *text* where
+ * the machine's text is, and is fourteen tall where the edit is
+ * twenty-three, a static being no taller than what it draws:
+ *
+ *     ours                        the machine
+ *     IDC_PROP_TYPE  87,65 160x14     13059  84,65 246x23
+ *     IDC_PROP_OPENS 87,91 160x14     13153  84,91 165x23
+ *     IDC_PROP_WHERE 87,130 240x14    13065  84,130 246x23
+ *
+ * **Those five numbers are ours and no capture can see them**, which is the
+ * shape every compensation removed from this feature had. They are written
+ * down rather than removed because removing them means making the fields
+ * borderless read-only edits, and whether ween32's edit paints a read-only
+ * one on the page's face rather than in COLOR_WINDOW is not measured -- a
+ * white box down the middle of the page is what a wrong guess looks like
+ * here. **That is the better fix and this is not it.**
+ *
+ * The one thing that follows from it: the machine holds this field's right
+ * edge still when it steps aside for an icon -- 84+165 and 106+143 both end
+ * at 249 -- and we cannot, because ours is five narrower than the field the
+ * rule is about. Taking that rule alone puts boot.ini at 494 against 306.
+ */
 static const fo_place g_prop_at[] = {
     { IDC_PROP_ICON, 11, 11, 32, 32 },
     { IDC_PROP_NAME, 84, 18, 246, 23 },
     { IDC_PROP_RULE1, 11, 52, 318, 2 },
-    { IDC_PROP_L_TYPE, 11, 65, 76, 14 },
+    { IDC_PROP_L_TYPE, 11, 65, 63, 15 },
     { IDC_PROP_TYPE, 87, 65, 160, 14 },
-    { IDC_PROP_L_OPENS, 11, 91, 76, 14 },
+    { IDC_PROP_L_OPENS, 11, 91, 63, 15 },
     { IDC_PROP_APPICON, 84, 91, 16, 16 },
     { IDC_PROP_OPENS, 87, 91, 160, 14 },
     { IDC_PROP_CHANGE, 255, 88, 75, 23 },
     { IDC_PROP_RULE2, 11, 117, 318, 2 },
-    { IDC_PROP_L_WHERE, 11, 130, 76, 14 },
+    { IDC_PROP_L_WHERE, 11, 130, 63, 15 },
     { IDC_PROP_WHERE, 87, 130, 240, 14 },
-    { IDC_PROP_L_SIZE, 11, 156, 76, 14 },
+    { IDC_PROP_L_SIZE, 11, 156, 63, 15 },
     { IDC_PROP_SIZE, 87, 156, 240, 14 },
-    { IDC_PROP_L_ONDISK, 11, 182, 76, 14 },
+    { IDC_PROP_L_ONDISK, 11, 182, 63, 15 },
     { IDC_PROP_ONDISK, 87, 182, 240, 14 },
     { IDC_PROP_RULE3, 11, 208, 318, 2 },
-    { IDC_PROP_L_CREATED, 11, 221, 76, 14 },
+    { IDC_PROP_L_CREATED, 11, 221, 63, 15 },
     { IDC_PROP_CREATED, 87, 221, 240, 14 },
-    { IDC_PROP_L_WHEN, 11, 247, 76, 14 },
+    { IDC_PROP_L_WHEN, 11, 247, 63, 15 },
     { IDC_PROP_WHEN, 87, 247, 240, 14 },
-    { IDC_PROP_L_ACCESSED, 11, 273, 76, 14 },
+    { IDC_PROP_L_ACCESSED, 11, 273, 63, 15 },
     { IDC_PROP_ACCESSED, 87, 273, 240, 14 },
     { IDC_PROP_RULE4, 11, 299, 318, 2 },
-    { IDC_PROP_L_ATTRS, 11, 312, 76, 14 },
+    { IDC_PROP_L_ATTRS, 11, 312, 63, 15 },
     { IDC_PROP_READONLY, 84, 312, 76, 16 },
     { IDC_PROP_HIDDEN, 164, 312, 76, 16 },
     { IDC_PROP_ARCHIVE, 243, 312, 76, 16 },
 };
+
+static const fo_place *prop_place(int id)
+{
+    size_t i;
+    for (i = 0; i < sizeof(g_prop_at) / sizeof(*g_prop_at); i++)
+        if (g_prop_at[i].id == id)
+            return &g_prop_at[i];
+    return NULL;
+}
+
 
 /* The row the sheet is about, and what its box said when it was put up: a
  * name that comes back changed is a rename. */
@@ -3506,7 +3556,28 @@ static INT_PTR CALLBACK prop_general(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                 if (icon)
                     SendMessageA(GetDlgItem(dlg, IDC_PROP_APPICON),
                                  STM_SETICON, (WPARAM)icon, 0);
-                MoveWindow(at, 109, 91, 160, 14, FALSE);
+                /* **The field steps aside from where it already is, by the
+                 * icon's width and a gap** -- 16 + 6, the machine's 84 to
+                 * 106 -
+                 * which is written from the two table rows rather than as a
+                 * second literal: a 22 in the source is the difference
+                 * between two constants that nothing relates, and it would be
+                 * wrong the moment an icon is not sixteen wide -- which is
+                 * where jd's dpi instruction points.
+                 *
+                 * **The machine also holds the field's right edge still**
+                 * -- 84+165 and 106+143 both end at 249 -- and we keep the
+                 * width instead. That is not an oversight and it cannot be
+                 * taken until the field is the machine's: ours is a static
+                 * 160 wide standing in for a 165-wide edit, so a rule about
+                 * where the machine's field *ends* lands 5 short of where
+                 * ours has to. Adopting it alone takes boot.ini from 306 to
+                 * 494. See g_prop_at. */
+                const fo_place *ic = prop_place(IDC_PROP_APPICON);
+                const fo_place *fl = prop_place(IDC_PROP_OPENS);
+                if (ic && fl)
+                    MoveWindow(at, fl->x + ic->cx + PROP_ICON_GAP, fl->y,
+                               fl->cx, fl->cy, FALSE);
             }
         } else {
             SetDlgItemTextA(dlg, IDC_PROP_OPENS, "Unknown application");
