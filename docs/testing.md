@@ -2273,9 +2273,43 @@ here it had a pointer in it for the same reason. **A pointer is not part of
 the program and it is not part of the render either**, so a capture with one
 in it cannot be compared with anything — and unlike a focus ring, which at
 least belongs to a control, this one lands wherever the last click was, which
-is to say wherever the interesting thing is. **Park the mouse in a corner
-before every capture**, and when a border, a rule or a glyph looks broken by a
-few pixels, check where the pointer was before believing it.
+is to say wherever the interesting thing is.
+
+**It has now done this three times in one day, and each time it looked like
+something else.** That is the part worth carrying, because the first version of
+this entry described only the middle row and it did not fire on the third:
+
+```
+a focus ring, 77 pixels          read as    our render missing a rectangle
+an I-beam's serif, 7 pixels      read as    a gap in the box's top border
+an arrow's drop shadow, 178 px   read as    the capture had been resampled
+```
+
+**The third was found by somebody else**, on a capture taken by the person who
+wrote this entry, four hours after writing it. The shadow is alpha-blended, so
+it does not add a pointer-shaped hole — it turns a five-colour ruler band into
+a **seventy-nine-colour** one, 0.73% of the pixels, in a patch sixteen wide.
+Nothing about that resembles "the pointer is in it", and the count was
+diagnosed as a lossy step in the capture path. It was the mouse, parked where
+the drag had released it.
+
+So the rule is not *look out for a broken border*. **A pointer in a capture
+is not one symptom, and filing it under the symptom you first met is what
+makes it invisible the second time.** What the three have in common is only
+the cause, so that is what to check: **before believing any anomaly in a
+capture, ask where the pointer was.**
+
+**And it should not be a rule at all, because the tool can do it.**
+`tools/vm/drive.py` has a `park` verb, so a capture routed through it moves the
+pointer out of the way by construction:
+
+```sh
+tools/vm/drive.py drag 174,262 460,262 wait 400 park wait 300 shot /tmp/x.png
+```
+
+The same run that produced the seventy-nine colours produced **five** with
+`park` in it. A rule that everybody must remember before every capture is a
+rule that will be forgotten; a verb in the command cannot be.
 
 ### Counting a picture with a script is still counting the picture
 
