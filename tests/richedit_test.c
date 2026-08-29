@@ -24,6 +24,14 @@
 
 #include "../src/ween_internal.h"
 
+static void face_copy_test(char *dst, const char *src)
+{
+    int i = 0;
+    while (src[i] && i < LF_FACESIZE - 1) { dst[i] = src[i]; i++; }
+    dst[i] = 0;
+}
+
+
 static int g_failures = 0;
 
 #define CHECK(cond, name)                                                      \
@@ -577,6 +585,62 @@ int main(void)
      *
      * Every number and rule below is riched20's own answer, read with
      * tools/vm/ctlprobe.c and written up in docs/testing.md. */
+
+    /* ---- SCF_DEFAULT: the format that outlives the text ----
+     *
+     * **Both halves, because either alone passes with the bug in place.** The
+     * default reaching an empty control's selection was already true by
+     * accident -- the old code armed the insertion format, which reads back
+     * the same way -- so a test that stopped there went green while WordPad
+     * still lost a document's font on open. The second half is the one that
+     * fails without the fix: `WM_SETTEXT` threw the armed format away and put
+     * every run back to the control's own face.
+     *
+     * riched20's answers, tools/vm/deffmt.txt on Windows 2000:
+     *
+     *   SCF_DEFAULT   Arial, then SetWindowTextA -> Arial
+     *   SCF_SELECTION Arial, then SetWindowTextA -> the control's own face
+     *
+     * SCF_DEFAULT is 0x0000, so the call below passes no flag at all. That is
+     * the thing itself and not a shorthand: a default call is one with
+     * neither SCF_SELECTION nor SCF_ALL. */
+    {
+        CHARFORMATA cf;
+        SetWindowTextA(re, "");
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_FACE;
+        face_copy_test(cf.szFaceName, "Arial");
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
+
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(strcmp(cf.szFaceName, "Arial") == 0,
+              "SCF_DEFAULT on an empty control is what the selection reports");
+
+        SetWindowTextA(re, "hello");
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(strcmp(cf.szFaceName, "Arial") == 0,
+              "and text set after it arrives in that face, not the control's");
+
+        /* And the other row of the machine's table, so the test says which of
+         * the two rules holds rather than only that one of them does. */
+        SetWindowTextA(re, "");
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        cf.dwMask = CFM_FACE;
+        face_copy_test(cf.szFaceName, "Courier New");
+        SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        SetWindowTextA(re, "hello");
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        CHECK(strcmp(cf.szFaceName, "Arial") == 0,
+              "a selection format does not outlive the text; the default does");
+    }
 
     {
         CHARFORMATA cf;

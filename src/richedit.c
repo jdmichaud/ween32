@@ -167,6 +167,22 @@ typedef struct {
      * empty selection, which arms this instead. Measured; see docs. */
     ween_rfmt insert;
     int insert_armed;
+    /* **The format text arrives in when nothing has said otherwise**, which
+     * is neither the selection's nor the insertion point's and outlives both.
+     * `EM_SETCHARFORMAT` with `SCF_DEFAULT` sets it and `WM_SETTEXT` lays new
+     * text out in it -- measured on riched20, tools/vm/deffmt.txt:
+     *
+     *   SCF_DEFAULT   Arial 10, then SetWindowTextA -> the text is Arial
+     *   SCF_SELECTION Arial 10, then SetWindowTextA -> the control's own face
+     *
+     * Without it WordPad loses a document's face the moment one is opened:
+     * Arial before, the control's own after. **`SCF_DEFAULT` is `0x0000`**,
+     * so it cannot be tested for with `&` -- a default call is one with
+     * neither SCF_SELECTION nor SCF_ALL, which is why it used to fall through
+     * to the selection branch and land in `insert`, where the next
+     * `WM_SETTEXT` threw it away. */
+    ween_rfmt def;
+    int def_set;
     /* Whether the text is broken to the window's width. EM_SETTARGETDEVICE
      * with a width -- any width, with no device to measure it against --
      * turns it off, which is what WordPad's No Wrap sends; with nought it
@@ -329,14 +345,20 @@ static int runs_reserve(ween_rich *e, int n)
     return 1;
 }
 
-/* One run over everything, in the control's own face. */
+/* One run over everything, in the default face: the one a program set with
+ * `SCF_DEFAULT` if it did, and the control's own if it did not. **This is the
+ * line that makes an opened document keep its font**, because `rich_set_text`
+ * comes through here for every `WM_SETTEXT`. */
 static void runs_reset(HWND wnd, ween_rich *e)
 {
     if (!runs_reserve(e, 1))
         return;
     e->runs = 1;
     e->run[0].start = 0;
-    rfmt_default(wnd, &e->run[0].fmt);
+    if (e->def_set)
+        e->run[0].fmt = e->def;
+    else
+        rfmt_default(wnd, &e->run[0].fmt);
 }
 
 static int run_at(const ween_rich *e, int at)
@@ -2930,6 +2952,38 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int from, to;
         if (!cf)
             return FALSE;
+        /* **`SCF_DEFAULT` is `0x0000`**, so it is the *absence* of the other
+         * two rather than a bit to test, and that is the whole reason this
+         * was missing: a default call looked like "not SCF_ALL" and fell into
+         * the selection branch below.
+         *
+         * What is set here outlives the text. It does not touch the runs that
+         * exist -- riched20's default is the format text *arrives* in, and
+         * `runs_reset` reads it on every `WM_SETTEXT` -- **except when the
+         * control is empty**, where the machine reports the new default back
+         * through `EM_GETCHARFORMAT(SCF_SELECTION)` straight away:
+         *
+         *   before anything, selection   face System
+         *   after the set, selection     face Arial
+         *
+         * so the one run an empty control has is re-based to it. That case is
+         * the one WordPad is in when it sets Arial 10 before a character
+         * exists. **Setting a default on a control that already has text is
+         * not measured** and is left alone here rather than guessed at. */
+        if (!(wp & (SCF_SELECTION | SCF_ALL))) {
+            if (!e->def_set) {
+                rfmt_default(wnd, &e->def);
+                e->def_set = 1;
+            }
+            rfmt_apply(&e->def, cf);
+            if (e->len == 0)
+                runs_reset(wnd, e);
+            /* The caret on an empty line takes its height from what would be
+             * typed on it, which is what was just set. */
+            rich_relines(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
+            return TRUE;
+        }
         if (wp & SCF_ALL) {
             from = 0;
             to = e->len;
