@@ -1967,7 +1967,13 @@ int main(void)
               "the first word still takes the whole of it");
         SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(b.x + 1, b.y + 2));
 
-        /* A fresh press starts over: characters again until it crosses. */
+        /* A fresh press starts over: characters again until it crosses.
+         *
+         * Somewhere the last selection does *not* cover, because a press
+         * inside a selection is the start of a drag of the text rather than
+         * a new one -- which is §5 as well, and is asserted below. */
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(c.x + 1, c.y + 2));
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(c.x + 1, c.y + 2));
         SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(a.x + 1, a.y + 2));
         SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(b.x + 1, b.y + 2));
         memset(&cr, 0, sizeof cr);
@@ -1976,6 +1982,106 @@ int main(void)
               "and a new press starts the snapping over rather than "
               "inheriting it");
         SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(b.x + 1, b.y + 2));
+        DestroyWindow(t);
+    }
+
+    {
+        /* §5's drag and drop: a press inside a selection drags the text
+         * rather than starting a new selection; the run stays selected where
+         * it lands; Ctrl+Z puts it back; and dropping inside the selection
+         * itself changes nothing. */
+        HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 300, 60, host, NULL, NULL, NULL);
+        CHARRANGE cr;
+        POINTL src, dst;
+        char back[64];
+        SetWindowTextA(t, "alpha bravo charlie");
+        SetFocus(t);
+        SendMessageA(t, EM_SETSEL, 0, 6);   /* "alpha " */
+        src.x = src.y = dst.x = dst.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&src, 2);   /* inside it */
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&dst, 19);  /* the very end */
+
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(src.x + 1, src.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 0 && cr.cpMax == 6,
+              "a press inside a selection leaves it alone -- it may be a drag "
+              "of the text, and nothing is decided until the button comes up");
+
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+        back[0] = 0;
+        GetWindowTextA(t, back, sizeof back);
+        CHECK(strcmp(back, "bravo charliealpha ") == 0,
+              "and dropping it elsewhere moves the run there");
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == 13 && cr.cpMax == 19,
+              "the run stays selected where it lands");
+
+        SendMessageA(t, EM_UNDO, 0, 0);
+        back[0] = 0;
+        GetWindowTextA(t, back, sizeof back);
+        CHECK(strcmp(back, "alpha bravo charlie") == 0,
+              "and one undo puts the whole move back, both halves of it");
+
+        /* Dropping inside the selection changes nothing at all. */
+        SetWindowTextA(t, "alpha bravo charlie");
+        SendMessageA(t, EM_SETSEL, 0, 6);
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&src, 1);
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&dst, 4);
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(src.x + 1, src.y + 2));
+        SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+        back[0] = 0;
+        GetWindowTextA(t, back, sizeof back);
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(strcmp(back, "alpha bravo charlie") == 0 && cr.cpMin == 0 &&
+                  cr.cpMax == 6,
+              "dropping inside the selection itself changes nothing, text or "
+              "selection");
+
+        /* A press and release with no movement is a click: it clears the
+         * selection and puts the caret where it landed. */
+        SendMessageA(t, EM_SETSEL, 0, 6);
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&src, 3);
+        SendMessageA(t, WM_LBUTTONDOWN, 0, MAKELPARAM(src.x + 1, src.y + 2));
+        SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(src.x + 1, src.y + 2));
+        memset(&cr, 0, sizeof cr);
+        SendMessageA(t, EM_EXGETSEL, 0, (LPARAM)&cr);
+        CHECK(cr.cpMin == cr.cpMax,
+              "and a press inside a selection that does not move is a click: "
+              "it clears the selection");
+
+        /* The formatting goes with the text: bold dragged elsewhere is still
+         * bold, rather than taking the format of where it landed. */
+        {
+            CHARFORMATA cf;
+            SetWindowTextA(t, "alpha bravo charlie");
+            memset(&cf, 0, sizeof cf);
+            cf.cbSize = sizeof cf;
+            cf.dwMask = CFM_BOLD;
+            cf.dwEffects = CFE_BOLD;
+            SendMessageA(t, EM_SETSEL, 0, 6);
+            SendMessageA(t, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&src, 2);
+            SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&dst, 19);
+            SendMessageA(t, WM_LBUTTONDOWN, 0,
+                         MAKELPARAM(src.x + 1, src.y + 2));
+            SendMessageA(t, WM_MOUSEMOVE, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+            SendMessageA(t, WM_LBUTTONUP, 0, MAKELPARAM(dst.x + 1, dst.y + 2));
+            memset(&cf, 0, sizeof cf);
+            cf.cbSize = sizeof cf;
+            cf.dwMask = CFM_BOLD;
+            SendMessageA(t, EM_SETSEL, 13, 19);
+            SendMessageA(t, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+            CHECK((cf.dwEffects & CFE_BOLD) != 0,
+                  "and the run carries its formatting with it rather than "
+                  "taking that of where it landed");
+        }
         DestroyWindow(t);
     }
 

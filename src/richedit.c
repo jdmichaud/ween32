@@ -142,6 +142,10 @@ typedef struct {
      * These are the word the press landed in, and whether the drag has left
      * it yet. */
     int drag_word_from, drag_word_to, drag_snapped;
+    /* A press that landed inside the selection: it may become a drag of the
+     * text rather than a new selection, and until the pointer moves it is
+     * not yet either. */
+    int dnd_pending, dnd_active, dnd_x, dnd_y;
     /* Where a walk up or down the lines set out from, in pixels along the
      * line. A rich edit remembers it: the machine's, asked with
      * tools/vm/ctlprobe.c, walks down from twelve characters into a long
@@ -1068,6 +1072,78 @@ static void rich_insert(HWND wnd, ween_rich *e, const char *text)
     e->insert_armed = 0; /* it armed one insertion, not every one after it */
     rich_relines(wnd, e);
     free(converted);
+}
+
+/* §5's drag and drop: the selected run moves to where it is dropped, stays
+ * selected there, and Ctrl+Z puts it back -- which is why the whole move is
+ * one undo step, taken before anything changes. Dropping inside the
+ * selection changes nothing; the caller checks that before asking.
+ *
+ * **The formatting goes with the text.** The span is put back run by run,
+ * each piece armed with the format it had, rather than taking the format of
+ * wherever it landed -- which is what a rich edit moving bold text has to
+ * do, and what the same insertion path already offers through insert_armed.
+ */
+static void rich_move_selection(HWND wnd, ween_rich *e, int dst)
+{
+    int from, to, n, i, at, count = 0, k, off = 0;
+    char *span, *tmp;
+    struct rich_piece {
+        int len;
+        ween_rfmt fmt;
+    } *piece;
+    rich_range(e, &from, &to);
+    n = to - from;
+    if (n <= 0 || (dst >= from && dst <= to))
+        return;
+    for (i = run_at(e, from); i < e->runs && e->run[i].start < to; i++)
+        count++;
+    if (count <= 0)
+        return;
+    span = malloc((size_t)n + 1);
+    tmp = malloc((size_t)n + 1);
+    piece = malloc((size_t)count * sizeof *piece);
+    if (!span || !tmp || !piece) {
+        free(span);
+        free(tmp);
+        free(piece);
+        return;
+    }
+    memcpy(span, e->text + from, (size_t)n);
+    span[n] = 0;
+    count = 0;
+    for (i = run_at(e, from); i < e->runs && e->run[i].start < to; i++) {
+        int s = e->run[i].start < from ? from : e->run[i].start;
+        int en = (i + 1 < e->runs && e->run[i + 1].start < to)
+                     ? e->run[i + 1].start
+                     : to;
+        piece[count].len = en - s;
+        piece[count].fmt = e->run[i].fmt;
+        count++;
+    }
+    rich_remember(e);
+    rich_delete_range(wnd, e, from, to);
+    /* Dropping past the selection means dropping into text that has just
+     * lost it, so the index moves back by what was taken out. */
+    at = dst > to ? dst - n : dst;
+    e->caret = e->anchor = at;
+    for (k = 0; k < count; k++) {
+        if (piece[k].len <= 0)
+            continue;
+        memcpy(tmp, span + off, (size_t)piece[k].len);
+        tmp[piece[k].len] = 0;
+        e->insert = piece[k].fmt;
+        e->insert_armed = 1;
+        rich_insert(wnd, e, tmp);
+        off += piece[k].len;
+    }
+    e->insert_armed = 0;
+    e->anchor = at;
+    e->caret = at + n; /* it stays selected where it lands */
+    free(span);
+    free(tmp);
+    free(piece);
+    rich_changed(wnd, e);
 }
 
 static int rich_set_text(HWND wnd, ween_rich *e, const char *text)
@@ -2934,6 +3010,33 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
             return 0;
         }
+        /* **A press inside the selection may be the start of a drag of the
+         * text rather than a new selection** -- §5. Which it is cannot be
+         * known until the pointer moves or the button comes up, so nothing
+         * changes here: the selection stands, and WM_LBUTTONUP decides.
+         *
+         * After the triple-click test on purpose: the third press of a run
+         * lands inside the word the double click selected, and it is a
+         * triple click rather than the beginning of a drag.
+         * A press in the selection bar is not this, since the bar is not in
+         * the text. */
+        {
+            int selfrom, selto, at;
+            rich_range(e, &selfrom, &selto);
+            at = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
+                                     GET_Y_LPARAM(lp));
+            if (selfrom != selto && at > selfrom && at < selto &&
+                !rich_in_selbar(wnd, GET_X_LPARAM(lp))) {
+                e->dnd_pending = 1;
+                e->dnd_active = 0;
+                e->dnd_x = GET_X_LPARAM(lp);
+                e->dnd_y = GET_Y_LPARAM(lp);
+                SetCapture(wnd);
+                if (!had)
+                    rich_notify(wnd, EN_SETFOCUS, ENM_CHANGE);
+                return 0;
+            }
+        }
         e->caret = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
                                        GET_Y_LPARAM(lp));
         e->anchor = e->caret; /* a fresh click starts a new selection */
@@ -2966,6 +3069,12 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 rich_notify(wnd, EN_VSCROLL, ENM_SCROLL);
                 InvalidateRect(wnd, NULL, FALSE);
             }
+        } else if (GetCapture() == wnd && e->dnd_pending) {
+            /* The pointer has moved with the button down and the press was
+             * inside the selection: it is a drag of the text. Nothing is
+             * drawn for it yet -- the drop is what changes anything. */
+            if (GET_X_LPARAM(lp) != e->dnd_x || GET_Y_LPARAM(lp) != e->dnd_y)
+                e->dnd_active = 1;
         } else if (GetCapture() == wnd && e->bar_anchor_row >= 0) {
             /* A drag that began in the selection bar takes whole display
              * lines, forwards or backwards from the one it started on. */
@@ -3024,6 +3133,27 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONUP:
         e->sb_grab = -1;
         e->bar_anchor_row = -1;
+        if (e->dnd_pending) {
+            int at = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
+                                         GET_Y_LPARAM(lp));
+            int selfrom, selto;
+            rich_range(e, &selfrom, &selto);
+            if (e->dnd_active) {
+                /* Dropped outside: the run moves and stays selected where it
+                 * lands. Dropped inside itself: nothing changes, which is
+                 * §5 and is what rich_move_selection refuses. */
+                rich_move_selection(wnd, e, at);
+            } else {
+                /* No drag: a press and release inside a selection puts the
+                 * caret where it landed, which is what makes a click inside
+                 * a selection clear it. */
+                e->caret = e->anchor = at;
+            }
+            e->dnd_pending = e->dnd_active = 0;
+            rich_selchange(wnd, e);
+            rich_show_caret(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
         if (GetCapture() == wnd)
             ReleaseCapture();
         return 0;
