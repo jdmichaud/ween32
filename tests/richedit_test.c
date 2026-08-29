@@ -2445,6 +2445,66 @@ int main(void)
         DestroyWindow(host5);
     }
 
+    /* ---- a bullet indents its first line and draws a dot ---------------
+     *
+     * jd's #7, and the geometry is the machine's (tools/vm/bulletprobe.txt
+     * and bullet-machine.png), taken as two passes because the two disagree
+     * and both are right:
+     *
+     *     riched20 alone   first character x 1 -> 12, the wrapped line back
+     *                      to x 1, dxStartIndent and dxOffset unchanged
+     *     WordPad          hangs -- but because it sets Left 0.5",
+     *                      First line -0.5" itself, which is a paragraph
+     *                      format this control already honours
+     *
+     * **So the control indents its first line and does not hang**, and it
+     * reports none of it through the paragraph format. The glyph is a 5x5
+     * dot with its corners off, at the paragraph's *un-indented* left edge --
+     * the text moves right past it. */
+    {
+        HWND host6 = CreateWindowExA(0, "weenrich", "h6", WS_POPUP | WS_VISIBLE,
+                                     0, 0, 200, 120, NULL, NULL, NULL, NULL);
+        HWND t = CreateWindowExA(0, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE, 0, 0,
+                                 110, 80, host6, NULL, NULL, NULL);
+        PARAFORMAT pf;
+        POINTL p0, p1;
+        int plain_x, second;
+        SetWindowTextA(t, "the quick brown fox jumps");
+        p0.x = p0.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p0, 0);
+        plain_x = (int)p0.x;
+        CHECK(SendMessageA(t, EM_GETLINECOUNT, 0, 0) > 1,
+              "the sample wraps, which is what makes the next check mean "
+              "anything");
+
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_NUMBERING;
+        pf.wNumbering = PFN_BULLET;
+        SendMessageA(t, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        p0.x = p0.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p0, 0);
+        CHECK(p0.x == plain_x + 11,
+              "a bullet moves the first line eleven pixels right");
+
+        second = (int)SendMessageA(t, EM_LINEINDEX, 1, 0);
+        p1.x = p1.y = 0;
+        SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p1, (LPARAM)second);
+        CHECK(p1.x == plain_x,
+              "and the wrapped line goes back to the margin -- the control "
+              "does not hang, whatever WordPad's own paragraph format does");
+
+        memset(&pf, 0, sizeof pf);
+        pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_STARTINDENT | PFM_OFFSET;
+        SendMessageA(t, EM_GETPARAFORMAT, 0, (LPARAM)&pf);
+        CHECK(pf.dxStartIndent == 0 && pf.dxOffset == 0,
+              "and says nothing about it through the paragraph format, which "
+              "is what the machine does too");
+        DestroyWindow(host6);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

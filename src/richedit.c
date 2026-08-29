@@ -1858,6 +1858,41 @@ static int rich_x_of(ween_rich *e, int row, int col)
  * The first line of a paragraph gets the offset as well as the indent, which
  * is what makes a hanging indent hang. With no wrapping yet every line is a
  * first line; when 4a wraps them this is where the difference goes. */
+/* **What a bullet takes from the first line of its paragraph.**
+ *
+ * Measured on the machine, tools/vm/bulletprobe.txt -- a bare RichEdit20W
+ * with `PFN_BULLET` and nothing else set:
+ *
+ *     the first character   x 1 -> 12      the text moves eleven pixels
+ *     the wrapped line      back to x 1    and the rest do NOT
+ *     dxStartIndent         0, unchanged   the paragraph format says
+ *     dxOffset              0, unchanged   nothing about any of it
+ *     line pitch            16 either way
+ *
+ * **The indent is the control's, and it is not reported through the
+ * paragraph format.** A program that reads `dxStartIndent` to find where a
+ * bulleted paragraph begins gets zero and is not being lied to -- it is
+ * asking the wrong thing.
+ *
+ * **And there is no hang here.** WordPad's bulleted paragraphs do hang --
+ * its Format > Paragraph reads Left 0.5", First line -0.5" -- but that is
+ * WordPad setting a paragraph format, which this already honours. The two
+ * readings disagreed about the wrapped line for that reason and both were
+ * right; only the message-level pass could tell them apart, and it is the
+ * reason to have asked for it before the pixels.
+ *
+ * The eleven scales with dpi as the selection bar's eight does. **Not
+ * measured**: the glyph's size at another dpi, and what a bullet does to a
+ * centred or right-aligned paragraph -- the reading is of a left-aligned
+ * one. */
+static int rich_bullet_indent(ween_rich *e, int row)
+{
+    const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
+    if (pf->numbering != PFN_BULLET || !e->line[row].first)
+        return 0;
+    return ween_ncm(11);
+}
+
 static int rich_line_left(HWND wnd, ween_rich *e, int row)
 {
     int sb = rich_bar(wnd);
@@ -1870,7 +1905,8 @@ static int rich_line_left(HWND wnd, ween_rich *e, int row)
     int left, right, width;
     rich_fmt(wnd, &cr);
     left = cr.left + rich_selbar(wnd) + rfmt_px_twips(pf->start_indent) +
-           (e->line[row].first ? 0 : rfmt_px_twips(pf->offset));
+           (e->line[row].first ? 0 : rfmt_px_twips(pf->offset)) +
+           rich_bullet_indent(e, row);
     if (pf->alignment == PFA_LEFT || !pf->alignment)
         return left;
     right = cr.right - sb - rfmt_px_twips(pf->right_indent);
@@ -2006,6 +2042,36 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
         int i = run_at(e, at);
         if ((wnd->style & ES_MULTILINE) && y + e->line[row].height > cr.bottom)
             break;
+        /* **The bullet itself: a five-by-five dot with its corners off.**
+         * Measured at 96 dpi (tools/vm/bullet-machine.png), on WordPad where
+         * plain text starts at screen x 175:
+         *
+         *     the glyph   x 175..179, y+6 .. y+10 of a sixteen-pixel line
+         *
+         * So it sits at the paragraph's *un-indented* left edge -- the text
+         * moves right past it and the dot stays where the text would have
+         * been. `left` already carries the eleven, so the dot is drawn back
+         * at `left - the indent`.
+         *
+         *     .###.
+         *     #####
+         *     #####
+         *     #####
+         *     .###.
+         */
+        {
+            int ind = rich_bullet_indent(e, row);
+            if (ind > 0) {
+                static const unsigned char dot[5] = { 0x0E, 0x1F, 0x1F,
+                                                      0x1F, 0x0E };
+                int bx = left - ind, by = y + 6, r, c;
+                for (r = 0; r < 5; r++)
+                    for (c = 0; c < 5; c++)
+                        if (dot[r] & (1 << (4 - c)))
+                            ween_surface_fill(&top->surface, ox + bx + c,
+                                              oy + by + r, 1, 1, WEEN_BLACK);
+            }
+        }
         /* A line is drawn run by run, and a run in two or three pieces where
          * the selection crosses it. Each piece is in its own face, size,
          * slant, rule and colour; they sit on one baseline, the tallest
