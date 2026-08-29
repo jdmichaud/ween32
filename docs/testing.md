@@ -603,6 +603,23 @@ PXDIFF_REF=tools/refcapture/properties-machine.png PXDIFF_OUR=/tmp/ours.png \
 | CONFIG.SYS | 640 | 453 the caption's bold title, 145 the icon quantised, 42 two glyphs |
 | boot | 294 | 236 the two icons quantised, 48 the same two glyphs and the title |
 
+**Re-checked on 2026-08-29 by the method that caught a wrong attribution in
+WordPad's own file, and CONFIG.SYS's holds exactly** — every figure, and the
+row band each of them lives in:
+
+| rows | pixels | what |
+| --- | --- | --- |
+| 8..17 | 453 | the caption's bold title |
+| 62..92 | 145 | the icon, quantised |
+| 275..284, 301..310 | 21 + 21 = 42 | the two glyphs |
+| 329..334 | 12 | **the day of the month** |
+
+453 + 145 + 42 is the table's 640, and the twelve in rows 329..334 is the
+whole of the drift `verify.sh` sees. **The number that moves is six rows
+wide and nothing else in the sheet moves at all**, which is a better thing to
+know than either total: anybody who sees this count change by something other
+than a dozen in those six rows has found something real.
+
 **Both were counted on the day the captures were taken, and neither is what
 you will get.** The Accessed row is today's date on either side, so the count
 moves with the calendar — up to 22 pixels where the day of the month is.
