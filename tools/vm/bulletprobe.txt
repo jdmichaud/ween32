@@ -1,0 +1,53 @@
+== three paragraphs, none bulleted yet ==
+  para 0, plain          numbering 0      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+  para 1, plain          numbering 0      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+  para 2, plain          numbering 0      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+  para 0 first char      index 0    x 1      y 0      
+  para 1 first char      index 17   x 1      y 16     
+  para 2 first char      index 34   x 1      y 32     
+
+== PFM_NUMBERING/PFN_BULLET on paragraphs 1 and 2 ==
+  para 0, still plain    numbering 0      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+  para 1, bulleted       numbering 1      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+  para 2, bulleted       numbering 1      startIndent 0      offset 0      rightIndent 0      align 1   mask 8001003F
+
+  Same startIndent and offset before and after means the
+  control does NOT move the text for a bullet, and WordPad's
+  menu item must be sending the indents itself. Different means
+  the control owns the geometry and it is these numbers.
+
+== where the characters actually land ==
+  para 0 first char      index 0    x 1      y 0      
+  para 1 first char      index 17   x 12     y 16     
+  para 2 first char      index 34   x 12     y 32     
+  para 2 wraps at index 92: x 1 y 48 (first line x 12 y 32)
+
+  A wrapped line starting at the same x as the first line means
+  the bullet hangs outside the text block. A smaller x means it
+  does not.
+
+== and the same thing in WordPad, which does not agree ==
+
+Measured off the machine's own WordPad at 96dpi (tools/vm/bullet-machine.png):
+
+  plain text left edge          x 175
+  bullet glyph                  x 175..179, a 5x5 filled dot
+  bulleted text left edge       x 223      -> 48px = 720 twips = 0.5"
+  the wrapped second line       x 223      -> it HANGS under the text
+  line pitch                    16px, the same bulleted or not
+  the glyph, on a 16px line starting at y  ->  y+6 .. y+10
+
+  .###.
+  #####
+  #####
+  #####
+  .###.
+
+Format > Paragraph on that paragraph, read off the machine rather than
+derived from the pixels:
+
+  Left 0.5"    Right 0"    First line -0.5"
+
+So WordPad sets a hanging indent and the bare control does not. The two
+readings above disagree about the wrapped line for that reason and not
+because either is wrong.
