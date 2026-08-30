@@ -270,6 +270,26 @@ void WinMainCRTStartup(void)
                 a, b, (a == 48) ? "   <- the wrap" : "");
     }
 
+    /* ---- and the same walk backwards over the hard mark ----
+     *
+     * bob built the leftward rule from the rightward one by symmetry and said
+     * in his source that symmetry is not a reading. It is not: the right-hand
+     * rule stops *on* the mark, and nothing about that says the left-hand one
+     * does rather than stepping past it to the last word of the line above. */
+    fprintf(GUEST_STREAM, "\n== Ctrl+Left back across the hard mark ==\n");
+    set_text(B);
+    set_sel(29, 29);
+    for (i = 0; i < 8; i++) {
+        key(VK_LEFT, 1, 0);
+        sel_of(&a, &b);
+        fprintf(GUEST_STREAM, "  Ctrl+Left %d              sel %d %d%s\n", i + 1,
+                a, b, (a == 20) ? "   <- the mark" : "");
+    }
+    set_text(B);
+    from(21, VK_LEFT, 1, 0, "from 21, first word after");
+    from(22, VK_LEFT, 1, 0, "from 22, inside \"five\"  ");
+    from(20, VK_LEFT, 1, 0, "from 20, on the mark    ");
+
     /* ---- Ctrl+Shift, including over a backwards selection ---- */
     fprintf(GUEST_STREAM, "\n== Ctrl+Shift ==\n");
     set_text(A);

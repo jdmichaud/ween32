@@ -60,6 +60,19 @@
   Ctrl+Right 15             sel 59 59
   Ctrl+Right 16             sel 59 59
 
+== Ctrl+Left back across the hard mark ==
+  Ctrl+Left 1              sel 26 26
+  Ctrl+Left 2              sel 21 21
+  Ctrl+Left 3              sel 20 20   <- the mark
+  Ctrl+Left 4              sel 16 16
+  Ctrl+Left 5              sel 14 14
+  Ctrl+Left 6              sel 9 9
+  Ctrl+Left 7              sel 4 4
+  Ctrl+Left 8              sel 0 0
+  from 21, first word after  caret 21 -> sel 20 20
+  from 22, inside "five"    caret 22 -> sel 21 21
+  from 20, on the mark      caret 20 -> sel 16 16
+
 == Ctrl+Shift ==
   Ctrl+Shift+Right 1       sel 0 6
   Ctrl+Shift+Right 2       sel 0 11
