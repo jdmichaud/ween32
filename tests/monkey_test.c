@@ -76,6 +76,12 @@ enum {
     OP_BOLD,     /* jd: "if you change the style and type something" */
     OP_ITALIC,
     OP_SIZE,     /* a character size, which is a run change and not a text one */
+    /* **The monkey could not undo.** Two of jd's reports were undo bugs and
+     * this instrument had no way to reach one: `EM_UNDO` was exercised by
+     * the formatting invariant, one step at a time, and never as an
+     * operation the sequence could contain. So "type, style, type, undo,
+     * type" -- a shape a person produces constantly -- was unreachable. */
+    OP_UNDO,
     OP_N
 };
 
@@ -85,7 +91,7 @@ static const char *op_name(int op)
                                "select", "selall", "home", "end", "up",
                                "down",  "left",  "right", "replace", "clear",
                                "click", "drag", "resize",
-                               "bold", "italic", "size" };
+                               "bold", "italic", "size", "undo" };
     return n[op];
 }
 
@@ -248,6 +254,7 @@ static void do_step(HWND re, const struct step *s)
         SendMessageA(re, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
         break;
     }
+    case OP_UNDO: SendMessageA(re, EM_UNDO, 0, 0); break;
     case OP_RESIZE:
         /* jd: "the editor does not seem synchronised with the window size."
          * A resize between two edits is the combination he describes, and
@@ -394,6 +401,70 @@ static const char *check_all(HWND re)
 }
 
 /* ---- running a sequence, and shrinking one that fails --------------------- */
+
+/* **Pairs, not a uniform shuffle -- and the pairs go through the pointer.**
+ *
+ * jd: *"Make sure the monkey testing is testing different scenarios, with
+ * interaction between all those features."* Every bug he has found lived in
+ * an interaction, and a uniform draw over twenty-one operations reaches a
+ * particular two of them together about once in four hundred steps.
+ *
+ * `tools/vm/replay.h` has the same idea for the differential language. **The
+ * list here is deliberately different**, because this instrument can do the
+ * thing that one cannot: **drive a pointer.** An injected gesture is not
+ * something riched20 can be asked to replay identically, so the shared
+ * language has no mouse at all -- which leaves every drag, every click and
+ * every press-inside-a-selection to this file.
+ *
+ * That is not a small remainder. §5's drag-and-drop, the word-snapping
+ * latch, the selection bar and the click-count state are reachable only from
+ * here, and the latch bug earlier tonight was a gesture setting state that
+ * five other gestures read.
+ */
+static void gen_pair(struct step *out, int first, int second)
+{
+    out[0].op = first;
+    out[0].a = (int)(nextr() % 1000u);
+    out[0].b = (int)(nextr() % 1000u);
+    out[1].op = second;
+    out[1].a = (int)(nextr() % 1000u);
+    out[1].b = (int)(nextr() % 1000u);
+}
+
+static void gen_seq(struct step *seq, int n)
+{
+    static const int pairs[][2] = {
+        /* the pointer ones, which only this instrument can reach */
+        { OP_DRAG, OP_TYPE },     /* select by pointer, then replace it */
+        { OP_DRAG, OP_BOLD },     /* style what a gesture selected */
+        { OP_SELALL, OP_DRAG },   /* a press inside a selection: §5's drag
+                                     and drop, or a new selection -- the
+                                     control decides on the button coming up */
+        { OP_DRAG, OP_UNDO },
+        { OP_CLICK, OP_BOLD },    /* caret placed by pointer, then armed */
+        { OP_RESIZE, OP_DRAG },   /* the layout moved under the gesture */
+        { OP_DRAG, OP_DRAG },     /* the word latch, set by one and read by
+                                     the next */
+        /* and the message-level ones the differential test also covers,
+         * because a gesture mixed with them is a third thing again */
+        { OP_BOLD, OP_TYPE },     { OP_SELECT, OP_REPLACE },
+        { OP_PASTE, OP_UNDO },    { OP_SIZE, OP_TYPE },
+        { OP_CLEAR, OP_TYPE }
+    };
+    int i = 0;
+    while (i < n) {
+        if (i + 1 < n && (nextr() & 1)) {
+            int k = (int)(nextr() % (sizeof pairs / sizeof pairs[0]));
+            gen_pair(seq + i, pairs[k][0], pairs[k][1]);
+            i += 2;
+        } else {
+            seq[i].op = upto(OP_N);
+            seq[i].a = (int)(nextr() % 1000u);
+            seq[i].b = (int)(nextr() % 1000u);
+            i++;
+        }
+    }
+}
 
 static HWND g_host;
 
@@ -766,11 +837,7 @@ int main(int argc, char **argv)
         if (!seq)
             break;
         g_rng = this_seed ? this_seed : 1;
-        for (i = 0; i < steps; i++) {
-            seq[i].op = upto(OP_N);
-            seq[i].a = (int)(nextr() % 1000u);
-            seq[i].b = (int)(nextr() % 1000u);
-        }
+        gen_seq(seq, steps);
         if (run_seq(seq, steps, &why, &at)) {
             printf("FAIL monkey seed 0x%08x broke after %d step(s): %s\n",
                    this_seed, at + 1, why);
