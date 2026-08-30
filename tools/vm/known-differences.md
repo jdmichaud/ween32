@@ -495,6 +495,29 @@ at two or three more sizes to confirm the ascent rule before it is baked in.
 **One data point is what this file exists to refuse building on**, and there is
 exactly one here.
 
+**It is carried in two repositories and retires in one change.** Dan ran
+wordpad's suite against this and 21 of 22 checks are green; the one that is
+not is `rulermonkey`, four of four sequences, **every failure exactly this
+pixel**:
+
+```
+the top marker is at 16     and the first line starts at 15
+the top marker is at 298    and the first line starts at 299
+the bottom marker is at 424 and the wrapped line starts at 423
+the bottom marker is at 16  and the wrapped line starts at 17
+```
+
+Both directions, because the ruler and the text round opposite ways around
+the same missing pixel. It is named in `wordpad`'s `rulermonkey.known` rather
+than fixed there, and **that was the right call over making the ruler
+alignment follow the new metrics**: that would be a second correction for one
+cause, and when the arithmetic below is fixed the alignment would then be
+wrong the other way and need undoing. One divergence, one entry, one fix.
+
+**So the retirement is: `font.c` reads the cell from the strike, Tahoma's nine
+captures do not move, the differential's twelve scenarios go to `0 new`, and
+Dan's four rulermonkey rows go green.** All four, or it is not done.
+
 
 ## The rule this file exists to enforce
 
