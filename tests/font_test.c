@@ -122,5 +122,50 @@ int main(void)
         return 1;
     }
     printf("font_test: all passed\n");
+    /* ---- a bigger size never draws smaller -------------------------------
+     *
+     * jd: *"The size are just incorrect. Try to set a text to all the value
+     * in the drop down and compare the screenshot."* Measured off the drawn
+     * ink at WordPad's sixteen sizes, before this was fixed:
+     *
+     *     forward   8pt drew 10px ... 26pt and up drew 10px -- SMALLER than
+     *               8pt, because the first cached strike was 8pt's
+     *     reverse   all sixteen drew 15px, 8pt included, because the first
+     *               cached strike was 72pt's
+     *
+     * **The same document rendered differently depending on which sizes the
+     * program had been shown first.** `ween_font_create` keeps twelve
+     * strikes and, once full, returned the *first* of the face rather than
+     * the nearest -- which is what the paragraph above it had always claimed
+     * it did.
+     *
+     * The invariant asserted here is deliberately weaker than "every size
+     * differs", because it must survive the strike ceiling: Tahoma's largest
+     * is about sixteen pixels, so everything from 12pt up genuinely draws the
+     * same and that is a font-coverage limit rather than a defect.
+     * **Monotonic is the part that cannot be excused** -- a larger request
+     * must never come back smaller. */
+    {
+        static const int pt[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 22,
+                                  24, 26, 28, 36, 48, 72 };
+        int i, prev = 0, ok = 1, worst = 0;
+        for (i = 0; i < (int)(sizeof pt / sizeof pt[0]); i++) {
+            const ween_strike *f =
+                ween_font_create("Arial", -(pt[i] * 96 / 72), 400);
+            int h = f ? f->ascent - f->descent : 0;
+            if (h < prev) {
+                ok = 0;
+                if (!worst)
+                    worst = pt[i];
+            }
+            prev = h;
+        }
+        CHECK(ok,
+              "a larger font size never comes back drawing smaller than the "
+              "one before it, however many strikes have been made already");
+        if (!ok)
+            printf("     first size that went backwards: %dpt\n", worst);
+    }
+
     return 0;
 }

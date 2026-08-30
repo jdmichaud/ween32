@@ -114,9 +114,38 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
             kept[i].bold == bold)
             return &kept[i].f;
     if (count == KEPT) {
-        for (int i = 0; i < count; i++)
-            if (kept[i].ttf == ttf)
-                return &kept[i].f;
+        /* **The nearest already-made strike, which is what the paragraph
+         * above has always claimed and what this did not do.** It returned
+         * the *first* entry of the face, so once twelve strikes existed the
+         * drawn size depended on the order sizes had first been asked for
+         * rather than on the size asked for.
+         *
+         * jd: *"The size are just incorrect. Try to set a text to all the
+         * value in the drop down and compare."* Sixteen sizes set in turn,
+         * measured off the drawn ink rather than off `format.size`:
+         *
+         *     forward   8pt draws 10px ... 26pt and up draw 10px -- SMALLER
+         *               than 8pt, because the first cached strike was 8pt's
+         *     reverse   every one of the sixteen draws 15px, 8pt included,
+         *               because the first cached strike was 72pt's
+         *
+         * **The same document in the same program renders differently
+         * depending on what sizes it happened to be shown first**, which is
+         * the half of jd's report that is not the strike ceiling below. */
+        int best = -1, bestd = 0;
+        for (int i = 0; i < count; i++) {
+            int d;
+            if (kept[i].ttf != ttf)
+                continue;
+            d = kept[i].ppem > ppem ? kept[i].ppem - ppem : ppem - kept[i].ppem;
+            if (best < 0 || d < bestd ||
+                (d == bestd && kept[i].bold == bold)) {
+                best = i;
+                bestd = d;
+            }
+        }
+        if (best >= 0)
+            return &kept[best].f;
         return bold ? ween_gui_font_bold() : ween_gui_font();
     }
     if (!ween_strike_init(&kept[count].f, ttf, len, ppem))
