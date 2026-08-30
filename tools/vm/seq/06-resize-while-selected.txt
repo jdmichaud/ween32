@@ -1,0 +1,6 @@
+# Layout moving under a selection. A scrollbar appearing changed a wrapping
+# width once already, and a selection is the state most likely to be held
+# as indices into a layout that just moved.
+type the quick brown fox jumps over the lazy dog and the patient heron waits
+sel 10 40
+resize 200 200

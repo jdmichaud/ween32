@@ -1,0 +1,30 @@
+Sequences for seqprobe.c and its counterpart on our side.
+
+One operation per line, `#` for a comment, blank lines ignored. Both ends
+must refuse an unknown word LOUDLY rather than skip it: a line one side
+executes and the other ignores produces a diff that looks like a finding
+about the editor and is not. seqprobe exits 4 when it did not understand
+something and names the line.
+
+    type <rest of line, spaces and all>
+    key <enter|back|del|home|end|left|right|up|down|tab> [+ctrl] [+shift]
+    sel <from> <to>
+    bold <0|1>    ital <0|1>    under <0|1>
+    face <name>   size <points>
+    align <l|c|r>
+    indent <start> <offset> <right>      twips
+    bullet <0|1>
+    copy | cut | paste
+    undo | redo
+    resize <w> <h>
+
+The control is 400x200 with no EM_SETRECT, and that is part of the contract
+rather than an implementation detail: wrapprobe.c measured that a control
+with a formatting rectangle and one without wrap differently, so two sides
+disagreeing about it would report a difference on every wrapping sequence.
+
+These seven are alice's, and they are not arbitrary. Every bug jd found by
+hand lived in an interaction between features rather than in one of them:
+a marker clamp that only failed when another marker had moved first, a
+toggle that only failed on the first of a run, an armed format that failed
+to close a typed run. A sequence that only types cannot find any of them.

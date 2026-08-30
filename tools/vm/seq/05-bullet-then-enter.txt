@@ -1,0 +1,6 @@
+# What a new paragraph inherits. The bullet's geometry took four people and
+# three wrong turns; what Enter does at the end of one is unasked.
+type first item
+bullet 1
+key enter
+type second item

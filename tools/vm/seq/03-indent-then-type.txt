@@ -1,0 +1,5 @@
+# Paragraph state changed under the caret. Dan's swapped ruler markers were
+# invisible until a second line existed, so this one wraps on purpose.
+type the quick brown fox jumps over the lazy dog and the patient heron waits
+indent 720 -720 0
+type and more text after the indent moved beneath it

@@ -1,0 +1,7 @@
+# The arming boundary -- jd found this one by hand and it took three
+# measurements to state: arming a format closes the typed run before it,
+# so `abc` and `XY` are two transactions and one undo takes only `XY`.
+type abc
+bold 1
+type XY
+undo

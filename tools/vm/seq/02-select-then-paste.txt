@@ -1,0 +1,8 @@
+# Replacing a formatted run with another. The question is what the pasted
+# text carries and what the surrounding runs become at the seam.
+type hello world
+sel 0 5
+bold 1
+copy
+sel 6 11
+paste

@@ -1,0 +1,9 @@
+# Two features whose grouping nobody has measured. Typing groups into one
+# transaction; whether a paste joins the run before it is unknown on both
+# sides, which is exactly why it is here.
+type abc
+sel 0 3
+copy
+key end
+paste
+undo

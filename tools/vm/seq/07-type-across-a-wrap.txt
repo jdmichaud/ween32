@@ -1,0 +1,6 @@
+# An edit whose effect is not where the caret is. Inserting near the start
+# of a wrapped paragraph moves the break, so the line table changes far from
+# the character that was typed.
+type the quick brown fox jumps over the lazy dog and the patient heron waits
+sel 4 4
+type INSERTED
