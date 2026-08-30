@@ -49,7 +49,7 @@ enum {
     OP_SELECT, OP_SELALL, OP_CLEAR, OP_HOME, OP_END,
     OP_UP, OP_DOWN, OP_LEFT, OP_RIGHT, OP_REPLACE,
     OP_BOLD, OP_ITALIC, OP_UNDER, OP_SIZE,
-    OP_ALIGN, OP_BULLET, OP_INDENT, OP_RESIZE, OP_UNDO,
+    OP_ALIGN, OP_BULLET, OP_INDENT, OP_RINDENT, OP_RESIZE, OP_UNDO,
     OP_N
 };
 
@@ -58,7 +58,7 @@ static const char *const op_names[OP_N] = {
     "select", "selall", "clear", "home", "end",
     "up", "down", "left", "right", "replace",
     "bold", "italic", "under", "size",
-    "align", "bullet", "indent", "resize", "undo"
+    "align", "bullet", "indent", "rindent", "resize", "undo"
 };
 
 struct rp_step { int op, a, b; };
@@ -121,6 +121,7 @@ static void rp_one(struct rp_step *s, int op)
     case OP_SIZE: s->a = 8 + rp_upto(20); break;
     case OP_ALIGN: s->a = rp_upto(3); break;
     case OP_INDENT: s->a = rp_upto(4) * 360; s->b = rp_upto(5) * 180; break;
+    case OP_RINDENT: s->a = rp_upto(6) * 360; break;
     case OP_RESIZE: s->a = rp_upto(240); s->b = rp_upto(120); break;
     default: break;
     }
@@ -135,7 +136,10 @@ static int rp_generate(struct rp_step *seq, int n, unsigned seed)
         { OP_SELECT, OP_REPLACE }, { OP_INDENT, OP_TYPE },
         { OP_PASTE, OP_UNDO },     { OP_BULLET, OP_ENTER },
         { OP_SELALL, OP_RESIZE },  { OP_SIZE, OP_TYPE },
-        { OP_ALIGN, OP_ENTER },    { OP_SELECT, OP_BOLD }
+        { OP_ALIGN, OP_ENTER },    { OP_SELECT, OP_BOLD },
+        /* jd found this one by driving the program: a right indent set and
+         * then text long enough to meet it. Nothing could ask it before. */
+        { OP_RINDENT, OP_PASTE }
     };
     static const int singles[] = {
         OP_TYPE, OP_TYPE, OP_ENTER, OP_PASTE, OP_BACK, OP_DELETE,
@@ -403,6 +407,18 @@ static void step(HWND re, const struct rp_step *s)
         pf.dwMask = PFM_STARTINDENT | PFM_OFFSET;
         pf.dxStartIndent = s->a;
         pf.dxOffset = s->b;
+        SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+        break;
+    /* **The right indent, which the language could not express at all.**
+     * jd: *"the right ruler's cursor does nothing on the text"* -- and no
+     * sequence could ask riched20 what it does with one, because there was
+     * no operation for it. `dxRightIndent` has been written, read back,
+     * printed and diffed all evening by three instruments and no character
+     * ever moved because of it. */
+    case OP_RINDENT:
+        memset(&pf, 0, sizeof pf); pf.cbSize = sizeof pf;
+        pf.dwMask = PFM_RIGHTINDENT;
+        pf.dxRightIndent = s->a;
         SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
         break;
     case OP_RESIZE:

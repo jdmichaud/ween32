@@ -191,10 +191,33 @@ static void dump_open(FILE *f, HWND re)
     }
     SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
 
+    /* **Where a line ends, not only where it begins.**
+     *
+     * jd: *"the right ruler's cursor does nothing on the text"* -- and no
+     * comparison could have seen that, because every instrument in either
+     * repository asserts on where text *starts*. A right indent moves where
+     * a line ENDS, so a setting that is stored, reported and ignored passed
+     * all of them.
+     *
+     * The length comes from the control rather than from the next line's
+     * start, so the last line has one too. */
     n = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0);
-    for (i = 0; i < n; i++)
-        fprintf(f, "line %d at %ld\n", i,
-                (long)SendMessageA(re, EM_LINEINDEX, (WPARAM)i, 0));
+    for (i = 0; i < n; i++) {
+        long at = (long)SendMessageA(re, EM_LINEINDEX, (WPARAM)i, 0);
+        fprintf(f, "line %d at %ld len %ld\n", i, at,
+                (long)SendMessageA(re, EM_LINELENGTH, (WPARAM)at, 0));
+    }
+
+    /* **The scrollbar, whose timing was outside the contract entirely.**
+     *
+     * jd: *"the scrollbar appears too late"* -- and the dump could not have
+     * said so, because it recorded nothing about the bar at all. The
+     * monkey's invariant lost its *iff* when the exactly-fits boundary was
+     * found to be unmeasured; **this is the field a machine run answers it
+     * with**, since a sequence that fills the view step by step now records
+     * where the bar came up. */
+    fprintf(f, "vscroll %d\n",
+            (GetWindowLongA(re, GWL_STYLE) & WS_VSCROLL) ? 1 : 0);
 }
 
 #endif

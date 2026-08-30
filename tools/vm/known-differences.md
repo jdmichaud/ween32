@@ -160,6 +160,56 @@ weakens it one entry at a time with each entry looking reasonable. **A run
 that can no longer fail is not evidence, and the only way to know is to make
 it fail on purpose.**
 
+## What the contract does not cover
+
+alice, on the seven-of-seven result: *"A contract's coverage is a fact about
+the contract and belongs next to its results. Otherwise the next person reads
+seven of seven and stops."*
+
+**Seven of seven is true of the questions we thought to ask.** It landed in
+the same minute as jd demonstrating two defects by hand, and neither was
+reachable by any of the seven — not because the sequences were unlucky but
+because the contract could not express them. Closed since:
+
+```
+right indent       no operation in the language   ->  rindent:TWIPS:0
+where a line ENDS  not in the dump                ->  line N at X len Y
+the scrollbar      not in the dump at all         ->  vscroll 0|1
+```
+
+**The right-indent one is worth reading twice.** `dxRightIndent` was written,
+read back, printed and diffed all evening by three instruments and no
+character ever moved because of it — **every one checked that a setting was
+stored; not one checked that it did anything.** With `len` on the line the
+dump says it plainly:
+
+```
+no right indent      para ind 0 0 0      line 0 at 0 len 40
+right indent 2880    para ind 0 0 2880   line 0 at 0 len 40
+```
+
+**Still not covered, and this list is meant to be extended rather than read
+past:**
+
+```
+not in the dump      anything drawn: the caret's visibility, the bar's
+                     position, the ruler, the selection highlight
+                     the scrollbar's *threshold* — `vscroll` records the
+                     state; what content height raises it is a machine
+                     question nobody has asked
+not in the language  tabs; anything driven by a mouse — deliberately, since
+                     an injected gesture is not replayable on the guest,
+                     which leaves §5's drag-and-drop and the selection bar
+                     to tests/monkey_test.c alone
+not comparable       wrap columns, while the fonts differ (entry 6)
+```
+
+**A sequence can only find what the language can say and the dump can see.**
+That is not a caveat about one run; it is the shape of the instrument, and it
+is why jd driving the program keeps finding things four instruments do not.
+
+---
+
 ## The rule this file exists to enforce
 
 **An entry is added by a measurement, never to make a run green.** The
