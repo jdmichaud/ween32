@@ -879,7 +879,8 @@ static int rich_next_tab_stop(ween_rich *e, int at, int x);
  * **It is per paragraph**, so the width is computed where the paragraph is
  * known rather than once for the control -- which is why this takes a
  * paragraph now and `rich_relines_once` asks per line. */
-static int rich_wrap_width(HWND wnd, ween_rich *e, const ween_pfmt *pf)
+static int rich_wrap_width(HWND wnd, ween_rich *e, const ween_pfmt *pf,
+                           int first)
 {
     RECT r;
     int w;
@@ -887,8 +888,32 @@ static int rich_wrap_width(HWND wnd, ween_rich *e, const ween_pfmt *pf)
         return 0; /* nothing to break to */
     rich_fmt(wnd, &r);
     w = r.right - r.left - rich_bar(wnd) - rich_selbar(wnd);
-    if (pf)
+    if (pf) {
+        /* **Every term `rich_line_left` adds, this takes off**, or a line
+         * starts indented and wraps at the full width -- overflowing by
+         * exactly the indent.
+         *
+         * The right indent was jd's report. The *left* ones were found by
+         * the differential test on the first run where both controls were
+         * the same width, which is the run that could see them:
+         *
+         *     indent:720:-720, then more text
+         *     ours     line 0 len 44, line 1 len 39        2 lines
+         *     riched20 line 0 len 35, line 1 len 43, 5     3 lines
+         *
+         * The machine wraps the first line nine characters earlier -- the
+         * start indent -- and the rest later, which is the negative offset.
+         * **Ours applied both to where a line began and neither to where it
+         * had to break.**
+         *
+         * `first` because the offset is the continuation lines', exactly as
+         * in `rich_line_left`; the two now read as one rule stated twice
+         * rather than two rules that happen to share a field. */
         w -= rfmt_px_twips(pf->right_indent);
+        w -= rfmt_px_twips(pf->start_indent);
+        if (!first)
+            w -= rfmt_px_twips(pf->offset);
+    }
     return w > 0 ? w : 0;
 }
 
@@ -953,9 +978,11 @@ static void rich_relines_once(HWND wnd, ween_rich *e)
         while (at < e->len && e->text[at] != '\r')
             at++;
         para_len = at - start; /* the mark is not part of the line */
-        /* Per paragraph, since the right indent is the paragraph's. */
-        width = rich_wrap_width(wnd, e,
-                                &e->para[para_at(e, start)].fmt);
+        /* Per line, not per paragraph: the offset applies to continuation
+         * lines only, so the width a line breaks at depends on which line
+         * it is -- the same distinction `rich_line_left` makes. */
+        width = rich_wrap_width(wnd, e, &e->para[para_at(e, start)].fmt,
+                                start == e->para[para_at(e, start)].start);
         len = rich_wrap_len(wnd, e, start, para_len, width);
         height = rich_line_extent(wnd, e, start, len, &ascent);
         if (n >= e->line_cap) {
