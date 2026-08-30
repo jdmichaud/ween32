@@ -39,6 +39,39 @@ printed rather than hidden. A quiet run would mean the differ had been taught
 to expect a bug.
 
 
+### What fixing it involves, since "a tracker item" is not a plan
+
+Scoped rather than started, at the end of a long session, because it is a
+model change and half of one is worse than none.
+
+**The two quantities are different and ween32 has only one of them.** The text
+is `abc`; the document is `abc` plus a paragraph mark. `GetWindowTextA` hands
+back three bytes on both sides and always has -- **the disagreement is not in
+the text.** It is in what the control answers when asked for its own extent:
+
+```
+richedit.c:3155   EM_EXSETSEL with cpMax -1 resolves to the end
+ours              e->len          the machine   e->len + 1
+```
+
+So the change is a document extent alongside the text length, not a longer
+buffer: positions run 0..len inclusive of a mark that is not in `e->text`.
+`dump.h` already asks the right question -- it takes `len` from the control's
+own resolution rather than from `strlen`, for exactly this reason.
+
+**The work is the audit, not the edit.** `e->len` appears 72 times in
+richedit.c and each one is either a text bound (clamp to `e->len`) or a
+document bound (clamp to `e->len + 1`), and they are not distinguishable by
+reading the name. Caret and anchor become document bounds; every `e->text[i]`
+stays a text bound. **A single one of the 72 read the wrong way is a read one
+past the buffer**, which the sanitizer will catch, or a selection that silently
+drops its last character, which nothing will.
+
+**What it buys**: every index in every message means the same thing on both
+sides. What it costs today is three `KNOWN` lines per dump -- visible,
+labelled, and not hiding anything, which is why this is a scheduled change
+rather than an urgent one.
+
 ## 2. The default face
 
 ```
