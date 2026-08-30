@@ -120,8 +120,14 @@ static void inject_script(const char *script)
              * as well, which is how an accelerator is pressed; a holds Alt,
              * which is how the menu bar is reached from the keyboard — and
              * with it the underlines a window shows once it has been. */
-            ev.shift = kind == 'K' || kind == 'C';
-            ev.ctrl = kind == 'c' || kind == 'C';
+            /* **The case of the letter, or the held state, or both.** `h:s`
+             * used to reach mouse presses only, so `h:s k:39` and `K:39` read
+             * as two spellings of one instruction and one of them did
+             * nothing. That cost a probe its selection and the channel a
+             * false finding about font sizes: the pixels were measured
+             * honestly, of a program that had never been sent a Shift. */
+            ev.shift = kind == 'K' || kind == 'C' || hold_shift;
+            ev.ctrl = kind == 'c' || kind == 'C' || hold_ctrl;
             ev.alt = kind == 'a';
             ev.vk = (unsigned)strtol(p + 2, (char **)&p, 10);
             ween_headless_inject(ev);
@@ -195,9 +201,13 @@ static void inject_script(const char *script)
             ween_headless_inject(ev);
         } else if (kind == 'h' && p[1] == ':') {
             /* h:s — Shift is held over the presses that follow, h:c Control,
-             * h:sc both, h: neither. A press carries the modifier keys the
-             * way a key press does, and Shift and a click on a second file is
-             * how the run between two of them is taken. */
+             * h:sc both, h: neither. **Over keys as well as clicks**: Shift
+             * and a click on a second file is how the run between two of them
+             * is taken, and Shift with the arrows is how a run of text is.
+             * This sentence used to say a press carries the modifiers "the
+             * way a key press does", which was a claim about mouse presses
+             * that read as a promise about key presses -- and the promise was
+             * not kept until the key branch below was taught to look here. */
             hold_shift = hold_ctrl = 0;
             for (p += 2; *p && *p != ' '; p++) {
                 if (*p == 's')

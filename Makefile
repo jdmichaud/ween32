@@ -28,6 +28,7 @@ TESTS = tests/render_test tests/api_test tests/dlg_test tests/input_test \
         tests/resize_test tests/multiwin_test tests/timer_test \
         tests/keys_test tests/menu_test tests/modal_test tests/clip_test \
         tests/image_test tests/geometry_test tests/views_test \
+        tests/script_test \
         tests/toolbar_test tests/draw_test tests/popup_test \
         tests/propsheet_test tests/comdlg_test tests/resource_test \
         tests/edit_test tests/registry_test tests/kernel_test \
@@ -138,6 +139,9 @@ tests/image_test: tests/image_test.c libween32.a
 
 tests/geometry_test: tests/geometry_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/geometry_test.c libween32.a $(LIBS)
+
+tests/script_test: tests/script_test.c libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/script_test.c libween32.a $(LIBS)
 
 tests/views_test: tests/views_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/views_test.c libween32.a $(LIBS)
