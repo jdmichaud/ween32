@@ -45,7 +45,7 @@ libween32.a: $(OBJS)
 	ar rcs $@ $(OBJS)
 
 $(OBJS): src/ween_internal.h include/ween32.h
-src/fonts.o: fonts/tahoma_ttf.h fonts/tahomabd_ttf.h fonts/marlett_ttf.h \
+src/fonts.o: fonts/arial_ttf.h fonts/tahoma_ttf.h fonts/tahomabd_ttf.h fonts/marlett_ttf.h \
              fonts/mssans_ttf.h
 
 examples/dialog: examples/dialog.c libween32.a

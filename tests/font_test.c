@@ -70,17 +70,33 @@ int main(void)
     g_count = 0;
     CHECK(EnumFontFamiliesA(NULL, NULL, collect, 0) != 0,
           "enumerating every face runs to the end");
-    CHECK(g_count == 2, "there are two faces, which is how many strikes exist");
-    CHECK(g_count == 2 && !strcmp(g_seen[0], "MS Sans Serif"),
-          "the first is MS Sans Serif");
-    CHECK(g_count == 2 && !strcmp(g_seen[1], "Tahoma"), "the second is Tahoma");
+    /* **Three faces, and the list is checked as a property rather than as
+     * three names.** It was two, and every assertion here named a count and a
+     * position; adding Arial broke five of them at once, which is more noise
+     * than a new face should make. What matters is that the list is complete
+     * and that no two entries are the same strike wearing two names. */
+    CHECK(g_count == 3, "three faces, which is how many strikes exist");
+    CHECK(g_count == 3 && !strcmp(g_seen[0], "Arial") &&
+              !strcmp(g_seen[1], "MS Sans Serif") &&
+              !strcmp(g_seen[2], "Tahoma"),
+          "Arial, MS Sans Serif and Tahoma, in that order");
 
     /* **The property, not the names.** Each has to be its own strike; two
-     * names in front of one strike is the failure this list exists to avoid. */
+     * names in front of one strike is the failure this list exists to avoid,
+     * and with three faces it is every pair rather than the one. */
     {
-        const ween_strike *a = ween_font_create(g_seen[0], 0, FW_NORMAL);
-        const ween_strike *b = ween_font_create(g_seen[1], 0, FW_NORMAL);
-        CHECK(a && b && a != b, "the two names resolve to two different strikes");
+        int i, j, distinct = 1;
+        for (i = 0; i < g_count; i++)
+            for (j = i + 1; j < g_count; j++) {
+                const ween_strike *a = ween_font_create(g_seen[i], 0,
+                                                        FW_NORMAL);
+                const ween_strike *b = ween_font_create(g_seen[j], 0,
+                                                        FW_NORMAL);
+                if (!a || !b || a == b)
+                    distinct = 0;
+            }
+        CHECK(distinct,
+              "every name in the list resolves to a strike of its own");
     }
 
     /* And a name that is not in the list must not resolve to its own strike --
@@ -93,11 +109,21 @@ int main(void)
               "a face not in the list falls back rather than being a third one");
     }
 
-    CHECK(g_count == 2 && g_type[0] == RASTER_FONTTYPE &&
-              g_type[1] == RASTER_FONTTYPE,
-          "both are reported as raster, which is all this library has");
-    CHECK(g_count == 2 && g_height[0] > 0 && g_height[1] > 0,
-          "each carries its own metrics rather than a zeroed struct");
+    {
+        int i, raster = 1, metrics = 1;
+        for (i = 0; i < g_count; i++) {
+            if (g_type[i] != RASTER_FONTTYPE)
+                raster = 0;
+            if (g_height[i] <= 0)
+                metrics = 0;
+        }
+        CHECK(g_count == 3 && raster,
+              "every face is reported as raster, which is all this library "
+              "has -- Arial included: it ships generated bitmap strikes, not "
+              "outlines");
+        CHECK(g_count == 3 && metrics,
+              "each carries its own metrics rather than a zeroed struct");
+    }
 
     /* Naming one face enumerates that face and no other. */
     g_count = 0;

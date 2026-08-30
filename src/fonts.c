@@ -9,6 +9,7 @@
 
 #include "ween_internal.h"
 
+#include "../fonts/arial_ttf.h"
 #include "../fonts/marlett_ttf.h"
 #include "../fonts/mssans_ttf.h"
 #include "../fonts/tahoma_ttf.h"
@@ -77,10 +78,23 @@ const ween_strike *ween_dialog_font(void)
  */
 const ween_strike *ween_font_create(const char *face, int height, int weight)
 {
-    /* Eight sizes across three faces is more than any of the programs
-     * written against this ask for; past that the nearest already-made one
-     * is handed back rather than a wrong face. */
-    enum { KEPT = 12 };
+    /* **Sized for the size box, which asks for more than any program used
+     * to.** This was twelve, on the grounds that *"eight sizes across three
+     * faces is more than any of the programs written against this ask for"* --
+     * true when a face carried eight strikes and the largest was 16 ppem.
+     *
+     * WordPad's size box offers sixteen sizes and two faces now carry a strike
+     * for each. Measured with twelve: **Arial plateaued at 26pt and Tahoma
+     * drew every one of the sixteen at the same height**, because the cache
+     * filled with Arial and every later Tahoma request found no entry of its
+     * own face and fell back to the GUI font. A cap that was generous became
+     * the thing that made a whole face draw one size.
+     *
+     * Sixty-four is sixteen sizes across two faces in both weights, with room
+     * for the dialog face and the odd size a program picks itself. Each entry
+     * is a `ween_strike` -- offsets into a font already in memory, not glyph
+     * data -- so the cost is a few hundred bytes rather than a bitmap cache. */
+    enum { KEPT = 64 };
     static struct {
         const unsigned char *ttf;
         int ppem, bold;
@@ -92,6 +106,12 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
     int bold = weight > 500;
     int dialog = face && (!strcmp(face, "MS Shell Dlg") ||
                           !strcmp(face, "MS Sans Serif"));
+    /* **Arial is a real face here now**, and it is Liberation Sans wearing
+     * the name -- metric-compatible, which is what every Linux system does
+     * with that name and what jd chose over aliasing it to Tahoma. The file
+     * keeps Liberation's own `name` table and its OFL notice, so it says what
+     * it is; this line is where it is given the name it answers to. */
+    int arial = face && !strcmp(face, "Arial");
     int ppem = height < 0 ? -height : height;
 
     if (ppem <= 0)
@@ -102,6 +122,12 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
          * a pixel apart. */
         ttf = ween_mssans_ttf;
         len = ween_mssans_ttf_len;
+    } else if (arial) {
+        /* No bold cut shipped for it either, for the same reason as the
+         * dialog face: a second 219K file to overstrike what one already
+         * gives. Bold Arial is the regular strikes struck twice. */
+        ttf = ween_arial_ttf;
+        len = ween_arial_ttf_len;
     } else if (bold) {
         ttf = ween_tahomabd_ttf;
         len = ween_tahomabd_ttf_len;
@@ -166,7 +192,7 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
      * a face with no bold cut has none at any size — both come out of the
      * same overstrike. MS Sans Serif measures from its glyphs rather than an
      * outline, which is the other thing ween_dialog_font works around. */
-    if (bold && (dialog || kept[count].f.ppem >= 13))
+    if (bold && (dialog || arial || kept[count].f.ppem >= 13))
         kept[count].f.embolden = 1;
     if (dialog)
         kept[count].f.bitmap_only = 1;
@@ -193,15 +219,22 @@ const ween_strike *ween_font_by_face(const char *face)
  *
  * Two strikes are embedded: MS Sans Serif and Tahoma. `ween_font_create`
  * above resolves any other name to Tahoma without complaint -- which is what
- * win32's font mapper does too -- so a program could ask for Arial, or for a
- * name nobody has ever used, and be given Tahoma with nothing to tell it so.
+ * win32's font mapper does too -- so a program could ask for a name nobody has
+ * ever used and be given Tahoma with nothing to tell it so.
+ *
+ * **Arial used to be that example and is now a face.** jd: *"the selected
+ * font by default is Arial in the dropdown, which is wrong, there is no
+ * Arial"* -- wordpad asks for it at startup and the list did not contain it,
+ * so the box named a face the program could not offer. It is Liberation Sans,
+ * metric-compatible, shipped under the OFL with its own name table intact.
  *
  * These names must be the ones `ween_font_create` tests for. They are checked
  * against it by `tests/font_test.c`: every name here resolves to a *different*
  * strike, which is the property that makes it a list of faces rather than a
  * list of words.
  */
-static const char *const g_families[] = { "MS Sans Serif", "Tahoma" };
+static const char *const g_families[] = { "Arial", "MS Sans Serif",
+                                          "Tahoma" };
 
 int ween_font_family_count(void)
 {

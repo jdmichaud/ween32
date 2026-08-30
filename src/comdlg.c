@@ -2158,15 +2158,40 @@ BOOL ChooseColorA(CHOOSECOLORA *cc)
  * A face the library reports and this does not name gets an **empty** size
  * list rather than another face's sizes. An empty list is visible; the wrong
  * face's sizes are not. */
-static const struct {
+static const struct font_face_entry {
     const char *face;
     const int *sizes;
     int n;
     int screen; /* a bitmap face, which is every face this library has */
 } font_faces[] = {
+    /* **A scalable face offers the box's own sixteen sizes**, which is what
+     * Sam read off the machine: Arial and Modern give
+     * 8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72, and MS Sans Serif gives
+     * only the strikes it has. Arial is here because it now is one. */
+    { "Arial", (const int[]){ 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26,
+                              28, 36, 48, 72 }, 16, 0 },
     { "MS Sans Serif", (const int[]){ 8, 10, 12, 14, 18, 24 }, 6, 1 },
     { "Tahoma", (const int[]){ 6, 7, 8, 9, 10, 11, 12 }, 7, 1 },
 };
+
+/* **By name, never by the combo's index.**
+ *
+ * The face list in the box is filled from `ween_font_family()` and this table
+ * used to be read with that combo's `CB_GETCURSEL` -- two lists that had to
+ * agree in order, with nothing checking that they did. Adding Arial to the
+ * library's list shifted one and not the other, and the Font box came up
+ * showing the wrong face and wrote the wrong one back. The failure was three
+ * assertions in `tests/comdlg_test.c` and it was a real defect, not a stale
+ * test: a program asking for Tahoma got something else.
+ *
+ * Looked up by the string the combo actually holds, the two cannot drift. */
+static const struct font_face_entry *font_face_by_name(const char *name)
+{
+    for (size_t i = 0; i < sizeof font_faces / sizeof font_faces[0]; i++)
+        if (name && !strcmp(font_faces[i].face, name))
+            return &font_faces[i];
+    return NULL;
+}
 
 /* Static 1093, the note under the Sample box, **which is a rule and not a
  * string**. Read verbatim off the machine with probe.exe, three selections:
@@ -2191,11 +2216,12 @@ static const struct {
  * so that adding a scalable face carries the note with it -- but it is
  * untested by anything that opens the box, and saying so here is the point:
  * a branch nothing exercises is not a branch anybody has checked. */
-static const char *font_note(int face)
+static const char *font_note(const char *name)
 {
-    if (face < 0)
-        face = 0; /* the note is about a kind of font, and both ours are one */
-    return font_faces[face].screen
+    const struct font_face_entry *e = font_face_by_name(name);
+    if (!e)
+        e = &font_faces[0]; /* the note is about a kind of font */
+    return e->screen
                ? "This is a screen font. The closest matching printer font "
                  "will be used for printing."
                : "This is an OpenType font. This same font will be used on "
@@ -2231,8 +2257,10 @@ static struct {
  * look wrong. */
 static int cf_face_index(const char *face)
 {
-    for (int i = 0; i < (int)(sizeof font_faces / sizeof font_faces[0]); i++)
-        if (face && !strcmp(font_faces[i].face, face))
+    /* the index in the list the combo was filled from, which is the
+     * library's faces and not this file's table */
+    for (int i = 0; i < ween_font_family_count(); i++)
+        if (face && !strcmp(ween_font_family(i), face))
             return i;
     return -1;
 }
@@ -2379,15 +2407,17 @@ static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
         case CF_FACE:
             if (HIWORD(wp) == CBN_SELCHANGE) {
                 /* a face's own sizes, which is what a bitmap face offers */
-                int f = (int)SendDlgItemMessageA(dlg, CF_FACE, CB_GETCURSEL, 0,
-                                                 0);
+                char name[64] = "";
+                const struct font_face_entry *e;
                 char keep[16];
                 int i;
+                GetDlgItemTextA(dlg, CF_FACE, name, sizeof name);
+                e = font_face_by_name(name);
                 GetDlgItemTextA(dlg, CF_SIZE, keep, sizeof keep);
                 SendDlgItemMessageA(dlg, CF_SIZE, CB_RESETCONTENT, 0, 0);
-                for (i = 0; f >= 0 && i < font_faces[f].n; i++) {
+                for (i = 0; e && i < e->n; i++) {
                     char num[16];
-                    sprintf(num, "%d", font_faces[f].sizes[i]);
+                    sprintf(num, "%d", e->sizes[i]);
                     SendDlgItemMessageA(dlg, CF_SIZE, CB_ADDSTRING, 0,
                                         (LPARAM)num);
                 }
@@ -2397,7 +2427,7 @@ static INT_PTR CALLBACK cf_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
                             : -1;
                 SendDlgItemMessageA(dlg, CF_SIZE, CB_SETCURSEL,
                                     (WPARAM)(i >= 0 ? i : 0), 0);
-                SetDlgItemTextA(dlg, 1093, font_note(f));
+                SetDlgItemTextA(dlg, 1093, font_note(name));
                 cf_sample(dlg);
             }
             return TRUE;
