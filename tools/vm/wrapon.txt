@@ -1,0 +1,9 @@
+== rp_create's control, 96 chars in 280px ==
+  as created                     lines 1
+  after EM_SETTARGETDEVICE(0,0)  lines 2
+  after EM_SETTARGETDEVICE(0,1440) lines 1
+  back to (0,0)                  lines 2
+
+== and a control without ES_AUTOHSCROLL, for contrast ==
+  as created                     lines 2
+  after EM_SETTARGETDEVICE(0,1440) lines 1
