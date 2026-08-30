@@ -2158,11 +2158,35 @@ static void rich_fmt(HWND wnd, RECT *r)
          * `f` as the origin's, which is why it is one rule and not two that
          * agree.
          *
-         * (Measured here through `EM_POSFROMCHAR` and a right-aligned
-         * paragraph, which carries a constant four-pixel bias -- the no-rect
-         * control reads 742 where the rule says 746 -- so what is established
-         * from this side is the *difference* of 39 and the origin, not the
-         * absolute width.)
+         * Measured here through `EM_POSFROMCHAR` and a right-aligned
+         * paragraph, and **every row matches the rule exactly**, asymmetric
+         * ones included.
+         *
+         * **It took two corrections to be able to say that.** The first
+         * reading looked four pixels short everywhere and I called it a bias
+         * in my method. Sam would not take it on one control: *"that four has
+         * turned out to be signal twice tonight and noise once, and it looked
+         * the same all three times"* -- it is the gap that made `client - 14`
+         * unexplained, and the gap that turned out to be the origin. He asked
+         * whether the offset stays four when the origin moves, since a method
+         * bias cannot know where the text is:
+         *
+         *     no rect     x0  9   offset 4        rect inset 20  x0 19  0
+         *     rect inset 2 x0 1   offset 3        rect inset 40  x0 39  0
+         *     rect inset 10 x0 9  offset 0        rect inset 80  x0 79  0
+         *
+         * **Not constant, so not a bias.** It appears only where the
+         * rectangle's right edge reaches the client's -- and the cause is
+         * that my probe's control was created 756 wide with
+         * `WS_EX_CLIENTEDGE`, so its *client* is 752. Every "rule" number I
+         * was comparing against assumes a 756 client. With 752 the rule gives
+         * 742 for the no-rect case and 733 for the right-inset-0 row, which
+         * is what was measured both times.
+         *
+         * So: no bias, no residue, and a control measured four pixels wider
+         * than it is. **Both my explanations were wrong and the second was
+         * the more plausible one**, which is why it needed the row that could
+         * separate them rather than another argument.
          *
          * **Horizontal only, because that is all that was measured.** `x0`
          * and `page` are both horizontal quantities; whether the top and
