@@ -6,8 +6,21 @@ the same sequence against ween32 and the two dumps are diffed. Committing
 them means the comparison does not need a machine every time -- only when a
 sequence is added or the contract changes.
 
-Taken at ween32 197bc5f with bob's replay.h and dump.h at 3b03db1, control
-0x550081C4 ex 0x210, 280x160, SCF_DEFAULT Arial 10.
+Taken with replay.h and dump.h at ween32 c8e9a27: control 0x550081C4, ex
+0x210, 280x160, SCF_DEFAULT Arial 10 with CFM_BOLD, CFM_ITALIC and
+CFM_UNDERLINE named and zero.
+
+That last clause is why these were re-taken. The first set was made before
+`rp_create` named the effects, and riched20's default face is System, which
+is bold -- so every character came back `B--` from the machine against `---`
+from ours, in every scenario, on documents where nothing had been bolded.
+Seven findings that were one sentence: the two sides did not start from the
+same character format.
+
+**A dump is an answer to the question a particular `rp_create` asked, and
+nothing inside the file records which.** The sha above is the mitigation and
+not the fix; the fix is a line in the dump itself, which is dump.h's to emit
+so that both sides emit it identically.
 
 Two things a reader should know before trusting a diff against these.
 

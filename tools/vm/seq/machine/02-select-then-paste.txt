@@ -2,6 +2,7 @@ len 10
 text 68 65 64 6b 72 79 65 6c 6f
 sel 8 8
 next B-- Arial 200
-char 0..9 B-- Arial 200
+char 0..8 B-- Arial 200
+char 9..9 --- Arial 200
 para 0..9 align 1 ind 0 0 0 num 0 tabs 0
 line 0 at 0
