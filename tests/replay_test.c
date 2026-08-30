@@ -87,12 +87,41 @@ int main(int argc, char **argv)
         printf("lines %ld\n", (long)SendMessageA(re, EM_GETLINECOUNT, 0, 0));
         for (len = 0; t[len]; len++) {
         }
+        {
+            CHARFORMATA cf;
+            memset(&cf, 0, sizeof cf);
+            cf.cbSize = sizeof cf;
+            SendMessageA(re, EM_GETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
+            printf("default face %s size %ld effects %08lx\n", cf.szFaceName,
+                   (long)cf.yHeight, (unsigned long)cf.dwEffects);
+            memset(&cf, 0, sizeof cf);
+            cf.cbSize = sizeof cf;
+            SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+            printf("actual  face %s size %ld effects %08lx\n", cf.szFaceName,
+                   (long)cf.yHeight, (unsigned long)cf.dwEffects);
+        }
         for (i = 0; i <= len; i += 4) {
             POINTL pt;
             pt.x = 0;
             pt.y = 0;
             SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&pt, (LPARAM)i);
             printf("x %d %ld\n", i, (long)pt.x);
+        }
+        {
+            /* A hundred w's, Sam's own unit: he read WordPad's longest line
+             * as nMax 901 over a hundred of them, 9px each and exact, and a
+             * probe asking for Arial 10 as 11. Same measurement here so the
+             * three can be put in a row. */
+            char ws[101];
+            POINTL a, b;
+            a.x = a.y = b.x = b.y = 0;
+            for (i = 0; i < 100; i++)
+                ws[i] = 'w';
+            ws[100] = 0;
+            SetWindowTextA(re, ws);
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&a, (LPARAM)0);
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&b, (LPARAM)100);
+            printf("wrun 100 %ld\n", (long)(b.x - a.x));
         }
         return 0;
     }

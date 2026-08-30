@@ -3,6 +3,8 @@
 # Not yet taken: nobody has run it on Windows 2000.
 client 276 156
 lines 1
+default face Arial size 200 effects 40000000
+actual  face Arial size 200 effects 40000000
 x 0 9
 x 4 30
 x 8 53
@@ -21,3 +23,4 @@ x 56 328
 x 60 355
 x 64 371
 x 68 397
+wrun 100 1000
