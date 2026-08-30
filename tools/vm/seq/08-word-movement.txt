@@ -1,17 +1,16 @@
 # **Ctrl and an arrow, which the language could not say until now.**
 #
 # jd: *"Ctrl+Right/Left (Ctrl+Shift+Right/Left) do not work as expected."*
-# alice measured ours moving one character instead of one word, and the reason
-# no sequence had ever caught it is that `SendMessage` carries no modifiers --
-# so every arrow this harness sent was an unmodified one. replay.h presses
-# Ctrl with `SetKeyboardState` now, which is win32's own answer and the only
-# one available to a file that compiles against both headers.
+# Ours moved one character. The reason no sequence had caught it is that
+# `SendMessage` carries no modifiers, so every arrow this harness had ever
+# sent was an unmodified one; replay.h presses Ctrl with `SetKeyboardState`
+# now, which is win32's own answer and the only one available to a file that
+# compiles against both headers.
 #
-# Words start at 0, 6, 11, 17. Three Ctrl+Rights from the start.
-#
-# **The question this asks the machine is not "is ours wrong" -- it is which
-# rule riched20 follows.** WordPad and Notepad famously differ on whether a
-# word-right lands on the next word's start or the current word's end, and
-# guessing between them is exactly what this file exists to avoid. Ours says
-# 3; a next-word-start rule says 17.
+# Three Ctrl+Rights from the start of "alpha beta gamma delta", words at
+# 0/6/11/17. **Measured on Windows 2000 (Sam, tools/vm/wordkey.c): the caret
+# lands on the NEXT word's start**, 0 -> 6 -> 11 -> 17, and from inside a word
+# it goes to the next word's start too (2 -> 6, 8 -> 11). The rival rule --
+# the current word's end, which is what Notepad does -- gives 16, and which
+# one riched20 follows was not guessable. Ours now gives 17.
 type:97:0,type:108:0,type:112:0,type:104:0,type:97:0,type:32:0,type:98:0,type:101:0,type:116:0,type:97:0,type:32:0,type:103:0,type:97:0,type:109:0,type:109:0,type:97:0,type:32:0,type:100:0,type:101:0,type:108:0,type:116:0,type:97:0,select:0:0,wordright:0:0,wordright:0:0,wordright:0:0

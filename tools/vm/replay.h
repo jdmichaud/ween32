@@ -447,7 +447,18 @@ static void step(HWND re, const struct rp_step *s)
     case OP_WORDRIGHT: modified(re, VK_RIGHT, 1, 0); break;
     case OP_WORDSELLEFT: modified(re, VK_LEFT, 1, 1); break;
     case OP_WORDSELRIGHT: modified(re, VK_RIGHT, 1, 1); break;
-    case OP_TAB: SendMessageA(re, WM_KEYDOWN, VK_TAB, 1); break;
+    case OP_TAB:
+        /* **Both messages, for the same reason `enter` sends both.** Sam
+         * measured Tab with `keybd_event`, which delivers the keydown and the
+         * character, so *which* of the two riched20 acts on is not in the
+         * reading and cannot be. ween32 acts on the character, where every
+         * other ordinary character is handled. Sending the pair is what a
+         * real message loop delivers and lets each side act on the one it
+         * recognises -- and, as with `enter`, the compensation is written
+         * down rather than hidden. */
+        SendMessageA(re, WM_KEYDOWN, VK_TAB, 1);
+        SendMessageA(re, WM_CHAR, '\t', 1);
+        break;
     case OP_BOLD: effect(re, CFM_BOLD, CFE_BOLD, s->a); break;
     case OP_ITALIC: effect(re, CFM_ITALIC, CFE_ITALIC, s->a); break;
     case OP_UNDER: effect(re, CFM_UNDERLINE, CFE_UNDERLINE, s->a); break;

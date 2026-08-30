@@ -1,9 +1,15 @@
 # **Ctrl+Shift and an arrow: the same movement, taking the selection with it.**
 #
-# Two Ctrl+Shift+Rights from the start of "alpha beta gamma delta". A
-# character rule gives 0..2, a word rule 0..11.
+# Two Ctrl+Shift+Rights from the start of "alpha beta gamma delta" -> 0..11.
+#
+# Sam measured that it **moves the active end and shrinks rather than
+# flipping**: anchor 11 with the caret at 6, Ctrl+Shift+Right collapses to
+# 11..11 instead of turning round to 17. That needs no code of its own -- it
+# is what leaving the anchor alone and moving the caret already does -- which
+# is worth knowing, because "does it flip" is the kind of question that
+# invites a special case for a behaviour you already have.
 #
 # Kept separate from 08 because the dump is one final state: a sequence
-# answers one question, and folding the movement and the selection into one
+# answers one question, and folding the movement and the selection together
 # would make a disagreement ambiguous between them.
 type:97:0,type:108:0,type:112:0,type:104:0,type:97:0,type:32:0,type:98:0,type:101:0,type:116:0,type:97:0,type:32:0,type:103:0,type:97:0,type:109:0,type:109:0,type:97:0,type:32:0,type:100:0,type:101:0,type:108:0,type:116:0,type:97:0,select:0:0,wordselright:0:0,wordselright:0:0

@@ -71,6 +71,14 @@ static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(wnd, msg, wp, lp);
 }
 
+static int sel_start(HWND w)
+{
+    DWORD a = 0, b = 0;
+    SendMessageA(w, EM_GETSEL, (WPARAM)&a, (LPARAM)&b);
+    (void)b;
+    return (int)a;
+}
+
 /* A key, as the pump delivers one: a repeat count of 1 in the low word, and
  * the modifiers taken from the key state rather than smuggled into lParam.
  *
@@ -1402,6 +1410,75 @@ int main(void)
         CHECK(g_vscroll > 0,
               "and the parent hears EN_VSCROLL, having asked for ENM_SCROLL");
         SendMessageA(re, EM_SETEVENTMASK, 0, ENM_CHANGE | ENM_UPDATE);
+    }
+
+    /* ---- Ctrl and an arrow, and the Tab key -------------------------------
+     *
+     * jd: *"Ctrl+Right/Left (Ctrl+Shift+Right/Left) do not work as expected."*
+     * and Tab doing nothing. **Every number below is Sam's reading of
+     * riched20 on Windows 2000** (tools/vm/wordkey.c), not a rule anybody
+     * here found reasonable.
+     *
+     * The second string is the one that matters. Every rival rule agrees on
+     * evenly spaced lowercase words, so "alpha beta gamma delta" **could not
+     * have failed** -- it takes a comma and a paragraph mark to tell them
+     * apart, which is why both samples are here rather than the tidy one. */
+    {
+        int i;
+        static const int walk[] = { 4, 9, 14, 16, 20, 21, 26, 29 };
+        int ok = 1;
+
+        SetWindowTextA(re, "alpha beta gamma delta");
+        SendMessageA(re, EM_SETSEL, 0, 0);
+        key(re, VK_RIGHT, 0, 1); /* Ctrl */
+        CHECK(sel_start(re) == 6,
+              "Ctrl+Right lands on the next word's start, not the current "
+              "word's end -- 6, where Notepad's rule would give 5");
+        SendMessageA(re, EM_SETSEL, 2, 2);
+        key(re, VK_RIGHT, 0, 1);
+        CHECK(sel_start(re) == 6,
+              "and from inside a word it goes to the next word's start too");
+        SendMessageA(re, EM_SETSEL, 22, 22);
+        key(re, VK_LEFT, 0, 1);
+        CHECK(sel_start(re) == 17,
+              "Ctrl+Left lands on the current word's start");
+        SendMessageA(re, EM_SETSEL, 8, 8);
+        key(re, VK_LEFT, 0, 1);
+        CHECK(sel_start(re) == 6,
+              "and from inside a word, on that word's start");
+
+        /* Ctrl+Shift moves the active end and shrinks; it does not flip. */
+        SendMessageA(re, EM_SETSEL, 11, 6);
+        key(re, VK_RIGHT, 1, 1);
+        {
+            DWORD a = 0, b = 0;
+            SendMessageA(re, EM_GETSEL, (WPARAM)&a, (LPARAM)&b);
+            CHECK(a == 11 && b == 11,
+                  "Ctrl+Shift+Right with the caret behind the anchor "
+                  "collapses onto it rather than flipping past it");
+        }
+
+        /* **The sample with information in it.** A comma is a word of its
+         * own, a run of spaces is not, and a hard paragraph mark is a stop
+         * you land on -- where a soft wrap is not a stop at all. */
+        SetWindowTextA(re, "one two  three, four\rfive six");
+        SendMessageA(re, EM_SETSEL, 0, 0);
+        for (i = 0; i < (int)(sizeof walk / sizeof walk[0]); i++) {
+            key(re, VK_RIGHT, 0, 1);
+            if (sel_start(re) != walk[i])
+                ok = 0;
+        }
+        CHECK(ok,
+              "Ctrl+Right walks 0 4 9 14 16 20 21 26 29: punctuation is a "
+              "word, a run of spaces is not, and the paragraph mark is a "
+              "stop of its own");
+
+        SetWindowTextA(re, "ab");
+        SendMessageA(re, EM_SETSEL, 2, 2);
+        SendMessageA(re, WM_CHAR, '\t', 1);
+        CHECK(strcmp(text_of(re), "ab\t") == 0,
+              "Tab puts a tab in the text -- always an 09, never an indent, "
+              "which is measured and was the least likely of the three");
     }
 
     /* ---- ES_NOHIDESEL: the selection stays when the keyboard leaves ---- */

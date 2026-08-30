@@ -1679,6 +1679,93 @@ static void rich_select_para(ween_rich *e, int at)
 /* The word an index is in: what a double click takes, and what a drag snaps
  * to once it has left the word it started in. One function because both ask
  * and the two must not drift apart. */
+/* ---- where Ctrl and an arrow put the caret --------------------------------
+ *
+ * jd: *"Ctrl+Right/Left (Ctrl+Shift+Right/Left) do not work as expected."*
+ * They moved one character, because the `if (ctrl)` switch below had cases
+ * for C, X, V, A and Z and no arrows, so they fell through to plain arrow
+ * handling.
+ *
+ * **Every rule here is Sam's reading of riched20 on Windows 2000**
+ * (tools/vm/wordkey.c), and the readings are not what a guess would have
+ * produced:
+ *
+ *     "alpha beta gamma delta"    0 -> 6 -> 11 -> 17 -> 22, then stops
+ *     from 2, inside "alpha"      -> 6         the NEXT word's start,
+ *     from 8, inside "beta"       -> 11        not the current word's end
+ *
+ * WordPad and Notepad famously differ on that last point and the rival rule
+ * gives 16 where this gives 17.
+ *
+ * **Punctuation is a word of its own; runs of spaces are not.** This is why
+ * his second sample exists: every rival rule agrees on evenly spaced
+ * lowercase words, so the first sample *could not have failed*.
+ *
+ *     "one two  three, four\r\nfive six"
+ *     0 -> 4 -> 9 -> 14 -> 16 -> 20 -> 21 -> 26 -> 29
+ *               the comma ^        ^ the paragraph mark
+ *
+ * **A break you can see and a break you cannot behave oppositely**, which is
+ * the finding rather than a detail:
+ *
+ *     hard paragraph mark   16 -> 20 (the mark itself) -> 21    STOPS on it
+ *     soft wrap             44 -> 48 -> 52, 48 being line 1     DOES NOT
+ *
+ * Either sample alone would have given a confident wrong rule. Ctrl+Left is
+ * the current word's start, or the previous word's if the caret is already
+ * there: 22 -> 17 -> 11 -> 6 -> 0, and from 8 -> 6.
+ *
+ * **What is NOT measured**: where Ctrl+Left lands coming back over a hard
+ * mark. It stops on the mark here, by symmetry with the right-hand rule, and
+ * symmetry is not a reading -- one sequence would settle it.
+ *
+ * Ctrl+Shift needs nothing of its own. Sam: *"moves the active end and
+ * shrinks. It does not flip"* -- anchor 11 and caret 6 collapsing to 11..11
+ * rather than turning round to 17 -- which is what leaving `e->anchor` alone
+ * and moving `e->caret` already does. */
+enum { RW_SPACE, RW_BREAK, RW_WORD, RW_PUNCT };
+
+static int rich_wclass(char c)
+{
+    if (c == '\r' || c == '\n')
+        return RW_BREAK;
+    if (c == ' ' || c == '\t')
+        return RW_SPACE;
+    return rich_is_word_char(c) ? RW_WORD : RW_PUNCT;
+}
+
+static int rich_word_right(const ween_rich *e, int at)
+{
+    int c;
+    if (at >= e->len)
+        return e->len;
+    c = rich_wclass(e->text[at]);
+    if (c == RW_BREAK) /* the mark is a stop of its own; step off it */
+        return at + 1;
+    while (at < e->len && rich_wclass(e->text[at]) == c)
+        at++;
+    /* spaces only: a mark ahead is the next stop, not something to skip */
+    while (at < e->len && rich_wclass(e->text[at]) == RW_SPACE)
+        at++;
+    return at;
+}
+
+static int rich_word_left(const ween_rich *e, int at)
+{
+    int c;
+    if (at <= 0)
+        return 0;
+    at--;
+    while (at > 0 && rich_wclass(e->text[at]) == RW_SPACE)
+        at--;
+    c = rich_wclass(e->text[at]);
+    if (c == RW_BREAK)
+        return at;
+    while (at > 0 && rich_wclass(e->text[at - 1]) == c)
+        at--;
+    return at;
+}
+
 static void rich_word_bounds(ween_rich *e, int at, int *pfrom, int *pto)
 {
     int from = at, to = at;
@@ -3969,7 +4056,28 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             rich_remember(e);
             if (!rich_delete_selection(wnd, e) && e->caret > 0)
                 rich_delete_range(wnd, e, e->caret - 1, e->caret);
-        } else if ((unsigned char)ch >= ' ') {
+        } else if ((unsigned char)ch >= ' ' || ch == '\t') {
+            /* **A tab is a character here and nothing more.** It was filtered
+             * out by `>= ' '` alone, which is why jd's Tab key did nothing --
+             * the layout half has always worked (`rich_next_tab_stop`, and
+             * paragraph tab stops are honoured), so only the character was
+             * missing.
+             *
+             * Sam measured riched20 on Windows 2000 and against WordPad
+             * itself (tools/vm/wordkey.c): **Tab always inserts an `09` and
+             * never indents** -- not at a paragraph start, not on a bulleted
+             * paragraph, not on an indented one, with `wNumbering` staying 1
+             * and `dxStartIndent` staying 720 while the tab goes into the
+             * text. **Shift+Tab inserts one too; it is not an outdent.** All
+             * three were live possibilities and none of them is guessed here.
+             *
+             * *Which message* riched20 acts on is not measured and cannot be
+             * from that reading: `keybd_event` delivers the keydown and the
+             * character both. It is done here, where every other ordinary
+             * character is done, rather than in WM_KEYDOWN where the
+             * paragraph break is -- the break is there because riched20 was
+             * measured ignoring `WM_CHAR` CR, and no such reading exists for
+             * a tab. */
             char one[2];
             int from, to;
             rich_range(e, &from, &to);
@@ -4027,11 +4135,15 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         switch (wp) {
         case VK_LEFT:
             /* One place, since a paragraph mark is one character here. */
-            if (e->caret > 0)
+            if (ctrl)
+                e->caret = rich_word_left(e, e->caret);
+            else if (e->caret > 0)
                 e->caret--;
             break;
         case VK_RIGHT:
-            if (e->caret < e->len)
+            if (ctrl)
+                e->caret = rich_word_right(e, e->caret);
+            else if (e->caret < e->len)
                 e->caret++;
             break;
         case VK_UP:

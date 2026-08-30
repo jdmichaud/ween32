@@ -1,15 +1,18 @@
-# **Tab, which does nothing at all here.**
+# **Tab, which did nothing at all here.**
 #
-# `VK_TAB` appears nowhere in src/richedit.c and the text is byte-identical
-# after pressing it -- alice measured that, and the layout half already works
-# (`rich_next_tab_stop` exists and paragraph tab stops are honoured). So this
-# is the key never producing one.
+# The character was filtered out by a `>= ' '` test in `WM_CHAR` -- 0x09 is
+# below it. The layout half had always worked (`rich_next_tab_stop`, and
+# paragraph tab stops are honoured), so only the character was missing.
 #
-# **What the machine is being asked is deliberately broader than "does a tab
-# appear".** riched20 may insert a `\t`, or move the caret to the next stop
-# as a position without putting a character in, and on a bulleted or indented
-# paragraph Tab may indent the paragraph instead. `text` in the dump tells the
-# first two apart -- a 09 byte or not -- and `para ind` would show the third.
+# **Sam measured all three possibilities and riched20 does the simplest:**
+# Tab always inserts an `09` and never indents -- not at a paragraph start,
+# not on a bulleted paragraph, not on an indented one, with `wNumbering`
+# staying 1 and `dxStartIndent` staying 720 while the tab goes into the text.
+# **Shift+Tab inserts one too; it is not an outdent.** Checked against WordPad
+# itself and not only a bare control, Tab being exactly the key an MFC frame
+# might have eaten.
 #
-# Ours: the text is "alphabetagamma" with no tab and no movement.
+# The dump tells the three apart without anybody choosing: a `09` in `text`
+# says it inserts, `sel` moving alone would say it is a position, and
+# `para ind` moving would say it indents.
 type:97:0,type:108:0,type:112:0,type:104:0,type:97:0,type:32:0,type:98:0,type:101:0,type:116:0,type:97:0,tab:0:0,type:103:0,type:97:0,type:109:0,type:109:0,type:97:0
