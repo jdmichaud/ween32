@@ -1688,7 +1688,20 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 e->first_visible = top;
                 InvalidateRect(wnd, NULL, FALSE);
             }
+            return 0;
         }
+        /* **A single line has nothing to scroll, and swallowing the wheel is
+         * not the same as having handled it.** win32's DefWindowProc hands an
+         * unhandled wheel to the parent, and that is the whole mechanism by
+         * which a combo box's field lets the combo scroll its dropped list:
+         * the wheel goes to the focus window, a combo's WM_SETFOCUS puts the
+         * focus on its field, and the field is therefore where every notch
+         * arrives.
+         *
+         * jd: *"the mouse wheel does not work on the dropdown list."* It was
+         * arriving here and stopping. */
+        if (wnd->parent)
+            return SendMessageA(wnd->parent, WM_MOUSEWHEEL, wp, lp);
         return 0;
     case WM_LBUTTONDBLCLK:
         if (e && !(wnd->style & WS_DISABLED)) {
@@ -2041,6 +2054,13 @@ typedef struct {
     HIMAGELIST images; /* ComboBoxEx: where those images come from */
     int count, cap, cursel, top;
     int track;  /* combo box: the item the pointer is over, -1 for none */
+    int sb_press; /* combo box: this press went to the dropped list's bar, so
+                   * the release is not a choice of item. **An arrow click
+                   * answers no grab**, so `sb_grab` alone does not cover it,
+                   * and without this a click on the bar picks whatever row it
+                   * happened to be beside and shuts the list. jd: *"clicking
+                   * the downarrow of the dropdown scrollbar will close the
+                   * dropdown."* */
     int sb_grab; /* combo box: where in the dropped list's thumb a drag took
                   * hold, or -1. **Without it the bar can be clicked and not
                   * dragged**: `ween_sb_click` answers a grab and this used to
@@ -3355,6 +3375,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     int pos = ween_sb_click(sy, combo_bar_h(wnd), &st, &grab);
                     it->top = ween_sb_clamp(pos, &st);
                     it->sb_grab = grab;
+                    it->sb_press = 1;
                     combo_damage(wnd);
                     SetCapture(wnd);
                 }
@@ -3435,8 +3456,9 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g_dropped != wnd)
             return 0;
         it = items_of(wnd);
-        if (it && it->sb_grab >= 0) { /* the drag is over, the position stays */
+        if (it && it->sb_press) { /* the bar's, not the list's: no choice made */
             it->sb_grab = -1;
+            it->sb_press = 0;
             return 0;
         }
         ween_client_origin(wnd, &ox, &oy);

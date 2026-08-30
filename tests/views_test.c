@@ -912,6 +912,70 @@ int main(void)
                 CHECK(top1 > top0,
                       "and the list's bar can be dragged, not only pressed");
             }
+            /* **The wheel, delivered where a wheel actually goes.**
+             * jd: *"the mouse wheel does not work on the dropdown list."*
+             * win32 sends it to the focus window, and a combo's WM_SETFOCUS
+             * hands the focus to its field -- so every notch arrives at the
+             * field, which swallowed it. A single line has nothing to scroll,
+             * and swallowing is not handling: DefWindowProc gives an unhandled
+             * wheel to the parent, which is the whole mechanism by which the
+             * combo ever sees one.
+             *
+             * **Sent to GetFocus() rather than to `cb`**, because sending it
+             * to the combo would test a path no wheel ever takes. Checked
+             * against a build without the forward: `top 0 -> 0`. */
+            {
+                HWND focus;
+                int top0, top1;
+                /* Opened here rather than inherited: the checks above leave
+                 * it closed, and a wheel over a list that is not down is a
+                 * different question from the one being asked. */
+                /* **Focus first, then open.** `SetFocus(cb)` hands the focus
+                 * to the combo's field, which gives the combo a WM_KILLFOCUS,
+                 * and that puts its own list away -- so focusing after opening
+                 * measures a wheel over a closed list. */
+                SetFocus(cb);
+                focus = GetFocus();
+                SendMessageA(cb, CB_SHOWDROPDOWN, TRUE, 0);
+                SendMessageA(cb, CB_SETTOPINDEX, 0, 0);
+                CHECK(focus != cb,
+                      "a combo's focus sits on its field, which is where the "
+                      "wheel will arrive");
+                top0 = (int)SendMessageA(cb, CB_GETTOPINDEX, 0, 0);
+                SendMessageA(focus, WM_MOUSEWHEEL,
+                             MAKEWPARAM(0, (WORD)(short)-120), 0);
+                top1 = (int)SendMessageA(cb, CB_GETTOPINDEX, 0, 0);
+                CHECK(top1 > top0,
+                      "and a notch on the field scrolls the list behind it");
+            }
+            /* **Clicking the bar is not choosing an item.**
+             * jd: *"clicking the downarrow of the dropdown scrollbar will
+             * close the dropdown."* The release handler treated any release
+             * inside the list as a release *on a row*, picked whatever row lay
+             * at that y and shut the list -- so a click on the bar silently
+             * chose a font size nobody asked for. Against a build without the
+             * guard: `closed, cursel 13`.
+             *
+             * The bar's own columns had always done this; the bottom sixteen
+             * pixels were shielded only because a grip that should not have
+             * existed swallowed them first. */
+            {
+                int ox2, oy2, bx2, y2, sel0, sel1;
+                SendMessageA(cb, CB_SHOWDROPDOWN, TRUE, 0);
+                ween_client_origin(cb, &ox2, &oy2);
+                ween_combo_list_rect(cb, &before);
+                SendMessageA(cb, CB_SETTOPINDEX, 0, 0);
+                sel0 = (int)SendMessageA(cb, CB_GETCURSEL, 0, 0);
+                bx2 = before.right - 4 - ox2;
+                y2 = before.bottom - 4 - oy2;   /* the down arrow */
+                SendMessageA(cb, WM_LBUTTONDOWN, 0, MAKELPARAM(bx2, y2));
+                SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(bx2, y2));
+                sel1 = (int)SendMessageA(cb, CB_GETCURSEL, 0, 0);
+                CHECK(SendMessageA(cb, CB_GETDROPPEDSTATE, 0, 0),
+                      "a click on the list's down arrow leaves it open");
+                CHECK(sel1 == sel0,
+                      "and chooses nothing: the bar is not a row");
+            }
         }
 
         /* The height a combo box is created with is the height it has with
