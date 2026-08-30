@@ -1,8 +1,10 @@
+client 256 106
 len 69
 text 74 68 65 20 71 75 69 63 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70 73 20 6f 76 65 72 20 74 68 65 20 6c 61 7a 79 20 64 6f 67 20 61 6e 64 20 74 68 65 20 68 65 72 6f 6e 20 77 61 69 74 73 20 68 65 72 65
 sel 10 40
 next --- Arial 200
 char 0..68 --- Arial 200
 para 0..68 align 1 ind 0 0 0 num 0 tabs 0
-line 0 at 0
-line 1 at 40
+line 0 at 0 len 40
+line 1 at 40 len 28
+vscroll 0

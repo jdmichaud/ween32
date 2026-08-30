@@ -6,7 +6,7 @@ the same sequence against ween32 and the two dumps are diffed. Committing
 them means the comparison does not need a machine every time -- only when a
 sequence is added or the contract changes.
 
-Taken with replay.h and dump.h at ween32 bf34501: control 0x550081C4, ex
+Taken with replay.h and dump.h at ween32 db32b52: control 0x550081C4, ex
 0x210, 280x160, SCF_DEFAULT Arial 10 with CFM_BOLD, CFM_ITALIC and
 CFM_UNDERLINE named and zero, and EM_SETTARGETDEVICE(0, 0).
 
@@ -42,3 +42,22 @@ to move, and the other six came back byte-identical. That check is the
 point: a dump is an answer to the question a particular rp_create asked, so
 "only these three can have changed" is a prediction and not a fact until it
 is compared.
+
+
+Re-taken at db32b52, which records `client W H` in the dump and sizes the
+control the way the call asks. Both matter: the earlier set was taken in a
+control 408 wide, because 0x550081C4 contains WS_MAXIMIZE and a child
+created with it fills its parent's client area -- see maxq.txt. Ours honours
+the requested size, so the two sides were laying text out in different
+widths and every wrap comparison between them was meaningless.
+
+With the widths equal and printed, three sequences that wrap say something
+for the first time:
+
+  07   ours 43, 33          machine 43, 33        identical
+  03   ours 2 lines 44,39   machine 3 lines 35,43,5
+  06   ours 44, 24          machine 40, 28        both at client 256
+
+07 agreeing is the useful half: plain wrapping is right, and what looked
+like a difference was the control size. 03 and 06 are real, at identical
+widths, with both sides printing the width they used.
