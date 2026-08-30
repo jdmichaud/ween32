@@ -1473,6 +1473,25 @@ int main(void)
               "word, a run of spaces is not, and the paragraph mark is a "
               "stop of its own");
 
+        /* **The mirror, measured rather than assumed.** This was written as
+         * "by symmetry" first and flagged as unmeasured, which is why it got
+         * read: 21 -> 20 onto the mark, 20 -> 16 to the last word before it,
+         * 22 -> 21. The mark is a stop from both directions and is stepped
+         * off rather than over. */
+        {
+            static const int back[] = { 26, 21, 20, 16, 14, 9, 4, 0 };
+            int okb = 1;
+            SendMessageA(re, EM_SETSEL, 29, 29);
+            for (i = 0; i < (int)(sizeof back / sizeof back[0]); i++) {
+                key(re, VK_LEFT, 0, 1);
+                if (sel_start(re) != back[i])
+                    okb = 0;
+            }
+            CHECK(okb,
+                  "and Ctrl+Left walks back 29 26 21 20 16 14 9 4 0, the "
+                  "exact mirror, stopping on the mark from either side");
+        }
+
         SetWindowTextA(re, "ab");
         SendMessageA(re, EM_SETSEL, 2, 2);
         SendMessageA(re, WM_CHAR, '\t', 1);

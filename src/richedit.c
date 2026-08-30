@@ -1814,9 +1814,17 @@ static void rich_select_para(ween_rich *e, int at)
  * the current word's start, or the previous word's if the caret is already
  * there: 22 -> 17 -> 11 -> 6 -> 0, and from 8 -> 6.
  *
- * **What is NOT measured**: where Ctrl+Left lands coming back over a hard
- * mark. It stops on the mark here, by symmetry with the right-hand rule, and
- * symmetry is not a reading -- one sequence would settle it.
+ * **The leftward walk is the exact mirror, and that is measured too** -- it
+ * was flagged here as an assumption first, which is the only reason anybody
+ * went and read it:
+ *
+ *     29 -> 26 -> 21 -> 20 -> 16 -> 14 -> 9 -> 4 -> 0
+ *
+ * and three singles say which rule produced it rather than which sequence:
+ * 21 -> 20 (onto the mark), 20 -> 16 (the last word before it), 22 -> 21.
+ * **The mark is a stop from both directions and is stepped off, not over.**
+ * Being right about the answer and having read it were two different things
+ * until Sam took the reading.
  *
  * Ctrl+Shift needs nothing of its own. Sam: *"moves the active end and
  * shrinks. It does not flip"* -- anchor 11 and caret 6 collapsing to 11..11
