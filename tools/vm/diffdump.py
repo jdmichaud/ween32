@@ -78,48 +78,47 @@ def _face(field, a, b):
     return face_a != face_b
 
 
-def _wrap_column(field, a, b, counts=None):
-    """6. Where a line wraps, when both wrap into the same number of lines.
-
-    ween32 has two bitmap strikes and the machine has real fonts, so the
-    same text is a different width and breaks at a different character.
-    Measured across the three wrapping scenarios:
-
-        03   ours line 1 at 44   machine at 69
-        06   ours line 1 at 44   machine at 40
-        07   ours line 1 at 43   machine at 72
-
-    **Both directions**, which is glyph widths rather than an off-by-anything.
-
-    **The line *count* is comparable and is not excused here.** All five
-    comparable scenarios agree on it -- 1, 1, 2, 2, 2 -- so a difference in
-    how many lines the text becomes is still a finding. Only the column is
-    unreadable while the fonts differ, and this matches nothing when the
-    counts disagree."""
-    if not field.startswith("line "):
-        return False
-    if counts is None or counts[0] != counts[1]:
-        return False
-    if a is None or b is None:
-        return False
-    # **Only the `at` column, and everything else identical.**
-    #
-    # The first version excused *any* `line` difference once the counts
-    # agreed, which is far looser than it reads. Sam's dumps predate the
-    # `len` field, so `1 at 44 len 39` against `1 at 69` is a different line
-    # *shape* -- and it was waved through as a wrap column.
-    #
-    # He caught it from the outside and without seeing the code: his control
-    # is 408 wide and ours 280, so the break indices should differ a lot, and
-    # the differ said `0 new`. **Two numbers that should disagree and do not
-    # is the same warning as two that agree for different reasons.**
-    fa, fb = a.split(), b.split()
-    if len(fa) != len(fb):
-        return False
-    # fields are: <n> at <x> [len <y>]
-    if fa[0] != fb[0] or fa[1] != "at" or fb[1] != "at":
-        return False
-    return fa[3:] == fb[3:]
+# **Entry 6 -- `_wrap_column` -- is DELETED, and it is the measurement that
+# deleted it rather than a preference.**
+#
+# It excused a differing wrap column whenever both sides wrapped into the
+# same number of lines, on the grounds that ween32 has two bitmap strikes and
+# the machine has real fonts. I wrote in known-differences.md that this "does
+# not go away when a bug is fixed, only when the two have the same fonts,
+# which is not a goal of this project."
+#
+# **That was wrong.** Sam re-took the dumps with both controls the same width
+# and the columns agree exactly, `at` and `len`, in every wrapping scenario:
+#
+#     03   ours 0 at 0 len 35 / 1 at 35 len 43 / 2 at 78 len 5   machine same
+#     07   ours 0 at 0 len 43 / 1 at 43 len 33                   machine same
+#
+# The columns were incomparable because the two controls were **different
+# widths**, not because the fonts differ. The font residue I hedged about is
+# zero here.
+#
+# **It would not have hidden 06** -- I checked instead of assuming, having
+# claimed otherwise for about a minute. 06 differs in `len` as well as `at`
+# (44/24 against 40/28) and the tightened rule requires every field after the
+# column to match, so it reports:
+#
+#     0 at 0 len 44 y 1     vs  0 at 0 len 40 y 1      excused=False
+#     1 at 44 len 24 y 17   vs  1 at 40 len 28 y 17    excused=False
+#
+# What it *would* excuse is a line that starts in a different place and is
+# the same length:
+#
+#     1 at 44 len 24 y 17   vs  1 at 40 len 24 y 17    excused=True
+#
+# which is a whole line shifted -- an ordinary off-by-one in a line table,
+# and not a shape anybody should have to argue about at the time. **An excuse
+# that is no longer needed still costs that.**
+#
+# That is the file's own rule read backwards: an entry is added by a
+# measurement, so an entry is **removed** by one too. Twice wrong in opposite
+# directions -- first using fonts to excuse three findings, then using fonts
+# to declare the comparison permanently impossible -- is a reason to delete
+# it rather than to write it a third time.
 
 
 KNOWN = [
@@ -191,8 +190,6 @@ def main():
     da, db = dict(a), dict(b)
     keys = [k for k, _ in a] + [k for k, _ in b if k not in da]
 
-    counts = (sum(1 for k, _ in a if k.startswith("line ")),
-              sum(1 for k, _ in b if k.startswith("line ")))
     known, new, seen = [], [], set()
     for k in keys:
         if k in seen:
@@ -210,8 +207,6 @@ def main():
                         break
                 except Exception:
                     pass
-        if why is None and _wrap_column(k, va, vb, counts):
-            why = "6. the wrap column, the fonts differing"
         # **The mark as a run of its own.** Where the text before it has a
         # format the mark does not share -- bold text, say -- riched20 reports
         # it as a separate `char` run at the last index, and ours has no such

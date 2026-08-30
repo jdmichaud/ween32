@@ -118,47 +118,67 @@ message.
 
 ---
 
-## 6. Where a line wraps — the column, not the count
+## 6. ~~Where a line wraps~~ — DELETED, BY A MEASUREMENT
+
+**This entry is gone from the differ, and it is the only one so far removed
+rather than added.** It excused a differing wrap column whenever both sides
+wrapped into the same number of lines.
+
+I was wrong about it twice, in opposite directions, and the second time is
+the one worth keeping:
 
 ```
-        ours          the machine
-03      line 1 at 44  at 69
-06      line 1 at 44  at 40
-07      line 1 at 43  at 72
+first    fonts differ, so these three findings are expected     -> excused 03, 06, 07
+second   fonts differ, so this "does not go away when a bug is
+         fixed, only when the two have the same fonts, which
+         is not a goal of this project"                         -> permanently incomparable
 ```
 
-**I attributed this to glyph widths and that was wrong, or at least not the
-half that mattered.** Sam then measured the control itself:
+**Both were the same mistake**: attributing a difference to fonts without
+measuring fonts. Sam caught the first by measuring the control (276 against
+408) and the second by re-taking the dumps at equal widths:
 
 ```
-asked for 280x160    ours    client 276x156   (the client edge)
-                     machine client 408x289   (the host's client area)
+03   ours  0 at 0 len 35 / 1 at 35 len 43 / 2 at 78 len 5    machine identical
+07   ours  0 at 0 len 43 / 1 at 43 len 33                    machine identical
 ```
 
-**Two controls of different widths wrap at different columns**, and no font
-difference is needed to explain most of that. `rp_create` sets the size again
-after creating it, so both sides are the size they were asked for whatever
-`CreateWindowExA` did with it.
+**The columns agree exactly.** They were incomparable because the two
+controls were different widths, not because ween32 has two bitmap strikes.
+The font residue I hedged about is, in these scenarios, zero — and I had
+declared it permanent.
 
-**What I did with the wrong attribution is the part worth recording**: I used
-it to turn three findings into expected ones. The differ said `1 new` on 03,
-06 and 07; I explained the difference, added the entry, and the run went
-green. **That is exactly the failure this file warns about, committed by the
-person who wrote the warning** — and the only reason it did not stand is that
-Sam measured the control instead of accepting the explanation.
+The rule this file exists to enforce reads backwards as well: **an entry is
+added by a measurement, so it is removed by one.** A third rewrite would have
+been a third guess.
 
-A residual font difference may well remain once the sizes agree. **It has to
-be measured before it is claimed again.**
+*What it did not do*: it would not have hidden 06 below. I claimed that when
+deleting it and then checked — 06 differs in `len` as well as `at`, and the
+tightened form requires every later field to match. What it would have
+excused is a line that starts elsewhere and is the same length, which is an
+ordinary shifted line table. An excuse that is no longer needed still costs
+that.
 
-**The line *count* is comparable and is not excused.** All seven scenarios
-agree on it — 1, 1, 2, 2, 2, 2, 2 — so a difference in how many lines the
-text becomes is still a finding, and the differ matches nothing here when
-the counts disagree. **Only the column is unreadable while the fonts
-differ.**
+---
 
-This is the one entry that is a *limit of the comparison* rather than a
-divergence: it does not go away when a bug is fixed, only when the two have
-the same fonts, which is not a goal of this project.
+## 06 — the one real disagreement, deliberately not written down as expected
+
+```
+client 256 106 on both sides, same text
+ours   0 at 0 len 44 / 1 at 44 len 24
+mach   0 at 0 len 40 / 1 at 40 len 28
+```
+
+Every other scenario agrees on `at` and `len` exactly. 06 is the only one
+that **shrinks** the control.
+
+Ruled out: a stale layout. Typing the whole string *after* the resize gives
+44 as well, so we are not holding a width we were laid out with — we fit 44
+where riched20 fits 40, at the same client width.
+
+**No entry, no rule, and it is reported on every run until somebody explains
+it.** Writing "the fonts differ" here is available, reasonable-sounding, and
+exactly what entry 6 was.
 
 ---
 
