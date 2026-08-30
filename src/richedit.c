@@ -1185,7 +1185,21 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * with.
      *
      * The guess this replaces was wrong in the direction it admitted to: we
-     * put a bar on a bare control, which the machine never does. */
+     * put a bar on a bare control, which the machine never does.
+     *
+     * **What would retire this, since alice asked before it landed and the
+     * next person to find WordPad barless will reach for this code first:**
+     * a machine reading where a control created *with* `WS_VSCROLL` shows a
+     * bar on a document that fits, or one created *without* it shows a bar on
+     * a document that does not. Either kills the permission model outright.
+     * It rests on `barwhy.c`'s two rows and nothing else -- four states of
+     * two controls -- so it is a strong claim on a small sample, and the
+     * sample is the whole of the evidence.
+     *
+     * **It is measured of a resting state, which is the subtlety.** Every
+     * style word this project quotes was read off a running control; none is
+     * a creation style. That is exactly how the reading it replaces went
+     * wrong, and it applies to this one too. */
     if (!e->bar_allowed) {
         rich_clamp_scroll(wnd, e);
         return;
