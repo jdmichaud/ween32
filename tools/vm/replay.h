@@ -141,12 +141,23 @@ static int rp_generate(struct rp_step *seq, int n, unsigned seed)
         { OP_ALIGN, OP_ENTER },    { OP_SELECT, OP_BOLD },
         /* jd found this one by driving the program: a right indent set and
          * then text long enough to meet it. Nothing could ask it before. */
-        { OP_RINDENT, OP_PASTE }
+        { OP_RINDENT, OP_PASTE },
+        /* A word walk over text that has just been reformatted, and a tab
+         * where an indent already is -- the two places the word rules and
+         * the tab stops can disagree with the layout. */
+        { OP_TYPE, OP_WORDLEFT },  { OP_INDENT, OP_TAB },
+        { OP_WORDSELRIGHT, OP_BOLD }
     };
     static const int singles[] = {
         OP_TYPE, OP_TYPE, OP_ENTER, OP_PASTE, OP_BACK, OP_DELETE,
         OP_SELECT, OP_SELALL, OP_HOME, OP_END, OP_UP, OP_DOWN,
-        OP_LEFT, OP_RIGHT, OP_REPLACE, OP_UNDO, OP_RESIZE
+        OP_LEFT, OP_RIGHT, OP_REPLACE, OP_UNDO, OP_RESIZE,
+        /* **The modifier operations, which no generated sequence could reach
+         * until the language could press Ctrl.** jd found both of these by
+         * hand -- word movement and Tab -- and the reason a million random
+         * steps never did is that `SendMessage` carries no modifiers, so
+         * every arrow ever generated was an unmodified one. */
+        OP_WORDLEFT, OP_WORDRIGHT, OP_WORDSELLEFT, OP_WORDSELRIGHT, OP_TAB
     };
     int i = 0;
     rp_rng = seed ? seed : 1;
