@@ -30,6 +30,28 @@
  *   size       the probe's control fills its host unless resized, because
  *              0x01000000 is WS_MAXIMIZE to the window manager (maxq.c)
  *
+ * **And the EM_SETRECT rows answer a question `src/richedit.c`'s `rich_fmt`
+ * says outright that nobody has measured** -- whether riched20 puts the
+ * selection bar inside a formatting rectangle or drops it. It drops it, and
+ * the sample is wide enough to say so rather than to fit it:
+ *
+ *     inset   0   1   2   4  10  20  40  80
+ *     x0      0   0   1   3   9  19  39  79      x0 = max(0, inset - 1)
+ *     page  756 756 754 750 738 718 678 598      page = client - 2 * x0
+ *
+ * The first four of those were taken alone and bob refused to write a rule
+ * against them, because four small insets cannot tell an offset of one from
+ * anything that happens to be one below four. **The last four are the case
+ * that separates them and the offset survives it** -- 79 at an inset of 80,
+ * not 72 or 78. Ours puts character 0 at `rect + 8` instead, so every text
+ * position is nine pixels right of the machine's the moment a rectangle
+ * exists, and identical until then.
+ *
+ * **The page follows a different rule with a rectangle than without one**,
+ * and that is a finding rather than an untidiness: without one it is
+ * `client - x0 - 1`, with one it is `client - 2 * x0`. Both exact over their
+ * own rows, neither covering the other, and nothing here says why.
+ *
  *   zig cc -target x86-windows-gnu -fno-sanitize=undefined -c \
  *          -o hpage.obj hpage.c
  *   zig cc -target x86-windows-gnu -nostdlib -Wl,--subsystem,windows \
@@ -225,6 +247,20 @@ void WinMainCRTStartup(void)
     row("W  own font   inset 2     ", 1, NULL, 1);
     g_inset = 4;
     row("W  own font   inset 4     ", 1, NULL, 1);
+    /* **Four small insets cannot tell "minus one" from anything that happens
+     * to be minus one below four.** bob asked for exactly this before he
+     * would write a rule against it, and he was right to: a constant offset
+     * is a very inviting thing to subtract, and the same shape has been
+     * fitted and withdrawn twice in this repository. These are the insets
+     * that separate an offset from a scaling. */
+    g_inset = 10;
+    row("W  own font   inset 10    ", 1, NULL, 1);
+    g_inset = 20;
+    row("W  own font   inset 20    ", 1, NULL, 1);
+    g_inset = 40;
+    row("W  own font   inset 40    ", 1, NULL, 1);
+    g_inset = 80;
+    row("W  own font   inset 80    ", 1, NULL, 1);
 
     fprintf(GUEST_STREAM, "\n== the same control, naming the effects ==\n");
     g_inset = -1;

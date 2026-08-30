@@ -18,6 +18,10 @@ WordPad's own, for comparison: client 756  page 742  client-page 14  adv 9
   W  own font   inset 1       client 756x366  page 756  client-page 0  nMax 5001  adv 10  x0 0
   W  own font   inset 2       client 756x366  page 754  client-page 2  nMax 5001  adv 10  x0 1
   W  own font   inset 4       client 756x366  page 750  client-page 6  nMax 5001  adv 10  x0 3
+  W  own font   inset 10      client 756x366  page 738  client-page 18  nMax 5001  adv 10  x0 9
+  W  own font   inset 20      client 756x366  page 718  client-page 38  nMax 5001  adv 10  x0 19
+  W  own font   inset 40      client 756x366  page 678  client-page 78  nMax 5001  adv 10  x0 39
+  W  own font   inset 80      client 756x366  page 598  client-page 158  nMax 5001  adv 10  x0 79
 
 == the same control, naming the effects ==
   A  Arial 10   effects unnamed  client 756x366  page 746  client-page 10  nMax 5501  adv 11  x0 9
