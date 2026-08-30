@@ -1056,12 +1056,49 @@ static void rich_relines_once(HWND wnd, ween_rich *e)
  * allocation -- a wrong number rather than a bad read. It is the shape alice
  * described when she asked for an oracle: a monkey that only catches
  * crashes would have run this sequence and reported nothing. */
-static void rich_clamp_scroll(ween_rich *e)
+static void rich_clamp_scroll(HWND wnd, ween_rich *e)
 {
+    RECT r;
+    int room, bottom, top;
     if (e->first_visible >= e->lines)
         e->first_visible = e->lines - 1;
     if (e->first_visible < 0)
         e->first_visible = 0;
+    if (!e->lines)
+        return;
+    /* **And not scrolled past the point where the last line sits at the
+     * bottom**, which this did not do at all.
+     *
+     * alice drove a window down and back up: thirty-one lines, forty rows of
+     * room, and `first_visible` still 22 -- nine lines of text above thirty
+     * rows of blank. Growing a window has to pull the view back down, because
+     * there is nothing below the last line to show.
+     *
+     * The furthest scroll is **the smallest top whose remaining lines still
+     * fit** -- the last line resting on the bottom, with up to one line's
+     * worth of slack because scrolling moves in whole lines.
+     *
+     * There is a second rule that sounds like the same one and is not: the
+     * *largest* top whose lines still fill the room. I wrote this, then
+     * talked myself into that, and it is wrong by a line -- 32 lines of 13px
+     * in 330px of room gives 7 against 6, and at 6 the last line is cut off
+     * twelve pixels short of its bottom. Never leaving blank space and never
+     * clipping the last line are different goals, and win32 takes the second:
+     * you can scroll until the last line is fully visible and no further.
+     *
+     * Both readings fix alice's case, which is why the probe agreed with each
+     * of them in turn and only the partial grow told them apart.
+     *
+     * Walked rather than divided, because a row count is wrong the moment two
+     * lines are different heights. */
+    rich_fmt(wnd, &r);
+    room = r.bottom - r.top;
+    bottom = e->line[e->lines - 1].top + e->line[e->lines - 1].height;
+    top = e->lines - 1;
+    while (top > 0 && bottom - e->line[top - 1].top <= room)
+        top--;
+    if (e->first_visible > top)
+        e->first_visible = top;
 }
 
 static void rich_relines(HWND wnd, ween_rich *e)
@@ -1072,7 +1109,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
     e->bar_on = 0;
     rich_relines_once(wnd, e);
     if (wnd->style & ES_DISABLENOSCROLL) {
-        rich_clamp_scroll(e);
+        rich_clamp_scroll(wnd, e);
         return;
     }
     /* **The control puts WS_VSCROLL up itself when the text overflows**, and
@@ -1127,7 +1164,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * when somebody reads which bit does it, the condition goes here. */
     if (!(wnd->style & WS_VSCROLL)) {
         if (!rich_overflows(wnd, e)) {
-            rich_clamp_scroll(e);
+            rich_clamp_scroll(wnd, e);
             return;
         }
         wnd->style |= WS_VSCROLL;
@@ -1135,14 +1172,14 @@ static void rich_relines(HWND wnd, ween_rich *e)
     } else if (e->bar_ours && !rich_overflows(wnd, e)) {
         wnd->style &= ~(DWORD)WS_VSCROLL;
         e->bar_ours = 0;
-        rich_clamp_scroll(e);
+        rich_clamp_scroll(wnd, e);
         return;
     }
     was = e->bar_on;
     e->bar_on = rich_overflows(wnd, e);
     if (e->bar_on != was)
         rich_relines_once(wnd, e);
-    rich_clamp_scroll(e);
+    rich_clamp_scroll(wnd, e);
 }
 
 /* Which line an offset is on, from the table. */
