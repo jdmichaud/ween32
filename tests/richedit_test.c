@@ -2031,9 +2031,24 @@ int main(void)
         CHECK(p.x == 9, "and its first character is at nine, the bar's eight "
                         "and the border's one");
 
-        /* Set one, and the text moves with it. The selection bar is inside
-         * the rectangle -- see rich_fmt in richedit.c, which says so and says
-         * that nobody has measured which way the machine has it. */
+        /* **Set one, and the bar goes away.** This asserted 14 -- the rect's
+         * six with the selection bar's eight inside it -- and named the bar
+         * in its own sentence. `rich_fmt` offered that reading and one other,
+         * a rect of 6 with the bar on top, and said a measurement would
+         * settle it.
+         *
+         * **Sam measured it and it is neither** (tools/vm/hpage.txt): once a
+         * formatting rectangle exists riched20 drops the selection bar
+         * entirely, and lays out a pixel wider than the rect on each side.
+         * Eight rows, a 756px control, the rect inset by N all round:
+         *
+         *     inset   0   1   2   4  10  20  40  80
+         *     x0      0   0   1   3   9  19  39  79
+         *
+         * 79 at an inset of 80 -- an offset, not a scaling, and read across
+         * two orders of magnitude rather than the four values "about N-1" was
+         * first written over. So a rect at 6 puts the first character at 5,
+         * and the eight pixels this test was named for are not there. */
         set.left = 6;
         set.top = 1;
         set.right = 290;
@@ -2041,13 +2056,12 @@ int main(void)
         SendMessageA(t, EM_SETRECT, 0, (LPARAM)&set);
         p.x = p.y = 0;
         SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 0);
-        CHECK(p.x == 14, "a formatting rectangle at six puts the first "
-                         "character at fourteen, the bar inside it");
-        if (p.x != 14)
-            printf("     wanted 14, got %d\n", (int)p.x);
+        CHECK(p.x == 5, "a formatting rectangle at six puts the first "
+                        "character at five: no selection bar inside it, and "
+                        "a pixel wider than it was asked for");
         p.x = p.y = 0;
         SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&p, 4);
-        CHECK(p.x == 14, "and the second line with it, not the first alone");
+        CHECK(p.x == 5, "and the second line with it, not the first alone");
 
         memset(&got, 0, sizeof got);
         SendMessageA(t, EM_GETRECT, 0, (LPARAM)&got);
