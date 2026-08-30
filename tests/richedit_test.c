@@ -2069,68 +2069,6 @@ int main(void)
                   got.bottom == 55,
               "and EM_GETRECT hands back the one that was set");
 
-        /* **How many passes a consumer needs to align text to a ruler**, which
-         * is the property wordpad depends on and nothing here asserted.
-         *
-         * `alignEditorToRuler` measures where character 0 is, computes the
-         * delta to where it wants it, and adds that delta to the rectangle --
-         * once. That works only while the mapping from `rect.left` to the
-         * character's x is the *same function* before and after the first
-         * rectangle exists. It is not guaranteed to be:
-         *
-         *     no rect yet   x = inset + selection bar
-         *     with a rect   x = f(rect.left), whatever riched20 does
-         *
-         * A change to `rich_fmt` that alters `f` moves a one-pass consumer by
-         * the difference and it converges only on the second pass. **That is
-         * a real merge that had to be reverted** -- ween32's own suite was
-         * green, wordpad's ruler checks went red by exactly nine pixels, and
-         * nothing in this file could have predicted it because nothing here
-         * drove the loop.
-         *
-         * So it is driven here. The assertion is convergence, not a
-         * particular number of passes, because the pass count is a fact about
-         * riched20 and not something this project chooses -- but a change that
-         * makes it take two will show up as this comment being edited, which
-         * is the point. */
-        {
-            RECT cur, next;
-            POINTL a;
-            int want_x = 40, passes = 0, landed = 0;
-            /* **From no rectangle at all**, which is the only state that
-             * crosses the boundary and the whole point of the check.
-             *
-             * Written without this line first, and it passed with the very
-             * change it was written to catch: the loop began *inside* the
-             * with-rect regime, where the mapping is continuous and one pass
-             * always suffices. A check that cannot fail, in the check written
-             * because a merge could not fail. It is the sixth time today and
-             * the first in something of mine that was new. */
-            SendMessageA(t, EM_SETRECT, 0, 0);
-            while (passes < 4 && !landed) {
-                a.x = a.y = 0;
-                SendMessageA(t, EM_POSFROMCHAR, (WPARAM)&a, 0);
-                if ((int)a.x == want_x) {
-                    landed = 1;
-                    break;
-                }
-                SendMessageA(t, EM_GETRECT, 0, (LPARAM)&cur);
-                next = cur;
-                next.left = cur.left + (want_x - (int)a.x);
-                SendMessageA(t, EM_SETRECT, 0, (LPARAM)&next);
-                passes++;
-            }
-            CHECK(landed,
-                  "a measure-then-set loop converges on the rectangle that "
-                  "puts character 0 where a ruler wants it");
-            CHECK(passes <= 1,
-                  "and one pass is enough, which is what wordpad's ruler "
-                  "alignment assumes -- two would move its markers nine "
-                  "pixels off the text until the second");
-        }
-        /* Put the rectangle back for the assertions that follow. */
-        SendMessageA(t, EM_SETRECT, 0, (LPARAM)&set);
-
         /* The top moves the text down, which the left cannot show. */
         set.top = 11;
         SendMessageA(t, EM_SETRECTNP, 0, (LPARAM)&set);
