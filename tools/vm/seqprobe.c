@@ -16,10 +16,11 @@
  * contract, and a disagreement between two implementations of a contract
  * looks exactly like a finding about the editor.
  *
- * The control is 400x200 with no `EM_SETRECT`, which is part of the contract
- * rather than a detail: `wrapprobe.c` measured that a control with a
- * formatting rectangle and one without wrap differently, so two sides
- * disagreeing about it would report a difference on every wrapping sequence.
+ * The control itself is `rp_create`'s, shared like everything else: its size,
+ * its style word and its default character format are all part of the
+ * contract. `wrapprobe.c` measured that a control with a formatting rectangle
+ * and one without wrap differently, so a size or a style the two sides did
+ * not agree on would report a difference on every wrapping sequence.
  *
  *   zig cc -target x86-windows-gnu -fno-sanitize=undefined -c \
  *          -o seqprobe.obj seqprobe.c
@@ -174,9 +175,15 @@ static void probe_main(void)
     if (g_out == INVALID_HANDLE_VALUE)
         ExitProcess(1);
 
-    re = CreateWindowExA(0, RICHEDIT_CLASSA, "",
-                         WS_CHILD | WS_VISIBLE | ES_MULTILINE | WS_VSCROLL,
-                         0, 0, 400, 200, host, NULL, wc.hInstance, NULL);
+    /* **The control comes from `rp_create` and not from here.** My own had
+     * `ES_MULTILINE` and still swallowed Return, and bob found why: the
+     * window was the last thing the two sides each built for themselves.
+     * A style word is as much a part of the contract as an opcode -- it is
+     * WordPad's own `550081C4` now, with the `SCF_DEFAULT` Arial 10 that
+     * `main.zig` sends -- and a difference in it reads as a finding about
+     * the editor. That is the third time today the answer was "the two
+     * sides were not set up the same". */
+    re = rp_create(host);
     if (!re) {
         fprintf(GUEST_STREAM, "!! the control would not be created\n");
         ExitProcess(2);
