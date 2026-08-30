@@ -72,6 +72,49 @@ sides. What it costs today is three `KNOWN` lines per dump -- visible,
 labelled, and not hiding anything, which is why this is a scheduled change
 rather than an urgent one.
 
+### Attempted, measured, and reverted -- with the blocker named
+
+Written and taken back out. **The audit half works and is not the problem.**
+Splitting the reported selection from the text selection -- `rich_range_said`
+for the two messages that answer a program, `rich_range` clamped to `e->len`
+for the fourteen that touch bytes -- and resolving `cpMax` of -1 to
+`e->len + 1` took seven of nine scenarios from `0 new, 3 known` to
+**`0 new, 0 known`**. `len`, the `char` ranges and the `para` ranges all
+agreed with the machine exactly.
+
+**What stopped it is one field further in, and the differ said so precisely:**
+
+```
+02   machine   char 0..8 B--   char 9..9 --- Arial 200
+     ours      char 0..9 B--
+```
+
+**The mark is a run of its own and carries the document's default while the
+text beside it is bold.** Ours has no format for it at all, so a mark-only
+selection collapses under the clamp and answers from the run *before* the
+caret. tests/monkey_test.c found the consequence in twenty-two steps --
+`bold, type, bold, selall, bold`, and *"a formatting change could not be
+undone"*, because nothing had recorded a format for a character with no run.
+
+**Giving the mark the document default fixes the dump and needs three
+assumptions, and that is where it was stopped:**
+
+```
+measured    the mark carries the default while the text is bold  (02)
+NOT         whether a select-all bold can change it
+NOT         what it carries when no SCF_DEFAULT was ever sent -- which is
+            the monkey's own control, so the fix did not even fire there
+```
+
+**Two of those are the shape this file exists to refuse**, and each one was
+only visible because the previous one had been tried. That is the whole value
+of the attempt: the scope above said "the work is the audit", and the audit
+was the easy half.
+
+**One machine sequence unblocks it**: select all, bold, and read the format at
+the last index. If the mark stays default, the change is a morning's work with
+every number already in `seq/machine`.
+
 ## 2. The default face
 
 ```
