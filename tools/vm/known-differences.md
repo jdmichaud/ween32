@@ -412,3 +412,39 @@ failure mode alice named is somebody weakening the comparison to get it
 passing; the way that happens is a difference being written down as expected
 because it was inconvenient, and it is indistinguishable afterwards from one
 that was investigated.
+
+## The second rule, which cost more to learn
+
+**A control has to be able to tell the explanations apart, not merely have a
+known answer.**
+
+"Run the new probe against a known-good case first" is the rule this project
+has been quoting all evening, and it is right, and it is not enough. Twice
+tonight a probe was validated against a control that shared the very fault
+being investigated, so it came back green and licensed a wrong conclusion:
+
+```
+the rect page   the offset was called a bias in the method, on the strength
+                of a no-rect control -- the one regime where "a bias" and
+                "my control is four pixels narrower than I think" predict
+                exactly the same number
+the wrap rule   `2 * x0` fitted eight rows, every one of them a symmetric
+                rectangle, where it and `f(left) + f(right)` are the same
+                arithmetic
+```
+
+**Both had a control. Both controls were incapable of failing** for the
+specific reason under test, and in both cases the check that settled it was
+not a better control but a *case chosen because the two answers disagree
+there* -- an asymmetric rectangle, and an origin that moves.
+
+So the question to ask of a control is not *"do I know what this should
+say?"* but **"if my explanation were wrong, would this row look different?"**
+If the answer is no, it is a demonstration and not a test, however green.
+
+This is the same shape as the six instruments that agreed with the thing they
+were measuring -- a test dividing by the same font the code did, helpers
+encoding the convention they covered, a probe that never pressed Ctrl, a
+runner whose exit status was `tail`'s, a check that passed with the change it
+was written to catch. **The fix has been identical every time: a second
+sample, chosen because it could disagree.**
