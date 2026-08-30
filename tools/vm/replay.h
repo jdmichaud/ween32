@@ -230,6 +230,22 @@ static HWND rp_create(HWND parent)
     d.szFaceName[0] = 'A'; d.szFaceName[1] = 'r'; d.szFaceName[2] = 'i';
     d.szFaceName[3] = 'a'; d.szFaceName[4] = 'l'; d.szFaceName[5] = 0;
     SendMessageA(re, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&d);
+    /* **Wrapping on, so the two sides wrap or neither does.**
+     *
+     * ween32's control wraps to its client by default; a bare
+     * `RichEdit20W` does not, and three scenarios came back from the machine
+     * with `len 84` and a single `line 0 at 0` while ours had wrapped at 44.
+     * Comparing a wrapped document against an unwrapped one says nothing
+     * about either.
+     *
+     * `EM_SETTARGETDEVICE(0, 0)` is what turns it on there -- Sam measured
+     * that. **What is *not* measured is whether it is what WordPad uses**;
+     * it is one way to get wrapping and possibly not that program's way. So
+     * this is a statement about the harness and not about WordPad: the two
+     * controls are put in the same condition, and if it later turns out
+     * WordPad reaches that condition by another route, the route changes
+     * here and the comparison does not. */
+    SendMessageA(re, EM_SETTARGETDEVICE, 0, 0);
     SetFocus(re);
     return re;
 }

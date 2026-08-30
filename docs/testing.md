@@ -234,6 +234,23 @@ ext4. `stat -f -c %T <path>` says `fuse` for the first two and `ext2/ext3`
 for the rest, and `mount | grep ween32` shows the pair. Nobody knew this for
 most of a day, and it explains a fault nobody could otherwise have found.
 
+**And the emulator is one too.** `/home/jd/jslinux` is
+`sshfs -p 2995 jedi@10.0.2.2:/home/jedi/tmp/jslinux-2019-12-21`, which is why
+it reads as an **empty directory** when the mount is not up rather than as a
+missing one.
+
+**Three of us reported "the machine is gone" in one evening and none of us
+said which kind of gone it was**, because `ls` cannot tell them apart:
+
+```
+a deleted tree     somebody has to restore it
+a dropped mount    one command, and the tree was never touched
+```
+
+**So the check is `mount | grep jslinux`, not `ls`** -- the same sentence as
+the checkouts above, one directory along, and it cost an evening's worth of
+people concluding the harder of the two.
+
 **Observed, and reproducible.** A copy step whose *source* is on the mount
 produces an **empty result, with no error**: `installHeadersDirectory` over
 one hands a consumer an `-I` at a directory with nothing in it, so a C
