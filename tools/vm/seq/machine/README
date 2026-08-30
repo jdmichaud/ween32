@@ -6,9 +6,9 @@ the same sequence against ween32 and the two dumps are diffed. Committing
 them means the comparison does not need a machine every time -- only when a
 sequence is added or the contract changes.
 
-Taken with replay.h and dump.h at ween32 c8e9a27: control 0x550081C4, ex
+Taken with replay.h and dump.h at ween32 bf34501: control 0x550081C4, ex
 0x210, 280x160, SCF_DEFAULT Arial 10 with CFM_BOLD, CFM_ITALIC and
-CFM_UNDERLINE named and zero.
+CFM_UNDERLINE named and zero, and EM_SETTARGETDEVICE(0, 0).
 
 That last clause is why these were re-taken. The first set was made before
 `rp_create` named the effects, and riched20's default face is System, which
@@ -28,9 +28,17 @@ Two things a reader should know before trusting a diff against these.
 riched20's document always ends in a paragraph mark: `type a` gives len 2.
 That is the machine's model and ours does not have it yet.
 
-Three of the sequences were written to wrap and do not, because
-ES_AUTOHSCROLL in the style word turns word wrap off -- see lenwrap.txt. So
-`line` in 03, 06 and 07 says nothing yet, and those dumps will change when
-that is settled. They are committed anyway, and marked here, because a dump
-that is going to change is still better than no baseline as long as nobody
-mistakes it for one that is not.
+The three sequences written to wrap now do. ES_AUTOHSCROLL in the style word
+turns word wrap off, and EM_SETTARGETDEVICE(0, 0) turns it back on over that
+bit -- measured in wrapon.txt -- which is what WordPad's own wrap-to-window
+does. rp_create sends it, so `line` means something in 03, 06 and 07:
+
+    03-indent-then-type        line 1 at 69
+    06-resize-while-selected   line 1 at 40
+    07-type-across-a-wrap      line 1 at 72
+
+All nine were re-taken when rp_create changed, not only the three expected
+to move, and the other six came back byte-identical. That check is the
+point: a dump is an answer to the question a particular rp_create asked, so
+"only these three can have changed" is a prediction and not a fact until it
+is compared.
