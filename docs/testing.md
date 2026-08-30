@@ -313,8 +313,25 @@ watching is 192 MB and a core.
 cd /home/jd/jslinux
 setsid node jslinux-node.js --cpu=x86 --emu=. --url=win2000/win2k.cfg \
   --mem=192 --graphic --w=1024 --h=768 --net --drive=vm-daemon.js \
+  --share=/home/jd/ween32/share-<you> \
   --sock=/tmp/jslinux-<you>.sock --shm=/dev/shm/jslinux-<you>.fb &
 ```
+
+**`--share` is not optional and `Z:` does not follow from it.** Every probe
+in `tools/vm` is run as `Z:\thing.exe` and writes its answer to `Z:\thing.txt`,
+and a fresh guest has no Z: at all -- the drive letter is a *mapping*, the
+disk does not keep one across a boot (see the note on persistence below), and
+the failure is a dialog saying **"Z:\ is not accessible. This folder was moved
+or removed"**, which reads like a broken share rather than a missing letter.
+So, once, on every boot, through Start > Run:
+
+```
+net use Z: \\10.0.2.2\share
+```
+
+`10.0.2.2` is the host as the guest sees it and `share` is the name
+`--share=DIR` is served under; the console flashes and closes, and nothing
+says it worked except Z: starting to work.
 
 About a minute to the desktop. Then everything below, pointed at it:
 
@@ -343,6 +360,21 @@ Two key names that work in `drive.py`: `key KeyF:ControlLeft` for Ctrl+F, and
 daemon answered an empty line and stopped listening, taking the machine with
 it, so a name the daemon does not know is not something to try on a machine
 somebody else is using.
+
+**Do not `park` between opening a menu and clicking an item in it.** The
+pointer is *walked* rather than jumped, so a walk that starts from the parked
+corner crosses the menu bar on its way, and crossing another top-level title
+while a menu is open switches which menu is down. The click then lands in a
+different menu at the same coordinates -- twice in a row for me, on a
+disabled item, which looks exactly like a click that missed. Drive the whole
+gesture in one invocation, or reach the item by keyboard: `key KeyV:AltLeft`
+then `key KeyO` is View > Options and has none of this.
+
+**And a batch file is worth it past about three probes.** Each Start > Run
+trip is four synthetic events and a guess at where the menu item is; a
+`.bat` on the share is one trip for any number of runs. `start /wait "" Z:\p.exe`
+rather than `Z:\p.exe` -- these probes are `--subsystem,windows`, so `cmd`
+does not wait for them and without it the whole file runs at once.
 
 ### Paint beside the machine
 
