@@ -131,7 +131,16 @@ const ween_strike *ween_font_create(const char *face, int height, int weight)
          *
          * **The same document in the same program renders differently
          * depending on what sizes it happened to be shown first**, which is
-         * the half of jd's report that is not the strike ceiling below. */
+         * the half of jd's report that is not the strike ceiling.
+         *
+         * **The ceiling is the larger half and this does not touch it**:
+         * Tahoma's largest strike is about sixteen pixels, so twelve of the
+         * sixteen sizes in WordPad's box -- 12pt through 72pt -- draw
+         * identically at 15px. Five distinct renderings across sixteen
+         * values. Counted, because the estimate that first went on the
+         * channel was six and the difference between six and twelve is the
+         * difference between a rough edge and three quarters of the control
+         * not working. Closing it needs strikes or a rasteriser. */
         int best = -1, bestd = 0;
         for (int i = 0; i < count; i++) {
             int d;

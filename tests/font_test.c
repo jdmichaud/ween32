@@ -143,6 +143,23 @@ int main(void)
      * differs", because it must survive the strike ceiling: Tahoma's largest
      * is about sixteen pixels, so everything from 12pt up genuinely draws the
      * same and that is a font-coverage limit rather than a defect.
+     *
+     * **The size of that limit, counted rather than estimated, because the
+     * count is what says whether jd's report is closed:**
+     *
+     *     10px   1 value    8
+     *     11px   1 value    9
+     *     12px   1 value    10
+     *     14px   1 value    11
+     *     15px  12 values   12 14 16 18 20 22 24 26 28 36 48 72
+     *
+     * **Five distinct renderings across sixteen sizes; twelve of the sixteen
+     * share one with another.** I first wrote "six", carried out of the
+     * hand-over that started this work, while the table saying twelve was on
+     * the screen -- and six of sixteen is a rough edge where twelve of
+     * sixteen is three quarters of the control not working. The fix below
+     * does not touch this; a user setting 12pt and 72pt gets the same text
+     * either way.
      * **Monotonic is the part that cannot be excused** -- a larger request
      * must never come back smaller. */
     {
