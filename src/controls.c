@@ -2029,7 +2029,6 @@ static void items_free(void *p); /* defined with ween_controls_free */
 /* How far down its client a combo box puts the row of text — the field when
  * it has one, and where the box under it hangs from. */
 #define WEEN_COMBO_TEXT_Y 3
-#define WEEN_CB_MIN_ROWS 2
 
 typedef struct {
     char **item;
@@ -2047,13 +2046,9 @@ typedef struct {
                  * in — which is what an address bar is */
     int quiet;  /* the control is writing in its own field: what comes back
                  * is not someone typing, and the owner is not told */
-    int rows;   /* how many the dropped list shows, once it has been dragged
-                 * taller or shorter; 0 until then */
     int drop_h; /* the height it was created with, which is the height it has
                  * with its list down — where the row count comes from */
     int item_h; /* a row's height when the program set one, 0 for the font's */
-    int sizing; /* the grip is being dragged, and this is where from */
-    int size_y0, size_rows0;
     char was[260]; /* and what was in it when the typing started */
 } ween_items;
 
@@ -2613,9 +2608,7 @@ static int combo_list_rows(HWND wnd)
     int n = it ? it->count : 0;
     int ih = item_height(wnd);
     int want = WEEN_CB_ROWS;
-    if (it && it->rows)
-        want = it->rows;
-    else if (it && ih) {
+    if (it && ih) {
         /* what is left of the asked-for height once the closed control and
          * the list's border come off it — measured against the height the
          * control has now, since a bar or a dialog lays it out afterwards.
@@ -2647,12 +2640,35 @@ static int combo_list_height(HWND wnd)
     return combo_list_rows(wnd) * item_height(wnd) + 2;
 }
 
-/* How tall the bar down the side is: the rows, less the corner standing at
- * the foot of it. The machine's is 82 pixels in a 98 pixel list, and the
- * sixteen below it are the grip. */
+/* How tall the bar down the side is: the whole of the rows.
+ *
+ * **It used to stop sixteen pixels short, for a grip that is not there.** The
+ * comment here read *"the machine's is 82 pixels in a 98 pixel list, and the
+ * sixteen below it are the grip"* -- sixteen pixels the bar did not cover,
+ * attributed to the most plausible cause and then built: a `sizing` field, a
+ * drag, and a corner drawn every time the list came down.
+ *
+ * **The machine's own style words say there is no grip**, and they were in
+ * the tree the whole time. `wordpad/reference/probe/font.txt` and `tabs.txt`
+ * record three of these lists:
+ *
+ *     147x95  54209053    WS_CHILD VISIBLE CLIPSIBLINGS WS_VSCROLL, LBS_*
+ *     111x95  54008041    the same without WS_VSCROLL
+ *     152x82  54008041
+ *
+ * `WS_THICKFRAME` is 0x00040000 and is set in none of them, so none of them
+ * can be dragged to another size. jd reported it from the other end -- *"the
+ * original dropdown does not have a resize handle contrary to ours"* -- and
+ * named the control the idea came from, which is the address bar's.
+ *
+ * **Both of his symptoms were this one line.** A bar drawn shorter than the
+ * space it scrolls puts its thumb and its arrows in the wrong places, so the
+ * grip that should not exist was also why the scrolling did not work.
+ *
+ * Retire this note if a reading of a dropped list ever shows WS_THICKFRAME. */
 static int combo_bar_h(HWND wnd)
 {
-    return combo_list_rows(wnd) * item_height(wnd) - ween_scroll_metric();
+    return combo_list_rows(wnd) * item_height(wnd);
 }
 
 /* Where the dropped list sits, in surface coordinates: directly under the
@@ -2729,7 +2745,6 @@ static void combo_list_draw(ween_surface *surface, int x, int y)
         ween_draw_scrollbar(surface, x + w - 1 - sb, y + 1, sb,
                             combo_bar_h(g_dropped), 1, 1, it ? it->top : 0,
                             rows, 0, (it ? it->count : 1) - 1);
-        ween_classic_sizegrip(surface, x + w - 2, y + h - 2);
     }
     for (int i = it ? it->top : 0; it && i < it->count; i++) {
         int iy = y + 1 + (i - it->top) * ih;
@@ -3321,16 +3336,10 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             int rows = combo_list_rows(wnd);
             sx = ox + GET_X_LPARAM(lp) - px;
             if (it && combo_list_scrolls(wnd) && sx >= pw - 1 - sb) {
-                if (sy >= combo_bar_h(wnd)) {
-                    /* the corner at the foot of the bar: the list is being
-                     * dragged taller or shorter */
-                    it->sizing = 1;
-                    it->size_y0 = oy + GET_Y_LPARAM(lp);
-                    it->size_rows0 = rows;
-                    SetCapture(wnd);
-                    return 0;
-                }
-                /* the bar itself, which works the way every other one does */
+                /* **The bar, all the way down.** There is no corner to grab:
+                 * these lists have no WS_THICKFRAME on the machine, so the
+                 * sixteen pixels at the foot that used to start a resize are
+                 * the bar's own last rows. */
                 {
                     ween_sbstate st = { it->top, 0, it->count - 1, rows, 1 };
                     int grab;
@@ -3374,20 +3383,6 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
-        if (it && it->sizing) {
-            /* following the corner: the list grows and shrinks by rows */
-            int moved = oy + GET_Y_LPARAM(lp) - it->size_y0;
-            int rows = it->size_rows0 + moved / (ih ? ih : 1);
-            if (rows < WEEN_CB_MIN_ROWS)
-                rows = WEEN_CB_MIN_ROWS;
-            if (rows > it->count)
-                rows = it->count;
-            if (rows != it->rows) {
-                it->rows = rows;
-                combo_damage(wnd);
-            }
-            return 0;
-        }
         if (it) {
             int on_list = sy >= 0 && sy < ph - 2;
             int at = on_list ? it->top + sy / (ih ? ih : 1) : -1;
@@ -3418,10 +3413,6 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g_dropped != wnd)
             return 0;
         it = items_of(wnd);
-        if (it && it->sizing) { /* the drag is over; the size stays */
-            it->sizing = 0;
-            return 0;
-        }
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
@@ -3605,7 +3596,6 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 it->images = keep.images;
                 it->edit = keep.edit;
                 it->drop_h = keep.drop_h;
-                it->rows = keep.rows;
             }
         }
         if (g_dropped == wnd)

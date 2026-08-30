@@ -846,8 +846,20 @@ int main(void)
             GetWindowTextA(field, got, (int)sizeof(got));
             CHECK(!strcmp(got, "item08"),
                   "and the highlight goes on past what is shown");
-            /* Dragging the corner makes it taller. The points are the
-             * combo's own, as a routed press would arrive. */
+            /* **The corner does not drag it taller, and this test used to
+             * say it did.** These lists have no WS_THICKFRAME on the machine
+             * -- wordpad/reference/probe/font.txt records three of them,
+             * 54209053 and 54008041 twice, and 0x00040000 is set in none --
+             * so there is no grip and nothing to grab. The drag existed
+             * because combo_bar_h's comment attributed sixteen pixels the
+             * scrollbar did not cover to a resize corner.
+             *
+             * jd reported it from the far end: *"the original dropdown does
+             * not have a resize handle contrary to ours"*.
+             *
+             * **The same press is still sent**, because what matters is that
+             * it does nothing to the height: a test that stopped pressing
+             * would pass just as well against a grip that came back. */
             {
                 int ox, oy;
                 ween_client_origin(cb, &ox, &oy);
@@ -862,8 +874,9 @@ int main(void)
                              MAKELPARAM(before.right - 6 - ox,
                                         before.bottom + 40 - oy));
                 ween_combo_list_rect(cb, &after);
-                CHECK(after.bottom - after.top > before.bottom - before.top,
-                      "and the corner drags it taller");
+                CHECK(after.bottom - after.top == before.bottom - before.top,
+                      "and the corner is the bar's, not a grip: it does not "
+                      "drag taller");
             }
         }
 
