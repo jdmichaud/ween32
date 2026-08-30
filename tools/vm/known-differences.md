@@ -262,7 +262,28 @@ that.
 
 ---
 
-## 06 — CLOSED. Glyph widths, and this time it is measured
+## 06 — CLOSED TWICE, and the second time by shipping Arial
+
+**The wrap column and the length now agree exactly**, which they never have:
+
+```
+before Arial existed   ours 0 at 0 len 44        machine 0 at 0 len 40
+after                  ours 1 at 40 len 28       machine 1 at 40 len 28
+```
+
+**The cause was that our "Arial" was Tahoma.** The measurement below said the
+difference was glyph widths and that was right; what it could not say was
+*why* our glyphs were narrower, because at the time there was no Arial to
+compare against. WordPad asked for Arial, the mapper handed back Tahoma, and
+Tahoma's glyphs are narrower than Arial's over that string. Shipping the face
+jd asked for closed a wrapping difference nobody had connected to it.
+
+**The only difference left in 06 is entry 7's one pixel** -- `y 16` against
+`y 17` -- and that is now true of every remaining difference in the whole set.
+
+### The original reading, which was right about the what and not the why
+
+## 06 — glyph widths, measured
 
 **Sam's re-take moved exactly one thing and it was `y`** — every `at` and
 every `len` byte-identical across nine dumps, and `y` entered the contract in
@@ -404,6 +425,76 @@ That is not a caveat about one run; it is the shape of the instrument, and it
 is why jd driving the program keeps finding things four instruments do not.
 
 ---
+
+## 7. Arial's line height, one row short
+
+```
+Arial 10 at 96 dpi, the caret's height on an empty document
+    the machine   16 rows
+    ours          15
+```
+
+**This is the first honest reading that assertion has ever given.** It has
+been green for months while measuring a different font: it says *Arial 10*,
+and until `fonts/arial.ttf` existed the request fell back to Tahoma, whose
+ppem-13 strike happens to give sixteen. **A check that names one thing and
+measures another** -- the same fault Sam found in wordpad's `fontsize.py` the
+same evening, and this one had been passing since it was written.
+
+So the claim is not *we regressed by a row*. It is: **we never rendered Arial,
+we do now, and its line is one short of the machine's.**
+
+**The arithmetic, because "the fonts differ" is not a cause:**
+
+```
+src/font.c   f->ascent = (hhea.ascender * strike_ppem + upem/2) / upem
+             1854 * 13 + 1024 = 25126,  / 2048 = 12    -> cell 15
+the strike's own sbitLineMetrics say     ascender 13   -> cell 16
+Windows, given the same lfHeight -13,    reports       16
+```
+
+Ten point at 96 dpi is 13.333 pixels and the strike is stored at ppem 13
+because EBLC keys on an integer. Scaling `hhea` by the rounded ppem loses the
+third of a pixel that carries the ascender over; the true rasterised ascent at
+13 ppem is 13, which is what `mkstrikes.py` writes into the strike and what
+`font.c` then ignores.
+
+**Why font.c ignores it, which is the part that makes this a debt and not a
+one-line fix.** The comment there says the cell comes from `hhea` rather than
+the strike *"whose descender some fonts leave at 0"*. Honouring the strike's
+own metrics fixes Arial and **moves every one of Tahoma's eight existing
+strikes**:
+
+```
+ppem      8    9   10   11   12   13   15   16
+strike    6    7    8    9   10   10   12   13
+hhea      8    9   10   11   12   13   15   16
+```
+
+Nine committed captures agree with the hhea column. So this cannot be changed
+for Arial alone.
+
+**It is now the only thing the differential disagrees about.** Twelve
+scenarios, and every `NEW` line in every one of them is this pixel:
+
+```
+03   line 1  ours y 16  machine y 17      off by one
+     line 2  ours y 31  machine y 33      off by two -- it accumulates
+06   line 1  ours y 16  machine y 17      all that is left of 06
+```
+
+**A one-pixel cell error is one pixel per line and it adds up down the page**,
+which is a stronger reason to fix it than the single caret measurement that
+found it.
+
+**What retires it.** Rewrite the kept strikes' `sbitLineMetrics` to the values
+`font.c` computes today -- which makes honouring them a no-op for Tahoma --
+and then read the cell from the strike. Both halves in one change, with the
+capture comparison as the proof, and a machine reading of Arial's line height
+at two or three more sizes to confirm the ascent rule before it is baked in.
+**One data point is what this file exists to refuse building on**, and there is
+exactly one here.
+
 
 ## The rule this file exists to enforce
 
