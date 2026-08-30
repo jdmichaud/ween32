@@ -52,6 +52,7 @@ static void pump(int ms)
 
 static HWND host;
 static char many[2048];
+static char wide[600];
 static WCHAR manyw[2048];
 
 static void say(HWND re, const char *what)
@@ -113,6 +114,9 @@ void WinMainCRTStartup(void)
         many[n++] = '\n';
     }
     many[n] = 0;
+    for (i = 0; i < 500; i++)
+        wide[i] = 'w';
+    wide[500] = 0;
     for (i = 0; i <= n; i++)
         manyw[i] = (WCHAR)(unsigned char)many[i];
 
@@ -151,6 +155,40 @@ void WinMainCRTStartup(void)
     pump(300);
     fill_and_say(re, "resized");
     DestroyWindow(re);
+
+    /* **The horizontal pair, which is the row this file was missing.**
+     * Everything above is WS_VSCROLL, and the horizontal permission was a
+     * symmetry rather than a reading -- said so in richedit.c and challenged
+     * on the channel, correctly, since a whole program's behaviour rests on
+     * it. This is the experiment named there as the one that retires it:
+     * No wrap and a line far past the right edge, with and without the bit.
+     *
+     * A control created WITHOUT WS_HSCROLL showing a bar here kills the
+     * permission model for this axis outright. */
+    fprintf(GUEST_STREAM, "\n== 5  the horizontal pair: No wrap, 500 w's ==\n");
+    {
+        int k;
+        for (k = 0; k < 2; k++) {
+            DWORD st = 0x550081C4u | (k ? (unsigned)WS_HSCROLL : 0u);
+            HWND h = CreateWindowExA(0x210, RICHEDIT_CLASSA, "", st, 0, 0, 756,
+                                     382, host, NULL, NULL, NULL);
+            LONG got;
+            SetFocus(h);
+            pump(200);
+            SendMessageA(h, EM_SETTARGETDEVICE, 0, (LPARAM)1440);
+            pump(200);
+            SendMessageA(h, WM_SETTEXT, 0, (LPARAM)wide);
+            pump(600);
+            got = GetWindowLongA(h, GWL_STYLE);
+            fprintf(GUEST_STREAM,
+                    "  created %s WS_HSCROLL   style %08x   hscroll %s"
+                    "   lines %d\n",
+                    k ? "WITH   " : "WITHOUT", (unsigned)got,
+                    (got & WS_HSCROLL) ? "SET" : "clear",
+                    (int)SendMessageA(h, EM_GETLINECOUNT, 0, 0));
+            DestroyWindow(h);
+        }
+    }
 
     fprintf(GUEST_STREAM, "\n== 4  RichEdit20A created WITH WS_VSCROLL, for contrast ==\n");
     re = CreateWindowExA(0x210, RICHEDIT_CLASSA, "",

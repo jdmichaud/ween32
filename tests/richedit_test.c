@@ -2915,16 +2915,26 @@ int main(void)
         b = (int)p.x;
         CHECK(a - b == 7, "an arrow moves the view 7 pixels");
 
-        /* The track: the client less fourteen. WordPad's own number at two
-         * widths -- 742 at 756 and 1006 at 1020. */
+        /* **The track moves a page, and the page follows the text origin.**
+         * Four machine rows, stored here as the two this control shape can
+         * reproduce:
+         *
+         *     bare, no selection bar   client 756 -> page 754   client - 2
+         *     bare, ES_SELECTIONBAR    client 756 -> page 746   client - 10
+         *     WordPad                  client 756 -> page 742   client - 14
+         *
+         * `client - page - 1` is the x of character 0 in each. **A single
+         * shape cannot tell that from a constant**, which is why the second
+         * control below exists: tuned to WordPad's fourteen, this control --
+         * which has no selection bar -- would be twelve pixels short. */
         a = b;
         SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_PAGERIGHT, 0), 0);
         p.x = p.y = 0;
         SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
         b = (int)p.x;
-        page = (hcr.right - hcr.left) - 14;
-        CHECK(a - b == page, "the track moves a page, which is the client "
-                             "less fourteen");
+        page = (hcr.right - hcr.left) - 2;
+        CHECK(a - b == page,
+              "with no selection bar the track moves the client less two");
 
         /* **The caret is followed sideways**, which is the half of jd's
          * report that a scrollbar does not fix: on the machine, typing one
@@ -2941,6 +2951,32 @@ int main(void)
         SendMessageA(hre, WM_SETTEXT, 0, (LPARAM) "short");
         CHECK(!(GetWindowLongA(hre, GWL_STYLE) & WS_HSCROLL),
               "and the bar goes when the long line does");
+        DestroyWindow(hre);
+
+        /* The same again with ES_SELECTIONBAR, which moves the text origin
+         * from 1 to 9 -- and the page with it, 754 to 746. **This is the
+         * check that a flat constant cannot pass**, and the one that says
+         * the page is the room to the right of the first character rather
+         * than a number somebody measured once. */
+        hre = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                              WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL |
+                                  ES_MULTILINE | ES_AUTOVSCROLL |
+                                  ES_AUTOHSCROLL | ES_SELECTIONBAR,
+                              0, 0, 380, 200, host, NULL, NULL, NULL);
+        GetClientRect(hre, &hcr);
+        SendMessageA(hre, EM_SETTARGETDEVICE, 0, 1440);
+        SendMessageA(hre, WM_SETTEXT, 0, (LPARAM)big);
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_LEFT, 0), 0);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        a = (int)p.x;
+        CHECK(a == 9, "a selection bar puts the first character at x 9");
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_PAGERIGHT, 0), 0);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        b = (int)p.x;
+        CHECK(a - b == (hcr.right - hcr.left) - 10,
+              "and the page follows it: the client less ten, not less two");
         DestroyWindow(hre);
     }
 

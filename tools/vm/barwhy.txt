@@ -13,6 +13,10 @@
   61 lines                  style 550081c4  vscroll clear  client 756x382  lines 61  no vertical bar
   emptied again             style 550081c4  vscroll clear  client 756x382  lines 1  no vertical bar
 
+== 5  the horizontal pair: No wrap, 500 w's ==
+  created WITHOUT WS_HSCROLL   style 550081c4   hscroll clear   lines 1
+  created WITH    WS_HSCROLL   style 551081c4   hscroll SET   lines 1
+
 == 4  RichEdit20A created WITH WS_VSCROLL, for contrast ==
   empty                     style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
   61 lines                  style 552081c4  vscroll SET    client 772x529  lines 61  vert min 0 max 976 page 528 pos 0

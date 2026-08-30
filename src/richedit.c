@@ -252,11 +252,21 @@ typedef struct {
      * The three flags mirror the vertical ones exactly, on purpose: the same
      * permission model, measured the same way (tools/vm/barwhy.c for the
      * mechanism, wpscroll.txt for WordPad raising WS_HSCROLL in No wrap and
-     * dropping it again when the line fits). **What is measured for the
-     * vertical bit and only assumed for this one is the permission itself**:
-     * barwhy.c's four rows are all WS_VSCROLL. A machine reading of a control
-     * made *with* WS_HSCROLL showing a bar on a line that fits, or one made
-     * without showing a bar on a line that does not, retires this. */
+     * dropping it again when the line fits).
+     *
+     * **This axis was a symmetry when it landed and is a reading now.** The
+     * retirement condition written here -- a control made without the bit
+     * showing a bar on a line that does not fit -- was aimed at it on the
+     * channel, correctly, since a whole program's behaviour rests on it. So
+     * it was run, and it did not fire (barwhy.txt, section 5, No wrap and
+     * 500 w's in a 756px control):
+     *
+     *     created WITHOUT WS_HSCROLL   550081c4   no bar, one line
+     *     created WITH    WS_HSCROLL   551081c4   bar
+     *
+     * The same four states as the vertical pair, on the axis they were
+     * assumed for. The condition stands and is now the thing that would
+     * retire a measurement rather than a guess. */
     int scroll_x;
     int hbar_on;
     int hbar_ours;  /* WS_HSCROLL is up because this control put it up */
@@ -2545,28 +2555,42 @@ static int rich_text_width(HWND wnd, ween_rich *e)
     return widest > 0 ? widest : 0;
 }
 
-/* The track step, and the bar's page.
+/* The track step, and the bar's page: **the room to the right of the first
+ * character, less one.**
  *
- * **`client - 14`, and the fourteen is WordPad's rather than a bare
- * control's.** Two widths of the machine's own editor, each predicted before
- * it was read:
+ * This was `client - 14` for a while, which is WordPad's number, and it was
+ * wrong -- fourteen is not a constant, it is *where WordPad's text begins*.
+ * Four measurements, three different text origins and two client widths:
  *
- *     client 756 -> page 742        client 1020 -> page 1006
+ *     control                     client  page   client - page - 1
+ *     bare, ES_SELECTIONBAR         756    746          9   <- and x0 is 9
+ *     bare, no selection bar        756    754          1   <- and x0 is 1
+ *     WordPad                       756    742         13
+ *     WordPad, maximised           1020   1006         13
  *
- * A bare riched20 built from the same style word gives `client - 10` at five
- * widths, equally cleanly. **The four pixels between them are not explained**
- * -- `tools/vm/hpage.c` eliminates the class, the font at 9, 10 and 11 pixels
- * per character, the target-device width, and `EM_SETRECT`; eight of the ten
- * is ES_SELECTIONBAR. WordPad's number is the one built to here because
- * WordPad is the program this library exists to reproduce, and the gap is
- * written here rather than in a channel so the next person meets it at the
- * constant. */
+ * **`client - page - 1` is the x of character 0 in every row where that x is
+ * known**, and it is the same 13 for WordPad at two widths. A flat fourteen
+ * fits neither bare row -- it would give a control without a selection bar a
+ * page twelve pixels short -- and the sample contains exactly the case that
+ * separates them, which a single width could not have.
+ *
+ * **So the page follows the text origin, and the four pixels this file used
+ * to call unexplained are the *same* four already written down over
+ * `rich_fmt`: WordPad's first character sits at editor-client 13 or 14 and a
+ * bare riched20 given WordPad's own style word puts it at 9.** One anomaly
+ * seen from two sides, not two. Whoever closes that note closes this, and
+ * until then ours is short by exactly the amount our text origin is.
+ *
+ * Written as the library's own origin rather than as WordPad's number, so it
+ * cannot be a pair of errors cancelling: tune the constant to 14 and the page
+ * is right only for the one control shape that hides the origin bug. */
 static int rich_hpage(HWND wnd)
 {
     RECT cr;
     int page;
     GetClientRect(wnd, &cr);
-    page = (cr.right - cr.left) - rich_bar(wnd) - 14;
+    page = (cr.right - cr.left) - rich_bar(wnd) - rich_inset(wnd) -
+           rich_selbar(wnd) - 1;
     return page > 1 ? page : 1;
 }
 
