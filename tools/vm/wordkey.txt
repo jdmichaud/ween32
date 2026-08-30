@@ -1,0 +1,94 @@
+== the control ==
+  plain Right from 0        caret 0 -> sel 1 1
+    (1 1 means keys reach the control)
+  Ctrl+A                   sel 0 23
+    (0 22 means Ctrl is really held -- without this every line below is void)
+
+== Ctrl+Right, "alpha beta gamma delta", words at 0 6 11 17, len 22 ==
+  press 1                   sel 6 6
+  press 2                   sel 11 11
+  press 3                   sel 17 17
+  press 4                   sel 22 22
+  press 5                   sel 22 22
+  press 6                   sel 22 22
+  from 2, inside "alpha"    caret 2 -> sel 6 6
+  from 8, inside "beta"     caret 8 -> sel 11 11
+  from 17, the last word    caret 17 -> sel 22 22
+  from 21, one from the end  caret 21 -> sel 22 22
+  from 22, the very end     caret 22 -> sel 22 22
+
+== Ctrl+Left ==
+  press 1                   sel 17 17
+  press 2                   sel 11 11
+  press 3                   sel 6 6
+  press 4                   sel 0 0
+  press 5                   sel 0 0
+  from 8, inside "beta"     caret 8 -> sel 6 6
+  from 6, at a word start   caret 6 -> sel 0 0
+  from 0, the very start    caret 0 -> sel 0 0
+
+== "one two  three, four\r\nfive six" -- double space, comma, hard break ==
+   words at 0 4 9 16, break at 20, then 22 27
+  Ctrl+Right 1             sel 4 4
+  Ctrl+Right 2             sel 9 9
+  Ctrl+Right 3             sel 14 14
+  Ctrl+Right 4             sel 16 16
+  Ctrl+Right 5             sel 20 20
+  Ctrl+Right 6             sel 21 21
+  Ctrl+Right 7             sel 26 26
+  Ctrl+Right 8             sel 29 29
+  from 16, last word of line 1  caret 16 -> sel 20 20
+  from 19, inside it        caret 19 -> sel 20 20
+
+== across a soft wrap (no character at the break) ==
+  lines 2
+  line 1 starts at 48
+  Ctrl+Right 1             sel 4 4
+  Ctrl+Right 2             sel 8 8
+  Ctrl+Right 3             sel 12 12
+  Ctrl+Right 4             sel 16 16
+  Ctrl+Right 5             sel 20 20
+  Ctrl+Right 6             sel 24 24
+  Ctrl+Right 7             sel 28 28
+  Ctrl+Right 8             sel 32 32
+  Ctrl+Right 9             sel 36 36
+  Ctrl+Right 10             sel 40 40
+  Ctrl+Right 11             sel 44 44
+  Ctrl+Right 12             sel 48 48   <- the wrap
+  Ctrl+Right 13             sel 52 52
+  Ctrl+Right 14             sel 56 56
+  Ctrl+Right 15             sel 59 59
+  Ctrl+Right 16             sel 59 59
+
+== Ctrl+Shift ==
+  Ctrl+Shift+Right 1       sel 0 6
+  Ctrl+Shift+Right 2       sel 0 11
+  Ctrl+Shift+Right 3       sel 0 17
+  set 11..6, reads back      sel 6 11
+  then Ctrl+Shift+Right      sel 11 11
+  then Ctrl+Shift+Left       sel 6 11
+
+== Tab ==
+    before, caret mid-text    ind 0 0 0  num 0  tabs 0
+    before                   len 22  text 61 6c 70 68 61 20 62 65 74 61 20 67 61 6d 6d 61 20 64 65 6c 74 61
+    after Tab at 11          len 23  text 61 6c 70 68 61 20 62 65 74 61 20 09 67 61 6d 6d 61 20 64 65 6c 74 61
+    sel 12 12
+    after                     ind 0 0 0  num 0  tabs 0
+
+  -- at the very start of a paragraph --
+    after Tab at 0           len 23  text 09 61 6c 70 68 61 20 62 65 74 61 20 67 61 6d 6d 61 20 64 65 6c 74 61
+    after                     ind 0 0 0  num 0  tabs 0
+
+  -- on a bulleted paragraph --
+    before                    ind 0 0 0  num 1  tabs 0
+    after Tab at 0           len 23  text 09 61 6c 70 68 61 20 62 65 74 61 20 67 61 6d 6d 61 20 64 65 6c 74 61
+    after                     ind 0 0 0  num 1  tabs 0
+
+  -- on an indented paragraph --
+    before                    ind 720 0 0  num 0  tabs 0
+    after Tab at 0           len 23  text 09 61 6c 70 68 61 20 62 65 74 61 20 67 61 6d 6d 61 20 64 65 6c 74 61
+    after                     ind 720 0 0  num 0  tabs 0
+
+  -- and Shift+Tab on the same, for contrast --
+    after Shift+Tab          len 24  text 09 09 61 6c 70 68 61 20 62 65 74 61 20 67 61 6d 6d 61 20 64 65 6c 74 61
+    after                     ind 720 0 0  num 0  tabs 0
