@@ -25,12 +25,46 @@
  * ween32 substitutes; riched20 has the font. Recording the resolution would
  * make almost every line differ for a reason that is not a bug -- and the
  * point of a differential test is that a difference is worth reading.
+ *
+ * ## What this asks of the platform
+ *
+ * **`fprintf` and nothing else.** No `malloc`, no `str*`: the guest side
+ * compiles `-nostdlib` because linking the CRT pulls in
+ * `api-ms-win-crt-*.dll`, which is the Universal CRT and **is not present on
+ * Windows 2000** -- a load-time failure with no useful message, and no older
+ * CRT to fall back to in this toolchain. Sam found that on this side of the
+ * boot rather than on the machine.
+ *
+ * So the buffer is static and the two string helpers are here. That leaves
+ * one function for the guest's shim to provide instead of six, which is the
+ * difference between a shim and a port.
  */
 #ifndef DUMP_H
 #define DUMP_H
 
 #include <stdio.h>
-#include <string.h>
+
+/* Static rather than allocated, and hand-rolled rather than <string.h>: see
+ * the note above about the guest having no CRT. Sized for the longest
+ * sequence the language can express, since a paragraph break comes back as
+ * two bytes. */
+static char dump_text[16384];
+
+static void dump_face(char *out, const char *in)
+{
+    int i;
+    for (i = 0; i < 31 && in[i]; i++)
+        out[i] = in[i];
+    out[i] = 0;
+}
+
+static int dump_same(const char *a, const char *b)
+{
+    int i;
+    for (i = 0; a[i] && a[i] == b[i]; i++)
+        ;
+    return a[i] == b[i];
+}
 
 struct dump_char { unsigned fx; char face[32]; long size; };
 struct dump_para {
@@ -41,7 +75,6 @@ static void dump_open(FILE *f, HWND re)
 {
     CHARRANGE all, keep;
     int len, i, n;
-    char *text;
     memset(&keep, 0, sizeof keep);
     SendMessageA(re, EM_EXGETSEL, 0, (LPARAM)&keep);
 
@@ -62,17 +95,35 @@ static void dump_open(FILE *f, HWND re)
 
     fprintf(f, "len %d\n", len);
 
-    text = (char *)malloc((size_t)len * 2 + 8);
-    if (!text)
-        return;
-    GetWindowTextA(re, text, len * 2 + 7);
+    GetWindowTextA(re, dump_text, (int)sizeof dump_text - 1);
     fprintf(f, "text");
-    for (i = 0; text[i]; i++)
-        fprintf(f, " %02x", (unsigned char)text[i]);
+    for (i = 0; dump_text[i]; i++)
+        fprintf(f, " %02x", (unsigned char)dump_text[i]);
     fprintf(f, "\n");
-    free(text);
 
     fprintf(f, "sel %ld %ld\n", (long)keep.cpMin, (long)keep.cpMax);
+
+    /* **What the next typed character would carry**, which is not in any of
+     * the lines above. A sequence ending in `bold:1` on an empty selection
+     * *arms* a format: it changes no character, so two controls can dump
+     * identically here and behave differently on the very next keystroke.
+     *
+     * That is the boundary jd found by hand -- style, then type, then undo --
+     * and it is the state a shrinker is most likely to shrink *to*, since it
+     * is reached in two steps. Sam asked for it; it costs no extra movement,
+     * because `EM_GETCHARFORMAT SCF_SELECTION` with the selection left as it
+     * stands is already the question. */
+    {
+        CHARFORMATA cf;
+        memset(&cf, 0, sizeof cf);
+        cf.cbSize = sizeof cf;
+        SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+        fprintf(f, "next %c%c%c %s %ld\n",
+                (cf.dwEffects & CFE_BOLD) ? 'B' : '-',
+                (cf.dwEffects & CFE_ITALIC) ? 'I' : '-',
+                (cf.dwEffects & CFE_UNDERLINE) ? 'U' : '-',
+                cf.szFaceName, (long)cf.yHeight);
+    }
 
     /* characters, collapsed */
     for (i = 0; i < len; ) {
@@ -85,8 +136,7 @@ static void dump_open(FILE *f, HWND re)
         memset(&cf, 0, sizeof cf); cf.cbSize = sizeof cf;
         SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
         a.fx = (unsigned)cf.dwEffects;
-        strncpy(a.face, cf.szFaceName, sizeof a.face - 1);
-        a.face[sizeof a.face - 1] = 0;
+        dump_face(a.face, cf.szFaceName);
         a.size = (long)cf.yHeight;
         for (j = i + 1; j < len; j++) {
             r.cpMin = j; r.cpMax = j + 1;
@@ -94,10 +144,10 @@ static void dump_open(FILE *f, HWND re)
             memset(&cf, 0, sizeof cf); cf.cbSize = sizeof cf;
             SendMessageA(re, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
             b.fx = (unsigned)cf.dwEffects;
-            strncpy(b.face, cf.szFaceName, sizeof b.face - 1);
-            b.face[sizeof b.face - 1] = 0;
+            dump_face(b.face, cf.szFaceName);
             b.size = (long)cf.yHeight;
-            if (b.fx != a.fx || b.size != a.size || strcmp(b.face, a.face))
+            if (b.fx != a.fx || b.size != a.size ||
+                !dump_same(b.face, a.face))
                 break;
         }
         fprintf(f, "char %d..%d %c%c%c %s %ld\n", i, j - 1,
