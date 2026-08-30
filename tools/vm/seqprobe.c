@@ -76,16 +76,67 @@ static void args_of(char *one, char *two, int cap)
     }
 }
 
+/* A sequence file, flattened into the one line `parse` expects.
+ *
+ * **`parse` parses a sequence; turning a file into one belongs here**, which
+ * is the only thing in the harness that reads files. Leaving comments to
+ * `parse` would put file handling in a header that both sides share and only
+ * one side needs.
+ *
+ * Found by running it rather than by reading it: the files in `tools/vm/seq` carry a
+ * `#` header saying what each scenario is for -- `type:97:0,type:98:0` does
+ * not say `abc` to a reader -- and the first `@file` run answered
+ * `unknown operation "# The arming bo"` and exited 3. The error path worked
+ * perfectly; the input did not.
+ *
+ * Lines are joined with a comma rather than concatenated, so a sequence split
+ * across two lines cannot silently weld `undo:0:0` to `type:97:0` and become
+ * a different sequence than the one written down. Doubled commas are then
+ * dropped, which makes a trailing comma harmless. */
 static int read_file(const char *path, char *out, int cap)
 {
+    static char raw[8192];
     DWORD got = 0;
+    int i, n = 0, sol = 1, skip = 0;
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, 0, NULL);
     if (h == INVALID_HANDLE_VALUE)
         return 0;
-    ReadFile(h, out, (DWORD)cap - 1, &got, NULL);
+    ReadFile(h, raw, sizeof raw - 1, &got, NULL);
     CloseHandle(h);
-    out[got] = 0;
+    raw[got] = 0;
+    for (i = 0; raw[i] && n < cap - 2; i++) {
+        char c = raw[i];
+        if (c == '\n' || c == '\r') {
+            if (!sol && n && out[n - 1] != ',')
+                out[n++] = ',';
+            sol = 1;
+            skip = 0;
+            continue;
+        }
+        if (sol && (c == ' ' || c == '\t'))
+            continue;
+        if (sol && c == '#')
+            skip = 1;
+        sol = 0;
+        if (skip || c == ' ' || c == '\t')
+            continue;
+        out[n++] = c;
+    }
+    while (n && out[n - 1] == ',')
+        n--;
+    out[n] = 0;
+    /* `,,` cannot arise from the joining above, but can from a file that
+     * already ended a line with one; removed rather than left for `parse` to
+     * read as an empty operation name. */
+    {
+        int r = 0, w = 0;
+        while (out[r]) {
+            if (out[r] == ',' && w && out[w - 1] == ',') { r++; continue; }
+            out[w++] = out[r++];
+        }
+        out[w] = 0;
+    }
     return 1;
 }
 
