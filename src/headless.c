@@ -77,6 +77,10 @@ const ween_surface *ween_headless_surface(void)
  *               into a common dialog, which is the whole of what a program's
  *               Open and Save can be driven with
  *   r:W,H       the window system hands the app a new size
+ *   W:W,H       a *window manager* imposes this size on every window,
+ *               whatever size the app asked for -- 0,0 gives it back. This
+ *               is the tiling case and the fullscreen case
+ *   P:X,Y       and puts every window here rather than where it asked to be
  *   w:MS        milliseconds of timer time to let pass
  *
  * `t:` and `r:` were missing from *this* list while being in the one in
@@ -86,8 +90,14 @@ const ween_surface *ween_headless_surface(void)
  *
  * The lesson is not "read the docs" -- it is that **a list that gives eight
  * of its ten words is worse than one that gives none**, because the eight
- * make it look complete and nobody goes to look for the other two. If you add
- * a command here, add it in both places or in neither. */
+ * make it look complete and nobody goes to look for the other two.
+ *
+ * **That instruction used to say "add it in both places or in neither", and
+ * the other place is gone**: `grep` finds no vocabulary list in `docs/` at
+ * all now. Adding one back would rebuild the very thing the paragraph above
+ * warns about, so **this comment is the list, and it is the only one.** If
+ * you add a command, add it here; if you write a second list anywhere, it
+ * will be wrong within a week and this is the evidence. */
 static void inject_script(const char *script)
 {
     const char *p = script;
@@ -132,6 +142,52 @@ static void inject_script(const char *script)
             if (*end == ',')
                 ev.y = (int)strtol(end + 1, &end, 10);
             p = end;
+            ween_headless_inject(ev);
+        } else if ((kind == 'W' || kind == 'P') && p[1] == ':') {
+            /* **What a window manager does, which `r:` cannot say.** `r:` is
+             * the app being handed a new size; these two are the geometry
+             * being *imposed* on it -- a tiling manager, or i3 going
+             * fullscreen. `x11.c` turns both into a ConfigureNotify, and its
+             * letterbox path has never been executed by a test because
+             * nothing headless could reach it.
+             *
+             * **Both report the size afterwards, even when it did not
+             * change**, because that is what the real path does: *"always
+             * report it, even when the size has not changed: a window manager
+             * that refuses a resize answers with the geometry it is
+             * keeping"*. A verb that moved the letterbox silently would leave
+             * the application never told, which is not what a window manager
+             * does. */
+            char *end;
+            int a = (int)strtol(p + 2, &end, 10), b = 0;
+            if (*end == ',')
+                b = (int)strtol(end + 1, &end, 10);
+            p = end;
+            if (kind == 'P') {
+                /* **A move reports nothing, and that is not a shortcut.**
+                 * X11 does send a ConfigureNotify for a pure move, and
+                 * `x11.c` turns it into a resize to the size it already
+                 * had -- which `resize_top` treats as no change. Injecting
+                 * one here is therefore behaviourally identical and *not*
+                 * harmless: the size this file can reach is the surface's,
+                 * not the client's, so reporting it resized the window and
+                 * moved the very origin the verb exists to set. Measured:
+                 * `P:40,30` on an overlapped window put the client at
+                 * 134,123 instead of 44,23. An instrument that disturbs
+                 * what it measures. */
+                ween_headless_set_window_origin(a, b);
+                continue;
+            }
+            ween_headless_set_window_size(a, b);
+            {
+                const ween_surface *sf = ween_headless_surface();
+                int zoom = ween_zoom() > 0 ? ween_zoom() : 1;
+                int ww = a ? a : (sf ? sf->w * zoom : 0);
+                int wh = b ? b : (sf ? sf->h * zoom : 0);
+                ev.kind = WEEN_EV_RESIZE;
+                ev.x = ww / zoom;
+                ev.y = wh / zoom;
+            }
             ween_headless_inject(ev);
         } else if (kind == 'w' && p[1] == ':') {
             ev.kind = WEEN_EV_TIME; /* w:500 — let 500ms of timer time pass */
