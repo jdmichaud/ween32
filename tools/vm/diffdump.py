@@ -34,9 +34,19 @@ def _len_mark(field, a, b):
             return int(b) == int(a) + 1
         except ValueError:
             return False
-    if field.startswith("char "):
-        # the same one index further on the last run
-        return _tail_index(a) is not None and _tail_index(b) == _tail_index(a) + 1
+    if field.startswith("char ") or field.startswith("para "):
+        # **`para` as well as `char`.** The first version matched only the
+        # character runs, so every scenario reported its paragraph line as a
+        # NEW finding -- the trailing mark showing up a second time under a
+        # different name. Seven scenarios, seven false findings, all of them
+        # the one difference we already understood.
+        ta, tb = _tail_index(a), _tail_index(b)
+        if ta is None or tb is None:
+            return False
+        if tb != ta + 1:
+            return False
+        # and nothing else on the line may differ
+        return a.split(None, 1)[1:] == b.split(None, 1)[1:]
     return False
 
 

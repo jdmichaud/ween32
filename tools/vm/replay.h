@@ -209,7 +209,23 @@ static HWND rp_create(HWND parent)
         return NULL;
     memset(&d, 0, sizeof d);
     d.cbSize = sizeof d;
-    d.dwMask = CFM_FACE | CFM_SIZE;
+    /* **The effects are named as well as the face, and that is not
+     * decoration.** WordPad sets only face and size, and on the machine that
+     * leaves riched20's own default *effects* in place -- its default face is
+     * System and **System is bold** -- so every character came back `B--`
+     * from the machine and `---` from us, in all seven scenarios, on
+     * documents where nothing had been bolded.
+     *
+     * Read as a finding it is seven findings; read properly it is one
+     * sentence: **the two sides did not start from the same character
+     * format.** Naming the three effects with a mask of 0 makes both start
+     * unbolded, so a bold difference later in a sequence is a real one.
+     *
+     * **The alternative was to teach the differ that effects may differ**,
+     * which would have hidden every genuine bold divergence for ever. Making
+     * the two sides start the same is the fix; excusing a difference is not. */
+    d.dwMask = CFM_FACE | CFM_SIZE | CFM_BOLD | CFM_ITALIC | CFM_UNDERLINE;
+    d.dwEffects = 0;
     d.yHeight = 200; /* ten point, in twips */
     d.szFaceName[0] = 'A'; d.szFaceName[1] = 'r'; d.szFaceName[2] = 'i';
     d.szFaceName[3] = 'a'; d.szFaceName[4] = 'l'; d.szFaceName[5] = 0;
