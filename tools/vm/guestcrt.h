@@ -160,6 +160,46 @@ void *memcpy(void *d, const void *s, size_t n)
     return d;
 }
 
+/* `parse` reads its numbers with `strtol` and reports an unknown word to
+ * `stderr`. Both need answering here rather than in `replay.h`: the header is
+ * shared and correct as it stands, and this is the guest's problem.
+ *
+ * **`stderr` is redefined rather than implemented.** mingw expands it to
+ * `__acrt_iob_func(2)`, which is a Universal CRT import and the whole thing
+ * this file exists to avoid -- linking it back in for one error message would
+ * undo the point. `fprintf` above ignores its stream argument, so a null one
+ * is honest: there is one output handle and the message goes to it, where a
+ * reader of the dump will see it. **An unknown operation must be loud, and a
+ * line in the dump file is louder than a stderr nobody captures off a guest.**
+ *
+ * The value is 1 rather than 0 because mingw declares `fprintf`'s stream
+ * non-null and a null one warns. **It is never dereferenced** -- by anything
+ * here or in `dump.h` -- so any non-null value does; `GUEST_STREAM` is the
+ * name so that a reader meets the intent rather than a bare cast.
+ */
+#define GUEST_STREAM ((FILE *)1)
+#undef stderr
+#define stderr GUEST_STREAM
+
+long strtol(const char *s, char **end, int base)
+{
+    long v = 0;
+    int neg = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') s++;
+    if (base == 10 || base == 0) {
+        while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); s++; }
+    } else {
+        /* Not reached by anything here; refused rather than half-done, so a
+         * future caller gets nothing back instead of a plausible wrong
+         * number. */
+        v = 0;
+    }
+    if (end) *end = (char *)s;
+    return neg ? -v : v;
+}
+
 void *__stack_chk_guard = (void *)0x0bad57ac;
 void __stack_chk_fail(void) { ExitProcess(3); }
 
