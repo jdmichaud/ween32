@@ -82,3 +82,31 @@ column -- which is a thing the old dump could not have said.
 A reader diffing against these needs one thing from `diffdump.py`: an absent
 `y` is *not compared* rather than a difference, so a dump taken before this
 re-take does not turn into noise.
+
+
+08, 09 and 10 taken at f004ff9, which completes the set: every sequence in
+the directory above now has a machine half, and `diffrun.sh` has no
+`no machine half` line left in it.
+
+These three are the word-movement and Tab work, and they are the first
+sequences whose machine dump was taken *after* the behaviour was implemented
+rather than before. The readings that produced them are `tools/vm/wordkey.c`
+and its `.txt`; **these dumps are an independent second measurement of the
+same three questions**, through a different probe, a different key mechanism
+(`replay.h` presses Ctrl with `SetKeyboardState`, `wordkey.c` used
+`keybd_event`) and the shared serialiser rather than a hand-written table.
+
+They agree:
+
+    08   sel 17 17          three Ctrl+Rights from 0 land on 17, the start
+                            of the fourth word -- wordkey.c's 0 -> 6 -> 11 -> 17
+    09   sel 0 11           two Ctrl+Shift+Rights, the active end moving
+    10   text ... 09 ...    Tab inserts a tab at the caret, index 10
+
+**That agreement is worth more than the dumps.** The tables those sequences
+were built from were mine, read off one probe; if that probe had been wrong
+about the modifiers -- which is exactly the fault it was designed against,
+since a synthesised Ctrl+Right arrives as a plain Right -- these three would
+have been built to a wrong answer and would still have passed against ours,
+because ours was built to the same table. A second mechanism agreeing is what
+makes that circle impossible to close silently.

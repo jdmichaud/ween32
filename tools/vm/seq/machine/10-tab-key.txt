@@ -1,0 +1,9 @@
+client 276 156
+len 17
+text 61 6c 70 68 61 20 62 65 74 61 09 67 61 6d 6d 61
+sel 16 16
+next --- Arial 200
+char 0..16 --- Arial 200
+para 0..16 align 1 ind 0 0 0 num 0 tabs 0
+line 0 at 0 len 16 y 1
+vscroll 0
