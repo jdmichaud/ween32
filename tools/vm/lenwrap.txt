@@ -1,0 +1,9 @@
+== two lengths, riched20, rp_create's style ==
+  empty         GetWindowTextLength 0  WM_GETTEXTLENGTH 0  selectall cpMax 1  lines 1
+  "abc"         GetWindowTextLength 3  WM_GETTEXTLENGTH 3  selectall cpMax 4  lines 1
+  "a\rb"        GetWindowTextLength 4  WM_GETTEXTLENGTH 4  selectall cpMax 4  lines 2
+
+== does it wrap? 96 characters in a 280px control ==
+  as rp_create 0x550081C4   lines 1
+  minus ES_AUTOHSCROLL      lines 2
+  minus ES_AUTOVSCROLL      lines 1
