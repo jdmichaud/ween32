@@ -236,6 +236,13 @@ typedef struct {
      * out again when it changes, since the bar takes width from them. */
     int bar_on;
     int bar_ours; /* WS_VSCROLL is up because this control put it up */
+    /* **Whether this control may ever show a vertical bar**, taken from
+     * WS_VSCROLL as the window was created and then removed from the style.
+     * Sam measured that the bit is a permission rather than a request
+     * (tools/vm/barwhy.c): a control created without it never gets a bar
+     * however much it overflows, and one created with it has the bit taken
+     * off again whenever the document fits. */
+    int bar_allowed;
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
@@ -271,6 +278,12 @@ static ween_rich *rich_state(HWND w)
         if (e) {
             e->sb_grab = -1;
             e->bar_anchor_row = -1;
+            /* **`WS_VSCROLL` at creation is a permission, not a request**, so
+             * it is remembered here and taken straight back off the window:
+             * an empty document has nothing to scroll and riched20 shows no
+             * bar on one. See rich_relines. */
+            e->bar_allowed = (w->style & WS_VSCROLL) != 0;
+            w->style &= ~(DWORD)WS_VSCROLL;
             e->text = calloc(1, 1); /* always a string, never NULL */
             e->cap = 1;
         }
@@ -1154,14 +1167,29 @@ static void rich_relines(HWND wnd, ween_rich *e)
      *     machine, WordPad's editor, overflowing WS_VSCROLL set
      *     ours, bare control, overflowing        WS_VSCROLL set   <- here
      *
-     * So *"the control puts its own scrollbar up"* is measured of the editor
-     * WordPad makes and generalised here to every rich edit. **What makes
-     * WordPad's gain the style is not measured** -- `ES_AUTOVSCROLL` and
-     * `EM_SETRECT` are both candidates and reasoning from either name is the
-     * thing this file keeps getting wrong. It is left broad rather than
-     * narrowed to a guess, because jd's editor is the measured case and a
-     * bare control with a bar is a smaller error than WordPad without one;
-     * when somebody reads which bit does it, the condition goes here. */
+     * **Somebody read which bit does it, so the condition is here now.** This
+     * said the rule was measured of WordPad's editor and generalised to every
+     * rich edit, that `ES_AUTOVSCROLL` and `EM_SETRECT` were both candidates,
+     * and that it was left broad on purpose until someone measured. Sam did
+     * (`tools/vm/barwhy.c`):
+     *
+     *     created WITHOUT WS_VSCROLL  empty 550081C4  61 lines 550081C4  never
+     *     created WITH    WS_VSCROLL  empty 550081C4  61 lines 552081C4  raised
+     *
+     * **`WS_VSCROLL` at creation is a permission, not a request.** Neither
+     * candidate: the plain window bit, which is why nobody found it by
+     * reasoning about names. A control created without it never shows a bar
+     * however far it overflows; one created with it has the bit taken off
+     * again whenever the document fits, which is why `550081C4` read off a
+     * running WordPad is a *resting state* and not the style it was made
+     * with.
+     *
+     * The guess this replaces was wrong in the direction it admitted to: we
+     * put a bar on a bare control, which the machine never does. */
+    if (!e->bar_allowed) {
+        rich_clamp_scroll(wnd, e);
+        return;
+    }
     if (!(wnd->style & WS_VSCROLL)) {
         if (!rich_overflows(wnd, e)) {
             rich_clamp_scroll(wnd, e);
@@ -1169,7 +1197,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
         }
         wnd->style |= WS_VSCROLL;
         e->bar_ours = 1;
-    } else if (e->bar_ours && !rich_overflows(wnd, e)) {
+    } else if (!rich_overflows(wnd, e)) {
         wnd->style &= ~(DWORD)WS_VSCROLL;
         e->bar_ours = 0;
         rich_clamp_scroll(wnd, e);

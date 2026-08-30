@@ -202,12 +202,31 @@ static void rp_filler(char *out, int n, int seed)
  * is what `src/main.zig` sends before a character exists. **The control
  * under test is the one jd drives**, so a divergence is the program rather
  * than the setup.
+ *
+ * **`WS_VSCROLL` is added to it, and that is a correction rather than a
+ * decoration.** Sam measured what the bit does (`tools/vm/barwhy.c`):
+ *
+ *     created WITHOUT WS_VSCROLL   empty 550081C4   61 lines 550081C4   never
+ *     created WITH    WS_VSCROLL   empty 550081C4   61 lines 552081C4   raised
+ *
+ * **The bit is a permission, not a request**, and riched20 takes it off a
+ * control whose document fits. So `550081C4` -- the word this repository has
+ * quoted all day, including here -- is a *resting state read off a running
+ * WordPad with an empty document*, not the style WordPad created the editor
+ * with. It cannot be, because WordPad's editor demonstrably gets a bar.
+ *
+ * Without this the guest's control could never raise one, ween32's does, and
+ * **`vscroll` would have disagreed on every overflowing sequence -- a
+ * manufactured finding, in the field added specifically to catch a real
+ * one.** No scenario overflows today, so it has cost nothing yet; it would
+ * have cost the first one that did.
  */
 static HWND rp_create(HWND parent)
 {
     CHARFORMATA d;
     HWND re = CreateWindowExA(0x00000210, RICHEDIT_CLASSA, "",
-                              (DWORD)0x550081C4, 0, 0, 280, 160, parent, NULL,
+                              (DWORD)0x550081C4 | WS_VSCROLL, 0, 0, 280, 160,
+                              parent, NULL,
                               NULL, NULL);
     if (!re)
         return NULL;

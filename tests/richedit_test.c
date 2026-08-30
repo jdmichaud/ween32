@@ -2348,24 +2348,43 @@ int main(void)
      * and then shows nothing, so what jd sees is **the caret below the
      * visible rows with no bar to say so** -- typing that lands invisibly.
      *
-     * **The control puts the style up itself**, which is measured rather
-     * than assumed and is why the two readings we had looked contradictory:
+     * **The control puts the style up itself, but only if it was created
+     * with permission to.** Two readings looked contradictory:
      *
      *     reference/probe/window.txt   550081C4   an empty document
      *     Sam, overflowing             552081C4   the same control, full
      *     difference                   0x00200000, WS_VSCROLL, alone
      *
-     * Both true, of different moments. WordPad creates it without the style
-     * (src/main.zig:959) and riched20 adds it. Neither file was wrong;
-     * neither said *when*.
+     * Both true, of different moments -- and this file then said WordPad
+     * creates the editor *without* the style and riched20 adds it. **That was
+     * wrong, and Sam measured it** (tools/vm/barwhy.c):
+     *
+     *     created WITHOUT WS_VSCROLL  empty 550081C4  61 lines 550081C4  never
+     *     created WITH    WS_VSCROLL  empty 550081C4  61 lines 552081C4  raised
+     *
+     * `550081C4` read off a running WordPad is a **resting state**, not a
+     * creation style -- riched20 had already taken the bit off an empty
+     * document. So the bit is a permission: without it, no bar however far
+     * the text runs; with it, raised and lowered as the document needs.
+     *
+     * Both assertions below changed direction as a result, and they are the
+     * ones that made the old guess look confirmed.
      */
     {
         HWND host3 = CreateWindowExA(0, "weenrich", "h3", WS_POPUP | WS_VISIBLE,
                                      0, 0, 300, 200, NULL, NULL, NULL, NULL);
-        /* WordPad's own word, and the point is what is *not* in it. */
+        /* Created WITHOUT the permission: the case Sam measured never gets a
+         * bar, however far the text runs past the bottom. */
+        HWND bare = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                    WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                        ES_AUTOVSCROLL | ES_WANTRETURN,
+                                    0, 0, 280, 100, host3, NULL, NULL, NULL);
+        /* And WordPad's own, which has it -- 0x550081C4 with WS_VSCROLL, the
+         * style it must have been created with to be seen wearing 552081C4. */
         HWND t = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
-                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
-                                     ES_AUTOVSCROLL | ES_WANTRETURN,
+                                 WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+                                     ES_MULTILINE | ES_AUTOVSCROLL |
+                                     ES_WANTRETURN,
                                  0, 0, 280, 100, host3, NULL, NULL, NULL);
         char big[4000];
         int n = 0;
@@ -2374,11 +2393,16 @@ int main(void)
 
         CHECK(bar_pixels(t) == 0, "an editor that fits has no scrollbar");
 
+        SendMessageA(bare, WM_SETTEXT, 0, (LPARAM)big);
+        CHECK((GetWindowLongA(bare, GWL_STYLE) & WS_VSCROLL) == 0 &&
+                  bar_pixels(bare) == 0,
+              "a control created without WS_VSCROLL never gets a bar, "
+              "however far the text runs past the bottom");
+
         SendMessageA(t, WM_SETTEXT, 0, (LPARAM)big);
         CHECK((GetWindowLongA(t, GWL_STYLE) & WS_VSCROLL) != 0,
-              "text past the bottom puts WS_VSCROLL on the control itself, "
-              "which is what riched20 does rather than what its creator "
-              "asked for");
+              "text past the bottom puts WS_VSCROLL on a control created "
+              "with permission to have one");
         CHECK(bar_pixels(t) > 0, "and the bar is drawn");
 
         /* The text is not refused, which is the half of jd's sentence that
@@ -2398,16 +2422,23 @@ int main(void)
               "does too");
         CHECK(bar_pixels(t) == 0, "and the bar with it");
 
-        /* But a bar its creator asked for is not the control's to remove:
-         * every machine reading is of an editor created without the style. */
+        /* **This asserted the opposite and it was the guess, not a reading.**
+         * A bar its creator asked for was said not to be the control's to
+         * remove. Sam's second row is the same control created WITH the style
+         * and reading 550081C4 while empty -- so riched20 does take it off,
+         * and what survives is the permission rather than the bar. */
         HWND asked = CreateWindowExA(0, RICHEDIT_CLASSA, "",
                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                          ES_MULTILINE,
                                      0, 100, 280, 60, host3, NULL, NULL, NULL);
         SendMessageA(asked, WM_SETTEXT, 0, (LPARAM) "short");
+        CHECK((GetWindowLongA(asked, GWL_STYLE) & WS_VSCROLL) == 0,
+              "a WS_VSCROLL the program asked for is taken off a document "
+              "that does not need it: the bit is a permission, not a bar");
+        SendMessageA(asked, WM_SETTEXT, 0, (LPARAM)big);
         CHECK((GetWindowLongA(asked, GWL_STYLE) & WS_VSCROLL) != 0,
-              "while a WS_VSCROLL the program asked for survives a document "
-              "that does not need it");
+              "and comes back when one is needed, so the permission outlives "
+              "the style bit");
         DestroyWindow(host3);
     }
 
