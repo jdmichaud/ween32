@@ -63,7 +63,12 @@ void WinMainCRTStartup(void){WNDCLASSA wc;HWND host,re;CHARFORMATA cf;RECT cr;in
   cf.dwMask=CFM_FACE|CFM_SIZE|CFM_BOLD|CFM_ITALIC|CFM_UNDERLINE;
   cf.yHeight=200;lstrcpyA(cf.szFaceName,"Arial");
   SendMessageA(re,EM_SETCHARFORMAT,SCF_DEFAULT,(LPARAM)&cf);
-  SendMessageA(re,EM_SETTARGETDEVICE,0,1440);   /* wrap off: one long line */
+  /* **1440 is arbitrary and that is the point.** Sam bisected it: every
+   * target width from 1 to 15840 turns wrapping off identically, so the
+   * message only ever had to be non-zero. Written as a number it reads like a
+   * measured twips-per-inch and it is not one -- the kind of constant that
+   * can be wrong for years without looking wrong. */
+  SendMessageA(re,EM_SETTARGETDEVICE,0,1440); /* wrap off: one long line */
   SetWindowTextA(re,TEXT06);pump(120);
   GetClientRect(re,&cr);
   fprintf(GUEST_STREAM,"client %ld %ld\n",(long)(cr.right-cr.left),(long)(cr.bottom-cr.top));

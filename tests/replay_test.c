@@ -79,6 +79,9 @@ int main(int argc, char **argv)
             "waits here";
         RECT cr;
         int len;
+        /* 1440 is arbitrary: Sam bisected every width from 1 to 15840 and
+         * they turn wrapping off identically, so it only had to be non-zero.
+         * Written as a number it reads like a measured twips-per-inch. */
         SendMessageA(re, EM_SETTARGETDEVICE, 0, 1440);
         SetWindowTextA(re, t);
         GetClientRect(re, &cr);
