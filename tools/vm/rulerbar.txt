@@ -1,0 +1,27 @@
+== does riched20 wrap to dxRightIndent? ==
+  asked for 280x160; client is 408 x 289
+  dxRightIndent 0 twips = 0px: break at 64, last x on line 1 379, lines 3
+  dxRightIndent 720 twips = 48px: break at 58, last x on line 1 345, lines 3
+  dxRightIndent 1440 twips = 96px: break at 52, last x on line 1 309, lines 3
+  dxRightIndent 2880 twips = 192px: break at 35, last x on line 1 209, lines 4
+
+== when does the vertical scrollbar appear? ==
+  client 408 x 289 px, style has WS_VSCROLL
+  lines 2, last line top y 17, bottom 33, WS_VSCROLL -
+  lines 3, last line top y 33, bottom 49, WS_VSCROLL -
+  lines 4, last line top y 49, bottom 65, WS_VSCROLL -
+  lines 5, last line top y 65, bottom 81, WS_VSCROLL -
+  lines 6, last line top y 81, bottom 97, WS_VSCROLL -
+  lines 7, last line top y 97, bottom 113, WS_VSCROLL -
+  lines 8, last line top y 113, bottom 129, WS_VSCROLL -
+  lines 9, last line top y 129, bottom 145, WS_VSCROLL -
+  lines 10, last line top y 145, bottom 161, WS_VSCROLL -
+  lines 11, last line top y 161, bottom 177, WS_VSCROLL -
+  lines 12, last line top y 177, bottom 193, WS_VSCROLL -
+  lines 13, last line top y 193, bottom 209, WS_VSCROLL -
+  lines 14, last line top y 209, bottom 225, WS_VSCROLL -
+  lines 15, last line top y 225, bottom 241, WS_VSCROLL -
+  lines 16, last line top y 241, bottom 257, WS_VSCROLL -
+  lines 17, last line top y 257, bottom 273, WS_VSCROLL -
+  lines 18, last line top y 273, bottom 289, WS_VSCROLL -
+  lines 19, last line top y 273, bottom 289, WS_VSCROLL SET
