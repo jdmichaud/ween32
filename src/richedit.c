@@ -913,6 +913,26 @@ static int rich_wrap_width(HWND wnd, ween_rich *e, const ween_pfmt *pf,
         w -= rfmt_px_twips(pf->start_indent);
         if (!first)
             w -= rfmt_px_twips(pf->offset);
+        /* **The bullet's own indent is deliberately NOT taken off here, and
+         * that is a gap rather than a decision.**
+         *
+         * By the rule above -- every term `rich_line_left` adds -- it should
+         * be: a bulleted first line begins eleven pixels in and wraps at the
+         * full width, overflowing by that much. I wrote the term, and then
+         * could not make any text demonstrate it: a break every three
+         * characters, an eleven-pixel indent, and the line broke in the same
+         * place with and without.
+         *
+         * **So the term went in unverified, and it came back out.** What is
+         * measured is where a bulleted line *begins* -- Sam's four rows and
+         * the eleven-pixel floor. **Whether riched20 also narrows the wrap
+         * for it is a different question and nobody has asked it.** One
+         * sequence answers it once there is a machine: a bulleted paragraph
+         * with dense break opportunities, and where its first line breaks.
+         *
+         * Adding it would have been swapping one unmeasured rule for a
+         * tidier unmeasured rule, which is the thing this file keeps
+         * catching. */
     }
     return w > 0 ? w : 0;
 }

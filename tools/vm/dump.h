@@ -218,11 +218,36 @@ static void dump_open(FILE *f, HWND re)
      *
      * The length comes from the control rather than from the next line's
      * start, so the last line has one too. */
+    /* **And where it sits, which is a third question again.**
+     *
+     * Sam, on alice finding that the control measures one font and lays out
+     * in another: *"your line-height bug is invisible to the differential
+     * harness."* He is right, and it is the same shape as the right indent
+     * one directory up -- `at` and `len` are both character indices, so a
+     * control laying out at 80px per line and one at 16px produce **the same
+     * dump**. Every scenario here has two lines and not one of them could
+     * have seen it.
+     *
+     * `y` is the first geometry in a value dump, which is a real cost: it
+     * moves with the scroll and with the font, and geometry can drown a
+     * comparison in differences that are not bugs. alice settled it with a
+     * number rather than a preference -- machine line tops 17, 33, 49, 65,
+     * a pitch of 16 for Arial 10, against ours at 80 -- so the field has a
+     * known correct value on both sides before it is added.
+     *
+     * It is deliberately **not** excused by the wrap-column rule: that rule
+     * allows the `at` column to differ and requires every later field to
+     * match, so a pitch difference is a finding on its first run. */
     n = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0);
     for (i = 0; i < n; i++) {
         long at = (long)SendMessageA(re, EM_LINEINDEX, (WPARAM)i, 0);
-        fprintf(f, "line %d at %ld len %ld\n", i, at,
-                (long)SendMessageA(re, EM_LINELENGTH, (WPARAM)at, 0));
+        POINTL pt;
+        pt.x = 0;
+        pt.y = 0;
+        SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&pt, (LPARAM)at);
+        fprintf(f, "line %d at %ld len %ld y %ld\n", i, at,
+                (long)SendMessageA(re, EM_LINELENGTH, (WPARAM)at, 0),
+                (long)pt.y);
     }
 
     /* **The scrollbar, whose timing was outside the contract entirely.**

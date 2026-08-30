@@ -253,7 +253,47 @@ not in the language  tabs; anything driven by a mouse — deliberately, since
                      which leaves §5's drag-and-drop and the selection bar
                      to tests/monkey_test.c alone
 not comparable       wrap columns, while the fonts differ (entry 6)
+never asked          whether a bullet narrows the wrap, or only moves the
+                     line's start
 ```
+
+**The `y` came out of Sam noticing what the dump could not see.** alice found
+the control measures one font and lays out in another; Sam's answer was that
+**the harness could not have found it** -- `at` and `len` are character
+indices, so a control laying out at 80px a line and one at 16px produce the
+same dump. Every scenario here has two lines and not one could see it.
+
+It is the right-indent lesson a second time, one field over: *every
+instrument checked that a setting was stored; not one checked that it did
+anything.*
+
+## The bullet's wrap term -- written, unverifiable, removed
+
+By the rule the indents established -- every term `rich_line_left` adds,
+`rich_wrap_width` takes off -- a bulleted first line should wrap eleven
+pixels earlier. I wrote it, and then no text could show it:
+
+```
+text "ab ab ab ..." -- a break every three characters
+plain                              first line breaks at 45
+bulleted                                                45
+start indent 165tw, the same 11px                       45
+```
+
+Either the subtraction never reached the width or eleven pixels never
+crosses a break, and **I could not tell which from the outside** -- that is
+the only thing I established.
+
+So it came out. What is measured is where a bulleted line *begins* (Sam's
+four rows, the eleven-pixel floor); **whether the line also ends earlier is
+a different fact and neither side has been asked.** Sam's reconciliation of
+the bullet grid as "one rule with a floor" is an inference over two
+measurements, not a reading of either, and shipping on it would have swapped
+an unmeasured rule for a *tidier* unmeasured rule. The tidiness is what makes
+that hard to see later.
+
+One sequence settles it once there is a machine, and `line N at X len Y` can
+already say it.
 
 **A sequence can only find what the language can say and the dump can see.**
 That is not a caveat about one run; it is the shape of the instrument, and it
