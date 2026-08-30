@@ -857,6 +857,8 @@ static int rich_selbar(HWND wnd);
 static void rich_fmt(HWND wnd, RECT *r);
 static int rich_bar(HWND wnd);
 static int rich_visible_lines(HWND wnd);
+static int rich_overflows(HWND wnd, ween_rich *e);
+static int rich_rows_from(HWND wnd, ween_rich *e, int start);
 static int rich_next_tab_stop(ween_rich *e, int at, int x);
 
 /* How wide the text may be before it has to break, in pixels of client. */
@@ -1124,20 +1126,20 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * bare control with a bar is a smaller error than WordPad without one;
      * when somebody reads which bit does it, the condition goes here. */
     if (!(wnd->style & WS_VSCROLL)) {
-        if (e->lines <= rich_visible_lines(wnd)) {
+        if (!rich_overflows(wnd, e)) {
             rich_clamp_scroll(e);
             return;
         }
         wnd->style |= WS_VSCROLL;
         e->bar_ours = 1;
-    } else if (e->bar_ours && e->lines <= rich_visible_lines(wnd)) {
+    } else if (e->bar_ours && !rich_overflows(wnd, e)) {
         wnd->style &= ~(DWORD)WS_VSCROLL;
         e->bar_ours = 0;
         rich_clamp_scroll(e);
         return;
     }
     was = e->bar_on;
-    e->bar_on = e->lines > rich_visible_lines(wnd);
+    e->bar_on = rich_overflows(wnd, e);
     if (e->bar_on != was)
         rich_relines_once(wnd, e);
     rich_clamp_scroll(e);
@@ -1830,13 +1832,88 @@ static int rich_bar(HWND wnd)
     return (e && e->bar_on) ? ween_scroll_metric() : 0;
 }
 
-static int rich_visible_lines(HWND wnd)
+/* Whether there is anything to scroll: the document taller than the room.
+ *
+ * **A height, not a line count.** `e->lines > rich_visible_lines(wnd)` was
+ * the old test and it asks a different question once the capacity is counted
+ * from `first_visible` -- scrolled down, a short tail fits, and the bar would
+ * take itself away underneath the scroll. It also could not be right for
+ * mixed sizes in either direction: twelve small lines and one huge one is a
+ * count of thirteen either way.
+ *
+ * The threshold is `>`: content equal to the room does not raise it.
+ * Measured on riched20, and the direction matters -- it is the difference
+ * between a bar on an exactly-full control and no bar. **What the machine
+ * measures the room *against* -- the client or the inset formatting
+ * rectangle -- is a separate open question**, and this keeps the rectangle
+ * the old test used rather than settling it by choosing. The dump records
+ * `vscroll` but nobody has asked the machine where the edge is. */
+static int rich_overflows(HWND wnd, ween_rich *e)
+{
+    return e && e->lines > rich_rows_from(wnd, e, 0);
+}
+
+/* How many lines fit, counted from the first visible one.
+ *
+ * **This used to be `(r.bottom - r.top) / rich_line_height(wnd)`, and that
+ * was jd's "the scrollbar appears too late".** alice found the cause:
+ * `rich_line_height` reads `wnd->font`, the `WM_SETFONT` font -- and WordPad
+ * never sends `WM_SETFONT`, it sets Arial 10 with `EM_SETCHARFORMAT
+ * SCF_DEFAULT`. So the capacity was measured in the shell font while every
+ * line was laid out in the document's.
+ *
+ * Line *layout* was already format-aware (`rich_line_extent` goes through
+ * `rfmt_strike`), which is why the pitch was right and only the scrollbar was
+ * wrong -- this was the one call site still asking the window. Measured
+ * before the change, client 156 tall, Arial 24, a line 19px so eight fit:
+ *
+ *     9 lines    last line spans 153..172, 16px past the bottom   no bar
+ *    11 lines    last line top 191, 35px past                     no bar
+ *    13 lines    13 * 13px of shell font finally exceeds 156      bar
+ *
+ * Five lines late. The table knows each line's real height, so it is asked
+ * instead: the answer is exact for mixed sizes rather than approximately
+ * right for uniform ones, and it needs no font at all.
+ *
+ * Counted from `first_visible` because with variable heights "how many fit"
+ * depends on where you start. */
+static int rich_rows_from(HWND wnd, ween_rich *e, int start)
 {
     RECT r;
-    int line = rich_line_height(wnd), rows;
+    int room, top, rows = 0, i;
     rich_fmt(wnd, &r);
-    rows = line > 0 ? (r.bottom - r.top) / line : 0;
+    room = r.bottom - r.top;
+    if (!e || !e->lines) {
+        int line = rich_line_height(wnd);
+        rows = line > 0 ? room / line : 0;
+        return rows > 0 ? rows : 1;
+    }
+    i = start;
+    if (i < 0 || i >= e->lines)
+        i = 0;
+    top = e->line[i].top;
+    for (; i < e->lines; i++) {
+        if (e->line[i].top + e->line[i].height - top > room)
+            break;
+        rows++;
+    }
+    /* **Never nought**, so a control too short for a single line still has a
+     * page of one and a one-line document never raises the bar.
+     *
+     * That floor is inherited from the arithmetic this replaced -- it fell
+     * out of `room / line` being clamped -- and it is **not measured**. What
+     * riched20 does with a line taller than its client is a question nobody
+     * has asked; monkey_test.c asserts the bar is down on a one-line
+     * document, which is this floor read back rather than an independent
+     * reading. Kept because dropping it would change an untested behaviour
+     * while fixing a measured one. */
     return rows > 0 ? rows : 1;
+}
+
+static int rich_visible_lines(HWND wnd)
+{
+    ween_rich *e = rich_state(wnd);
+    return rich_rows_from(wnd, e, e ? e->first_visible : 0);
 }
 
 static ween_sbstate rich_sbstate(HWND wnd)

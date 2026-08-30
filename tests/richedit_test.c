@@ -1339,17 +1339,54 @@ int main(void)
         GetClientRect(re, &cr);
         rows = (int)SendMessageA(re, EM_GETLINECOUNT, 0, 0);
         CHECK(rows == 61, "sixty lines and the empty one after the last break");
-        g_vscroll = 0;
-        SendMessageA(re, WM_LBUTTONDOWN, 0,
-                     MAKELPARAM(cr.right - 4, cr.bottom / 2));
-        SendMessageA(re, WM_LBUTTONUP, 0,
-                     MAKELPARAM(cr.right - 4, cr.bottom / 2));
-        top = (int)SendMessageA(re, EM_GETFIRSTVISIBLELINE, 0, 0);
         {
-            const ween_strike *f = ween_gui_font();
-            int line = f ? f->ascent - f->descent : 13;
-            int page = (cr.bottom - cr.top - 2) / line;
-            CHECK(top == page - 1,
+            /* **Which line is at the bottom now** -- read before the click,
+             * which is the whole point of the sentence being tested. I first
+             * measured it afterwards and it dutifully reported the bottom of
+             * the *scrolled* view: `EM_POSFROMCHAR` is relative to the first
+             * visible line, so it came back 22 rather than 11 and the check
+             * compared the answer with itself moved down a page.
+             *
+             * The formatting rectangle, not the client: they differ by the
+             * inset, and whether riched20 measures its capacity against one
+             * or the other is an open question this test must not decide by
+             * accident. `EM_GETRECT` asks the control which it is using.
+             *
+             * Nothing here knows a font. It used to divide the client by
+             * `ween_gui_font()`'s height, which is exactly the bug alice
+             * found in `rich_visible_lines` written out a second time in the
+             * test covering it -- the capacity measured in the shell font
+             * while the lines were laid out in the document's. A test that
+             * repeats the implementation's assumption cannot fail when the
+             * assumption is wrong. */
+            POINTL a, b;
+            RECT fr;
+            int pitch, last = 0, i;
+            a.x = a.y = b.x = b.y = 0;
+            SendMessageA(re, EM_GETRECT, 0, (LPARAM)&fr);
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&a,
+                         SendMessageA(re, EM_LINEINDEX, 0, 0));
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&b,
+                         SendMessageA(re, EM_LINEINDEX, 1, 0));
+            pitch = (int)(b.y - a.y);
+            for (i = 0; i < rows; i++) {
+                POINTL pt;
+                pt.x = pt.y = 0;
+                SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&pt,
+                             SendMessageA(re, EM_LINEINDEX, (WPARAM)i, 0));
+                if (pt.y + pitch > fr.bottom)
+                    break;
+                last = i;
+            }
+
+            g_vscroll = 0;
+            SendMessageA(re, WM_LBUTTONDOWN, 0,
+                         MAKELPARAM(cr.right - 4, cr.bottom / 2));
+            SendMessageA(re, WM_LBUTTONUP, 0,
+                         MAKELPARAM(cr.right - 4, cr.bottom / 2));
+            top = (int)SendMessageA(re, EM_GETFIRSTVISIBLELINE, 0, 0);
+
+            CHECK(pitch > 0 && last > 0 && top == last,
                   "a click below the thumb moves a screenful less one line, "
                   "so the line that was at the bottom is at the top");
         }
