@@ -120,6 +120,30 @@ def main():
     args = ap.parse_args()
 
     a, b = read(args.ours), read(args.theirs)
+
+    # **An empty dump is not a document, and it must not read as findings.**
+    # A dump has a `len` line unconditionally, so a file without one did not
+    # come from the serialiser -- the replay binary failed to build, or the
+    # probe never ran, or the redirect went somewhere else.
+    #
+    # It matters because of what it looks like: every field missing on one
+    # side is reported as a difference, so an empty file comes out as **"7
+    # new, 0 known"** across every scenario -- a full-looking table of
+    # findings, identical in shape to a real one. I produced exactly that
+    # three times today, twice from `make` leaving no binary behind after
+    # verify.sh had rebuilt the library with X11, and read it as seven
+    # divergences each time before checking.
+    #
+    # This is the same guard `tools/build.py` puts in front of the wordpad
+    # instruments -- *refuse rather than warn* -- and the differ was the one
+    # instrument in either repository that did not have it.
+    for path, dump in ((args.ours, a), (args.theirs, b)):
+        if not any(k == "len" for k, _ in dump):
+            sys.exit("%s has no `len` line, so it is not a dump: the program "
+                     "that should have written it did not run.\n"
+                     "Refusing to compare -- an empty file reports as a "
+                     "difference in every field, which reads exactly like a "
+                     "finding." % path)
     da, db = dict(a), dict(b)
     keys = [k for k, _ in a] + [k for k, _ in b if k not in da]
 
