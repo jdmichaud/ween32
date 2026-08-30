@@ -1,0 +1,92 @@
+== 10:21:15 ==
+ focus unknown
+
+ window WordPadClass "Document - WordPad"
+  ComboBox id 165   count 21   cursel 0   shows "Arial"
+    Arial Arial Black Comic Sans MS Courier New Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif Modern Palatino Linotype Roman Script Symbol Tahoma
+    Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 166   count 0   cursel -1   shows "10"
+  ComboBox id 207   count 9   cursel 8   shows "Western"
+    Arabic Baltic Central European Cyrillic Greek Hebrew Turkish Vietnamese Western
+== 10:22:04 ==
+ focus unknown
+
+ window WordPadClass "Document - WordPad"
+  ComboBox id 165   count 21   cursel 0   shows "Arial"
+    Arial Arial Black Comic Sans MS Courier New Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif Modern Palatino Linotype Roman Script Symbol Tahoma
+    Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 166   count 16   cursel 2   shows "10"
+    8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72
+   
+  ComboBox id 207   count 9   cursel 8   shows "Western"
+    Arabic Baltic Central European Cyrillic Greek Hebrew Turkish Vietnamese Western
+== 10:29:37 ==
+ focus unknown
+
+ window WordPadClass "Document - WordPad"
+  ComboBox id 165   count 21   cursel 10   shows "Modern"
+    Arial Arial Black Comic Sans MS Courier New Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif Modern Palatino Linotype Roman Script Symbol Tahoma
+    Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 166   count 16   cursel 4   shows "12"
+    8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72
+   
+  ComboBox id 207   count 1   cursel 0   shows "OEM/DOS"
+    OEM/DOS
+== 10:30:22 ==
+ focus unknown
+
+ window #32770 "Font"
+  ComboBox id 1136   count 24   cursel -1   shows ""
+    Arial Arial Black Comic Sans MS Courier Courier New Fixedsys Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif MS Sans Serif MS Serif Palatino Linotype Small Fonts
+    Symbol System Tahoma Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1137   count 4   cursel 0   shows "Regular"
+    Regular Italic Bold Bold Italic
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1138   count 16   cursel 4   shows "12"
+    8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72
+   
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1139   count 16   cursel 0   shows "Black"
+    Black Maroon Green Olive Navy Purple Teal Gray Silver Red Lime Yellow Blue Fuchsia Aqua White
+   
+  ComboBox id 1140   count 0   cursel -1   shows ""
+
+ window WordPadClass "Document - WordPad"
+  ComboBox id 165   count 21   cursel 10   shows "Modern"
+    Arial Arial Black Comic Sans MS Courier New Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif Modern Palatino Linotype Roman Script Symbol Tahoma
+    Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 166   count 16   cursel 4   shows "12"
+    8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72
+   
+  ComboBox id 207   count 1   cursel 0   shows "OEM/DOS"
+    OEM/DOS
+== 10:31:34 ==
+ focus unknown
+
+ window #32770 "Font"
+  ComboBox id 1136   count 24   cursel 12   shows "MS Sans Serif"
+    Arial Arial Black Comic Sans MS Courier Courier New Fixedsys Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif MS Sans Serif MS Serif Palatino Linotype Small Fonts
+    Symbol System Tahoma Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1137   count 4   cursel 0   shows "Regular"
+    Regular Italic Bold Bold Italic
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1138   count 6   cursel 2   shows "12"
+    8 10 12 14 18 24
+  ComboBox id 1000   count 0   cursel 0   shows ""
+  ComboBox id 1139   count 16   cursel 0   shows "Black"
+    Black Maroon Green Olive Navy Purple Teal Gray Silver Red Lime Yellow Blue Fuchsia Aqua White
+   
+  ComboBox id 1140   count 1   cursel 0   shows "Western"
+    Western
+
+ window WordPadClass "Document - WordPad"
+  ComboBox id 165   count 21   cursel 10   shows "Modern"
+    Arial Arial Black Comic Sans MS Courier New Georgia Impact Lucida Console Lucida Sans Unicode Marlett Microsoft Sans Serif Modern Palatino Linotype Roman Script Symbol Tahoma
+    Times New Roman Trebuchet MS Verdana Webdings Wingdings
+  ComboBox id 166   count 16   cursel 4   shows "12"
+    8 9 10 11 12 14 16 18 20 22 24 26 28 36 48 72
+   
+  ComboBox id 207   count 1   cursel 0   shows "OEM/DOS"
+    OEM/DOS
