@@ -1,9 +1,4 @@
 # Two features whose grouping nobody has measured. Typing groups into one
 # transaction; whether a paste joins the run before it is unknown on both
 # sides, which is exactly why it is here.
-type abc
-sel 0 3
-copy
-key end
-paste
-undo
+type:97:0,type:98:0,type:99:0,end:0:0,paste:5:1,undo:0:0

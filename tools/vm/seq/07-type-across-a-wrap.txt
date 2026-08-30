@@ -1,6 +1,4 @@
 # An edit whose effect is not where the caret is. Inserting near the start
-# of a wrapped paragraph moves the break, so the line table changes far from
-# the character that was typed.
-type the quick brown fox jumps over the lazy dog and the patient heron waits
-sel 4 4
-type INSERTED
+# of a wrapped paragraph moves the break, so the line table changes far
+# from the character that was typed.
+type:116:0,type:104:0,type:101:0,type:32:0,type:113:0,type:117:0,type:105:0,type:99:0,type:107:0,type:32:0,type:98:0,type:114:0,type:111:0,type:119:0,type:110:0,type:32:0,type:102:0,type:111:0,type:120:0,type:32:0,type:106:0,type:117:0,type:109:0,type:112:0,type:115:0,type:32:0,type:111:0,type:118:0,type:101:0,type:114:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:108:0,type:97:0,type:122:0,type:121:0,type:32:0,type:100:0,type:111:0,type:103:0,type:32:0,type:97:0,type:110:0,type:100:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:104:0,type:101:0,type:114:0,type:111:0,type:110:0,type:32:0,type:119:0,type:97:0,type:105:0,type:116:0,type:115:0,type:32:0,type:104:0,type:101:0,type:114:0,type:101:0,select:4:4,type:73:0,type:78:0,type:83:0,type:69:0,type:82:0,type:84:0,type:69:0,type:68:0

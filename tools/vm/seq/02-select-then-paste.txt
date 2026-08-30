@@ -1,8 +1,3 @@
-# Replacing a formatted run with another. The question is what the pasted
-# text carries and what the surrounding runs become at the seam.
-type hello world
-sel 0 5
-bold 1
-copy
-sel 6 11
-paste
+# Replacing a formatted run with another. What does the pasted text carry,
+# and what do the runs either side of the seam become?
+type:104:0,type:101:0,type:108:0,type:108:0,type:111:0,select:0:5,bold:1:0,select:2:4,paste:6:3

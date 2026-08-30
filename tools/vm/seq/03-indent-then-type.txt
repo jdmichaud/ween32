@@ -1,5 +1,3 @@
 # Paragraph state changed under the caret. Dan's swapped ruler markers were
 # invisible until a second line existed, so this one wraps on purpose.
-type the quick brown fox jumps over the lazy dog and the patient heron waits
-indent 720 -720 0
-type and more text after the indent moved beneath it
+type:116:0,type:104:0,type:101:0,type:32:0,type:113:0,type:117:0,type:105:0,type:99:0,type:107:0,type:32:0,type:98:0,type:114:0,type:111:0,type:119:0,type:110:0,type:32:0,type:102:0,type:111:0,type:120:0,type:32:0,type:106:0,type:117:0,type:109:0,type:112:0,type:115:0,type:32:0,type:111:0,type:118:0,type:101:0,type:114:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:108:0,type:97:0,type:122:0,type:121:0,type:32:0,type:100:0,type:111:0,type:103:0,type:32:0,type:97:0,type:110:0,type:100:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:104:0,type:101:0,type:114:0,type:111:0,type:110:0,type:32:0,type:119:0,type:97:0,type:105:0,type:116:0,type:115:0,type:32:0,type:104:0,type:101:0,type:114:0,type:101:0,indent:720:-720,type:32:0,type:97:0,type:110:0,type:100:0,type:32:0,type:109:0,type:111:0,type:114:0,type:101:0,type:32:0,type:97:0,type:102:0,type:116:0,type:101:0,type:114:0

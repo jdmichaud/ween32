@@ -1,6 +1,4 @@
 # Layout moving under a selection. A scrollbar appearing changed a wrapping
 # width once already, and a selection is the state most likely to be held
 # as indices into a layout that just moved.
-type the quick brown fox jumps over the lazy dog and the patient heron waits
-sel 10 40
-resize 200 200
+type:116:0,type:104:0,type:101:0,type:32:0,type:113:0,type:117:0,type:105:0,type:99:0,type:107:0,type:32:0,type:98:0,type:114:0,type:111:0,type:119:0,type:110:0,type:32:0,type:102:0,type:111:0,type:120:0,type:32:0,type:106:0,type:117:0,type:109:0,type:112:0,type:115:0,type:32:0,type:111:0,type:118:0,type:101:0,type:114:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:108:0,type:97:0,type:122:0,type:121:0,type:32:0,type:100:0,type:111:0,type:103:0,type:32:0,type:97:0,type:110:0,type:100:0,type:32:0,type:116:0,type:104:0,type:101:0,type:32:0,type:104:0,type:101:0,type:114:0,type:111:0,type:110:0,type:32:0,type:119:0,type:97:0,type:105:0,type:116:0,type:115:0,type:32:0,type:104:0,type:101:0,type:114:0,type:101:0,select:10:40,resize:200:200
