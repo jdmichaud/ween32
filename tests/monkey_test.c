@@ -138,7 +138,16 @@ static void do_step(HWND re, const struct step *s)
 {
     switch (s->op) {
     case OP_TYPE: SendMessageA(re, WM_CHAR, (WPARAM)('a' + s->a % 26), 1); break;
-    case OP_ENTER: SendMessageA(re, WM_CHAR, '\r', 1); break;
+    case OP_ENTER:
+        /* Both messages, as a keystroke delivers them and as
+         * tools/vm/replay.h explains: riched20 acts on the keydown and
+         * ween32 now does too, so the WM_CHAR is the half TranslateMessage
+         * would add and neither acts on twice. Sending only the WM_CHAR --
+         * which this did -- inserts nothing at all since the break moved to
+         * WM_KEYDOWN. */
+        SendMessageA(re, WM_KEYDOWN, VK_RETURN, 0);
+        SendMessageA(re, WM_CHAR, '\r', 1);
+        break;
     case OP_PASTE: {
         char buf[128];
         int i, n = 1 + s->a % 60;

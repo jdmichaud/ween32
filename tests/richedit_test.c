@@ -78,10 +78,23 @@ static void key(HWND w, int vk, int shift, int ctrl)
                  (LPARAM)((shift ? 1 : 0) | (ctrl ? (1L << 28) : 0)));
 }
 
+/* **A Return is a keystroke, not a character.** riched20 makes its
+ * paragraph break in `WM_KEYDOWN VK_RETURN` and ignores `WM_CHAR` CR --
+ * measured on Windows 2000 -- and ween32 now does the same, so a test that
+ * sends only the WM_CHAR gets no break.
+ *
+ * A keyboard delivers both: WM_KEYDOWN, then WM_CHAR through
+ * TranslateMessage. So this sends the pair for a `\r` and the character
+ * alone for everything else, which is what typing that string *is*. Several
+ * cases below were written against the old behaviour and read as failures
+ * the moment the break moved. */
 static void typed(HWND w, const char *text)
 {
-    for (const char *p = text; *p; p++)
+    for (const char *p = text; *p; p++) {
+        if (*p == '\r')
+            SendMessageA(w, WM_KEYDOWN, VK_RETURN, 0);
         SendMessageA(w, WM_CHAR, (WPARAM)(unsigned char)*p, 0);
+    }
 }
 
 static const char *text_of(HWND w)
@@ -343,6 +356,9 @@ int main(void)
     typed(re, "hello");
     CHECK(strcmp(text_of(re), "hello") == 0, "typing puts the characters in");
     CHECK(caret_of(re) == 5, "and leaves the caret after them");
+    /* The keystroke, not the character: riched20 breaks the paragraph in
+     * WM_KEYDOWN and ignores WM_CHAR CR, and ween32 now matches it. */
+    SendMessageA(re, WM_KEYDOWN, VK_RETURN, 0);
     SendMessageA(re, WM_CHAR, (WPARAM)'\r', 0);
     typed(re, "world");
     CHECK(strcmp(text_of(re), "hello\r\nworld") == 0,
@@ -1010,6 +1026,7 @@ int main(void)
         pf.wAlignment = PFA_CENTER;
         SendMessageA(re, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
         SendMessageA(re, EM_SETSEL, 5, 5);
+        SendMessageA(re, WM_KEYDOWN, VK_RETURN, 0);
         SendMessageA(re, WM_CHAR, (WPARAM)'\r', 0);
         SendMessageA(re, EM_SETSEL, 0, 1);
         SendMessageA(re, EM_GETPARAFORMAT, 0, (LPARAM)&pf);

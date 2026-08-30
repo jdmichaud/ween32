@@ -3721,16 +3721,24 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (wnd->style & (WS_DISABLED | ES_READONLY))
             return 0;
         if (ch == '\r' || ch == '\n') {
-            /* A line of its own, written the way Windows writes one: a
-             * carriage return and a line feed, so a program reading the text
-             * back finds what it expects. A single-line control is not
-             * typing at all -- the dialog's default button has already had
-             * its chance at the key. */
-            if (!multi)
-                return 0;
-            rich_remember(e);
-            rich_delete_selection(wnd, e);
-            rich_insert(wnd, e, "\r"); /* one character, as it is stored */
+            /* **Nothing. riched20 ignores this, and it is measured.**
+             *
+             *     riched20 (Windows 2000)   ween32, before this
+             *     WM_CHAR CR   nothing      inserted a break
+             *     WM_KEYDOWN VK_RETURN
+             *                  inserts      did nothing
+             *
+             * Exactly opposite, on both forms. A program sending `WM_CHAR`
+             * CR to a rich edit got a paragraph from us and nothing from
+             * Windows; one sending the keydown got the reverse. The break is
+             * made in WM_KEYDOWN now, where the machine makes it.
+             *
+             * **A keyboard is unaffected either way**, because a keystroke
+             * delivers both messages -- WM_KEYDOWN, then WM_CHAR through
+             * TranslateMessage -- so the control acts once whichever of the
+             * two it listens to. That is why this was invisible: everything
+             * in tree types through the backend, which sends the pair. */
+            return 0;
         } else if (ch == '\b') {
             rich_remember(e);
             if (!rich_delete_selection(wnd, e) && e->caret > 0)
@@ -3852,6 +3860,30 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 e->caret = e->len;
             }
             break;
+        case VK_RETURN:
+            /* **The paragraph break is made here, which is where riched20
+             * makes it.** Measured on Windows 2000: `WM_KEYDOWN VK_RETURN`
+             * inserts and `WM_CHAR` CR does nothing, and ours was exactly
+             * opposite until this.
+             *
+             * A line of its own is written the way Windows writes one -- a
+             * carriage return and a line feed when the text is read back --
+             * though it is *one* character in index space, which is what
+             * `line 1 at 2` says for `type, enter, type`.
+             *
+             * A single-line control is not typing at all: the dialog's
+             * default button has already had its chance at the key. */
+            if (wnd->style & (WS_DISABLED | ES_READONLY))
+                return 0;
+            if (!(wnd->style & ES_MULTILINE))
+                return 0;
+            rich_remember(e);
+            rich_delete_selection(wnd, e);
+            rich_insert(wnd, e, "\r"); /* one character, as it is stored */
+            rich_show_caret(wnd, e);
+            rich_changed(wnd, e);
+            InvalidateRect(wnd, NULL, FALSE);
+            return 0;
         case VK_DELETE: {
             if (wnd->style & (WS_DISABLED | ES_READONLY))
                 return 0;
