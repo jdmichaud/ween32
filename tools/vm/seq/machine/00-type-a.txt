@@ -1,0 +1,7 @@
+len 2
+text 61
+sel 1 1
+next B-- Arial 200
+char 0..1 B-- Arial 200
+para 0..1 align 1 ind 0 0 0 num 0 tabs 0
+line 0 at 0

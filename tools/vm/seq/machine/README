@@ -1,0 +1,23 @@
+Dumps taken from a real riched20 on Windows 2000, one per sequence in the
+directory above, with tools/vm/seqprobe.exe.
+
+These are the other half of the differential test: `tests/replay_test` runs
+the same sequence against ween32 and the two dumps are diffed. Committing
+them means the comparison does not need a machine every time -- only when a
+sequence is added or the contract changes.
+
+Taken at ween32 197bc5f with bob's replay.h and dump.h at 3b03db1, control
+0x550081C4 ex 0x210, 280x160, SCF_DEFAULT Arial 10.
+
+Two things a reader should know before trusting a diff against these.
+
+`char` and `para` cover one index past the last visible character, because
+riched20's document always ends in a paragraph mark: `type a` gives len 2.
+That is the machine's model and ours does not have it yet.
+
+Three of the sequences were written to wrap and do not, because
+ES_AUTOHSCROLL in the style word turns word wrap off -- see lenwrap.txt. So
+`line` in 03, 06 and 07 says nothing yet, and those dumps will change when
+that is settled. They are committed anyway, and marked here, because a dump
+that is going to change is still better than no baseline as long as nobody
+mistakes it for one that is not.
