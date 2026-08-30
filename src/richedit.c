@@ -2584,6 +2584,24 @@ static int rich_text_width(HWND wnd, ween_rich *e)
  * Written as the library's own origin rather than as WordPad's number, so it
  * cannot be a pair of errors cancelling: tune the constant to 14 and the page
  * is right only for the one control shape that hides the origin bug. */
+/* **And this is the rule for a control with no formatting rectangle, which
+ * wordpad's editor is not.** `hpage.txt`'s other eight rows say the machine
+ * uses a different one once `EM_SETRECT` has been sent:
+ *
+ *     no rect     page = client - x0 - 1        x0 = inset + selection bar
+ *     with rect   page = client - 2 * x0        x0 = rect.left - 1
+ *
+ * Both exact over their own rows and neither covering the other. The second
+ * is **not implemented here on purpose**: the machine's `x0` under a
+ * rectangle is `rect.left - 1` because it drops the selection bar, and ours
+ * is `rect.left + 8` because it keeps it -- so building the machine's page
+ * rule onto our origin would be one half of a two-half fix, and the other
+ * half was landed and reverted this evening for being exactly that.
+ *
+ * **Whoever lands the origin change lands this with it.** Until then a
+ * control with a formatting rectangle gets the no-rect page, which is wrong
+ * by however far the two origins differ, and is written down here rather
+ * than left to be discovered by the scrollbar behaving oddly. */
 static int rich_hpage(HWND wnd)
 {
     RECT cr;
