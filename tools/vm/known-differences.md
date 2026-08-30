@@ -102,21 +102,46 @@ have lost its break on one side**, and the diff would have read as *ours
 inserts paragraphs that WordPad does not* — a spectacular finding entirely
 manufactured by the harness.
 
-## 5. Shift in the repeat count — a fault, not a difference
+## 5. ~~Shift in the repeat count~~ — FIXED
 
-ween32 reads Shift from `lParam` bit 0 (`src/richedit.c:3766`,
-`src/dialog.c:462`) where win32 keeps the repeat count. The executor passes
-0 so the two sides agree, which means **this harness cannot detect the
-divergence it is compensating for**.
+ween32 read Shift out of `lParam` bit 0, where win32 keeps the repeat count,
+and Ctrl out of bit 28, which win32 reserves. **So an ordinary synthesised
+keydown — repeat count 1, which is what every real keystroke carries — came
+out of us as a shift-keystroke.** Not only a harness problem: any win32
+program driving a control with `SendMessage` hit it.
 
-It is here so that the compensation is visible. The fix is in ween32's
-message queue: `GetKeyState` alone is not enough, because `g_shift_down` is
-set at event ingest (`src/user.c:3033`) and a handler runs at dispatch, so a
-batched gesture reports the last event's modifiers. win32 answers as of the
-message *retrieved*, which needs the modifier state carried on the queued
-message.
+```
+                                    before          after
+WM_KEYDOWN VK_LEFT, lParam 1    selection extended  caret moved
+same, Shift actually held       selection extended  selection extended
+```
 
----
+The fix is the one this entry named. `GetKeyState` in win32 answers as of the
+message *retrieved*, and ween32 set its modifier state at event ingest while
+handlers run at dispatch, so a batched gesture reported the last event's
+modifiers to every message in the batch — which is why the state was smuggled
+into `lParam` in the first place. The modifiers now travel **with** the queued
+message and are restored when it is taken off the queue. `MSG` is win32's own
+struct and `make win32` compiles it, so nothing could be added to it: a
+parallel ring beside `g_queue`. Nine read sites across five files moved to
+`GetKeyState`; Alt stays in bit 29, which is win32's own context code.
+
+**Every one of the tests covering this encoded the bug.** The `key()` helpers
+in `edit_test.c`, `richedit_test.c` and `keys_test.c` built their lParam the
+way the library read it, and `clip_test.c`, `views_test.c`, `resource_test.c`
+and `propsheet_test.c` wrote the bits out by hand. The suite and the library
+agreed with each other and neither agreed with win32, so **1223 assertions
+passed and would have passed under any convention at all**. That is the same
+shape as the paging test computing its expected page from `ween_gui_font()`,
+found the same evening, and it is worth naming as a class: *a test that
+re-derives the implementation's assumption cannot fail when the assumption is
+wrong.* Injecting a keystroke now goes through `ween_set_modifiers`, which is
+internal — the tests and the script driver are this library's input system, so
+they say what is held rather than encoding how it is stored.
+
+The executor still passes lParam 0 for its key operations. It no longer has to
+— both sides now agree with a proper repeat count — and it is left alone only
+so the machine dumps do not need taking a fourth time.
 
 ## 6. ~~Where a line wraps~~ — DELETED, BY A MEASUREMENT
 

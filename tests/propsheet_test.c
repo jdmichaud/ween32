@@ -63,7 +63,12 @@ static INT_PTR page_proc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp, int which)
         return TRUE;
     case WM_USER + 100:
         g_focus_before_ctrltab = GetFocus();
-        PostMessageA(sheet, WM_KEYDOWN, VK_TAB, 1L << 28);
+        /* Ctrl+Tab, posted: the modifiers travel with the message, so the
+         * state is set at post time and read back when it is retrieved --
+         * which is the whole mechanism, exercised end to end. */
+        ween_set_modifiers(0, 1, 0);
+        PostMessageA(sheet, WM_KEYDOWN, VK_TAB, 1);
+        ween_set_modifiers(0, 0, 0);
         return TRUE;
     case WM_NOTIFY: {
         const NMHDR *nm = (const NMHDR *)lp;

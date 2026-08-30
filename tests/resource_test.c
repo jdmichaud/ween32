@@ -359,7 +359,8 @@ int main(void)
     msg.hwnd = host;
     msg.message = WM_KEYDOWN;
     msg.wParam = 'N';
-    msg.lParam = 1L << 28; /* Control held, as the library posts it */
+    msg.lParam = 1;              /* a repeat count, as a real keydown has */
+    ween_set_modifiers(0, 1, 0); /* Control held: the key state, not lParam */
     g_command = 0;
     CHECK(TranslateAcceleratorA(host, accel, &msg) != 0,
           "Ctrl+N is taken by the table");

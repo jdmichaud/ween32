@@ -41,11 +41,20 @@ static LRESULT CALLBACK host_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(wnd, msg, wp, lp);
 }
 
-/* A key, the way the backend posts one: Shift in bit 0, Control in bit 28. */
+/* A key, as the pump delivers one: a repeat count of 1 in the low word, and
+ * the modifiers taken from the key state rather than smuggled into lParam.
+ *
+ * **This helper used to encode the bug it was covering** -- Shift in bit 0,
+ * Ctrl in bit 28 -- so the whole suite agreed with the library and neither
+ * agreed with win32, and no assertion could have noticed. `SendMessage` does
+ * not go through a queue and so carries no modifiers of its own; win32's
+ * input system sets that state, and here the test is the input system.
+ * Cleared afterwards so the next message is not shifted by this one. */
 static void key(HWND w, int vk, int shift, int ctrl)
 {
-    SendMessageA(w, WM_KEYDOWN, (WPARAM)vk,
-                 (LPARAM)((shift ? 1 : 0) | (ctrl ? (1L << 28) : 0)));
+    ween_set_modifiers(shift, ctrl, 0);
+    SendMessageA(w, WM_KEYDOWN, (WPARAM)vk, 1);
+    ween_set_modifiers(0, 0, 0);
 }
 
 static void typed(HWND w, const char *text)

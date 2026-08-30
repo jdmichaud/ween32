@@ -341,6 +341,12 @@ ween_color ween_cr_to_px(COLORREF c);
 extern int ween_menu_cues;
 extern int ween_kbd_used;
 
+/* Say which modifiers are held, for code that injects a keystroke with
+ * SendMessage rather than through the queue -- the tests and the script
+ * driver, which are this library's input system. A posted message carries
+ * its own; see g_qmods in user.c. */
+void ween_set_modifiers(int shift, int ctrl, int alt);
+
 /* And the dotted rectangle round the thing the keyboard would act on. This
  * one starts shown — a folder opens with it on the first item — and a click
  * in a list puts it away, an arrow key brings it back. */

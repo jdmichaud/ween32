@@ -189,9 +189,10 @@ int main(void)
         /* Shift and an arrow takes the run from the end it started at, and
          * keeps that end for the next press: measuring from the caret each
          * time leaves two rows picked however many times it is pressed —
-         * which is what it used to do. The library's own shift bit is the low
-         * one of lParam. */
-        SendMessageA(g_list, WM_KEYDOWN, VK_HOME, 0);
+         * which is what it used to do. Shift is in the key state now, where
+         * win32 keeps it; lParam's low word is the repeat count. */
+        SendMessageA(g_list, WM_KEYDOWN, VK_HOME, 1);
+        ween_set_modifiers(1, 0, 0);
         SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
         SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
         SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
@@ -200,12 +201,16 @@ int main(void)
         SendMessageA(g_list, WM_KEYDOWN, VK_UP, 1);
         CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 3,
               "and coming back up gives one of them up again");
-        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 0);
+        ween_set_modifiers(0, 0, 0);
+        SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
         CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 1,
               "an arrow with no Shift picks one and moves the end with it");
+        ween_set_modifiers(1, 0, 0);
         SendMessageA(g_list, WM_KEYDOWN, VK_DOWN, 1);
         CHECK(SendMessageA(g_list, LVM_GETSELECTEDCOUNT, 0, 0) == 2,
               "so the next run is measured from where that left the caret");
+
+        ween_set_modifiers(0, 0, 0);
 
         /* Enter says what a double click says — a shell opens what is picked
          * — and moves nothing while it says it. */

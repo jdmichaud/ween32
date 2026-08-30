@@ -461,8 +461,8 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
     HWND focus = ween_focus_get();
     /* the backend puts Shift in bit 0 of lParam and Alt in bit 29, where win32
      * keeps the context code */
-    int shift = (msg->lParam & 1) != 0;
-    int ctrl = (msg->lParam & (1L << 28)) != 0;
+    int shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    int ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     int alt = (msg->lParam & (1L << 29)) != 0;
 
     /* Alt on its own, or F10, opens the window's menu bar; Alt+letter opens
@@ -733,10 +733,12 @@ int TranslateAcceleratorA(HWND wnd, HACCEL table, LPMSG msg)
 {
     if (!wnd || !table || !msg || msg->message != WM_KEYDOWN)
         return 0;
-    /* the pump packs the modifiers into lParam: Shift in bit 0, Ctrl in 28,
-     * Alt in 29 */
-    int shift = (msg->lParam & 1) != 0;
-    int ctrl = (msg->lParam & (1L << 28)) != 0;
+    /* Shift and Ctrl come from the key state, which a posted message carries
+     * with it -- win32 answers `GetKeyState` as of the message retrieved, and
+     * ween32 used to pack them into lParam over the repeat count. Alt stays
+     * in bit 29, which is win32's own context code. */
+    int shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    int ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     int alt = (msg->lParam & (1L << 29)) != 0;
     for (int i = 0; i < table->count; i++) {
         const ACCEL *a = &table->entry[i];

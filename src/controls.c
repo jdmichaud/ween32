@@ -1832,8 +1832,8 @@ static LRESULT edit_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_KEYDOWN: {
-        int shift = (lp & 1) != 0;      /* the backend puts Shift in bit 0 */
-        int ctrl = (lp & (1L << 28)) != 0; /* and Ctrl in bit 28 */
+        int shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        int ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         int moved = 1;
         if (!e)
             return 0;
@@ -6180,7 +6180,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         l->focus = l->sel;
         /* the arrow moves the one that is picked, unless Shift is held, which
          * takes the run from the end the run started at */
-        if (!(wnd->style & LVS_SINGLESEL) && (lp & 1)) {
+        if (!(wnd->style & LVS_SINGLESEL) &&
+            (GetKeyState(VK_SHIFT) & 0x8000)) {
             if (!l->anchor)
                 l->anchor = l->sel;
             lv_select_range(l, l->anchor - 1, l->sel - 1);

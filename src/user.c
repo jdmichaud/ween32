@@ -130,6 +130,23 @@ static int g_dblclk = 0;  /* this press is the second of a pair */
  * did not fit, which is what USER32 does at its own (far higher) limit, but at
  * 64 a burst of mouse moves could swallow a keystroke behind it. */
 static MSG *g_queue;
+/* **The modifiers as of each queued message, kept beside the ring.**
+ *
+ * `MSG` is win32's own struct and `make win32` compiles this against the real
+ * `<windows.h>`, so nothing may be added to it -- the state travels in a
+ * parallel array instead.
+ *
+ * It has to travel at all because win32's `GetKeyState` answers as of the
+ * message *retrieved*, not as of now. ween32 set these at event ingest and a
+ * handler runs at dispatch, so a batched gesture reported the last event's
+ * modifiers to every message in the batch. That is why Shift was smuggled
+ * into `lParam` bit 0 instead -- where win32 keeps the repeat count, so a
+ * program sending an ordinary keydown with a repeat count of 1 got shifted
+ * behaviour out of us. */
+static unsigned char *g_qmods;
+/* What was held when the message now being handled was queued. GetKeyState
+ * answers from it. */
+static int g_shift_down, g_ctrl_down, g_alt_down;
 static int g_qcap = 0, g_qhead = 0, g_qtail = 0;
 static int g_quit = 0, g_quit_code = 0;
 /* Whether the quit came from a drained event queue rather than from the
@@ -2207,12 +2224,20 @@ static int queue_grow(void)
 {
     int cap = g_qcap ? g_qcap * 2 : 64;
     MSG *grown = malloc((size_t)cap * sizeof *grown);
-    if (!grown)
+    unsigned char *gmods = malloc((size_t)cap);
+    if (!grown || !gmods) {
+        free(grown);
+        free(gmods);
         return 0;
+    }
     int n = 0;
-    for (int i = g_qhead; i != g_qtail; i = (i + 1) % g_qcap)
+    for (int i = g_qhead; i != g_qtail; i = (i + 1) % g_qcap) {
+        gmods[n] = g_qmods ? g_qmods[i] : 0;
         grown[n++] = g_queue[i];
+    }
     free(g_queue);
+    free(g_qmods);
+    g_qmods = gmods;
     g_queue = grown;
     g_qcap = cap;
     g_qhead = 0;
@@ -2234,6 +2259,9 @@ static void post_msg(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     g_queue[g_qtail].message = msg;
     g_queue[g_qtail].wParam = wp;
     g_queue[g_qtail].lParam = lp;
+    g_qmods[g_qtail] = (unsigned char)((g_shift_down ? 1 : 0) |
+                                       (g_ctrl_down ? 2 : 0) |
+                                       (g_alt_down ? 4 : 0));
     g_qtail = next;
 }
 
@@ -2541,13 +2569,21 @@ static int button_bit(int button)
         return 0;
     }
 }
-/* What was held when the last event arrived, which is as much as one
- * keyboard can say between messages. GetKeyState answers from it. */
-static int g_shift_down, g_ctrl_down, g_alt_down;
-
 /* Whether a modifier is down right now. win32 answers for every key; here
  * only the three an application asks about mid-gesture are tracked -- a
  * drawing program holding Shift to constrain a line, say. */
+/* **For code that injects a keystroke with SendMessage**, which does not go
+ * through a queue and so cannot carry modifiers with it. win32's own input
+ * system sets this state; here the tests and the headless script driver are
+ * the input system, so they say it directly. Internal on purpose: it must not
+ * reach the public header, which `make win32` compiles against the real one. */
+void ween_set_modifiers(int shift, int ctrl, int alt)
+{
+    g_shift_down = shift;
+    g_ctrl_down = ctrl;
+    g_alt_down = alt;
+}
+
 SHORT GetKeyState(int vk)
 {
     int down = 0;
@@ -3142,11 +3178,17 @@ static void pump_event(struct ween_wnd *top, const ween_event *ev)
          * and Ctrl+O is enough to count -- its Open box comes up with them.
          * The windows already on the screen keep what they had. */
         ween_kbd_used = 1;
-        /* the character rides in the high word, where win32 keeps the scan
-         * code and repeat count; TranslateMessage turns it into WM_CHAR */
+        /* The character rides in the high word, where win32 keeps the scan
+         * code; TranslateMessage turns it into WM_CHAR.
+         *
+         * **The low word is the repeat count and holds 1**, which is what an
+         * ordinary keystroke carries. It used to hold Shift, and bit 28 --
+         * reserved in win32 -- used to hold Ctrl; both now travel with the
+         * message and come back out of `GetKeyState`. Bit 29 keeps Alt
+         * because that one is win32's own context code. */
         post_msg(g_focus ? g_focus : (HWND)top, WM_KEYDOWN, ev->vk,
-                 (LPARAM)(ev->ch << 16) | (ev->shift ? 1 : 0) |
-                     (ev->ctrl ? (1L << 28) : 0) | (ev->alt ? (1L << 29) : 0));
+                 (LPARAM)(ev->ch << 16) | 1 |
+                     (ev->alt ? (1L << 29) : 0));
         break;
     case WEEN_EV_CLOSE:
         post_msg(top, WM_CLOSE, 0, 0);
@@ -3187,10 +3229,18 @@ BOOL GetMessageA(LPMSG msg, HWND wnd, UINT min, UINT max)
     reap_windows();
     for (;;) {
         if (g_qhead != g_qtail) {
-            *msg = g_queue[g_qhead];
+            int at = g_qhead;
+            *msg = g_queue[at];
             g_qhead = (g_qhead + 1) % g_qcap;
             if (msg->hwnd && msg->hwnd->destroyed)
                 continue;
+            /* **As of the message retrieved**, which is win32's rule and the
+             * whole point of carrying it. Set after the destroyed-window skip
+             * so a message nobody will handle does not leave its modifiers
+             * behind. */
+            g_shift_down = (g_qmods[at] & 1) != 0;
+            g_ctrl_down = (g_qmods[at] & 2) != 0;
+            g_alt_down = (g_qmods[at] & 4) != 0;
             return TRUE;
         }
         if (g_quit) {

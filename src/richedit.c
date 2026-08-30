@@ -3918,8 +3918,8 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_KEYDOWN: {
-        int shift = (lp & 1) != 0;         /* the backend puts Shift in bit 0 */
-        int ctrl = (lp & (1L << 28)) != 0; /* and Ctrl in bit 28 */
+        int shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        int ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         int moved = 1, keeps_goal = 0;
         if (ctrl) {
             switch (wp) {

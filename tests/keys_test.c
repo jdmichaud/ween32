@@ -81,8 +81,7 @@ static HWND g_host;
 /* One key press, offered to IsDialogMessageA and then dispatched if it did not
  * want it — exactly what an app's loop does with it. The message is built
  * here rather than injected because a headless script runs the loop once, and
- * these assertions want to look between one key and the next. lParam carries
- * Shift in bit 0 and Alt in bit 29, where the pump puts them. */
+ * these assertions want to look between one key and the next. */
 static void key(unsigned vk, unsigned ch, int shift, int alt)
 {
     MSG msg;
@@ -90,11 +89,18 @@ static void key(unsigned vk, unsigned ch, int shift, int alt)
     msg.hwnd = ween_focus_get() ? ween_focus_get() : g_host;
     msg.message = WM_KEYDOWN;
     msg.wParam = vk;
-    msg.lParam = (LPARAM)(ch << 16) | (shift ? 1 : 0) | (alt ? (1L << 29) : 0);
-    if (IsDialogMessageA(g_host, &msg))
+    /* A repeat count of 1, Alt in win32's own context bit, and Shift in the
+     * key state where win32 keeps it -- this built the message by hand and so
+     * encoded the old convention twice over. */
+    msg.lParam = (LPARAM)(ch << 16) | 1 | (alt ? (1L << 29) : 0);
+    ween_set_modifiers(shift, 0, alt);
+    if (IsDialogMessageA(g_host, &msg)) {
+        ween_set_modifiers(0, 0, 0);
         return;
+    }
     TranslateMessage(&msg);
     DispatchMessageA(&msg);
+    ween_set_modifiers(0, 0, 0);
 }
 
 int main(void)
@@ -188,7 +194,8 @@ int main(void)
         msg.hwnd = g_host;
         msg.message = WM_KEYDOWN;
         msg.wParam = 'S';
-        msg.lParam = (LPARAM)(1L << 28); /* Ctrl */
+        msg.lParam = 1;            /* a repeat count, as a real keydown has */
+        ween_set_modifiers(0, 1, 0); /* Ctrl held: the state, not the lParam */
         g_save_clicked = 0;
         g_accel_cmd = 0;
         CHECK(TranslateAcceleratorA(g_host, table, &msg),
@@ -196,7 +203,7 @@ int main(void)
         CHECK(g_accel_cmd == ID_SAVE, "and sent that entry's command");
         CHECK(g_accel_from == 1, "marked as coming from an accelerator");
 
-        msg.lParam = 0; /* the same key without Ctrl is not the accelerator */
+        ween_set_modifiers(0, 0, 0); /* the same key without Ctrl */
         g_accel_cmd = 0;
         CHECK(!TranslateAcceleratorA(g_host, table, &msg),
               "without Ctrl it is not a match");

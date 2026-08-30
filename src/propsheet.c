@@ -235,9 +235,11 @@ static void sheet_show_keeping_focus(ps_sheet *ps, int want)
 static int sheet_key(ps_sheet *ps, WPARAM wp, LPARAM lp)
 {
     int back, want;
-    if (!ps || wp != VK_TAB || !(lp & (1L << 28)) || ps->count < 2)
+    (void)lp; /* the modifiers are in the key state now, not in here */
+    if (!ps || wp != VK_TAB || !(GetKeyState(VK_CONTROL) & 0x8000) ||
+        ps->count < 2)
         return 0;
-    back = (lp & 1) != 0; /* the pump puts Shift in bit 0 */
+    back = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     want = ps->current + (back ? -1 : 1);
     if (want >= ps->count)
         want = 0;

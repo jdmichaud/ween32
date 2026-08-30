@@ -66,7 +66,11 @@ static void inject_click(HWND w, int x, int y)
 
 static void key(unsigned vk, int ctrl)
 {
-    SendMessageA(g_edit, WM_KEYDOWN, vk, ctrl ? (LPARAM)(1L << 28) : 0);
+    /* Ctrl is in the key state, where win32 keeps it; lParam's low word is
+     * the repeat count. This put it in bit 28, which win32 reserves. */
+    ween_set_modifiers(0, ctrl, 0);
+    SendMessageA(g_edit, WM_KEYDOWN, vk, 1);
+    ween_set_modifiers(0, 0, 0);
 }
 
 static const char *text_of(HWND w)
