@@ -2130,11 +2130,29 @@ static void rich_fmt(HWND wnd, RECT *r)
          * special cases that happen to agree would be less honest than the
          * one that explains them.
          *
-         * **It is still a hypothesis where it goes beyond the rows.** Every
-         * rectangle measured was inset equally on all sides, so a
-         * *non-symmetric* one would tell the inflation apart from a rule
-         * about the page's width -- that is the experiment, and it has not
-         * been run.
+         * **That was a hypothesis when it was written and the experiment has
+         * since been run.** Every rectangle in those eight rows was inset
+         * equally on all sides, so `2 * x0` and "a pixel on each side" are
+         * the same number in all of them; a *non-symmetric* rectangle tells
+         * them apart, and wordpad's is asymmetric -- `alignEditorToRuler`
+         * moves the left and leaves the right. Sam went and took it:
+         *
+         *     left 20, right inset  0    x0 19   page 737
+         *     left 20, right inset 40    x0 19   page 698
+         *
+         * **Same origin, thirty-nine pixels apart**, where `2 * x0` predicts
+         * 718 for both. Inflating each side independently -- which is what
+         * the two clamped lines below do -- gives 737 and 698, because a
+         * pixel off the left and a pixel onto the right is exactly
+         * `client - f(left) - f(right)` with `f(k) = max(0, k - 1)`. The same
+         * `f` as the origin's, which is why it is one rule and not two that
+         * agree.
+         *
+         * (Measured here through `EM_POSFROMCHAR` and a right-aligned
+         * paragraph, which carries a constant four-pixel bias -- the no-rect
+         * control reads 742 where the rule says 746 -- so what is established
+         * from this side is the *difference* of 39 and the origin, not the
+         * absolute width.)
          *
          * **Horizontal only, because that is all that was measured.** `x0`
          * and `page` are both horizontal quantities; whether the top and
