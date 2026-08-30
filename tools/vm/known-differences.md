@@ -429,10 +429,26 @@ is why jd driving the program keeps finding things four instruments do not.
 ## 7. Arial's line height, one row short
 
 ```
-Arial 10 at 96 dpi, the caret's height on an empty document
-    the machine   16 rows
-    ours          15
+                pt    8   9  10  11  12  14  16  18  20  22  24  26  28  36  48  72
+Arial  machine       14  15  16  17  18  22  24  27  32  33  36  40  42  55  72 107
+       ours          12  14  15  15  17  21  23  27  30  32  36  39  41  53  72 107
+       diff          -2  -1  -1  -2  -1  -1  -1   0  -2  -1   0  -1  -1  -2   0   0
+
+Tahoma machine       13  14  16  18  19  23  25  29  33  35  39  42  45  58  77 116
+       ours          12  14  16  16  19  23  25  29  33  35  39  42  45  58  77 116
+       diff          -1   0   0  -2   0   0   0   0   0   0   0   0   0   0   0   0
 ```
+
+**Arial is short at twelve of the sixteen sizes, by one or two rows.** This
+entry first said "one row", from a single caret reading at 10pt generalised
+into a pixel per line -- **the same error as calling twelve indistinguishable
+sizes six, three hours earlier the same evening, and from the same cause:
+describing a table before measuring it.** Sam's thirty-two machine readings
+are what made the other fifteen rows checkable.
+
+**Tahoma is right at thirteen of sixteen**, wrong only at 8pt and 11pt, so the
+generated strikes give the machine's line heights at almost every size through
+the arithmetic already in `font.c`.
 
 **This is the first honest reading that assertion has ever given.** It has
 been green for months while measuring a different font: it says *Arial 10*,
@@ -487,11 +503,26 @@ scenarios, and every `NEW` line in every one of them is this pixel:
 which is a stronger reason to fix it than the single caret measurement that
 found it.
 
-**What retires it.** Rewrite the kept strikes' `sbitLineMetrics` to the values
-`font.c` computes today -- which makes honouring them a no-op for Tahoma --
-and then read the cell from the strike. Both halves in one change, with the
-capture comparison as the proof, and a machine reading of Arial's line height
-at two or three more sizes to confirm the ascent rule before it is baked in.
+**What retires it, and it is not a rule.** The entry first said "read the cell
+from the strike", which assumed the strike's metrics could be computed. They
+cannot:
+
+```
+machine ascent   13  15  29  86      at 10, 12, 24 and 72 pt
+ceil(hhea scale) 13  15  29  87      three of four
+Liberation's ink 13  15  28  85      two of four
+```
+
+**No scaling of Liberation's outline reproduces Arial's metrics, and it should
+not** -- metric-compatible means advances, not ink extents. The source has to
+be `tools/vm/lineheight.txt`: thirty-two measured numbers written per size
+into the strikes, which is data rather than a fitted expression, and it exists
+only because Sam took the readings after this file refused to build on one.
+
+So: write the measured ascent and descent into each strike, rewrite Tahoma's
+kept strikes to the values `font.c` computes today so honouring them moves
+nothing, and then read the cell from the strike. All three halves in one
+change, with the capture comparison as the proof.
 **One data point is what this file exists to refuse building on**, and there is
 exactly one here.
 
