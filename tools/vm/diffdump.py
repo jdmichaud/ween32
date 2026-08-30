@@ -78,6 +78,31 @@ def _face(field, a, b):
     return face_a != face_b
 
 
+def _wrap_column(field, a, b, counts=None):
+    """6. Where a line wraps, when both wrap into the same number of lines.
+
+    ween32 has two bitmap strikes and the machine has real fonts, so the
+    same text is a different width and breaks at a different character.
+    Measured across the three wrapping scenarios:
+
+        03   ours line 1 at 44   machine at 69
+        06   ours line 1 at 44   machine at 40
+        07   ours line 1 at 43   machine at 72
+
+    **Both directions**, which is glyph widths rather than an off-by-anything.
+
+    **The line *count* is comparable and is not excused here.** All five
+    comparable scenarios agree on it -- 1, 1, 2, 2, 2 -- so a difference in
+    how many lines the text becomes is still a finding. Only the column is
+    unreadable while the fonts differ, and this matches nothing when the
+    counts disagree."""
+    if not field.startswith("line "):
+        return False
+    if counts is None or counts[0] != counts[1]:
+        return False
+    return a is not None and b is not None
+
+
 KNOWN = [
     ("1. the trailing paragraph mark", _len_mark),
     ("2/3. the face", _face),
@@ -147,6 +172,8 @@ def main():
     da, db = dict(a), dict(b)
     keys = [k for k, _ in a] + [k for k, _ in b if k not in da]
 
+    counts = (sum(1 for k, _ in a if k.startswith("line ")),
+              sum(1 for k, _ in b if k.startswith("line ")))
     known, new, seen = [], [], set()
     for k in keys:
         if k in seen:
@@ -164,6 +191,22 @@ def main():
                         break
                 except Exception:
                     pass
+        if why is None and _wrap_column(k, va, vb, counts):
+            why = "6. the wrap column, the fonts differing"
+        # **The mark as a run of its own.** Where the text before it has a
+        # format the mark does not share -- bold text, say -- riched20 reports
+        # it as a separate `char` run at the last index, and ours has no such
+        # run because it has no mark. That is entry 1 again, in a third shape
+        # after `len` and the run ranges.
+        #
+        # Matched only when it is the *last* index on their side and absent
+        # on ours, so it cannot excuse a run we have lost anywhere else.
+        if why is None and va is None and k.startswith("char "):
+            try:
+                if int(k.split()[1]) == int(db["len"]) - 1:
+                    why = "1. the mark, as a run of its own"
+            except (KeyError, ValueError):
+                pass
         (known if why else new).append((k, va, vb, why))
 
     if args.sequence:

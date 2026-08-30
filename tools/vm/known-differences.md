@@ -118,6 +118,48 @@ message.
 
 ---
 
+## 6. Where a line wraps — the column, not the count
+
+```
+        ours          the machine
+03      line 1 at 44  at 69
+06      line 1 at 44  at 40
+07      line 1 at 43  at 72
+```
+
+**Both directions**, which is glyph widths rather than an off-by-anything:
+ween32 has two bitmap strikes and the machine has real fonts, so the same
+text is a different width and breaks at a different character. That is
+entry 3 reaching the layout.
+
+**The line *count* is comparable and is not excused.** All seven scenarios
+agree on it — 1, 1, 2, 2, 2, 2, 2 — so a difference in how many lines the
+text becomes is still a finding, and the differ matches nothing here when
+the counts disagree. **Only the column is unreadable while the fonts
+differ.**
+
+This is the one entry that is a *limit of the comparison* rather than a
+divergence: it does not go away when a bug is fixed, only when the two have
+the same fonts, which is not a goal of this project.
+
+---
+
+## Proving the list has not blunted the instrument
+
+Every time an entry is added, a difference that is **not** on the list must
+still be reported. Checked after entry 6 went in, by editing one field of a
+machine dump:
+
+```
+NEW   sel   8 8   3 7        1 new, 3 known
+```
+
+**That check is the point of this section.** The failure alice named is
+somebody weakening the comparison to get it green, and a list of excuses
+weakens it one entry at a time with each entry looking reasonable. **A run
+that can no longer fail is not evidence, and the only way to know is to make
+it fail on purpose.**
+
 ## The rule this file exists to enforce
 
 **An entry is added by a measurement, never to make a run green.** The
