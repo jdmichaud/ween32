@@ -860,7 +860,26 @@ static int rich_visible_lines(HWND wnd);
 static int rich_next_tab_stop(ween_rich *e, int at, int x);
 
 /* How wide the text may be before it has to break, in pixels of client. */
-static int rich_wrap_width(HWND wnd, ween_rich *e)
+/* **The right indent comes off the width the wrap is computed against**,
+ * which is what riched20 does and what ours did not.
+ *
+ * jd: *"the right ruler's cursor does nothing on the text"*. It did nothing
+ * because `dxRightIndent` was stored, reported, and never reached this line
+ * -- three instruments read it back all evening and no character moved.
+ *
+ * Sam measured the rule rather than us inferring one, and the arithmetic
+ * closes to within the width of the character that did not fit:
+ *
+ *     indent   breaks at   last x on line 1   client width - indent
+ *          0          64                379                     408
+ *        720          58                345                     360
+ *       1440          52                309                     312
+ *       2880          35                209                     216
+ *
+ * **It is per paragraph**, so the width is computed where the paragraph is
+ * known rather than once for the control -- which is why this takes a
+ * paragraph now and `rich_relines_once` asks per line. */
+static int rich_wrap_width(HWND wnd, ween_rich *e, const ween_pfmt *pf)
 {
     RECT r;
     int w;
@@ -868,6 +887,8 @@ static int rich_wrap_width(HWND wnd, ween_rich *e)
         return 0; /* nothing to break to */
     rich_fmt(wnd, &r);
     w = r.right - r.left - rich_bar(wnd) - rich_selbar(wnd);
+    if (pf)
+        w -= rfmt_px_twips(pf->right_indent);
     return w > 0 ? w : 0;
 }
 
@@ -925,14 +946,16 @@ static int rich_wrap_len(HWND wnd, ween_rich *e, int start, int para_len,
 static void rich_relines_once(HWND wnd, ween_rich *e)
 {
     int at = 0, top = 0, n = 0;
-    int width = rich_wrap_width(wnd, e);
     if (!e)
         return;
     for (;;) {
-        int start = at, len, height, ascent = 0, para_len;
+        int start = at, len, height, ascent = 0, para_len, width;
         while (at < e->len && e->text[at] != '\r')
             at++;
         para_len = at - start; /* the mark is not part of the line */
+        /* Per paragraph, since the right indent is the paragraph's. */
+        width = rich_wrap_width(wnd, e,
+                                &e->para[para_at(e, start)].fmt);
         len = rich_wrap_len(wnd, e, start, para_len, width);
         height = rich_line_extent(wnd, e, start, len, &ascent);
         if (n >= e->line_cap) {

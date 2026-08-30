@@ -127,10 +127,28 @@ message.
 07      line 1 at 43  at 72
 ```
 
-**Both directions**, which is glyph widths rather than an off-by-anything:
-ween32 has two bitmap strikes and the machine has real fonts, so the same
-text is a different width and breaks at a different character. That is
-entry 3 reaching the layout.
+**I attributed this to glyph widths and that was wrong, or at least not the
+half that mattered.** Sam then measured the control itself:
+
+```
+asked for 280x160    ours    client 276x156   (the client edge)
+                     machine client 408x289   (the host's client area)
+```
+
+**Two controls of different widths wrap at different columns**, and no font
+difference is needed to explain most of that. `rp_create` sets the size again
+after creating it, so both sides are the size they were asked for whatever
+`CreateWindowExA` did with it.
+
+**What I did with the wrong attribution is the part worth recording**: I used
+it to turn three findings into expected ones. The differ said `1 new` on 03,
+06 and 07; I explained the difference, added the entry, and the run went
+green. **That is exactly the failure this file warns about, committed by the
+person who wrote the warning** — and the only reason it did not stand is that
+Sam measured the control instead of accepting the explanation.
+
+A residual font difference may well remain once the sizes agree. **It has to
+be measured before it is claimed again.**
 
 **The line *count* is comparable and is not excused.** All seven scenarios
 agree on it — 1, 1, 2, 2, 2, 2, 2 — so a difference in how many lines the

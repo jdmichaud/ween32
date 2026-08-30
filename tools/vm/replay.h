@@ -250,6 +250,22 @@ static HWND rp_create(HWND parent)
      * WordPad reaches that condition by another route, the route changes
      * here and the comparison does not. */
     SendMessageA(re, EM_SETTARGETDEVICE, 0, 0);
+    /* **And the size is set again, because creating it with one is not
+     * enough.** Asked for 280x160, ours comes back with a client of 276x156
+     * -- the client edge -- and the machine's comes back **408x289**, which
+     * is the host window's client area, with nothing resizing it.
+     *
+     * **Two controls of different widths wrap at different columns**, and
+     * that is not a font difference however much it looks like one. I had
+     * already written the wrap column into known-differences.md as glyph
+     * widths, and used that to turn three findings into expected ones. The
+     * attribution was wrong.
+     *
+     * `SetWindowPos` after creation makes both sides the size they were
+     * asked for whatever `CreateWindowExA` did with it -- the same principle
+     * as naming the effects in the character format: **make the two sides
+     * the same rather than explain why they differ.** */
+    SetWindowPos(re, NULL, 0, 0, 280, 160, SWP_NOMOVE | SWP_NOZORDER);
     SetFocus(re);
     return re;
 }

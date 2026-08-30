@@ -389,18 +389,26 @@ static const char *check_all(HWND re)
      * is left alone until somebody reads the boundary. */
     {
         int up = (GetWindowLongA(re, GWL_STYLE) & WS_VSCROLL) != 0;
-        /* "Does the document fit" has no public message -- the visible-row
-         * count is the control's own arithmetic -- so rather than reach
-         * inside for it, this asserts the two ends of Sam's reading that
-         * need no such number:
+        /* **The boundary is measured now, so the `iff` can come back.**
          *
-         *   an empty document must not have the bar up   (his third state)
-         *   a bar up implies more than one line          (a one-line
-         *                                                 document cannot
-         *                                                 overflow a box a
-         *                                                 line tall)
+         * alice asked for *set iff the content exceeds the view*; Sam
+         * pointed out the exactly-fits case was not among his three
+         * readings, and it was dropped to two one-way checks. **jd then
+         * walked into exactly that boundary** -- "the scrollbar appears too
+         * late" -- and Sam measured it:
          *
-         * Both hold at every boundary, which is the property `iff` lacked. */
+         *     18 lines   last line bottom 289, client height 289   NOT set
+         *     19 lines                                             SET
+         *
+         * **Exactly-fitting does not raise it: the test is `>`, not `>=`.**
+         *
+         * What is asserted here is still the two ends rather than the `iff`
+         * itself, because "does the content exceed the view" needs the
+         * visible-row count and that is the control's own arithmetic -- the
+         * `iff` belongs in the differential dump, where `vscroll` now
+         * records the state and a filling sequence can be compared against
+         * riched20 line by line. **Two instruments, each asking what it can
+         * see.** */
         if (up && len == 0)
             return "the bar is up on an empty document";
         if (up && lines <= 1)
