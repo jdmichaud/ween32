@@ -64,6 +64,9 @@ examples/menu: examples/menu.c libween32.a
 examples/explorer: examples/explorer.c examples/fs.h libween32.a
 	$(CC) $(CFLAGS) -o $@ examples/explorer.c libween32.a $(LIBS)
 
+tests/replay_test: tests/replay_test.c tools/vm/replay.h tools/vm/dump.h libween32.a
+	$(CC) $(CFLAGS) -o $@ tests/replay_test.c libween32.a $(LIBS)
+
 tests/monkey_test: tests/monkey_test.c libween32.a
 	$(CC) $(CFLAGS) -o $@ tests/monkey_test.c libween32.a $(LIBS)
 

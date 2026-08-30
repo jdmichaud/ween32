@@ -142,8 +142,21 @@ static void do_step(HWND re, const struct step *s)
         SendMessageA(re, EM_REPLACESEL, TRUE, (LPARAM)buf);
         break;
     }
-    case OP_BACK: SendMessageA(re, WM_KEYDOWN, VK_BACK, 1); break;
-    case OP_DELETE: SendMessageA(re, WM_KEYDOWN, VK_DELETE, 1); break;
+    /* **lParam 0 for a key, not 1.** The backend puts Shift in bit 0 of a
+     * WM_KEYDOWN's lParam where win32 keeps the repeat count
+     * (src/richedit.c:3766), so the 1 that WM_CHAR wants makes every arrow a
+     * *shift*-arrow. These operations were written with 1 and have been
+     * holding Shift down ever since -- `home`, `end` and the four arrows
+     * extended the selection instead of moving the caret.
+     *
+     * **Nothing it reported was wrong**, because the invariants are about
+     * the document rather than about which key was pressed. What was wrong
+     * is what it was exploring: a monkey whose navigation always extends
+     * cannot reach the states a person reaches by pressing an arrow to
+     * deselect, which is one of the commonest gestures there is. Found by
+     * tests/replay_test.c on its first run. */
+    case OP_BACK: SendMessageA(re, WM_KEYDOWN, VK_BACK, 0); break;
+    case OP_DELETE: SendMessageA(re, WM_KEYDOWN, VK_DELETE, 0); break;
     case OP_SELECT: {
         int len = (int)SendMessageA(re, WM_GETTEXTLENGTH, 0, 0);
         /* Sometimes backwards on purpose: whether the control normalises a
@@ -154,18 +167,18 @@ static void do_step(HWND re, const struct step *s)
         break;
     }
     case OP_SELALL: SendMessageA(re, EM_SETSEL, 0, -1); break;
-    case OP_HOME: SendMessageA(re, WM_KEYDOWN, VK_HOME, 1); break;
-    case OP_END: SendMessageA(re, WM_KEYDOWN, VK_END, 1); break;
-    case OP_UP: SendMessageA(re, WM_KEYDOWN, VK_UP, 1); break;
-    case OP_DOWN: SendMessageA(re, WM_KEYDOWN, VK_DOWN, 1); break;
-    case OP_LEFT: SendMessageA(re, WM_KEYDOWN, VK_LEFT, 1); break;
-    case OP_RIGHT: SendMessageA(re, WM_KEYDOWN, VK_RIGHT, 1); break;
+    case OP_HOME: SendMessageA(re, WM_KEYDOWN, VK_HOME, 0); break;
+    case OP_END: SendMessageA(re, WM_KEYDOWN, VK_END, 0); break;
+    case OP_UP: SendMessageA(re, WM_KEYDOWN, VK_UP, 0); break;
+    case OP_DOWN: SendMessageA(re, WM_KEYDOWN, VK_DOWN, 0); break;
+    case OP_LEFT: SendMessageA(re, WM_KEYDOWN, VK_LEFT, 0); break;
+    case OP_RIGHT: SendMessageA(re, WM_KEYDOWN, VK_RIGHT, 0); break;
     case OP_REPLACE:
         SendMessageA(re, EM_REPLACESEL, TRUE, (LPARAM) "XY");
         break;
     case OP_CLEAR:
         SendMessageA(re, EM_SETSEL, 0, -1);
-        SendMessageA(re, WM_KEYDOWN, VK_DELETE, 1);
+        SendMessageA(re, WM_KEYDOWN, VK_DELETE, 0);
         break;
     /* **The pointer goes in as injected events, not as messages**, so this
      * exercises the route and not only the handler at the end of it -- my own
