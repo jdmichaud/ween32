@@ -186,75 +186,58 @@ that.
 
 ---
 
-## 06 — the one real disagreement, deliberately not written down as expected
+## 06 — CLOSED. Glyph widths, and this time it is measured
+
+**Sam's re-take moved exactly one thing and it was `y`** — every `at` and
+every `len` byte-identical across nine dumps, and `y` entered the contract in
+agreement, 1/17/33 on both sides in every scenario **including 06**. So 06's
+disagreement was horizontal only: same line tops, different break column.
+The old dump could not have said that.
+
+`glyphs.c` then answered the rest. Over 06's own string:
 
 ```
-client 256 106 on both sides, same text
-ours   0 at 0 len 44 / 1 at 44 len 24
-mach   0 at 0 len 40 / 1 at 40 len 28
+idx       ours   machine   diff
+  0          9         9      0      -- the selection bar, both
+ 40        233       241     +8
+ 44        257       266     +9
+ 68        397       408    +11
 ```
 
-Every other scenario agrees on `at` and `len` exactly. 06 is the only one
-that **shrinks** the control.
+**Two false starts, both mine, both worth keeping.**
 
-Ruled out: a stale layout. Typing the whole string *after* the resize gives
-44 as well, so we are not holding a width we were laid out with — we fit 44
-where riched20 fits 40, at the same client width.
-
-**No entry, no rule, and it is reported on every run until somebody explains
-it.** Writing "the fonts differ" here is available, reasonable-sounding, and
-exactly what entry 6 was.
-
----
-
-## Proving the list has not blunted the instrument
-
-Every time an entry is added, a difference that is **not** on the list must
-still be reported. Checked after entry 6 went in, by editing one field of a
-machine dump:
+*First*, I read `x 44` — 257 ours, 266 the machine — against a 256px client
+and concluded that under the machine's own rule **we** should break at 40 too,
+so ours was over-running its column. Wrong: index 43 is a space, and a
+trailing space hangs past the margin rather than counting against it. What is
+measured is the last non-space:
 
 ```
-NEW   sel   8 8   3 7        1 new, 3 known
+ours    x 42 'g' 247, x 43 '_' 254   content 254-9 = 245  fits w=246
+machine x 44 266, so 'g' near 262    content near 253     does not
 ```
 
-**That check is the point of this section.** The failure alice named is
-somebody weakening the comparison to get it green, and a list of excuses
-weakens it one entry at a time with each entry looking reasonable. **A run
-that can no longer fail is not evidence, and the only way to know is to make
-it fail on purpose.**
+Both sides follow the same rule, and the column is 246 on our side by direct
+reading. **Different glyphs, identical wrap width** — 03 and 07 agreeing
+exactly at client 276 says the same thing from the other end.
 
-## The seven-of-seven is withdrawn until the dumps are re-taken
+*Second*, before that I had `11/10` beside `44/40 = 1.10` and called it "a
+coincidence of ratios, not a finding". **The ratio was not even a
+coincidence** — Sam corrected himself: his probe's "Arial 10" was *bold*,
+because a mask of `CFM_FACE|CFM_SIZE` leaves riched20's own effects in place
+and its default face is System, which is bold. Named effects take 11px to 9
+and meet WordPad exactly. That is entry 2's trap, one field over, and it is
+recorded in `seq/machine/README` as having already cost seven findings.
 
-**It was `0 new` on all seven and it should not have been.** Sam questioned
-it from the outside, without reading the differ:
+**Do not generalise the direction.** Over this string the machine is wider, so
+we fit more characters before a break — the right direction for 44 against 40.
+For `w` alone ours is the wider one, 10px against 9. It is per-character and
+it goes both ways, so *"the machine's glyphs are wider"* is true of one string
+and is not a fact about the fonts.
 
-> *My three wrapping dumps were taken in a control 408 wide; ours wraps in
-> one 280 wide. Their break indices should differ by a lot. You report
-> `0 new`.* **Two numbers that should disagree and do not is the same
-> warning as two that agree for different reasons.**
-
-He was right, and the cause was entry 6 — mine. The rule excused **any**
-`line` difference once the line counts agreed, which is far looser than it
-reads: his dumps predate the `len` field, so `1 at 44 len 39` against
-`1 at 69` is a different line *shape* and it was waved through as a wrap
-column.
-
-**Tightened to the `at` column alone, with every other field identical**,
-the same seven now report three and four differences each — the sizes, the
-missing `vscroll`, and the line shape. That is the honest state: **the
-machine dumps are older than the contract, and the two controls are not the
-same width.**
-
-`WS_MAXIMIZE` is why: `0x01000000` is in WordPad's style word, a child
-created with it fills its parent's client, and **ween32 does not honour it**
-— a divergence in its own right, and the reason the two sides sized their
-controls by different rules.
-
-**What this cost was about an hour of a result everybody believed**,
-including me, and it was not caught by the instrument. It was caught by
-somebody asking why two numbers that had every reason to differ did not.
-
----
+**No entry, because there is nothing left to excuse.** Entry 6 said this twice
+without measuring it and was deleted for it; the difference now is two pixel
+tables and a per-character reading, not a plausible sentence.
 
 ## What the contract does not cover
 
