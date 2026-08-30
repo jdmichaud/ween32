@@ -281,7 +281,31 @@ static void step(HWND re, const struct rp_step *s)
     PARAFORMAT pf;
     switch (s->op) {
     case OP_TYPE: SendMessageA(re, WM_CHAR, (WPARAM)s->a, 1); break;
-    case OP_ENTER: SendMessageA(re, WM_CHAR, '\r', 1); break;
+    case OP_ENTER:
+        /* **Both messages, because a keyboard produces both and the two
+         * implementations answer opposite ones.**
+         *
+         *     ween32           WM_CHAR CR inserts; WM_KEYDOWN VK_RETURN does not
+         *     riched20 (wine)  WM_KEYDOWN VK_RETURN inserts; WM_CHAR CR does not
+         *
+         * Sam measured the second, I measured the first. **Neither single
+         * form works on both**, so an executor that picks one silently loses
+         * every paragraph break on one side -- and the diff would read as
+         * *ours inserts paragraphs that WordPad does not*, which is a
+         * spectacular finding that is entirely the harness.
+         *
+         * A real message loop delivers `WM_KEYDOWN` and then, via
+         * `TranslateMessage`, `WM_CHAR`. Sending both is what a keystroke
+         * *is*, and each side takes the one it acts on and ignores the
+         * other -- one break, both sides, for the right reason rather than a
+         * compensating one.
+         *
+         * **That the two act on different messages is itself a divergence**
+         * and it is in known-differences.md; this makes the harness able to
+         * run past it, not able to hide it. */
+        SendMessageA(re, WM_KEYDOWN, VK_RETURN, 0);
+        SendMessageA(re, WM_CHAR, '\r', 1);
+        break;
     case OP_PASTE:
     case OP_REPLACE:
         rp_filler(buf, s->a > 400 ? 400 : s->a, s->b);

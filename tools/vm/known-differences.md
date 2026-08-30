@@ -58,7 +58,32 @@ to.
 precisely so this does not appear on every line. It will still appear
 wherever the two disagree about whether a request was honoured at all.
 
-## 4. Shift in the repeat count — a fault, not a difference
+## 4. Which message inserts a paragraph break
+
+```
+ween32            WM_CHAR CR inserts;  WM_KEYDOWN VK_RETURN does not
+riched20 (wine)   WM_KEYDOWN VK_RETURN inserts;  WM_CHAR CR does not
+```
+
+**Exact opposites, and neither single form works on both.** Sam measured the
+second under wine, I measured the first here.
+
+The executor therefore sends **both**, which is what a real message loop
+delivers — `WM_KEYDOWN`, then `WM_CHAR` via `TranslateMessage` — so each side
+acts on the one it recognises and ignores the other. One break on both, for
+the right reason rather than a compensating one.
+
+**Status: ours measured, riched20's from wine only.** If the machine agrees
+with wine then ween32 ignoring `WM_KEYDOWN VK_RETURN` is a real divergence: a
+program with its own message loop that does not call `TranslateMessage` gets
+no paragraph break from us and one from Windows.
+
+**Had the executor picked one form, every sequence containing `enter` would
+have lost its break on one side**, and the diff would have read as *ours
+inserts paragraphs that WordPad does not* — a spectacular finding entirely
+manufactured by the harness.
+
+## 5. Shift in the repeat count — a fault, not a difference
 
 ween32 reads Shift from `lParam` bit 0 (`src/richedit.c:3766`,
 `src/dialog.c:462`) where win32 keeps the repeat count. The executor passes
