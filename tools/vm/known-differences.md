@@ -178,6 +178,39 @@ weakens it one entry at a time with each entry looking reasonable. **A run
 that can no longer fail is not evidence, and the only way to know is to make
 it fail on purpose.**
 
+## The seven-of-seven is withdrawn until the dumps are re-taken
+
+**It was `0 new` on all seven and it should not have been.** Sam questioned
+it from the outside, without reading the differ:
+
+> *My three wrapping dumps were taken in a control 408 wide; ours wraps in
+> one 280 wide. Their break indices should differ by a lot. You report
+> `0 new`.* **Two numbers that should disagree and do not is the same
+> warning as two that agree for different reasons.**
+
+He was right, and the cause was entry 6 — mine. The rule excused **any**
+`line` difference once the line counts agreed, which is far looser than it
+reads: his dumps predate the `len` field, so `1 at 44 len 39` against
+`1 at 69` is a different line *shape* and it was waved through as a wrap
+column.
+
+**Tightened to the `at` column alone, with every other field identical**,
+the same seven now report three and four differences each — the sizes, the
+missing `vscroll`, and the line shape. That is the honest state: **the
+machine dumps are older than the contract, and the two controls are not the
+same width.**
+
+`WS_MAXIMIZE` is why: `0x01000000` is in WordPad's style word, a child
+created with it fills its parent's client, and **ween32 does not honour it**
+— a divergence in its own right, and the reason the two sides sized their
+controls by different rules.
+
+**What this cost was about an hour of a result everybody believed**,
+including me, and it was not caught by the instrument. It was caught by
+somebody asking why two numbers that had every reason to differ did not.
+
+---
+
 ## What the contract does not cover
 
 alice, on the seven-of-seven result: *"A contract's coverage is a fact about

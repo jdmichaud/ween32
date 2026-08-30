@@ -93,6 +93,23 @@ static void dump_open(FILE *f, HWND re)
     len = (int)all.cpMax;
     SendMessageA(re, EM_EXSETSEL, 0, (LPARAM)&keep);
 
+    /* **The control's own size, because two controls of different widths
+     * wrap differently and that is not a fact about either program.**
+     *
+     * Sam asked for this after finding his control was 408 wide where ours
+     * was 280 -- `WS_MAXIMIZE` in WordPad's style word, which ween32 does
+     * not honour on a child. Until the two agree, every wrap comparison
+     * differs for a reason that is in neither control.
+     *
+     * **It goes in the dump rather than being asserted out of band** so the
+     * differ sees it: a size difference is then a NEW line in every run that
+     * has one, instead of an assumption two people have to remember to
+     * check. It is the state the rest of the dump is relative to. */
+    {
+        RECT cr;
+        GetClientRect(re, &cr);
+        fprintf(f, "client %ld %ld\n", (long)cr.right, (long)cr.bottom);
+    }
     fprintf(f, "len %d\n", len);
 
     GetWindowTextA(re, dump_text, (int)sizeof dump_text - 1);

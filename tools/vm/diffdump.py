@@ -100,7 +100,26 @@ def _wrap_column(field, a, b, counts=None):
         return False
     if counts is None or counts[0] != counts[1]:
         return False
-    return a is not None and b is not None
+    if a is None or b is None:
+        return False
+    # **Only the `at` column, and everything else identical.**
+    #
+    # The first version excused *any* `line` difference once the counts
+    # agreed, which is far looser than it reads. Sam's dumps predate the
+    # `len` field, so `1 at 44 len 39` against `1 at 69` is a different line
+    # *shape* -- and it was waved through as a wrap column.
+    #
+    # He caught it from the outside and without seeing the code: his control
+    # is 408 wide and ours 280, so the break indices should differ a lot, and
+    # the differ said `0 new`. **Two numbers that should disagree and do not
+    # is the same warning as two that agree for different reasons.**
+    fa, fb = a.split(), b.split()
+    if len(fa) != len(fb):
+        return False
+    # fields are: <n> at <x> [len <y>]
+    if fa[0] != fb[0] or fa[1] != "at" or fb[1] != "at":
+        return False
+    return fa[3:] == fb[3:]
 
 
 KNOWN = [
