@@ -69,6 +69,34 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    /* `--glyphs` measures how wide the text is rather than where it breaks.
+     * The same string, indices and message as tools/vm/glyphs.c, so the two
+     * columns can be subtracted. Wrap off, so the client width is out of it
+     * and `x` is pure cumulative advance. See that file for why. */
+    if (!strcmp(argv[1], "--glyphs")) {
+        static const char *t =
+            "the quick brown fox jumps over the lazy dog and the heron "
+            "waits here";
+        RECT cr;
+        int len;
+        SendMessageA(re, EM_SETTARGETDEVICE, 0, 1440);
+        SetWindowTextA(re, t);
+        GetClientRect(re, &cr);
+        printf("client %ld %ld\n", (long)(cr.right - cr.left),
+               (long)(cr.bottom - cr.top));
+        printf("lines %ld\n", (long)SendMessageA(re, EM_GETLINECOUNT, 0, 0));
+        for (len = 0; t[len]; len++) {
+        }
+        for (i = 0; i <= len; i += 4) {
+            POINTL pt;
+            pt.x = 0;
+            pt.y = 0;
+            SendMessageA(re, EM_POSFROMCHAR, (WPARAM)&pt, (LPARAM)i);
+            printf("x %d %ld\n", i, (long)pt.x);
+        }
+        return 0;
+    }
+
     n = parse(argv[1], seq, 4096);
     if (n < 0)
         return 2;

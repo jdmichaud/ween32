@@ -1,0 +1,23 @@
+# ween32, tests/replay_test --glyphs. The machine's half is glyphs.txt,
+# written by tools/vm/glyphs.c -- same string, indices and message.
+# Not yet taken: nobody has run it on Windows 2000.
+client 276 156
+lines 1
+x 0 9
+x 4 30
+x 8 53
+x 12 74
+x 16 101
+x 20 121
+x 24 150
+x 28 172
+x 32 191
+x 36 211
+x 40 233
+x 44 257
+x 48 281
+x 52 302
+x 56 328
+x 60 355
+x 64 371
+x 68 397
