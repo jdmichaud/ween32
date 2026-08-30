@@ -2058,6 +2058,21 @@ static int rich_inset(HWND wnd)
  * been asked. */
 static int rich_selbar(HWND wnd)
 {
+    /* **No selection bar inside an explicit formatting rectangle.**
+     *
+     * `rich_fmt`'s comment used to offer two readings of WordPad's character
+     * 0 sitting at editor-client 14 -- a rect of 14 with the bar inside it,
+     * or a rect of 6 with the bar on top -- and said a measurement would
+     * settle it. Sam measured it (tools/vm/hpage.txt): it is neither. Once a
+     * rectangle exists riched20 drops the bar entirely.
+     *
+     * Ours put character 0 at `rect + 8` where the machine puts it just
+     * before the rect, and the two agree exactly until the message is sent
+     * -- so nothing that never sends `EM_SETRECT` could have seen it, and
+     * wordpad sends one. */
+    ween_rich *e = rich_state(wnd);
+    if (e && e->fmt_set)
+        return 0;
     return (wnd->style & ES_SELECTIONBAR) ? ween_ncm(8) : 0;
 }
 
@@ -2084,7 +2099,50 @@ static void rich_fmt(HWND wnd, RECT *r)
     ween_rich *e = rich_state(wnd);
     int inset;
     if (e && e->fmt_set) {
+        /* **A rectangle given to `EM_SETRECT` lays text out one pixel wider
+         * on each side than it asks for**, which is measured rather than
+         * reasoned. Sam's eight rows, a 756px control, the rect inset by N
+         * on every side (tools/vm/hpage.txt):
+         *
+         *     inset   0   1   2   4  10  20  40  80
+         *     x0      0   0   1   3   9  19  39  79
+         *     page  756 756 754 750 738 718 678 598
+         *
+         * **79 at an inset of 80, not 72 and not 78** -- an offset rather
+         * than a scaling, over two orders of magnitude rather than over the
+         * four values it was first read off. He had written "about N-1" over
+         * the first four and went back for these when I would not build on an
+         * approximation.
+         *
+         * He recorded them as two rules -- `x0 = max(0, inset - 1)` and
+         * `page = client - 2 * x0` -- and deliberately did not tidy them into
+         * one, on the grounds that the version that gets withdrawn is always
+         * the one tidied first. **Inflating the rectangle by a pixel
+         * reproduces both, exactly, on all eight rows**, so that is what this
+         * does: any implementation has to choose some expression, and two
+         * special cases that happen to agree would be less honest than the
+         * one that explains them.
+         *
+         * **It is still a hypothesis where it goes beyond the rows.** Every
+         * rectangle measured was inset equally on all sides, so a
+         * *non-symmetric* one would tell the inflation apart from a rule
+         * about the page's width -- that is the experiment, and it has not
+         * been run.
+         *
+         * **Horizontal only, because that is all that was measured.** `x0`
+         * and `page` are both horizontal quantities; whether the top and
+         * bottom inflate too is unasked, and inflating them here would be
+         * exactly the unmeasured symmetry that the WS_HSCROLL permission
+         * nearly became. */
+        RECT cr;
+        GetClientRect(wnd, &cr);
         *r = e->fmt;
+        r->left -= 1;
+        r->right += 1;
+        if (r->left < cr.left)
+            r->left = cr.left;
+        if (r->right > cr.right)
+            r->right = cr.right;
         return;
     }
     GetClientRect(wnd, r);
@@ -3758,10 +3816,21 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case EM_GETRECT: {
+        /* **What was set, not what is laid out in.** `rich_fmt` inflates an
+         * explicit rectangle by a pixel on each side because that is what
+         * riched20 lays out in; a program asking for its rectangle back must
+         * get the one it gave. wordpad reads this and adds a delta to it
+         * (`alignEditorToRuler`), so handing back the inflated one would grow
+         * the rectangle by two pixels on every call -- the accumulation Dan
+         * traced item 3 to, in a second field. */
         RECT *r = (RECT *)lp;
+        ween_rich *e = rich_state(wnd);
         if (!r)
             return 0;
-        rich_fmt(wnd, r);
+        if (e && e->fmt_set)
+            *r = e->fmt;
+        else
+            rich_fmt(wnd, r);
         return 0;
     }
     case EM_POSFROMCHAR: {
