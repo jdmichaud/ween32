@@ -1,0 +1,15 @@
+== 09:42:59 ==
+  RichEdit20W  style 551081c4  ex 00000210  window 760x386  client 756x366
+    vscroll clear   hscroll SET
+    horz  min 0 max 901 page 742 pos 159
+    vert  min 0 max 100 page 0 pos 0
+== 09:44:19 ==
+  RichEdit20W  style 550081c4  ex 00000210  window 1024x597  client 1020x593
+    vscroll clear   hscroll clear
+    horz  min 0 max 901 page 742 pos 159
+    vert  min 0 max 100 page 0 pos 0
+== 09:45:18 ==
+  RichEdit20W  style 551081c4  ex 00000210  window 1024x597  client 1020x577
+    vscroll clear   hscroll SET
+    horz  min 0 max 2197 page 1006 pos 1191
+    vert  min 0 max 100 page 0 pos 0

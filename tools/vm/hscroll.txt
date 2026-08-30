@@ -1,0 +1,58 @@
+== the control: WS_VSCROLL, already known ==
+  client 788 x 529
+  empty                     style 550081c4  vscroll clear  hscroll clear
+  60 lines                 lines 61
+                            style 552081c4  vscroll SET    hscroll clear
+  vertical                  min 0 max 976 page 528 pos 0
+  SB_LINEDOWN (an arrow)    y0 1 -> -15  moved 16 px   pos 0 -> 16
+  SB_PAGEDOWN (the track)   y0 -15 -> -447  moved 432 px   pos 16 -> 448
+  emptied again             style 550081c4  vscroll clear  hscroll clear
+
+== the control: wrapping, 500 w's ==
+  lines 8
+                            style 550081c4  vscroll clear  hscroll clear
+
+== No wrap, Arial 10, client 788 x 529 ==
+  a line that fits          style 550081c4  vscroll clear  hscroll clear
+  500 w's                  lines 1   len 500
+                            style 551081c4  vscroll clear  hscroll SET
+  x of char 0 9   x of the last char 5498
+  horizontal                min 0 max 5501 page 778 pos 0
+  after typing one more    x of char 0 -4723
+                            min 0 max 5510 page 778 pos 4732
+  SB_LEFT                  x of char 0 9
+  SB_LINERIGHT (an arrow)   x0 9 -> 2  moved 7 px   pos 0 -> 7
+  SB_LINERIGHT again        x0 2 -> -5  moved 7 px   pos 7 -> 14
+  SB_PAGERIGHT (the track)  x0 -5 -> -783  moved 778 px   pos 14 -> 792
+  SB_PAGERIGHT again        x0 -783 -> -1561  moved 778 px   pos 792 -> 1570
+  SB_LINELEFT               x0 -1561 -> -1554  moved -7 px   pos 1570 -> 1563
+  SB_PAGELEFT               x0 -1554 -> -776  moved -778 px   pos 1563 -> 785
+  SB_RIGHT (the end)        x0 -776 -> -5500  moved 4724 px   pos 785 -> 4733
+  SB_LEFT (the start)       x0 -5500 -> 9  moved -5509 px   pos 4733 -> 0
+  the long line deleted     style 550081c4  vscroll clear  hscroll clear
+
+== No wrap, Courier New 10, client 788 x 529 ==
+  a line that fits          style 550081c4  vscroll clear  hscroll clear
+  500 w's                  lines 1   len 500
+                            style 551081c4  vscroll clear  hscroll SET
+  x of char 0 9   x of the last char 4001
+  horizontal                min 0 max 4001 page 778 pos 0
+  after typing one more    x of char 0 -3222
+                            min 0 max 4009 page 778 pos 3231
+  SB_LEFT                  x of char 0 9
+  SB_LINERIGHT (an arrow)   x0 9 -> 2  moved 7 px   pos 0 -> 7
+  SB_LINERIGHT again        x0 2 -> -5  moved 7 px   pos 7 -> 14
+  SB_PAGERIGHT (the track)  x0 -5 -> -783  moved 778 px   pos 14 -> 792
+  SB_PAGERIGHT again        x0 -783 -> -1561  moved 778 px   pos 792 -> 1570
+  SB_LINELEFT               x0 -1561 -> -1554  moved -7 px   pos 1570 -> 1563
+  SB_PAGELEFT               x0 -1554 -> -776  moved -778 px   pos 1563 -> 785
+  SB_RIGHT (the end)        x0 -776 -> -3999  moved 3223 px   pos 785 -> 3232
+  SB_LEFT (the start)       x0 -3999 -> 9  moved -4008 px   pos 3232 -> 0
+  the long line deleted     style 550081c4  vscroll clear  hscroll clear
+
+== the page and the arrow against the client ==
+  asked 760  client 756  one bar    arrow 7  page moved 746  nPage 746  nMax 5501  client-10 746
+  asked 600  client 596  one bar    arrow 7  page moved 586  nPage 586  nMax 5501  client-10 586
+  asked 400  client 396  one bar    arrow 7  page moved 386  nPage 386  nMax 5501  client-10 386
+  asked 760  client 740  both bars  arrow 7  page moved 730  nPage 730  nMax 3301  client-10 730
+  asked 400  client 380  both bars  arrow 7  page moved 370  nPage 370  nMax 3301  client-10 370

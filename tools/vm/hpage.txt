@@ -1,0 +1,24 @@
+WordPad's own, for comparison: client 756  page 742  client-page 14  adv 9
+
+  A  Arial 10   selbar   client 756x366  page 746  client-page 10  nMax 5501  adv 11  x0 9
+  W  Arial 10   selbar   client 756x366  page 746  client-page 10  nMax 5501  adv 11  x0 9
+  A  own font   selbar   client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+  W  own font   selbar   client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+  A  Arial 10   no sel   client 756x366  page 754  client-page 2  nMax 5501  adv 11  x0 1
+  W  own font   no sel   client 756x366  page 754  client-page 2  nMax 5001  adv 10  x0 1
+
+== the same control, against the target width ==
+  W  own font   target 1      client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+  W  own font   target 1440   client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+  W  own font   target 9360   client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+  W  own font   target 15840  client 756x366  page 746  client-page 10  nMax 5001  adv 10  x0 9
+
+== the same control, against EM_SETRECT ==
+  W  own font   inset 0       client 756x366  page 756  client-page 0  nMax 5001  adv 10  x0 0
+  W  own font   inset 1       client 756x366  page 756  client-page 0  nMax 5001  adv 10  x0 0
+  W  own font   inset 2       client 756x366  page 754  client-page 2  nMax 5001  adv 10  x0 1
+  W  own font   inset 4       client 756x366  page 750  client-page 6  nMax 5001  adv 10  x0 3
+
+== the same control, naming the effects ==
+  A  Arial 10   effects unnamed  client 756x366  page 746  client-page 10  nMax 5501  adv 11  x0 9
+  A  Arial 10   effects zeroed   client 756x366  page 746  client-page 10  nMax 4501  adv 9  x0 9

@@ -1,0 +1,19 @@
+== 1  RichEdit20A, WordPad's style word ==
+  empty                     style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
+  61 lines                  style 550081c4  vscroll clear  client 788x529  lines 61  no vertical bar
+  emptied again             style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
+
+== 2  RichEdit20W, which is what the machine's is ==
+  empty                     style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
+  61 lines                  style 550081c4  vscroll clear  client 788x529  lines 61  no vertical bar
+  emptied again             style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
+
+== 3  RichEdit20A resized after creation, as MFC does ==
+  empty                     style 550081c4  vscroll clear  client 756x382  lines 1  no vertical bar
+  61 lines                  style 550081c4  vscroll clear  client 756x382  lines 61  no vertical bar
+  emptied again             style 550081c4  vscroll clear  client 756x382  lines 1  no vertical bar
+
+== 4  RichEdit20A created WITH WS_VSCROLL, for contrast ==
+  empty                     style 550081c4  vscroll clear  client 788x529  lines 1  no vertical bar
+  61 lines                  style 552081c4  vscroll SET    client 772x529  lines 61  vert min 0 max 976 page 528 pos 0
+  emptied again             style 550081c4  vscroll clear  client 788x529  lines 1  vert min 0 max 976 page 528 pos 0
