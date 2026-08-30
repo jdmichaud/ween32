@@ -35,8 +35,24 @@ int main(int argc, char **argv)
     WNDCLASSA wc;
     struct rp_step seq[4096];
     int n, i;
+    /* `--emit <seed> <n>` prints a generated sequence and does not run it.
+     * Generation lives here rather than in tests/monkey_test.c because the
+     * monkey drives a mouse and this language cannot: a sequence with a drag
+     * in it is not one riched20 can be asked to replay, and the point of a
+     * generated sequence is that both sides run it. */
+    if (argc >= 4 && !strcmp(argv[1], "--emit")) {
+        struct rp_step out[4096];
+        int want = atoi(argv[3]);
+        if (want > 4096)
+            want = 4096;
+        rp_print(stdout, out,
+                 rp_generate(out, want, (unsigned)strtoul(argv[2], NULL, 0)));
+        return 0;
+    }
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <sequence>\n", argv[0]);
+        fprintf(stderr, "usage: %s <sequence>\n"
+                        "       %s --emit <seed> <steps>\n",
+                argv[0], argv[0]);
         return 2;
     }
     setenv("WEEN32_DPI", "96", 1);

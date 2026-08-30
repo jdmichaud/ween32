@@ -63,6 +63,113 @@ static const char *const op_names[OP_N] = {
 
 struct rp_step { int op, a, b; };
 
+/* ---- the generator ------------------------------------------------------
+ *
+ * jd: *"Make sure the monkey testing is testing different scenarios, with
+ * interaction between all those features."*
+ *
+ * **Every bug he has found lived in an interaction**, not in a feature: a
+ * marker clamp that only failed once another marker had moved; a format
+ * armed on an empty selection that failed to close a typed run; a scrollbar
+ * whose appearance changed a wrapping width; a word latch set by one gesture
+ * and read by five. **None is reachable by exercising one feature well**, and
+ * a uniformly random sequence reaches them only by accident.
+ *
+ * So the generator emits **pairs** as often as it emits single operations,
+ * and the pairs are the shapes that have actually bitten this project. Each
+ * one is a bug somebody found by hand:
+ *
+ *     style then type        the arming boundary -- jd, twice
+ *     select then replace    replacing a formatted run with another
+ *     indent then type       paragraph state changed under the caret
+ *     paste then undo        a grouping nobody had measured
+ *     bullet then enter      what a new paragraph inherits
+ *     resize while selected  layout moving under a selection
+ *
+ * **It emits the shared language, not the monkey's**, so a sequence that
+ * fails here can be handed to the guest unchanged. That is the whole point:
+ * tests/monkey_test.c drives a mouse and this cannot, and a sequence with a
+ * drag in it is not a sequence riched20 can be asked to replay.
+ */
+static unsigned rp_rng;
+
+static unsigned rp_next(void)
+{
+    rp_rng ^= rp_rng << 13;
+    rp_rng ^= rp_rng >> 17;
+    rp_rng ^= rp_rng << 5;
+    return rp_rng;
+}
+
+static int rp_upto(int n) { return n > 0 ? (int)(rp_next() % (unsigned)n) : 0; }
+
+/* One operation, filled in with plausible arguments. */
+static void rp_one(struct rp_step *s, int op)
+{
+    s->op = op;
+    s->a = 0;
+    s->b = 0;
+    switch (op) {
+    case OP_TYPE: s->a = 'a' + rp_upto(26); break;
+    case OP_PASTE:
+    case OP_REPLACE: s->a = 1 + rp_upto(40); s->b = rp_upto(27); break;
+    case OP_SELECT: s->a = rp_upto(60); s->b = rp_upto(60); break;
+    case OP_BOLD:
+    case OP_ITALIC:
+    case OP_UNDER:
+    case OP_BULLET: s->a = rp_upto(2); break;
+    case OP_SIZE: s->a = 8 + rp_upto(20); break;
+    case OP_ALIGN: s->a = rp_upto(3); break;
+    case OP_INDENT: s->a = rp_upto(4) * 360; s->b = rp_upto(5) * 180; break;
+    case OP_RESIZE: s->a = rp_upto(240); s->b = rp_upto(120); break;
+    default: break;
+    }
+}
+
+/* Fills `seq` with `n` steps and returns how many it wrote -- pairs mean the
+ * count is reached rather than divided into. */
+static int rp_generate(struct rp_step *seq, int n, unsigned seed)
+{
+    static const int pairs[][2] = {
+        { OP_BOLD, OP_TYPE },      { OP_ITALIC, OP_TYPE },
+        { OP_SELECT, OP_REPLACE }, { OP_INDENT, OP_TYPE },
+        { OP_PASTE, OP_UNDO },     { OP_BULLET, OP_ENTER },
+        { OP_SELALL, OP_RESIZE },  { OP_SIZE, OP_TYPE },
+        { OP_ALIGN, OP_ENTER },    { OP_SELECT, OP_BOLD }
+    };
+    static const int singles[] = {
+        OP_TYPE, OP_TYPE, OP_ENTER, OP_PASTE, OP_BACK, OP_DELETE,
+        OP_SELECT, OP_SELALL, OP_HOME, OP_END, OP_UP, OP_DOWN,
+        OP_LEFT, OP_RIGHT, OP_REPLACE, OP_UNDO, OP_RESIZE
+    };
+    int i = 0;
+    rp_rng = seed ? seed : 1;
+    while (i < n) {
+        /* **Half pairs.** Uniform singles reach an interaction only when the
+         * dice happen to put two related operations together, which for two
+         * specific ops out of twenty-four is rare enough that jd found these
+         * by hand first. */
+        if (i + 1 < n && rp_upto(2)) {
+            int k = rp_upto((int)(sizeof pairs / sizeof pairs[0]));
+            rp_one(&seq[i++], pairs[k][0]);
+            rp_one(&seq[i++], pairs[k][1]);
+        } else {
+            rp_one(&seq[i++],
+                   singles[rp_upto((int)(sizeof singles / sizeof singles[0]))]);
+        }
+    }
+    return i;
+}
+
+static void rp_print(FILE *f, const struct rp_step *seq, int n)
+{
+    int i;
+    for (i = 0; i < n; i++)
+        fprintf(f, "%s%s:%d:%d", i ? "," : "", op_names[seq[i].op], seq[i].a,
+                seq[i].b);
+    fprintf(f, "\n");
+}
+
 /* The filler a `paste` or `replace` inserts. Generated rather than stored so
  * both sides produce identical bytes from the same two numbers, and chosen
  * to contain a space and no CR: a paste that carried a line break would mix
