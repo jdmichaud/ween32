@@ -1,0 +1,25 @@
+which line does a left indent pair narrow?
+
+  client 276 px wide
+  start 0, offset 0    (neither)
+    line 0: starts at char 0, x 1, 44 chars
+    line 1: starts at char 44, x 1, 48 chars
+    line 2: starts at char 92, x 1, 16 chars
+
+  client 276 px wide
+  start 720, offset 0
+    line 0: starts at char 0, x 49, 35 chars
+    line 1: starts at char 35, x 49, 38 chars
+    line 2: starts at char 73, x 49, 35 chars
+
+  client 276 px wide
+  start 0, offset 720
+    line 0: starts at char 0, x 1, 44 chars
+    line 1: starts at char 44, x 49, 34 chars
+    line 2: starts at char 78, x 49, 30 chars
+
+  client 276 px wide
+  start 720, offset -720   <- 03's pair
+    line 0: starts at char 0, x 49, 35 chars
+    line 1: starts at char 35, x 1, 43 chars
+    line 2: starts at char 78, x 1, 30 chars
