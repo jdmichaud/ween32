@@ -1,0 +1,8 @@
+Windows 2000, riched20, the control rp_create builds.
+The labels are the probe's, in source order; the run that produced
+this predates the format fix and printed them as %-28s.
+
+  after WM_CHAR CR           61
+  after WM_CHAR LF           61
+  after WM_KEYDOWN VK_RETURN 61 0d 0a
+  after EM_REPLACESEL CR     61 0d 0a 0d 0a
