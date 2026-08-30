@@ -10,26 +10,34 @@ it is a place to hide a bug rather than a place to record one.
 
 ---
 
-## 1. The trailing paragraph mark, and therefore `len`
+## 1. ~~The trailing paragraph mark~~ — MEASURED, AND IT IS OURS
+
+**Not a known difference. A bug in ween32.** Windows 2000:
 
 ```
-ours     type a, b, c   ->  len 3   text 61 62 63   char 0..2
-riched20 (wine)          ->  len 4                  char 0..3
+riched20   type a              len 2      ours   type a         len 1
+riched20   type a, b           len 4      ours   type a, b, c   len 3
+riched20   type, enter, type   text 61 0d 0a 62, line 1 at 2, len 4
 ```
 
-riched20 counts a paragraph mark past the last visible character; `cpMax =
--1` resolves to that. **ween32's length is the visible characters and no
-mark.**
+The third row settles the shape: the break is **one** character in index
+space while being two bytes of text, and `len 4` is a, break, b, **plus a
+trailing paragraph mark**. A rich edit document always ends in one.
 
-**Status: not measured on the machine.** Sam's numbers are from wine, whose
-riched20 is not Windows 2000's. **This one is first on the list because if it
-holds, every dump differs on `len` and on the last `char` line, and the first
-comparison is a hundred per cent noise.**
+**This entry was written as "not measured on the machine", and the rule in
+this file is why that mattered.** Written as an expected difference — the
+convenient reading, and the one that would have made the first comparison
+quiet — the model bug underneath it would have been permanently invisible to
+the only instrument built to find it.
 
-**And it may be a real divergence rather than an expected one.** A document
-that always ends in a paragraph mark is Rich Edit's model, not a rendering
-detail — it changes what every index means. If the machine agrees with wine,
-this belongs in the tracker and not in this file.
+**It is a model difference, not a rendering one**: every index in every
+message means something else, and any program selecting to the end of a
+document is off by one against ours. **It stays here as a pointer to the
+tracker item, not as a difference we accept** — and until it is fixed every
+dump differs on `len` and on the last `char` range, matched as KNOWN and
+printed rather than hidden. A quiet run would mean the differ had been taught
+to expect a bug.
+
 
 ## 2. The default face
 
@@ -73,10 +81,21 @@ delivers — `WM_KEYDOWN`, then `WM_CHAR` via `TranslateMessage` — so each sid
 acts on the one it recognises and ignores the other. One break on both, for
 the right reason rather than a compensating one.
 
-**Status: ours measured, riched20's from wine only.** If the machine agrees
-with wine then ween32 ignoring `WM_KEYDOWN VK_RETURN` is a real divergence: a
-program with its own message loop that does not call `TranslateMessage` gets
-no paragraph break from us and one from Windows.
+**Status: MEASURED ON THE MACHINE, and it is a ween32 bug.** Windows 2000
+agrees with wine exactly — the two single forms are opposite:
+
+```
+                        riched20 (machine)   ween32
+WM_CHAR CR               nothing              inserts
+WM_KEYDOWN VK_RETURN     inserts              nothing
+EM_REPLACESEL CR         inserts              inserts
+```
+
+A program sending `WM_CHAR` CR to a rich edit gets a paragraph from us and
+nothing from Windows; one sending the keydown gets the reverse. **A tracker
+item, not a difference we accept** — it is here because the executor
+compensates for it, and a compensation has to be visible.
+
 
 **Had the executor picked one form, every sequence containing `enter` would
 have lost its break on one side**, and the diff would have read as *ours
