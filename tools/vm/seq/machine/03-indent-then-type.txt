@@ -5,7 +5,7 @@ sel 83 83
 next --- Arial 200
 char 0..83 --- Arial 200
 para 0..83 align 1 ind 720 -720 0 num 0 tabs 0
-line 0 at 0 len 35
-line 1 at 35 len 43
-line 2 at 78 len 5
+line 0 at 0 len 35 y 1
+line 1 at 35 len 43 y 17
+line 2 at 78 len 5 y 33
 vscroll 0

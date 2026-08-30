@@ -61,3 +61,24 @@ for the first time:
 07 agreeing is the useful half: plain wrapping is right, and what looked
 like a difference was the control size. 03 and 06 are real, at identical
 widths, with both sides printing the width they used.
+
+
+Re-taken at 0f828da, when the dump gained `line ... y N` -- the pixel top of
+each line, which Sam asked for after the line-height bug proved invisible to
+a contract that recorded only which characters were on each line.
+
+**The prediction was that nothing but `y` would move, and nothing did.** All
+nine differ from the previous set by exactly the added field; every `at` and
+every `len` is byte-identical. That is the check worth having, because "only
+the new field can have changed" is a prediction about a serialiser and not a
+fact until nine files say so.
+
+**And the field enters the contract in agreement**, which is the test for
+whether it belongs there at all: the machine's line tops are 1, 17, 33 and
+ours are 1, 17, 33, in every scenario including the one that still
+disagrees. 06's disagreement is horizontal only -- same `y`, different break
+column -- which is a thing the old dump could not have said.
+
+A reader diffing against these needs one thing from `diffdump.py`: an absent
+`y` is *not compared* rather than a difference, so a dump taken before this
+re-take does not turn into noise.

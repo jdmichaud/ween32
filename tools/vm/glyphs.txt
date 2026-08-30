@@ -1,0 +1,23 @@
+client 388 269
+lines 1
+default face Arial size 200 effects 40000000
+actual  face Arial size 200 effects 40000000
+x 0 9
+x 4 31
+x 8 55
+x 12 77
+x 16 104
+x 20 125
+x 24 153
+x 28 176
+x 32 195
+x 36 216
+x 40 241
+x 44 266
+x 48 291
+x 52 313
+x 56 338
+x 60 365
+x 64 383
+x 68 408
+wrun 100 900
