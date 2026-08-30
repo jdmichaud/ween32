@@ -1190,9 +1190,13 @@ static void rich_relines(HWND wnd, ween_rich *e)
      *     the difference               0x00200000, WS_VSCROLL, and nothing
      *                                  else -- WS_HSCROLL is set in neither
      *
-     * They do not contradict. WordPad creates the editor **without** the
-     * style (wordpad's src/main.zig:959, from its own style word) and
-     * riched20 adds it. Both files were right and neither said *when*.
+     * They do not contradict, and **the reading that reconciled them was
+     * wrong for a year of comment-lines below this one**: it said WordPad
+     * creates the editor *without* the style and riched20 adds it. It cannot.
+     * `550081C4` is a style word read off a **running, idle** WordPad --
+     * riched20 had already taken the bit down off an empty document -- so it
+     * is a resting state and never was a creation style. See the permission
+     * reading further down, which is what this paragraph now defers to.
      *
      * Without this the control scrolled perfectly well and drew no bar: jd
      * reported it as *"no scrollbar appears and you cannot write any more"*,
@@ -1206,22 +1210,25 @@ static void rich_relines(HWND wnd, ween_rich *e)
      *     overflowing                552081C4   WS_VSCROLL added
      *     overflowed, then emptied   550081C4   WS_VSCROLL removed
      *
-     * **Only the bit this control raised is cleared.** A program that asked
-     * for WS_VSCROLL at CreateWindow keeps it: every reading above is of
-     * WordPad's editor, which is created *without* the style, so what is
-     * measured is a control managing a bit it put up itself. Whether
-     * riched20 also takes down one its creator asked for is a fourth state
-     * and nobody has looked, so this does not touch it.
+     * **This said the opposite and it was the guess, not a reading.** It read
+     * *"only the bit this control raised is cleared; a program that asked for
+     * WS_VSCROLL at CreateWindow keeps it"*, and closed by naming the fourth
+     * state as one nobody had looked at. Sam looked (`barwhy.c` row 2): a
+     * control created **with** the style reads `550081C4` while empty, so
+     * riched20 takes down a bit its creator asked for too. **What survives a
+     * document that fits is the permission, not the bar.**
      *
-     * **This raise is broader than its evidence, and that is not yet
-     * resolved.** Every reading above is of *WordPad's* editor. Sam later
-     * drove a **bare** `RichEdit20W` -- minimal style, no `EM_SETRECT` --
-     * twenty-one lines into an eighty-pixel control, and `WS_VSCROLL` was
-     * never set:
+     * **That gap is resolved and this is how it was found.** The raise was
+     * once broader than its evidence -- every reading was of *WordPad's*
+     * editor, and a bare `RichEdit20W` driven twenty-one lines into an
+     * eighty-pixel control never set the bit:
      *
      *     machine, bare control, overflowing     WS_VSCROLL not set
      *     machine, WordPad's editor, overflowing WS_VSCROLL set
-     *     ours, bare control, overflowing        WS_VSCROLL set   <- here
+     *     ours, bare control, overflowing        WS_VSCROLL set   <- was here
+     *
+     * Two controls disagreeing about the same overflow is what sent somebody
+     * looking for the bit that differed, and the answer is below.
      *
      * **Somebody read which bit does it, so the condition is here now.** This
      * said the rule was measured of WordPad's editor and generalised to every
