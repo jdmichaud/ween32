@@ -2736,6 +2736,102 @@ int main(void)
         DestroyWindow(host6);
     }
 
+    /* ---- horizontal scrolling, against the machine ----
+     *
+     * Every number here is `tools/vm/hscroll.txt` or `wpscroll.txt`, taken
+     * from riched20 on Windows 2000 and from the machine's own WordPad. The
+     * checks call the control and compare against those stored figures;
+     * none of them recompute what they are checking, which is the way two of
+     * this suite's tests have managed to pass while wrong.
+     *
+     * The control gets its own window because the permission is read at
+     * creation and cannot be added afterwards -- which is itself the first
+     * thing asserted. */
+    {
+        char big[600];
+        int i;
+        HWND noperm, hre;
+        RECT hcr;
+        POINTL p;
+        int a, b, page;
+
+        for (i = 0; i < 500; i++)
+            big[i] = 'w';
+        big[500] = 0;
+
+        /* **Without WS_HSCROLL at creation there is no bar, however long the
+         * line.** barwhy.c's rows, one axis over: the bit is a permission. */
+        noperm = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                                 WS_CHILD | WS_VISIBLE | ES_MULTILINE |
+                                     ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+                                 0, 0, 380, 200, host, NULL, NULL, NULL);
+        SendMessageA(noperm, EM_SETTARGETDEVICE, 0, 1440);
+        SendMessageA(noperm, WM_SETTEXT, 0, (LPARAM)big);
+        CHECK(!(GetWindowLongA(noperm, GWL_STYLE) & WS_HSCROLL),
+              "no WS_HSCROLL at creation, no horizontal bar ever");
+        DestroyWindow(noperm);
+
+        hre = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                              WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL |
+                                  ES_MULTILINE | ES_AUTOVSCROLL |
+                                  ES_AUTOHSCROLL,
+                              0, 0, 380, 200, host, NULL, NULL, NULL);
+        GetClientRect(hre, &hcr);
+        CHECK(!(GetWindowLongA(hre, GWL_STYLE) & WS_HSCROLL),
+              "an empty document shows no horizontal bar");
+
+        /* No wrap is EM_SETTARGETDEVICE with a width and no device -- and the
+         * width is arbitrary, measured: 1, 1440, 9360 and 15840 all turn
+         * wrapping off identically (hpage.txt). */
+        SendMessageA(hre, EM_SETTARGETDEVICE, 0, 1440);
+        SendMessageA(hre, WM_SETTEXT, 0, (LPARAM)big);
+        CHECK(SendMessageA(hre, EM_GETLINECOUNT, 0, 0) == 1,
+              "500 w's are one line with wrapping off");
+        CHECK((GetWindowLongA(hre, GWL_STYLE) & WS_HSCROLL) != 0,
+              "and a line past the right edge raises the bar");
+
+        /* The arrow: 7 pixels. A constant and not a character width -- the
+         * machine gives the same 7 at 8, 9 and 11 pixels per character, which
+         * is the sample that separates those two rules. */
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_LEFT, 0), 0);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        a = (int)p.x;
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_LINERIGHT, 0), 0);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        b = (int)p.x;
+        CHECK(a - b == 7, "an arrow moves the view 7 pixels");
+
+        /* The track: the client less fourteen. WordPad's own number at two
+         * widths -- 742 at 756 and 1006 at 1020. */
+        a = b;
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_PAGERIGHT, 0), 0);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        b = (int)p.x;
+        page = (hcr.right - hcr.left) - 14;
+        CHECK(a - b == page, "the track moves a page, which is the client "
+                             "less fourteen");
+
+        /* **The caret is followed sideways**, which is the half of jd's
+         * report that a scrollbar does not fix: on the machine, typing one
+         * character past the edge takes character 0 from x 9 to x -4723. */
+        SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_LEFT, 0), 0);
+        SendMessageA(hre, EM_SETSEL, (WPARAM)500, (LPARAM)500);
+        SendMessageA(hre, WM_CHAR, (WPARAM)'X', 1);
+        p.x = p.y = 0;
+        SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+        CHECK(p.x < 0, "typing past the right edge brings the caret back "
+                       "into view");
+
+        /* And down again, on the same document -- not a latch. */
+        SendMessageA(hre, WM_SETTEXT, 0, (LPARAM) "short");
+        CHECK(!(GetWindowLongA(hre, GWL_STYLE) & WS_HSCROLL),
+              "and the bar goes when the long line does");
+        DestroyWindow(hre);
+    }
+
     if (g_failures) {
         printf("%d failure(s)\n", g_failures);
         return 1;

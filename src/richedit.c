@@ -163,6 +163,7 @@ typedef struct {
     int undos, undo_cap;
     int first_visible; /* the top line drawn */
     int sb_grab;       /* where in the thumb a drag took hold, or -1 */
+    int hsb_grab;      /* the same for the horizontal bar */
     /* The last double click, so that a press close to it in time and place
      * can be told from a first one: win32 has no triple-click message, so a
      * control that wants the third press counts them itself. */
@@ -243,6 +244,23 @@ typedef struct {
      * however much it overflows, and one created with it has the bit taken
      * off again whenever the document fits. */
     int bar_allowed;
+    /* The horizontal axis, in pixels rather than lines. `scroll_x` is how far
+     * the view has moved right, and it is what `rich_line_left` takes off --
+     * one subtraction there reaches the painter, the caret, the hit test and
+     * EM_POSFROMCHAR, because all four already go through that function.
+     *
+     * The three flags mirror the vertical ones exactly, on purpose: the same
+     * permission model, measured the same way (tools/vm/barwhy.c for the
+     * mechanism, wpscroll.txt for WordPad raising WS_HSCROLL in No wrap and
+     * dropping it again when the line fits). **What is measured for the
+     * vertical bit and only assumed for this one is the permission itself**:
+     * barwhy.c's four rows are all WS_VSCROLL. A machine reading of a control
+     * made *with* WS_HSCROLL showing a bar on a line that fits, or one made
+     * without showing a bar on a line that does not, retires this. */
+    int scroll_x;
+    int hbar_on;
+    int hbar_ours;  /* WS_HSCROLL is up because this control put it up */
+    int hbar_allowed;
     /* The selection as the parent last heard it, so that EN_SELCHANGE is
      * sent when it moves and not every time something asks. */
     int said_from, said_to;
@@ -277,6 +295,7 @@ static ween_rich *rich_state(HWND w)
         ween_rich *e = calloc(1, sizeof(ween_rich));
         if (e) {
             e->sb_grab = -1;
+            e->hsb_grab = -1;
             e->bar_anchor_row = -1;
             /* **`WS_VSCROLL` at creation is a permission, not a request**, so
              * it is remembered here and taken straight back off the window:
@@ -284,6 +303,8 @@ static ween_rich *rich_state(HWND w)
              * bar on one. See rich_relines. */
             e->bar_allowed = (w->style & WS_VSCROLL) != 0;
             w->style &= ~(DWORD)WS_VSCROLL;
+            e->hbar_allowed = (w->style & WS_HSCROLL) != 0;
+            w->style &= ~(DWORD)WS_HSCROLL;
             e->text = calloc(1, 1); /* always a string, never NULL */
             e->cap = 1;
         }
@@ -871,6 +892,11 @@ static void rich_fmt(HWND wnd, RECT *r);
 static int rich_bar(HWND wnd);
 static int rich_visible_lines(HWND wnd);
 static int rich_overflows(HWND wnd, ween_rich *e);
+static int rich_hoverflows(HWND wnd, ween_rich *e);
+static void rich_hrelines(HWND wnd, ween_rich *e);
+static int rich_hbar(HWND wnd);
+static int rich_text_width(HWND wnd, ween_rich *e);
+static int rich_hpage(HWND wnd);
 static int rich_rows_from(HWND wnd, ween_rich *e, int start);
 static int rich_next_tab_stop(ween_rich *e, int at, int x);
 
@@ -1112,6 +1138,24 @@ static void rich_clamp_scroll(HWND wnd, ween_rich *e)
         top--;
     if (e->first_visible > top)
         e->first_visible = top;
+
+    /* And the same, sideways. The furthest right the view goes is what the
+     * machine's own bar allows, which is the standard scrollbar arithmetic
+     * over the range measured in `rich_text_width` and `rich_hpage`:
+     *
+     *     nMax 5510, nPage 778, SB_RIGHT -> pos 4733 = max - page + 1
+     *
+     * Read off hscroll.txt rather than derived, and it agrees with the
+     * ordinary rule, which is the only reason to use the ordinary rule. */
+    {
+        int max = rich_text_width(wnd, e) + 1 - rich_hpage(wnd) + 1;
+        if (max < 0)
+            max = 0;
+        if (e->scroll_x > max)
+            e->scroll_x = max;
+        if (e->scroll_x < 0)
+            e->scroll_x = 0;
+    }
 }
 
 static void rich_relines(HWND wnd, ween_rich *e)
@@ -1121,6 +1165,18 @@ static void rich_relines(HWND wnd, ween_rich *e)
         return;
     e->bar_on = 0;
     rich_relines_once(wnd, e);
+    /* **Before the vertical block, because that block returns four different
+     * ways** -- disabled bars, no permission, nothing to scroll, nothing to
+     * scroll any more -- and a horizontal update hung off the end of it would
+     * be skipped on all four. A document one line tall and a mile wide takes
+     * every one of those paths.
+     *
+     * The two axes depend on each other: a vertical bar narrows the room the
+     * horizontal one measures against, and the reverse. It is settled by
+     * running this twice, here and after the vertical bar has moved, rather
+     * than by solving it -- the same thing riched20 must do, since its own
+     * client shrinks on both axes when both bars come up. */
+    rich_hrelines(wnd, e);
     if (wnd->style & ES_DISABLENOSCROLL) {
         rich_clamp_scroll(wnd, e);
         return;
@@ -1201,11 +1257,13 @@ static void rich_relines(HWND wnd, ween_rich *e)
      * a creation style. That is exactly how the reading it replaces went
      * wrong, and it applies to this one too. */
     if (!e->bar_allowed) {
+        rich_hrelines(wnd, e);
         rich_clamp_scroll(wnd, e);
         return;
     }
     if (!(wnd->style & WS_VSCROLL)) {
         if (!rich_overflows(wnd, e)) {
+            rich_hrelines(wnd, e);
             rich_clamp_scroll(wnd, e);
             return;
         }
@@ -1214,6 +1272,7 @@ static void rich_relines(HWND wnd, ween_rich *e)
     } else if (!rich_overflows(wnd, e)) {
         wnd->style &= ~(DWORD)WS_VSCROLL;
         e->bar_ours = 0;
+        rich_hrelines(wnd, e);
         rich_clamp_scroll(wnd, e);
         return;
     }
@@ -1221,7 +1280,47 @@ static void rich_relines(HWND wnd, ween_rich *e)
     e->bar_on = rich_overflows(wnd, e);
     if (e->bar_on != was)
         rich_relines_once(wnd, e);
+    rich_hrelines(wnd, e);
     rich_clamp_scroll(wnd, e);
+}
+
+/* The horizontal bar, raised and lowered on the same terms as the vertical
+ * one. Measured on the machine's own WordPad rather than assumed from the
+ * symmetry (wpscroll.txt), because the note this replaces got the vertical
+ * rule right and its reason wrong:
+ *
+ *     No wrap, a line past the edge      551081c4   WS_HSCROLL up
+ *     the window widened so it fits      550081c4   down again
+ *
+ * The same document both times, only the width changing -- so it is not a
+ * latch, and it is not the text being edited that moves it.
+ *
+ * **Wrapping is what keeps this quiet in the ordinary case**: a wrapped line
+ * is never wider than its room, so `rich_hoverflows` is false and no bar
+ * appears. That agrees with the two readings of the machine's wrapping
+ * editor which found WS_HSCROLL clear -- and which is all `richedit.c` used
+ * to have, generalised into "riched20 never puts one up". */
+static void rich_hrelines(HWND wnd, ween_rich *e)
+{
+    if (!e->hbar_allowed) {
+        e->hbar_on = 0;
+        return;
+    }
+    if (!(wnd->style & WS_HSCROLL)) {
+        if (!rich_hoverflows(wnd, e)) {
+            e->hbar_on = 0;
+            return;
+        }
+        wnd->style |= WS_HSCROLL;
+        e->hbar_ours = 1;
+    } else if (!rich_hoverflows(wnd, e)) {
+        wnd->style &= ~(DWORD)WS_HSCROLL;
+        e->hbar_ours = 0;
+        e->hbar_on = 0;
+        e->scroll_x = 0;
+        return;
+    }
+    e->hbar_on = rich_hoverflows(wnd, e);
 }
 
 /* Which line an offset is on, from the table. */
@@ -1998,6 +2097,24 @@ static int rich_bar(HWND wnd)
     return (e && e->bar_on) ? ween_scroll_metric() : 0;
 }
 
+/* The horizontal bar's height, and it takes room the same way the vertical
+ * one takes width. Measured on the machine's WordPad, which is the only
+ * reason to believe it rather than assume the symmetry:
+ *
+ *     window 760x386   no bar   client 756x382
+ *                      bar up   client 756x366     16 off the height
+ *     window 1024x597  both     client 740x529     and 16 off the width
+ */
+static int rich_hbar(HWND wnd)
+{
+    ween_rich *e = rich_state(wnd);
+    if (!(wnd->style & WS_HSCROLL))
+        return 0;
+    if (wnd->style & ES_DISABLENOSCROLL)
+        return ween_scroll_metric();
+    return (e && e->hbar_on) ? ween_scroll_metric() : 0;
+}
+
 /* Whether there is anything to scroll: the document taller than the room.
  *
  * **A height, not a line count.** `e->lines > rich_visible_lines(wnd)` was
@@ -2048,7 +2165,10 @@ static int rich_rows_from(HWND wnd, ween_rich *e, int start)
     RECT r;
     int room, top, rows = 0, i;
     rich_fmt(wnd, &r);
-    room = r.bottom - r.top;
+    /* The horizontal bar takes sixteen pixels off the bottom, so a document
+     * that fits without one may not fit with it -- measured on the machine's
+     * WordPad, whose client goes 756x382 to 756x366 when the bar comes up. */
+    room = r.bottom - r.top - rich_hbar(wnd);
     if (!e || !e->lines) {
         int line = rich_line_height(wnd);
         rows = line > 0 ? room / line : 0;
@@ -2091,6 +2211,30 @@ static ween_sbstate rich_sbstate(HWND wnd)
     st.max = e && e->lines ? e->lines - 1 : 0;
     st.page = rich_visible_lines(wnd);
     st.line = 1;
+    return st;
+}
+
+/* The horizontal bar's state, in **pixels** where the vertical one is in
+ * lines. Every field is a measurement rather than a convention:
+ *
+ *     max   the longest line's width + 1     nMax 5501 for 5500px of text
+ *     page  client - 14                      742 at 756, 1006 at 1020
+ *     line  7                                the arrow, and it is a constant:
+ *                                            the same 7 at 8, 9 and 11 pixels
+ *                                            per character, which is what
+ *                                            separates it from "one average
+ *                                            character width"
+ *     pos   pixels, 1:1 with the view        pos 7 per arrow, 778 per page
+ */
+static ween_sbstate rich_hsbstate(HWND wnd)
+{
+    ween_rich *e = rich_state(wnd);
+    ween_sbstate st;
+    st.pos = e ? e->scroll_x : 0;
+    st.min = 0;
+    st.max = e ? rich_text_width(wnd, e) + 1 : 0;
+    st.page = rich_hpage(wnd);
+    st.line = 7;
     return st;
 }
 
@@ -2244,7 +2388,11 @@ static int rich_bullet_indent(ween_rich *e, int row)
     }
 }
 
-static int rich_line_left(HWND wnd, ween_rich *e, int row)
+/* Where a line begins if the view has not been scrolled sideways. Split out
+ * from `rich_line_left` because the horizontal machinery needs the *layout*
+ * position -- how wide the text is, where the caret stands within it -- and
+ * would chase its own tail if it asked the scrolled one. */
+static int rich_line_left_unscrolled(HWND wnd, ween_rich *e, int row)
 {
     int sb = rich_bar(wnd);
     const ween_pfmt *pf = &e->para[para_at(e, e->line[row].start)].fmt;
@@ -2267,6 +2415,86 @@ static int rich_line_left(HWND wnd, ween_rich *e, int row)
     if (pf->alignment == PFA_CENTER)
         return left + (right - left - width) / 2;
     return left;
+}
+
+/* **The one subtraction that scrolls the view sideways.** Four callers go
+ * through here -- the painter, the caret, the hit test and EM_POSFROMCHAR --
+ * so they all move together and none can be forgotten. That the machine's
+ * EM_POSFROMCHAR reports scrolled coordinates is measured rather than
+ * assumed: with 500 w's and the view at the end, character 0 answers x
+ * -4723 (hscroll.txt), so it is the same convention. */
+static int rich_line_left(HWND wnd, ween_rich *e, int row)
+{
+    return rich_line_left_unscrolled(wnd, e, row) - e->scroll_x;
+}
+
+/* How wide the widest line is, from the text's own left edge.
+ *
+ * This is what the bar's range is made of. On the machine `nMax` is the
+ * longest line's width plus one, with no residue over two fonts and two
+ * lengths (hscroll.txt):
+ *
+ *     500 w's at 11px   nMax 5501       501 of them   nMax 5510
+ *     500 at 8px        nMax 4001       501           nMax 4009
+ *
+ * The indent is included and the selection bar is not, because character 0
+ * sits at x 9 in a control whose nMax is 5501 for 5500 pixels of text. */
+static int rich_text_width(HWND wnd, ween_rich *e)
+{
+    int row, widest = 0;
+    if (!e || !e->lines)
+        return 0;
+    for (row = 0; row < e->lines; row++) {
+        int w = rich_line_left_unscrolled(wnd, e, row) +
+                rich_x_of(e, row, e->line[row].len);
+        if (w > widest)
+            widest = w;
+    }
+    widest -= rich_selbar(wnd);
+    return widest > 0 ? widest : 0;
+}
+
+/* The track step, and the bar's page.
+ *
+ * **`client - 14`, and the fourteen is WordPad's rather than a bare
+ * control's.** Two widths of the machine's own editor, each predicted before
+ * it was read:
+ *
+ *     client 756 -> page 742        client 1020 -> page 1006
+ *
+ * A bare riched20 built from the same style word gives `client - 10` at five
+ * widths, equally cleanly. **The four pixels between them are not explained**
+ * -- `tools/vm/hpage.c` eliminates the class, the font at 9, 10 and 11 pixels
+ * per character, the target-device width, and `EM_SETRECT`; eight of the ten
+ * is ES_SELECTIONBAR. WordPad's number is the one built to here because
+ * WordPad is the program this library exists to reproduce, and the gap is
+ * written here rather than in a channel so the next person meets it at the
+ * constant. */
+static int rich_hpage(HWND wnd)
+{
+    RECT cr;
+    int page;
+    GetClientRect(wnd, &cr);
+    page = (cr.right - cr.left) - rich_bar(wnd) - 14;
+    return page > 1 ? page : 1;
+}
+
+/* Whether a line runs past the right edge.
+ *
+ * **The exact threshold is not measured.** What is: a 901px line in a 1020px
+ * client shows no bar, and the same document widened past it does
+ * (wpscroll.txt). That brackets the boundary and does not pin it, so this
+ * takes the plain reading -- the text is wider than the room for it -- and
+ * says so rather than dressing the bracket up as a rule. */
+static int rich_hoverflows(HWND wnd, ween_rich *e)
+{
+    RECT cr;
+    int room;
+    if (!e || !e->lines)
+        return 0;
+    GetClientRect(wnd, &cr);
+    room = (cr.right - cr.left) - rich_bar(wnd) - rich_selbar(wnd);
+    return rich_text_width(wnd, e) > room;
 }
 
 /* How far along its line the caret stands. */
@@ -2352,10 +2580,52 @@ static int rich_scroll_into_view(HWND wnd, ween_rich *e)
     return 1;
 }
 
+/* The view follows the caret sideways, which is the half of jd's report that
+ * adding a scrollbar does not fix.
+ *
+ * Measured: in No wrap, typing one character past the right edge moves
+ * character 0 from x 9 to x -4723 -- the machine scrolls to bring the caret
+ * back into the window (hscroll.txt). Ours did not move at all, so the caret
+ * simply left sideways, which is the same shape as leaving the bottom and an
+ * unrelated cause.
+ *
+ * **What is measured is that it follows and roughly where it lands; the exact
+ * resting offset is not.** The machine put the caret about a dozen pixels
+ * short of the right edge, and whether that is a margin, a rounding or the
+ * next character's width has not been asked. This scrolls the least that
+ * makes the caret visible, which agrees with the measurement to within that
+ * dozen and is the behaviour a reader would expect. When somebody measures
+ * the offset, it goes here. */
+static int rich_hscroll_into_view(HWND wnd, ween_rich *e)
+{
+    int row, x, left, right, room, was = e->scroll_x;
+    RECT cr;
+    if (!e->lines || !e->hbar_allowed)
+        return 0;
+    GetClientRect(wnd, &cr);
+    room = (cr.right - cr.left) - rich_bar(wnd) - rich_selbar(wnd);
+    if (room <= 0)
+        return 0;
+    row = rich_line_of(e, e->caret);
+    /* Where the caret stands in the text, before the view is taken off. */
+    x = rich_line_left_unscrolled(wnd, e, row) - rich_selbar(wnd) +
+        rich_x_of(e, row, e->caret - e->line[row].start);
+    left = e->scroll_x;
+    right = left + room;
+    if (x < left)
+        e->scroll_x = x;
+    else if (x > right)
+        e->scroll_x = x - room;
+    if (e->scroll_x < 0)
+        e->scroll_x = 0;
+    return e->scroll_x != was;
+}
+
 static void rich_show_caret(HWND wnd, ween_rich *e)
 {
     e->caret_on = 1; /* a caret that has just moved is not blinking off */
     rich_scroll_into_view(wnd, e);
+    rich_hscroll_into_view(wnd, e);
 }
 
 /* ---- drawing ------------------------------------------------------------- */
@@ -2365,7 +2635,7 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     struct ween_wnd *top = ween_top_level(wnd);
     ween_rich *e = rich_state(wnd);
     RECT r = ps->rcPaint, cr;
-    int ox, oy, sb = rich_bar(wnd);
+    int ox, oy, sb = rich_bar(wnd), hb = rich_hbar(wnd);
     int from = 0, to = 0, row;
     ween_color ink = (wnd->style & WS_DISABLED) ? WEEN_SHADOW : WEEN_BLACK;
 
@@ -2504,11 +2774,21 @@ static void rich_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
                                e->line[crow].height, WEEN_BLACK);
     }
 
-    /* The bar last, so a line long enough to reach it is covered by it. */
+    /* The bars last, so a line long enough to reach one is covered by it.
+     * They stop short of each other rather than meeting in the corner: the
+     * vertical one ends where the horizontal one starts, which is the room
+     * each has already taken off the other's client. */
     if (sb) {
         ween_sbstate st = rich_sbstate(wnd);
         ween_draw_scrollbar(&top->surface, ox + cr.right - sb, oy, sb,
-                            cr.bottom - cr.top, 1,
+                            cr.bottom - cr.top - hb, 1,
+                            ween_sb_maxpos(&st) > st.min, st.pos, st.page,
+                            st.min, st.max);
+    }
+    if (hb) {
+        ween_sbstate st = rich_hsbstate(wnd);
+        ween_draw_scrollbar(&top->surface, ox + cr.left, oy + cr.bottom - hb,
+                            cr.right - cr.left - sb, hb, 0,
                             ween_sb_maxpos(&st) > st.min, st.pos, st.page,
                             st.min, st.max);
     }
@@ -3703,6 +3983,31 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         int had = ween_focus_get() == wnd;
         if (wnd->style & WS_DISABLED)
             return 0;
+        /* **The horizontal bar is tested first**, because the vertical
+         * block below asks only about x and would take a click in the
+         * bottom-right corner -- which belongs to neither bar and to the
+         * vertical one least of all, since the vertical bar stops short of
+         * it. */
+        if ((wnd->style & WS_HSCROLL) && rich_hbar(wnd)) {
+            RECT cr;
+            GetClientRect(wnd, &cr);
+            if (GET_Y_LPARAM(lp) >= cr.bottom - rich_hbar(wnd)) {
+                ween_sbstate st = rich_hsbstate(wnd);
+                int grab, pos;
+                SetFocus(wnd);
+                pos = ween_sb_click(GET_X_LPARAM(lp),
+                                    cr.right - cr.left - rich_bar(wnd), &st,
+                                    &grab);
+                if (grab >= 0) {
+                    SetCapture(wnd);
+                    e->hsb_grab = grab;
+                }
+                e->scroll_x = ween_sb_clamp(pos, &st);
+                rich_notify(wnd, EN_HSCROLL, ENM_SCROLL);
+                InvalidateRect(wnd, NULL, FALSE);
+                return 0;
+            }
+        }
         if ((wnd->style & WS_VSCROLL)) {
             RECT cr;
             GetClientRect(wnd, &cr);
@@ -3817,7 +4122,22 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_MOUSEMOVE:
-        if (GetCapture() == wnd && e->sb_grab >= 0) {
+        if (GetCapture() == wnd && e->hsb_grab >= 0) {
+            RECT cr;
+            ween_sbstate st = rich_hsbstate(wnd);
+            int pos;
+            GetClientRect(wnd, &cr);
+            pos = ween_sb_clamp(ween_sb_drag(GET_X_LPARAM(lp),
+                                             cr.right - cr.left -
+                                                 rich_bar(wnd),
+                                             &st, e->hsb_grab),
+                                &st);
+            if (pos != e->scroll_x) {
+                e->scroll_x = pos;
+                rich_notify(wnd, EN_HSCROLL, ENM_SCROLL);
+                InvalidateRect(wnd, NULL, FALSE);
+            }
+        } else if (GetCapture() == wnd && e->sb_grab >= 0) {
             RECT cr;
             ween_sbstate st = rich_sbstate(wnd);
             int top;
@@ -3917,6 +4237,7 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_LBUTTONUP:
         e->sb_grab = -1;
+        e->hsb_grab = -1;
         e->bar_anchor_row = -1;
         if (e->dnd_pending) {
             int at = rich_index_at_point(wnd, e, GET_X_LPARAM(lp),
@@ -3964,6 +4285,42 @@ static LRESULT CALLBACK rich_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             InvalidateRect(wnd, NULL, FALSE);
         }
         return 0;
+    /* **WM_HSCROLL, which this control used to ignore outright.** alice
+     * measured it: 500 w's in No wrap, the message sent, and character 499
+     * still at x 3993 -- four fifths of the line unreachable by any means.
+     *
+     * Every step here is read off the machine (`tools/vm/hscroll.txt`) rather
+     * than taken from the vertical side, because the two axes do not agree:
+     * the vertical page is a screenful less one line and this one is not a
+     * screenful less one character.
+     *
+     *     SB_LINELEFT/RIGHT   7 px      constant across three fonts
+     *     SB_PAGELEFT/RIGHT   the page  client - 14
+     *     SB_LEFT / SB_RIGHT  the ends
+     */
+    case WM_HSCROLL: {
+        ween_sbstate st = rich_hsbstate(wnd);
+        int pos = e->scroll_x;
+        switch (LOWORD(wp)) {
+        case SB_LINELEFT:  pos -= st.line; break;
+        case SB_LINERIGHT: pos += st.line; break;
+        case SB_PAGELEFT:  pos -= st.page; break;
+        case SB_PAGERIGHT: pos += st.page; break;
+        case SB_LEFT:      pos = st.min; break;
+        case SB_RIGHT:     pos = ween_sb_maxpos(&st); break;
+        case SB_THUMBPOSITION:
+        case SB_THUMBTRACK: pos = HIWORD(wp); break;
+        default: return 0;
+        }
+        pos = ween_sb_clamp(pos, &st);
+        if (pos != e->scroll_x) {
+            e->scroll_x = pos;
+            rich_notify(wnd, EN_HSCROLL, ENM_SCROLL);
+            InvalidateRect(wnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
     case WM_MOUSEWHEEL:
         if (multi) {
             ween_sbstate st = rich_sbstate(wnd);
