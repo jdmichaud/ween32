@@ -1,0 +1,8 @@
+# a, a paragraph break, b. The row that settles the shape of entry 1: `len 4`
+# with `text 61 0d 0a 62` and `line 1 at 2`, so the break is ONE character in
+# index space while being two bytes of text, and the fourth is the trailing
+# mark.
+#
+# Also the sequence that would have caught the `enter` compensation had it
+# been run: both sides must produce one break, from opposite messages.
+type:97:0,enter:0:0,type:98:0

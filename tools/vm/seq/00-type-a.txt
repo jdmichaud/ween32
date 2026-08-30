@@ -1,0 +1,8 @@
+# One character, which is the smallest thing the two can disagree about --
+# and they do: `len 2` against our 1, the trailing paragraph mark, entry 1.
+#
+# **This dump sat in seq/machine with no sequence beside it**, so the reading
+# that entry 1 is built on was never actually run through the differ. It was
+# quoted in prose and compared by eye. tools/vm/diffrun.sh now says when a
+# machine half has no scenario, which is how it was noticed.
+type:97:0
