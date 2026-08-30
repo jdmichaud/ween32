@@ -2584,6 +2584,40 @@ void ween_set_modifiers(int shift, int ctrl, int alt)
     g_alt_down = alt;
 }
 
+/* **The whole keyboard, which is how win32 lets a caller press a modifier for
+ * a message it is about to send.** `SendMessage` carries no modifiers -- it
+ * does not go through a queue -- so a program synthesising Ctrl+Right sets the
+ * state first and win32 answers `GetKeyState` from it. The differential
+ * harness needs exactly this: `tools/vm/replay.h` compiles against the real
+ * `<windows.h>` as well as ours, so it cannot call anything of ours, and
+ * without a shared way to hold Ctrl the language could not say "Ctrl+Right" at
+ * all -- which is why jd's word-movement bug was invisible to it.
+ *
+ * Only the three modifiers are kept (see g_shift_down), so the array is
+ * written and read at those indices and zero elsewhere rather than stored
+ * whole: reporting keys we do not track as up is honest, and pretending to
+ * remember 256 of them would not be. */
+BOOL GetKeyboardState(PBYTE state)
+{
+    if (!state)
+        return FALSE;
+    memset(state, 0, 256);
+    state[VK_SHIFT] = (BYTE)(g_shift_down ? 0x80 : 0);
+    state[VK_CONTROL] = (BYTE)(g_ctrl_down ? 0x80 : 0);
+    state[VK_MENU] = (BYTE)(g_alt_down ? 0x80 : 0);
+    return TRUE;
+}
+
+BOOL SetKeyboardState(LPBYTE state)
+{
+    if (!state)
+        return FALSE;
+    g_shift_down = (state[VK_SHIFT] & 0x80) != 0;
+    g_ctrl_down = (state[VK_CONTROL] & 0x80) != 0;
+    g_alt_down = (state[VK_MENU] & 0x80) != 0;
+    return TRUE;
+}
+
 SHORT GetKeyState(int vk)
 {
     int down = 0;

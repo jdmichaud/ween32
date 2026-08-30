@@ -1,0 +1,15 @@
+# **Tab, which does nothing at all here.**
+#
+# `VK_TAB` appears nowhere in src/richedit.c and the text is byte-identical
+# after pressing it -- alice measured that, and the layout half already works
+# (`rich_next_tab_stop` exists and paragraph tab stops are honoured). So this
+# is the key never producing one.
+#
+# **What the machine is being asked is deliberately broader than "does a tab
+# appear".** riched20 may insert a `\t`, or move the caret to the next stop
+# as a position without putting a character in, and on a bulleted or indented
+# paragraph Tab may indent the paragraph instead. `text` in the dump tells the
+# first two apart -- a 09 byte or not -- and `para ind` would show the third.
+#
+# Ours: the text is "alphabetagamma" with no tab and no movement.
+type:97:0,type:108:0,type:112:0,type:104:0,type:97:0,type:32:0,type:98:0,type:101:0,type:116:0,type:97:0,tab:0:0,type:103:0,type:97:0,type:109:0,type:109:0,type:97:0

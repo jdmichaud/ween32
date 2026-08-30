@@ -382,6 +382,12 @@ BOOL TrackMouseEvent(TRACKMOUSEEVENT *track);
  * bit set means held. Asked mid-gesture, when there is no message to read
  * it from -- constraining a drag to a square while it is being dragged. */
 SHORT GetKeyState(int vk);
+/* The whole keyboard. A program synthesising a modified keystroke with
+ * SendMessage sets the state first, because SendMessage carries no modifiers
+ * of its own -- which is how the differential harness presses Ctrl on both
+ * ween32 and a real riched20 with one line of shared code. */
+BOOL GetKeyboardState(PBYTE state);
+BOOL SetKeyboardState(LPBYTE state);
 
 /* ---- cursors -------------------------------------------------------------
  *

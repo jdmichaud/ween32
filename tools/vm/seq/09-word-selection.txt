@@ -1,0 +1,9 @@
+# **Ctrl+Shift and an arrow: the same movement, taking the selection with it.**
+#
+# Two Ctrl+Shift+Rights from the start of "alpha beta gamma delta". A
+# character rule gives 0..2, a word rule 0..11.
+#
+# Kept separate from 08 because the dump is one final state: a sequence
+# answers one question, and folding the movement and the selection into one
+# would make a disagreement ambiguous between them.
+type:97:0,type:108:0,type:112:0,type:104:0,type:97:0,type:32:0,type:98:0,type:101:0,type:116:0,type:97:0,type:32:0,type:103:0,type:97:0,type:109:0,type:109:0,type:97:0,type:32:0,type:100:0,type:101:0,type:108:0,type:116:0,type:97:0,select:0:0,wordselright:0:0,wordselright:0:0

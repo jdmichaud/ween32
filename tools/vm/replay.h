@@ -50,6 +50,7 @@ enum {
     OP_UP, OP_DOWN, OP_LEFT, OP_RIGHT, OP_REPLACE,
     OP_BOLD, OP_ITALIC, OP_UNDER, OP_SIZE,
     OP_ALIGN, OP_BULLET, OP_INDENT, OP_RINDENT, OP_RESIZE, OP_UNDO,
+    OP_WORDLEFT, OP_WORDRIGHT, OP_WORDSELLEFT, OP_WORDSELRIGHT, OP_TAB,
     OP_N
 };
 
@@ -58,7 +59,8 @@ static const char *const op_names[OP_N] = {
     "select", "selall", "clear", "home", "end",
     "up", "down", "left", "right", "replace",
     "bold", "italic", "under", "size",
-    "align", "bullet", "indent", "rindent", "resize", "undo"
+    "align", "bullet", "indent", "rindent", "resize", "undo",
+    "wordleft", "wordright", "wordselleft", "wordselright", "tab"
 };
 
 struct rp_step { int op, a, b; };
@@ -335,6 +337,35 @@ static int parse(const char *t, struct rp_step *seq, int max)
     return n;
 }
 
+/* **A keystroke with a modifier held, said the same way on both sides.**
+ *
+ * `SendMessage` carries no modifiers -- it does not go through a queue -- so
+ * a synthesised Ctrl+Right is a plain Right to whoever receives it unless the
+ * key state is set first. win32's own answer is `SetKeyboardState`, which is
+ * what a program does when it presses a key on another's behalf, and it is
+ * the only mechanism available to this file: replay.h compiles against the
+ * real `<windows.h>` as well as ween32's, so it cannot call anything of ours.
+ *
+ * ween32 grew `SetKeyboardState` for this. **Until it existed the language
+ * could not say "Ctrl" at all**, which is why jd's word-movement bug -- Ctrl
+ * with an arrow moving one character -- was not reachable by any sequence
+ * this harness could generate. A contract that cannot press a modifier cannot
+ * find a bug in one.
+ *
+ * Put back down afterwards, so the modifier does not leak into the next
+ * operation the way a real key would not. */
+static void modified(HWND re, int vk, int ctrl, int shift)
+{
+    BYTE ks[256];
+    memset(ks, 0, sizeof ks);
+    ks[VK_CONTROL] = (BYTE)(ctrl ? 0x80 : 0);
+    ks[VK_SHIFT] = (BYTE)(shift ? 0x80 : 0);
+    SetKeyboardState(ks);
+    SendMessageA(re, WM_KEYDOWN, (WPARAM)vk, 1);
+    memset(ks, 0, sizeof ks);
+    SetKeyboardState(ks);
+}
+
 static void effect(HWND re, DWORD mask, DWORD bit, int on)
 {
     CHARFORMATA cf;
@@ -412,6 +443,11 @@ static void step(HWND re, const struct rp_step *s)
     case OP_DOWN: SendMessageA(re, WM_KEYDOWN, VK_DOWN, 0); break;
     case OP_LEFT: SendMessageA(re, WM_KEYDOWN, VK_LEFT, 0); break;
     case OP_RIGHT: SendMessageA(re, WM_KEYDOWN, VK_RIGHT, 0); break;
+    case OP_WORDLEFT: modified(re, VK_LEFT, 1, 0); break;
+    case OP_WORDRIGHT: modified(re, VK_RIGHT, 1, 0); break;
+    case OP_WORDSELLEFT: modified(re, VK_LEFT, 1, 1); break;
+    case OP_WORDSELRIGHT: modified(re, VK_RIGHT, 1, 1); break;
+    case OP_TAB: SendMessageA(re, WM_KEYDOWN, VK_TAB, 1); break;
     case OP_BOLD: effect(re, CFM_BOLD, CFE_BOLD, s->a); break;
     case OP_ITALIC: effect(re, CFM_ITALIC, CFE_ITALIC, s->a); break;
     case OP_UNDER: effect(re, CFM_UNDERLINE, CFE_UNDERLINE, s->a); break;
