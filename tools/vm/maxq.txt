@@ -1,0 +1,8 @@
+host client 412 x 293; asked for 280x160 each time
+WS_MAXIMIZE is 0x01000000 and 0x550081C4 contains it
+
+  0x550081C4 as it stands      : window 412 x 293
+  same, minus 0x01000000       : window 280 x 160
+  0x540081C4 written out       : window 280 x 160
+  WS_CHILD|WS_VISIBLE|MULTILINE: window 280 x 160
+  the same plus WS_MAXIMIZE    : window 412 x 293

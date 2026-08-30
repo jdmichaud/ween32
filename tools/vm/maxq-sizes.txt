@@ -1,0 +1,14 @@
+host client 412 x 293
+
+== RICHEDIT20 asked for 280x160 ==
+  immediately after CreateWindowEx: window 412 x 293, client 408 x 289
+  after pumping 300ms            : window 412 x 293, client 408 x 289
+  after MoveWindow 280x160       : window 280 x 160, client 276 x 156
+
+== a plain EDIT for contrast, same call ==
+  immediately after CreateWindowEx: window 412 x 293, client 408 x 289
+  after pumping 300ms            : window 412 x 293, client 408 x 289
+
+== RICHEDIT20 with hInstance passed ==
+  immediately after CreateWindowEx: window 412 x 293, client 408 x 289
+  after pumping 300ms            : window 412 x 293, client 408 x 289
