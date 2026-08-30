@@ -570,6 +570,8 @@ typedef struct tagCOMBOBOXEXITEMA {
  * how a list of suggestions comes up as you type. */
 #define CB_SHOWDROPDOWN 0x014F
 #define CB_GETDROPPEDSTATE 0x0157
+#define CB_GETTOPINDEX 0x015B
+#define CB_SETTOPINDEX 0x015C
 #define CBN_SELCHANGE 1
 #define CBN_EDITCHANGE 5
 #define CBN_DROPDOWN 7

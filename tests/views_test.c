@@ -878,6 +878,40 @@ int main(void)
                       "and the corner is the bar's, not a grip: it does not "
                       "drag taller");
             }
+            /* **And the bar can be dragged, which is not the same as clicked.**
+             * jd: *"the scrollbar on the fontsize dropdown does not work."*
+             * `ween_sb_click` answers where in the thumb a press took hold and
+             * this control dropped that answer on the floor, so the list moved
+             * once to where the bar was pressed and then stood still under the
+             * pointer. Checked against a build without the fix before being
+             * written: it reports the top unmoved. */
+            {
+                int ox, oy, bx, y0, y1, top0, top1;
+                /* **Opened fresh, because the checks above leave it
+                 * scrolled.** The corner press just above is now a press on
+                 * the bar -- that is the point of it -- and the walk before
+                 * that left the top at 5. A press meant for the thumb then
+                 * lands *above* it and reads as a page-up, which answers no
+                 * grab: the test would have failed against a working drag.
+                 * **A test that inherits its neighbour's state measures the
+                 * neighbour.** */
+                SendMessageA(cb, CB_SETTOPINDEX, 0, 0);
+                ween_client_origin(cb, &ox, &oy);
+                ween_combo_list_rect(cb, &before);
+                bx = before.right - 4 - ox;
+                /* **Below the up arrow**, or the press is an arrow click and
+                 * answers no grab -- which is a bar that cannot be dragged
+                 * for a different reason and would pass this test wrongly. */
+                y0 = before.top + ween_scroll_metric() + 4 - oy;
+                y1 = before.bottom - 4 - oy;
+                SendMessageA(cb, WM_LBUTTONDOWN, 0, MAKELPARAM(bx, y0));
+                top0 = (int)SendMessageA(cb, CB_GETTOPINDEX, 0, 0);
+                SendMessageA(cb, WM_MOUSEMOVE, 0, MAKELPARAM(bx, y1));
+                top1 = (int)SendMessageA(cb, CB_GETTOPINDEX, 0, 0);
+                SendMessageA(cb, WM_LBUTTONUP, 0, MAKELPARAM(bx, y1));
+                CHECK(top1 > top0,
+                      "and the list's bar can be dragged, not only pressed");
+            }
         }
 
         /* The height a combo box is created with is the height it has with

@@ -2041,6 +2041,13 @@ typedef struct {
     HIMAGELIST images; /* ComboBoxEx: where those images come from */
     int count, cap, cursel, top;
     int track;  /* combo box: the item the pointer is over, -1 for none */
+    int sb_grab; /* combo box: where in the dropped list's thumb a drag took
+                  * hold, or -1. **Without it the bar can be clicked and not
+                  * dragged**: `ween_sb_click` answers a grab and this used to
+                  * drop it on the floor, so the thumb moved once to where it
+                  * was pressed and then stood still under the pointer. jd:
+                  * *"the scrollbar on the fontsize dropdown does not work."*
+                  * The rich edit keeps `sb_grab` for the same reason. */
     int opened; /* combo box: this press is the one that opened the list */
     HWND edit;  /* combo box: the field, when its style says it can be typed
                  * in — which is what an address bar is */
@@ -2060,6 +2067,8 @@ static ween_items *items_of(HWND w)
         if (w->ctl) {
             ((ween_items *)w->ctl)->cursel = -1;
             ((ween_items *)w->ctl)->track = -1;
+            /* calloc gives 0, which would read as a drag already in hand */
+            ((ween_items *)w->ctl)->sb_grab = -1;
         }
     }
     return w->ctl;
@@ -3345,6 +3354,7 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                     int grab;
                     int pos = ween_sb_click(sy, combo_bar_h(wnd), &st, &grab);
                     it->top = ween_sb_clamp(pos, &st);
+                    it->sb_grab = grab;
                     combo_damage(wnd);
                     SetCapture(wnd);
                 }
@@ -3383,6 +3393,18 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
+        if (it && it->sb_grab >= 0 && GetCapture() == wnd) {
+            /* following the thumb, the way the rich edit's bar is followed */
+            ween_sbstate st = { it->top, 0, it->count - 1,
+                                combo_list_rows(wnd), 1 };
+            int top = ween_sb_clamp(
+                ween_sb_drag(sy, combo_bar_h(wnd), &st, it->sb_grab), &st);
+            if (top != it->top) {
+                it->top = top;
+                combo_damage(wnd);
+            }
+            return 0;
+        }
         if (it) {
             int on_list = sy >= 0 && sy < ph - 2;
             int at = on_list ? it->top + sy / (ih ? ih : 1) : -1;
@@ -3413,6 +3435,10 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         if (g_dropped != wnd)
             return 0;
         it = items_of(wnd);
+        if (it && it->sb_grab >= 0) { /* the drag is over, the position stays */
+            it->sb_grab = -1;
+            return 0;
+        }
         ween_client_origin(wnd, &ox, &oy);
         combo_list_rect(wnd, &px, &py, &pw, &ph);
         sy = oy + GET_Y_LPARAM(lp) - py - 1;
@@ -3602,6 +3628,27 @@ static LRESULT combo_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
             combo_drop(NULL);
         InvalidateRect(wnd, NULL, FALSE);
         return 0;
+    /* **Which item the dropped list shows first.** win32's own pair, and the
+     * reason they are here is that from outside a combo a bar that can be
+     * dragged and one that cannot look identical -- this is the number that
+     * tells them apart, so a test can hold the behaviour. */
+    case CB_GETTOPINDEX:
+        it = items_of(wnd);
+        return it ? it->top : 0;
+    case CB_SETTOPINDEX: {
+        int rows;
+        it = items_of(wnd);
+        if (!it)
+            return CB_ERR;
+        rows = combo_list_rows(wnd);
+        it->top = (int)wp;
+        if (it->top > it->count - rows)
+            it->top = it->count - rows;
+        if (it->top < 0)
+            it->top = 0;
+        combo_damage(wnd);
+        return 0;
+    }
     case CB_SETCURSEL:
         it = items_of(wnd);
         if (it) {
