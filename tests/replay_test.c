@@ -63,20 +63,11 @@ int main(int argc, char **argv)
     RegisterClassA(&wc);
     HWND host = CreateWindowExA(0, "replayhost", "h", WS_POPUP | WS_VISIBLE,
                                 0, 0, 400, 300, NULL, NULL, NULL, NULL);
-    /* **WordPad's own style word and its startup default.** The control
-     * under test has to be the one jd drives, or a difference could be the
-     * configuration rather than the program. */
-    HWND re = CreateWindowExA(0x00000210, RICHEDIT_CLASSA, "",
-                              (DWORD)0x550081C4, 0, 0, 280, 160, host, NULL,
-                              NULL, NULL);
-    CHARFORMATA d;
-    memset(&d, 0, sizeof d);
-    d.cbSize = sizeof d;
-    d.dwMask = CFM_FACE | CFM_SIZE;
-    d.yHeight = 200;
-    strcpy(d.szFaceName, "Arial");
-    SendMessageA(re, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&d);
-    SetFocus(re);
+    HWND re = rp_create(host);
+    if (!re) {
+        fprintf(stderr, "no control\n");
+        return 2;
+    }
 
     n = parse(argv[1], seq, 4096);
     if (n < 0)

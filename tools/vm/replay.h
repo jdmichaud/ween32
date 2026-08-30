@@ -183,6 +183,41 @@ static void rp_filler(char *out, int n, int seed)
     out[n] = 0;
 }
 
+/* ---- the control under test ---------------------------------------------
+ *
+ * **Both sides create it here, or a difference is the configuration.**
+ * Sam's wine run found `enter:0:0` producing no paragraph break, which
+ * looked like an operation that did nothing -- and a control without
+ * `ES_MULTILINE` or `ES_WANTRETURN` swallows Return whatever the executor
+ * sends. The language, the executor and the serialiser were shared and the
+ * *window* was not, so the one remaining place the two sides could differ by
+ * construction was the thing being tested.
+ *
+ * The style word is WordPad's own, read off the machine
+ * (`reference/probe/window.txt`): `550081C4`, ex `210`. The default format
+ * is what `src/main.zig` sends before a character exists. **The control
+ * under test is the one jd drives**, so a divergence is the program rather
+ * than the setup.
+ */
+static HWND rp_create(HWND parent)
+{
+    CHARFORMATA d;
+    HWND re = CreateWindowExA(0x00000210, RICHEDIT_CLASSA, "",
+                              (DWORD)0x550081C4, 0, 0, 280, 160, parent, NULL,
+                              NULL, NULL);
+    if (!re)
+        return NULL;
+    memset(&d, 0, sizeof d);
+    d.cbSize = sizeof d;
+    d.dwMask = CFM_FACE | CFM_SIZE;
+    d.yHeight = 200; /* ten point, in twips */
+    d.szFaceName[0] = 'A'; d.szFaceName[1] = 'r'; d.szFaceName[2] = 'i';
+    d.szFaceName[3] = 'a'; d.szFaceName[4] = 'l'; d.szFaceName[5] = 0;
+    SendMessageA(re, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&d);
+    SetFocus(re);
+    return re;
+}
+
 /* ---- the executor -------------------------------------------------------
  *
  * **Here rather than in the caller, for the same reason the serialiser is.**
