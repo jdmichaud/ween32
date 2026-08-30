@@ -23,6 +23,13 @@ WordPad's own, for comparison: client 756  page 742  client-page 14  adv 9
   W  own font   inset 40      client 756x366  page 678  client-page 78  nMax 5001  adv 10  x0 39
   W  own font   inset 80      client 756x366  page 598  client-page 158  nMax 5001  adv 10  x0 79
 
+== asymmetric rects: left and right apart ==
+  W  left 20 right 00  client 756x366  page 737  client-page 19  nMax 5001  adv 10  x0 19
+  W  left 20 right 40  client 756x366  page 698  client-page 58  nMax 5001  adv 10  x0 19
+  W  left 00 right 20  client 756x366  page 737  client-page 19  nMax 5001  adv 10  x0 0
+  W  left 40 right 20  client 756x366  page 698  client-page 58  nMax 5001  adv 10  x0 39
+  W  left 04 right 60  client 756x366  page 694  client-page 62  nMax 5001  adv 10  x0 3
+
 == the same control, naming the effects ==
   A  Arial 10   effects unnamed  client 756x366  page 746  client-page 10  nMax 5501  adv 11  x0 9
   A  Arial 10   effects zeroed   client 756x366  page 746  client-page 10  nMax 4501  adv 9  x0 9

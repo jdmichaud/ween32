@@ -118,6 +118,7 @@ static int xof(HWND re, int i)
  * font alone, `sel` clears ES_SELECTIONBAR. */
 static long g_target = 1440;
 static int g_inset = -1;   /* >=0: EM_SETRECT, the client inset by this much */
+static int g_right = -1;   /* >=0: a different inset on the right, so the rect is asymmetric */
 
 static void row(const char *label, int wide, const char *face, int sel)
 {
@@ -153,7 +154,7 @@ static void row(const char *label, int wide, const char *face, int sel)
         RECT fr;
         GetClientRect(re, &fr);
         fr.left += g_inset;
-        fr.right -= g_inset;
+        fr.right -= (g_right >= 0 ? g_right : g_inset);
         SendMessageA(re, EM_SETRECT, 0, (LPARAM)&fr);
         pump(250);
     }
@@ -261,6 +262,38 @@ void WinMainCRTStartup(void)
     row("W  own font   inset 40    ", 1, NULL, 1);
     g_inset = 80;
     row("W  own font   inset 80    ", 1, NULL, 1);
+
+    /* **Every rect row above is a symmetric inset, so `2 * x0` and
+     * `left + right` are the same number in all of them** -- and wordpad's
+     * own rect is asymmetric (`want.left = r.left + dx`), which is precisely
+     * the case they cannot separate. A rule read off the rows above would be
+     * fitted to the one shape the program being copied does not use. */
+    fprintf(GUEST_STREAM, "\n== asymmetric rects: left and right apart ==\n");
+    {
+        int L[] = {20, 20, 0, 40, 4};
+        int R[] = {0, 40, 20, 20, 60};
+        int k;
+        for (k = 0; k < 5; k++) {
+            g_inset = L[k];
+            g_right = R[k];
+            {
+                char lbl[64];
+                int n = 0;
+                const char *pre = "W  left ";
+                while (*pre) lbl[n++] = *pre++;
+                lbl[n++] = (char)('0' + L[k] / 10);
+                lbl[n++] = (char)('0' + L[k] % 10);
+                lbl[n++] = ' '; lbl[n++] = 'r'; lbl[n++] = 'i';
+                lbl[n++] = 'g'; lbl[n++] = 'h'; lbl[n++] = 't'; lbl[n++] = ' ';
+                lbl[n++] = (char)('0' + R[k] / 10);
+                lbl[n++] = (char)('0' + R[k] % 10);
+                lbl[n] = 0;
+                row(lbl, 1, NULL, 1);
+            }
+        }
+        g_right = -1;
+        g_inset = -1;
+    }
 
     fprintf(GUEST_STREAM, "\n== the same control, naming the effects ==\n");
     g_inset = -1;

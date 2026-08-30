@@ -2584,31 +2584,47 @@ static int rich_text_width(HWND wnd, ween_rich *e)
  * Written as the library's own origin rather than as WordPad's number, so it
  * cannot be a pair of errors cancelling: tune the constant to 14 and the page
  * is right only for the one control shape that hides the origin bug. */
-/* **And this is the rule for a control with no formatting rectangle, which
- * wordpad's editor is not.** `hpage.txt`'s other eight rows say the machine
- * uses a different one once `EM_SETRECT` has been sent:
+/* **And a control with a formatting rectangle uses a different rule, which
+ * wordpad's editor has.** `hpage.txt`'s rect rows, thirteen of them:
  *
- *     no rect     page = client - x0 - 1        x0 = inset + selection bar
- *     with rect   page = client - 2 * x0        x0 = rect.left - 1
+ *     page = client - f(left) - f(right),   f(k) = max(0, k - 1)
  *
- * Both exact over their own rows and neither covering the other. The second
- * is **not implemented here on purpose**: the machine's `x0` under a
- * rectangle is `rect.left - 1` because it drops the selection bar, and ours
- * is `rect.left + 8` because it keeps it -- so building the machine's page
- * rule onto our origin would be one half of a two-half fix, and the other
- * half was landed and reverted this evening for being exactly that.
+ * with `left` and `right` the rectangle's insets from the client edges. Zero
+ * residue over all thirteen -- and `f` is the *same function* as the text
+ * origin's, `x0 = max(0, left - 1)`, so the page is the client less the
+ * origin at each end rather than a second rule that happens to agree.
  *
- * **Whoever lands the origin change lands this with it.** Until then a
- * control with a formatting rectangle gets the no-rect page, which is wrong
- * by however far the two origins differ, and is written down here rather
- * than left to be discovered by the scrollbar behaving oddly. */
+ * **The first eight rows said something else and it was wrong.** They were
+ * all *symmetric* insets, where `2 * x0` and `f(left) + f(right)` are the
+ * same number, and `2 * x0` is what they fit. wordpad's own rectangle is
+ * asymmetric -- `alignEditorToRuler` sets `want.left = r.left + dx` and
+ * leaves the right alone -- so the tidy rule read off those rows was fitted
+ * to the one shape the program being copied does not use. Five asymmetric
+ * rows kill it outright:
+ *
+ *     left 20 right  0   x0 19   page 737
+ *     left 20 right 40   x0 19   page 698     same x0, and 39 pixels apart
+ *
+ * `2 * x0` predicts 718 for both. **The separating case was worth the boot
+ * it cost**, and it is the fourth time today a rule that fitted every row
+ * anybody had was fitted to a sample that could not disagree.
+ *
+ * This does **not** depend on the origin change: it is a function of the
+ * rectangle the caller set, not of where we then put the text. */
 static int rich_hpage(HWND wnd)
 {
+    ween_rich *e = rich_state(wnd);
     RECT cr;
     int page;
     GetClientRect(wnd, &cr);
-    page = (cr.right - cr.left) - rich_bar(wnd) - rich_inset(wnd) -
-           rich_selbar(wnd) - 1;
+    if (e && e->fmt_set) {
+        int l = e->fmt.left - cr.left, r = cr.right - e->fmt.right;
+        page = (cr.right - cr.left) - rich_bar(wnd) - (l > 1 ? l - 1 : 0) -
+               (r > 1 ? r - 1 : 0);
+    } else {
+        page = (cr.right - cr.left) - rich_bar(wnd) - rich_inset(wnd) -
+               rich_selbar(wnd) - 1;
+    }
     return page > 1 ? page : 1;
 }
 

@@ -2978,6 +2978,54 @@ int main(void)
         CHECK(a - b == (hcr.right - hcr.left) - 10,
               "and the page follows it: the client less ten, not less two");
         DestroyWindow(hre);
+
+        /* **A formatting rectangle, and an asymmetric one.** The page rule
+         * under a rect is `client - f(left) - f(right)` with
+         * `f(k) = max(0, k - 1)`, measured over thirteen machine rows.
+         *
+         * Both of these have the same left inset and therefore the same text
+         * origin, and their pages are 39 pixels apart -- so **a rule written
+         * as `2 * x0` passes neither**, which is what the first eight rows of
+         * that measurement said before anyone took an asymmetric one. Every
+         * symmetric sample agrees with both rules; only these tell them
+         * apart, and wordpad's own rectangle is the asymmetric shape. */
+        hre = CreateWindowExA(WS_EX_CLIENTEDGE, RICHEDIT_CLASSA, "",
+                              WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL |
+                                  ES_MULTILINE | ES_AUTOVSCROLL |
+                                  ES_AUTOHSCROLL | ES_SELECTIONBAR,
+                              0, 0, 380, 200, host, NULL, NULL, NULL);
+        SendMessageA(hre, EM_SETTARGETDEVICE, 0, 1440);
+        GetClientRect(hre, &hcr);
+        {
+            RECT fr;
+            int wide = hcr.right - hcr.left;
+            int steps[2][2] = {{20, 0}, {20, 40}};
+            int k;
+            for (k = 0; k < 2; k++) {
+                int l = steps[k][0], r = steps[k][1];
+                fr = hcr;
+                fr.left += l;
+                fr.right -= r;
+                SendMessageA(hre, EM_SETRECT, 0, (LPARAM)&fr);
+                SendMessageA(hre, WM_SETTEXT, 0, (LPARAM)big);
+                SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_LEFT, 0), 0);
+                p.x = p.y = 0;
+                SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+                a = (int)p.x;
+                SendMessageA(hre, WM_HSCROLL, MAKEWPARAM(SB_PAGERIGHT, 0), 0);
+                p.x = p.y = 0;
+                SendMessageA(hre, EM_POSFROMCHAR, (WPARAM)&p, 0);
+                b = (int)p.x;
+                page = wide - (l > 1 ? l - 1 : 0) - (r > 1 ? r - 1 : 0);
+                CHECK(a - b == page,
+                      k == 0
+                          ? "a rectangle inset only on the left pages by the "
+                            "client less its left"
+                          : "and insetting the right as well takes that off "
+                            "too, which 2*x0 cannot express");
+            }
+        }
+        DestroyWindow(hre);
     }
 
     if (g_failures) {
