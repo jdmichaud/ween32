@@ -3,7 +3,34 @@
     .version = "0.4.0",
     .fingerprint = 0x843ab14c20ac068e,
     .minimum_zig_version = "0.17.0-dev.1158",
-    .dependencies = .{},
+    .dependencies = .{
+        // Paint's .png half: libpng itself is the upstream tarball this
+        // package wraps, built by `zig build` with zlib under it.
+        .libpng = .{
+            .url = "git+https://github.com/allyourcodebase/libpng#e123eca2140de78f1017a46c24e330fb3024fc58",
+            .hash = "libpng-1.6.57-oiaFGuYqAAB3CK1mjIzXHn2Z3EVV9okuko-VH23OOSV_",
+        },
+        // The same sources, named here as well. The wrapper builds them;
+        // Paint is shown their png.h to call it through, and a header read
+        // where it stands cannot be gathered out of the wrapper's installed
+        // headers on every filesystem this checkout builds on -- see the
+        // note beside addHeaders below. The two entries must move together:
+        // the hash is the wrapper's own pin of these very sources.
+        .libpng_src = .{
+            .url = "https://github.com/glennrp/libpng/archive/refs/tags/v1.6.57.tar.gz",
+            .hash = "N-V-__8AACSdYAB_UbYSe21ZcD-qFBX7twJ4mRDPTrekTXQF",
+        },
+        // And zlib's own sources, pinned the same way and for the same
+        // reason: libpng's compile is handed zlib's headers through the
+        // installed-headers copy that does not survive every filesystem,
+        // so they are handed to it again here, read where they stand. The
+        // hash is the zlib wrapper's own pin, and the three entries move
+        // together.
+        .zlib_src = .{
+            .url = "https://github.com/madler/zlib/archive/refs/tags/v1.3.2.tar.gz",
+            .hash = "N-V-__8AAI4ANwDM8MWhHTUFLKfvLE_n2NQk6mh0sFDzhTqO",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

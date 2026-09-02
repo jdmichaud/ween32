@@ -26,7 +26,7 @@ const art_icon = @import("art_icon.zig");
 const dialogs = @import("dialogs.zig");
 const undo = @import("undo.zig");
 const tools = @import("tools.zig");
-const bmp = @import("file.zig");
+const picfile = @import("file.zig");
 const selection = @import("selection.zig");
 const viewbitmap = @import("viewbitmap.zig");
 const thumbnail = @import("thumbnail.zig");
@@ -384,7 +384,7 @@ fn command(id: u16) void {
             var keep: [300]u8 = @splat(0);
             const path = recentPath(i);
             @memcpy(keep[0..path.len], path);
-            bmp.open(keep[0..path.len]) catch {
+            picfile.open(keep[0..path.len]) catch {
                 _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
                 return;
             };
@@ -397,7 +397,7 @@ fn command(id: u16) void {
             var buf: [300]u8 = @splat(0);
             if (!askForFile(&buf, false)) return;
             const path = zlen(&buf);
-            bmp.open(path) catch {
+            picfile.open(path) catch {
                 _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
                 return;
             };
@@ -576,16 +576,44 @@ fn askToSave() bool {
 fn askForFile(buf: *[300]u8, saving: bool) bool {
     var ofn = w.OPENFILENAMEA{
         .hwndOwner = app.frame,
-        .lpstrFilter = "Bitmap Files (*.bmp)\x00*.bmp\x00All Files (*.*)\x00*.*\x00",
+        .lpstrFilter = "Bitmap Files (*.bmp)\x00*.bmp\x00PNG File (*.png)\x00*.png\x00All Files (*.*)\x00*.*\x00",
         .lpstrFile = @ptrCast(buf),
         .nMaxFile = buf.len,
-        .lpstrDefExt = "bmp",
+        // On the way in a suffix is still guessed for the name: "bmp",
+        // which is what a name without one has always meant. On the way out
+        // it is the type box's business -- a fixed "bmp" would call every
+        // picture one, whatever type was chosen above it -- so the suffix
+        // the choice implies is put on afterwards, below.
+        .lpstrDefExt = if (saving) null else "bmp",
         .Flags = if (saving) w.OFN_OVERWRITEPROMPT else w.OFN_FILEMUSTEXIST,
         .lpstrTitle = if (saving) "Save As" else "Open",
     };
     // start where the last one was, if there was one
     if (hasPath()) @memcpy(buf[0..savePath().len], savePath());
-    return (if (saving) w.GetSaveFileNameA(&ofn) else w.GetOpenFileNameA(&ofn)) != 0;
+    if ((if (saving) w.GetSaveFileNameA(&ofn) else w.GetOpenFileNameA(&ofn)) == 0) return false;
+    if (saving) nameByType(&ofn, buf);
+    return true;
+}
+
+/// The second line of the filter, counted from one as the dialog counts it.
+const png_type = 2;
+
+/// What the type box chose, put on the name if it was typed without one:
+/// the suffix belongs to the type, and All Files falls back to the format
+/// Paint has always saved.
+fn nameByType(ofn: *w.OPENFILENAMEA, buf: *[300]u8) void {
+    var len: usize = 0;
+    while (len < buf.len and buf[len] != 0) : (len += 1) {}
+    var i = len;
+    while (i > 0) : (i -= 1) {
+        const c = buf[i - 1];
+        if (c == '.') return; // the name carries its own
+        if (c == '/' or c == '\\') break; // none in the name itself
+    }
+    const ext: []const u8 = if (ofn.nFilterIndex == png_type) ".png" else ".bmp";
+    if (len + ext.len >= buf.len) return;
+    @memcpy(buf[len .. len + ext.len], ext);
+    buf[len + ext.len] = 0;
 }
 
 fn zlen(buf: []const u8) []const u8 {
@@ -608,7 +636,7 @@ fn save(straight: bool) void {
         if (!askForFile(&buf, true)) return;
         path = zlen(&buf);
     }
-    bmp.save(path) catch {
+    picfile.save(path) catch {
         _ = w.MessageBoxA(app.frame, "The picture could not be saved.", "Paint", w.MB_OK | w.MB_ICONERROR);
         return;
     };
@@ -655,7 +683,7 @@ fn openArgument() void {
         arg = arg[1..end];
     }
     if (arg.len == 0) return;
-    bmp.open(arg) catch {
+    picfile.open(arg) catch {
         _ = w.MessageBoxA(app.frame, "The picture could not be opened.", "Paint", w.MB_OK | w.MB_ICONERROR);
         return;
     };

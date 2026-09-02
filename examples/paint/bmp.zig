@@ -1,4 +1,5 @@
-//! Reading and writing the one format Paint is really about: a .bmp.
+//! The format Paint was born writing: a .bmp, read and written by the
+//! program itself.
 //!
 //! GDI has no file format of its own — a program that saves a picture writes
 //! the header itself and asks for the pixels with GetDIBits, which is what
@@ -12,7 +13,15 @@ const app = &A.app;
 
 var path_buf: [300]u8 = undefined;
 
-fn zpath(path: []const u8) [*:0]const u8 {
+/// The path as win32 wants it: nul-terminated, in a buffer of its own.
+///
+/// **It answers rather than assuming it fits.** A path is not bounded by the
+/// dialog that usually supplies one -- `openArgument` hands over whatever is
+/// on the command line -- and this copied in without looking, so a long
+/// enough name wrote past the buffer. Reachable, and silent in a release
+/// build.
+fn zpath(path: []const u8) ![*:0]const u8 {
+    if (path.len >= path_buf.len) return error.PathTooLong;
     @memcpy(path_buf[0..path.len], path);
     path_buf[path.len] = 0;
     return @ptrCast(&path_buf);
@@ -39,7 +48,7 @@ pub fn save(path: []const u8) !void {
     } };
     _ = w.GetDIBits(app.pic.dc, app.pic.bmp, 0, @intCast(height), bits.ptr, &info, w.DIB_RGB_COLORS);
 
-    const f = w.CreateFileA(zpath(path), w.GENERIC_WRITE, 0, null, w.CREATE_ALWAYS, w.FILE_ATTRIBUTE_NORMAL, null);
+    const f = w.CreateFileA(try zpath(path), w.GENERIC_WRITE, 0, null, w.CREATE_ALWAYS, w.FILE_ATTRIBUTE_NORMAL, null);
     if (f == w.INVALID_HANDLE_VALUE) return error.CannotCreate;
     defer _ = w.CloseHandle(f);
     var head: [file_header + info_header]u8 = undefined;
@@ -62,7 +71,7 @@ pub fn save(path: []const u8) !void {
 /// Read a .bmp into the picture, which takes its size.
 pub fn open(path: []const u8) !void {
     const alloc = std.heap.page_allocator;
-    const f = w.CreateFileA(zpath(path), w.GENERIC_READ, w.FILE_SHARE_READ, null, w.OPEN_EXISTING, w.FILE_ATTRIBUTE_NORMAL, null);
+    const f = w.CreateFileA(try zpath(path), w.GENERIC_READ, w.FILE_SHARE_READ, null, w.OPEN_EXISTING, w.FILE_ATTRIBUTE_NORMAL, null);
     if (f == w.INVALID_HANDLE_VALUE) return error.CannotOpen;
     defer _ = w.CloseHandle(f);
     const size32 = w.GetFileSize(f, null);

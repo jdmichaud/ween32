@@ -213,14 +213,44 @@ fn addExamples(b: *std.Build, mod: *std.Build.Module, target: std.Build.Resolved
             .root_source_file = b.path("examples/paint/main.zig"),
             .target = target,
             .optimize = optimize,
-            // On Windows it carries no C runtime: it reads and writes a
-            // .bmp with CreateFile and ReadFile, as a win32 program does,
-            // and has nothing else to ask one for. Everywhere else the
-            // library it links against is C and wants one.
-            .link_libc = target.result.os.tag != .windows,
+            // libpng, which reads and writes the .png half of Paint's file
+            // handling, is a C library and brings the C runtime with it on
+            // either kind of host. The picture files themselves still go in
+            // and out through CreateFile, ReadFile and WriteFile, as a
+            // win32 program does; it is only the deflate that asks the
+            // runtime for anything.
+            .link_libc = true,
         }),
     });
     paint.root_module.addImport("ween32", mod);
+    // libpng, from allyourcodebase's packaging: the upstream sources built
+    // by `zig build`, with zlib under them. The declarations the program
+    // calls it through are translated out of png.h as the library built it,
+    // read where it stands out of the very sources the wrapper pins -- not
+    // out of the library's installed headers, which are gathered by copying
+    // directories and do not survive every filesystem this checkout builds
+    // on (the note beside addHeaders above says how that goes). This Zig
+    // has no @cImport to do it in place with.
+    const png_dep = b.dependency("libpng", .{ .target = target, .optimize = optimize });
+    const png_lib = png_dep.artifact("png");
+    // zlib's headers, reached for libpng's compile the plain way: the
+    // wrapper is handed them through the installed-headers copy that does
+    // not survive every filesystem this checkout builds on, and on a host
+    // with a zlib of its own the compile quietly uses *that* header
+    // instead. Read where they stand, out of the very sources pinned in
+    // build.zig.zon, and neither can happen.
+    const zlib_src = b.dependency("zlib_src", .{});
+    png_lib.root_module.addIncludePath(zlib_src.path(""));
+    paint.root_module.linkLibrary(png_lib);
+    const png_src = b.dependency("libpng_src", .{});
+    const png_h = b.addTranslateC(.{
+        .root_source_file = png_src.path("png.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // pnglibconf.h, which png.h was built expecting, sits in the wrapper
+    png_h.addIncludePath(png_dep.path(""));
+    paint.root_module.addImport("libpng", png_h.createModule());
     // A program with windows, not a console one: without this the loader
     // opens a console beside it.
     if (target.result.os.tag == .windows)

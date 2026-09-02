@@ -241,6 +241,28 @@ away whatever is floating: move a selection on the machine and press Ctrl+Z,
 and the pixels are back where they were with nothing at the place they were
 dragged to.
 
+**The files are .bmp and .png.** The .bmp Paint writes itself, the way
+the machine's does: GDI has no file format of its own, so a program that
+saves a picture writes the header itself and asks for the pixels with
+GetDIBits — twenty-four bits, bottom-up, rows padded to four bytes. The
+.png is libpng's, from [allyourcodebase's `zig build`
+packaging](https://github.com/allyourcodebase/libpng), because that format
+is deflate and crcs and thirteen kinds of chunk, and no honest program
+writes it out by hand. Only the library's simplified API is used — RGB in,
+RGB out — with whatever was transparent laid onto white, the colour of the
+paper; anything a file is that the picture is not, a palette, sixteen bits,
+an alpha channel, interlacing, comes over on the way in.
+
+The machine's Paint knew one format, and knew it completely; a .png reached
+it only through the filters a later Windows could install. So the second
+format is a thing chosen because it is better rather than because it is what
+Paint did, like the undo depth. Which format a path means is decided by its
+extension — and on the way in by what the file turns out to be, because a
+name is not always telling the truth: a png picked out through "All Files"
+under a name with no suffix still opens, recognised by its signature. The
+Save box offers both types, and a name typed without its suffix takes the
+type chosen above it rather than a fixed default.
+
 **The Open box is the shell's.** What a program gets when it calls
 `GetOpenFileNameA` on the machine is not the plain dialog the API had in 1993
 but the shell's browser: a places bar down the left with History, Desktop, My
@@ -442,10 +464,10 @@ Attributes opens with the width already selected, which is user32's dialog
 manager doing what ween32 was taught to; the page's corner handle drags out a
 dotted rectangle and the picture becomes it; a shape dragged out past the left
 of the picture stops at the picture's edge rather than crossing the tool box;
-and Save As followed by File > Open writes a .bmp and reads it back with the
-file calls Windows has, no C runtime in it anywhere. XTEST drives all of that
-from a script — press, move, screenshot, release — and the pixels say the
-same thing on both sides.
+and Save As followed by File > Open writes a .bmp — or, named .png, deflates
+one through libpng — and reads it back with the file calls Windows has.
+XTEST drives all of that from a script — press, move, screenshot, release —
+and the pixels say the same thing on both sides.
 
 One difference worth knowing, since it is the sort of thing a comparison
 against wine would otherwise "fix": wine's `DrawFocusRect` puts its dots on
@@ -456,13 +478,21 @@ opposite ones. The machine is what ween32 follows.
 ## What the win32 build is
 
 `paint.exe` is a 64-bit Windows program with windows rather than a console —
-`subsystem = .Windows`, or the loader opens one beside it — and it carries no
-C runtime at all. It reads and writes its .bmp with `CreateFile`, `ReadFile`
-and `WriteFile` like any other win32 program, which is the only thing it ever
-wanted a runtime for, so what it imports is USER32, GDI32, COMCTL32,
-COMDLG32, and from KERNEL32 the six file calls and `GetCommandLineA` and
-`GlobalMemoryStatus`. `make win32` builds it, so it cannot quietly stop
+`subsystem = .Windows`, or the loader opens one beside it. It reads and
+writes its picture files with `CreateFile`, `ReadFile` and `WriteFile` like
+any other win32 program; it is the .png half that wants a C runtime, libpng
+being a C library, and with the runtime linked in what it imports is
+USER32, GDI32, COMCTL32, COMDLG32, from KERNEL32 the six file calls and
+`GetCommandLineA` and `GlobalMemoryStatus`, and the CRT's own
+api-ms-win-crt-* set. `make win32` builds it, so it cannot quietly stop
 building.
+
+It used to carry no runtime at all — nothing but the five system DLLs — and
+building it that way was worth doing once, to find that nothing else was
+needed. The .png half ends that rather than complicating it: a runtime that
+imports the api-ms-win-crt-* set does not exist on a Windows 2000, so a
+program with a .png in it does not run there. The .bmp half is unchanged,
+and still the machine's own.
 
 It was worth finding out how far that goes, and the answer is: the same
 source runs on the Windows 2000 in the emulator, beside the Paint it is a
@@ -475,7 +505,8 @@ declaration; a PE stamped NT 4.0, which `tools/vm/pe2k.py` does; and an entry
 point of its own, because Zig's start-up leaves through ntdll's
 `RtlExitUserProcess`, which arrived with XP — a program that so much as names
 a procedure ntdll has not got is refused by the loader before a line of it
-runs.
+runs. It would need a fourth now, the one thing that cannot be had: a
+libpng with no C runtime in it.
 
 The one thing to know if it is ever tried again: Zig's `.winapi` calling
 convention is chosen by the *architecture*, not by the system. Writing it on

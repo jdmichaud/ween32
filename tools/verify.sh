@@ -3,7 +3,7 @@
 #
 #     tools/verify.sh              # this working tree, as it stands
 #     tools/verify.sh <sha>        # a throwaway worktree at that commit
-#     FAST=1 tools/verify.sh       # skip the sanitizer and the win32 gates
+#     FAST=1 tools/verify.sh       # skip the sanitizer, the gates and the pictures
 #
 # It exists because the numbers below were being measured twice: once by
 # whoever wrote the change and once by whoever reviewed it, from recipes
@@ -296,7 +296,7 @@ renamebox "ours" "$tmp/rb-before.png" "$tmp/rb-after.png"
 echo
 
 if [ "${FAST:-0}" = 1 ]; then
-    echo "== FAST: the sanitizer and the gates were skipped =="
+    echo "== FAST: the sanitizer, the gates and the pictures were skipped =="
     exit 0
 fi
 
@@ -330,3 +330,37 @@ for line in "win32 constants agree" "win32 structs agree" \
 done
 echo
 echo "A missing gate line means that gate did not run, not that it passed."
+
+# ---- the pictures, which are the only thing that opens what paint wrote -----
+#
+# The gates say Paint *compiles*, against win32 and against ween32, and are
+# silent about whether a picture that goes out comes back. `pictures.py` asks
+# that -- and until now nothing ran it, so it could neither pass nor fail.
+#
+# **Three outcomes, not two.** Paint is built by `zig build paint`, which
+# nothing else here does: without zig there is no binary, and a check with no
+# binary must say so rather than report a verdict about Paint. That is the
+# same rule as the gate line above -- a missing line means it did not run.
+#
+# **`--cache-dir` is not optional and is the Makefile's own.** This checkout
+# is on an sshfs mount, and Zig extracts a fetched package into the build root
+# before renaming it into place -- a rename this mount refuses, with a bare
+# `error: PermissionDenied` and nothing to say which path it meant. The
+# Makefile has always passed `$(ZIG_CACHE)`, which is on /tmp, and that is why
+# `make win32` builds Paint on this machine while a plain `zig build paint`
+# cannot. Written out because the failure names neither the mount nor the
+# cache, and the next person will lose the same hour I did.
+echo
+echo "== pictures =="
+if ! command -v zig > /dev/null 2>&1; then
+    echo "  SKIPPED: no zig, so Paint was not built and nothing was asked"
+elif ! zig build paint --cache-dir "${ZIG_CACHE:-/tmp/ween32-zig-cache}" \
+        > "$tmp/paintbuild.log" 2>&1; then
+    echo "  NOT FIT TO REPORT: Paint did not build"
+    grep -E "error" "$tmp/paintbuild.log" | head -3 | sed 's/^/    /'
+elif python3 tools/paint/pictures.py > "$tmp/pictures.log" 2>&1; then
+    printf "  ok      %s\n" "$(tail -1 "$tmp/pictures.log")"
+else
+    echo "  FAILED"
+    grep -E "FAIL|could not|refused" "$tmp/pictures.log" | head -4 | sed 's/^/    /'
+fi
