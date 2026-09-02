@@ -5173,6 +5173,20 @@ static int lv_icon_cell_h(HWND wnd)
 }
 
 static int lv_content_w(const ween_list *l);
+static int lv_flow_down(int view_h);
+
+/* Which bars the view needs and what is left for the rows once they are
+ * taken. Each bar takes a strip off the view, and taking one can bring the
+ * other on — a list that just fits until its own scroll bar appears. */
+typedef struct {
+    int hbar, vbar;     /* whether each is shown */
+    int view_w, view_h; /* what is left for the header and rows */
+    int visible;        /* rows that fit in view_h */
+    int flow_down;      /* List: how many cells stand in one column */
+    int content_w;      /* how wide the view's own contents are */
+} ween_lv_layout;
+
+static ween_lv_layout lv_layout(HWND wnd, const ween_list *l);
 
 /* Where a row sits, in the view's own coordinates before scrolling: every
  * view works out from this, so what is drawn and what is clicked agree. */
@@ -5208,7 +5222,33 @@ static void lv_cell_rect(HWND wnd, const ween_list *l, int row, RECT *out)
         if (across < 1)
             across = 1;
         if (mode == LVS_LIST) {
-            out->left = (row / down) * cw;
+            /* **The one flow view that scrolls, so the one that takes the
+             * offset here.** The Report branch above leaves scrolling to its
+             * callers, which subtract for themselves; a List cell is drawn
+             * and hit-tested from this rectangle alone, so the column the
+             * bar has scrolled to is part of where the cell *is*. Small
+             * Icons and Icons still do not scroll at all -- they flow the
+             * other way and want the bar down the side, which is a separate
+             * question and is not answered here. */
+            /* **The height the cells flow in, worked out from the `cw`
+             * already in hand.** Calling `lv_layout` here asked
+             * `lv_flow_cell_w` for that width a second time, and it measures
+             * every row's text -- so a paint that walks every cell measured
+             * every row for each of them. bob's numbers: 200 items 17ms, 400
+             * 68ms, 800 273ms, four times the paint for twice the items,
+             * against a Details view's 0.2ms. The bar I had just given the
+             * box paid it on every drag.
+             *
+             * Whether the bar is there decides the height, and it is decided
+             * the same way `lv_layout` decides it -- from this same `cw`,
+             * without asking for it again. */
+            int n = l ? l->nrow : 0;
+            int sb = ween_scroll_metric();
+            int first = lv_flow_down(cr.bottom);
+            int cols = (n + first - 1) / first;
+            int view_h = cr.bottom - (cols * cw > cr.right ? sb : 0);
+            down = lv_flow_down(view_h);
+            out->left = (row / down) * cw - l->scroll_x;
             out->top = (row % down) * ch;
         } else {
             out->left = (row % across) * cw;
@@ -5228,14 +5268,13 @@ static int lv_content_w(const ween_list *l)
     return w;
 }
 
-/* Which bars the view needs and what is left for the rows once they are
- * taken. Each bar takes a strip off the view, and taking one can bring the
- * other on — a list that just fits until its own scroll bar appears. */
-typedef struct {
-    int hbar, vbar;     /* whether each is shown */
-    int view_w, view_h; /* what is left for the header and rows */
-    int visible;        /* rows that fit in view_h */
-} ween_lv_layout;
+/* How many cells stand one above the other in a List view's column, given
+ * the height left for them. */
+static int lv_flow_down(int view_h)
+{
+    int down = view_h / WEEN_LV_FLOW_H;
+    return down > 0 ? down : 1;
+}
 
 static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
 {
@@ -5244,8 +5283,39 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     int sb = ween_scroll_metric(), content = lv_content_w(l);
     int ih = lv_item_h(wnd, l);
     int rows_h = (l ? l->nrow : 0) * ih + lv_header_h(wnd) + WEEN_LV_ROW_TOP;
+    int mode = lv_mode(wnd);
 
     GetClientRect(wnd, &cr);
+    if (mode == LVS_LIST) {
+        /* **A List view grows sideways, not downwards.** Its cells go down
+         * a column and then start another, so what there is to scroll is
+         * columns and the bar is the one along the bottom -- where the
+         * measurements above describe a Report view, whose contents are as
+         * wide as its headings and as tall as its rows. Measured as a Report
+         * view, a List view reports contents narrower than itself and asks
+         * for no bar at all: jd's Open box put its files in four columns,
+         * showed two and a half, and offered nothing to reach the rest with.
+         *
+         * The height decides the width, and a bar takes height, so the two
+         * are settled in that order -- the same one step the Report branch
+         * below takes for its own pair. */
+        int cw = lv_flow_cell_w(wnd, l), n = l ? l->nrow : 0;
+        int down = lv_flow_down(cr.bottom);
+        int cols = (n + down - 1) / down;
+        g.vbar = 0;
+        g.hbar = cols * cw > cr.right;
+        if (g.hbar) {
+            down = lv_flow_down(cr.bottom - sb);
+            cols = (n + down - 1) / down;
+            g.hbar = cols * cw > cr.right;
+        }
+        g.view_w = cr.right;
+        g.view_h = cr.bottom - (g.hbar ? sb : 0);
+        g.flow_down = lv_flow_down(g.view_h);
+        g.content_w = ((n + g.flow_down - 1) / g.flow_down) * cw;
+        g.visible = g.flow_down;
+        return g;
+    }
     g.hbar = content > cr.right;
     g.vbar = rows_h > cr.bottom - (g.hbar ? sb : 0);
     g.hbar = content > cr.right - (g.vbar ? sb : 0);
@@ -5254,6 +5324,8 @@ static ween_lv_layout lv_layout(HWND wnd, const ween_list *l)
     g.visible = (g.view_h - lv_header_h(wnd) - WEEN_LV_ROW_TOP) / ih;
     if (g.visible < 1)
         g.visible = 1;
+    g.flow_down = lv_flow_down(g.view_h);
+    g.content_w = content;
     return g;
 }
 
@@ -5295,6 +5367,48 @@ static void lv_scroll_to(HWND wnd, ween_list *l, int top)
     if (top == l->top)
         return;
     l->top = top;
+    InvalidateRect(wnd, NULL, FALSE);
+}
+
+/* Bring a row into view, whichever way the view scrolls.
+ *
+ * **A List view scrolls sideways, so keeping a row in view is a horizontal
+ * question there.** The two callers below both worked in `l->top`, which is
+ * a count of rows off the top and is what a Details view scrolls by; the
+ * List branch of `lv_cell_rect` never reads it. That did not matter while a
+ * List view could not scroll at all -- it can now, so an arrow key or an
+ * LVM_ENSUREVISIBLE moved the selection into a column off the right and
+ * nothing followed it. bob measured it: `ENSUREVISIBLE(199)` left the top
+ * row spanning items 1..25 with `l->top` at 192, and 199 nowhere on screen.
+ */
+static void lv_bring_into_view(HWND wnd, ween_list *l, int row)
+{
+    ween_lv_layout g;
+    int cw, col, left, right;
+    if (!l || row < 0 || row >= l->nrow)
+        return;
+    if (lv_mode(wnd) != LVS_LIST) {
+        if (row < l->top)
+            lv_scroll_to(wnd, l, row);
+        else if (row >= l->top + lv_visible(wnd))
+            lv_scroll_to(wnd, l, row - lv_visible(wnd) + 1);
+        return;
+    }
+    g = lv_layout(wnd, l);
+    cw = lv_flow_cell_w(wnd, l);
+    col = g.flow_down > 0 ? row / g.flow_down : 0;
+    left = col * cw;
+    right = left + cw;
+    if (left < l->scroll_x)
+        l->scroll_x = left;
+    else if (right > l->scroll_x + g.view_w)
+        l->scroll_x = right - g.view_w;
+    else
+        return;
+    if (l->scroll_x > g.content_w - g.view_w)
+        l->scroll_x = g.content_w - g.view_w;
+    if (l->scroll_x < 0)
+        l->scroll_x = 0;
     InvalidateRect(wnd, NULL, FALSE);
 }
 
@@ -5848,6 +5962,20 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (lv_mode(wnd) != LVS_REPORT) { /* one of the three that flow */
         lv_paint_flow(wnd, l, dc);
         lv_paint_band(l, &top->surface, ox, oy);
+        /* **A List view's bar is drawn here or nowhere.** The bars below
+         * belong to the Details path, and this one returns before reaching
+         * them -- so a List view whose columns ran off the right had a bar
+         * computed for it and never drawn. Only List: the other two flow
+         * downwards and want the bar down the side, which they do not have
+         * either and which is not answered here. */
+        if (lv_mode(wnd) == LVS_LIST) {
+            ween_lv_layout fg = lv_layout(wnd, l);
+            if (fg.hbar)
+                ween_draw_scrollbar(&top->surface, ox, oy + fg.view_h,
+                                    fg.view_w, ween_scroll_metric(), 0, 1,
+                                    l->scroll_x, fg.view_w, 0,
+                                    fg.content_w - 1);
+        }
         return; /* and none of them has a header: that band is Details' own */
     }
     ih = lv_item_h(wnd, l);
@@ -5855,8 +5983,8 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     g = lv_layout(wnd, l);
     if (!g.hbar)
         l->scroll_x = 0;
-    else if (l->scroll_x > lv_content_w(l) - g.view_w)
-        l->scroll_x = lv_content_w(l) - g.view_w;
+    else if (l->scroll_x > g.content_w - g.view_w)
+        l->scroll_x = g.content_w - g.view_w;
     if (l->scroll_x < 0)
         l->scroll_x = 0;
     sx = l->scroll_x;
@@ -6003,7 +6131,7 @@ static void listview_paint(HWND wnd, HDC dc, const PAINTSTRUCT *ps)
     if (g.hbar)
         ween_draw_scrollbar(&top->surface, ox, oy + g.view_h, g.view_w,
                             ween_scroll_metric(), 0, 1, l->scroll_x, g.view_w,
-                            0, lv_content_w(l) - 1);
+                            0, g.content_w - 1);
     if (g.hbar && g.vbar) /* the dead square where they meet */
         ween_surface_fill(&top->surface, ox + g.view_w, oy + g.view_h,
                           ween_scroll_metric(), ween_scroll_metric(),
@@ -6250,12 +6378,8 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         ween_ui_focus_cues = 1; /* the keyboard has been used, so it shows */
         /* keep the selection in view, which is the whole point of moving it */
-        if (l->sel) {
-            if (l->sel - 1 < l->top)
-                lv_scroll_to(wnd, l, l->sel - 1);
-            else if (l->sel - 1 >= l->top + lv_visible(wnd))
-                lv_scroll_to(wnd, l, l->sel - lv_visible(wnd));
-        }
+        if (l->sel)
+            lv_bring_into_view(wnd, l, l->sel - 1);
         InvalidateRect(wnd, NULL, FALSE);
         notify_parent(wnd, LVN_ITEMCHANGED);
         }
@@ -6287,7 +6411,11 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         /* and the one along the bottom, which scrolls the columns */
         if (g.hbar && my >= g.view_h) {
             int grab;
-            ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1, g.view_w,
+            /* `g.content_w`, not `lv_content_w`: the latter is the sum of
+             * the *column* widths, which is what a Details view scrolls and
+             * is zero for a List view -- it has no columns, it has flowed
+             * cells. The bar drew and would not move. */
+            ween_sbstate st = { l->scroll_x, 0, g.content_w - 1, g.view_w,
                                 lv_item_h(wnd, l) };
             int pos = ween_sb_click(mx, g.view_w, &st, &grab);
             if (grab >= 0) {
@@ -6606,7 +6734,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
                 lv_scroll_to(wnd, l, ween_sb_drag(GET_Y_LPARAM(lp), g.view_h, &st,
                                              wnd->drag_offset));
             } else if (g.hbar) {
-                ween_sbstate st = { l->scroll_x, 0, lv_content_w(l) - 1,
+                ween_sbstate st = { l->scroll_x, 0, g.content_w - 1,
                                     g.view_w, lv_item_h(wnd, l) };
                 int pos = ween_sb_drag(GET_X_LPARAM(lp), g.view_w, &st,
                                   wnd->drag_offset);
@@ -7003,12 +7131,7 @@ static LRESULT listview_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     }
     case LVM_ENSUREVISIBLE:
         l = list_of(wnd);
-        if (l && (int)wp >= 0 && (int)wp < l->nrow) {
-            if ((int)wp < l->top)
-                lv_scroll_to(wnd, l, (int)wp);
-            else if ((int)wp >= l->top + lv_visible(wnd))
-                lv_scroll_to(wnd, l, (int)wp - lv_visible(wnd) + 1);
-        }
+        lv_bring_into_view(wnd, l, (int)wp);
         return TRUE;
     case WM_KILLFOCUS:
         /* the keyboard went somewhere else: a rename that was waiting on the
