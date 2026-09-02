@@ -156,6 +156,7 @@ static struct {
     int saving;
     char dir[1400];
     char pick[1800];
+    char last_dir[1400]; /* where the last one succeeded, for the next */
     HIMAGELIST icons;      /* the two the file list draws */
     HIMAGELIST tree_icons; /* and the seven the "Look in" tree does */
 } g_fd;
@@ -610,6 +611,64 @@ static const char *shown_name(const char *name, const char *patterns)
     return name;
 }
 
+/* The names as they stand on disk, in the order the list holds them.
+ *
+ * **The list shows a name and hands back a name, and they are not the same
+ * one.** `shown_name` leaves the extension off a file whose type the filter
+ * knows -- which is what the shell does and what the comment above it says --
+ * but both handlers read the *displayed* text back out of the control and
+ * used it as the file name. So picking `picture.png` out of a list filtered
+ * for .png put `picture` in the box, and Open then looked for `picture.bmp`
+ * -- the default extension, appended because the name had none -- and said
+ * "The file could not be found" about a file that was there and selected.
+ *
+ * jd hit it with the file he could see in the list. The comment on
+ * `shown_name` already required this: *"What it hands back is still the whole
+ * name."* Nothing carried it: this control has no LVIF_PARAM to ride in, so
+ * the names are kept here, indexed as the items are. */
+static char **g_names;
+static int g_names_n, g_names_cap;
+
+static void names_reset(void)
+{
+    int i;
+    for (i = 0; i < g_names_n; i++)
+        free(g_names[i]);
+    g_names_n = 0;
+}
+
+static void names_add(const char *name)
+{
+    char *copy;
+    if (g_names_n == g_names_cap) {
+        int want = g_names_cap ? g_names_cap * 2 : 64;
+        char **grown = realloc(g_names, (size_t)want * sizeof *grown);
+        if (!grown)
+            return; /* nothing recorded, and nothing after it either: the
+                     * count stops here, so every row from this one on falls
+                     * back to what the list shows rather than shifting */
+        g_names = grown;
+        g_names_cap = want;
+    }
+    /* not strdup: this builds -std=c99 -pedantic, where it is not declared */
+    copy = malloc(strlen(name) + 1);
+    if (copy)
+        memcpy(copy, name, strlen(name) + 1);
+    /* **The slot is taken whether or not the name fits in it.** The row goes
+     * into the list either way, so a name skipped here would put every later
+     * row against the name before it -- and `real_name` would answer
+     * confidently with the wrong file rather than fall back to what the list
+     * shows. A NULL is the fallback working; a shift is a silent mis-open. */
+    g_names[g_names_n++] = copy;
+}
+
+/* The name on disk for a row, or NULL if it was not recorded -- in which case
+ * the caller uses what the list shows, which is what it did before. */
+static const char *real_name(int at)
+{
+    return at >= 0 && at < g_names_n ? g_names[at] : NULL;
+}
+
 static void add_item(HWND list, int at, const char *text, int image)
 {
     LVITEMA it;
@@ -750,6 +809,7 @@ static void fill_list(HWND dlg)
     if (details)
         list_columns(list);
     SendMessageA(list, LVM_DELETEALLITEMS, 0, 0);
+    names_reset();
     if (lookin)
         fill_tree(lookin);
     d = opendir(g_fd.dir);
@@ -766,6 +826,7 @@ static void fill_list(HWND dlg)
         if (stat(full, &st) != 0 || !S_ISDIR(st.st_mode))
             continue;
         add_item(list, at, e->d_name, FD_ICON_FOLDER);
+        names_add(e->d_name);
         if (details)
             list_details(list, at, e->d_name, &st, 1);
         at++;
@@ -783,6 +844,7 @@ static void fill_list(HWND dlg)
         if (!matches(e->d_name, patterns))
             continue;
         add_item(list, at, shown_name(e->d_name, patterns), FD_ICON_FILE);
+        names_add(e->d_name);
         if (details)
             list_details(list, at, e->d_name, &st, 0);
         at++;
@@ -999,6 +1061,11 @@ static void selection_changed(HWND dlg)
     it.pszText = name;
     it.cchTextMax = sizeof name;
     SendMessageA(list, LVM_GETITEMA, 0, (LPARAM)&it);
+    {
+        const char *whole = real_name(sel);
+        if (whole)
+            snprintf(name, sizeof name, "%s", whole);
+    }
     if (it.iImage != FD_ICON_FOLDER)
         SetDlgItemTextA(dlg, IDC_FILE_NAME, name);
 }
@@ -1018,6 +1085,11 @@ static void open_selection(HWND dlg)
     it.pszText = name;
     it.cchTextMax = sizeof name;
     SendMessageA(list, LVM_GETITEMA, 0, (LPARAM)&it);
+    {
+        const char *whole = real_name(sel);
+        if (whole)
+            snprintf(name, sizeof name, "%s", whole);
+    }
     if (it.iImage == FD_ICON_FOLDER) {
         go_into(dlg, name);
         SetDlgItemTextA(dlg, IDC_FILE_NAME, "");
@@ -1282,10 +1354,45 @@ static BOOL run_file_dialog(OPENFILENAMEA *ofn, int saving)
     g_fd.ofn = ofn;
     g_fd.saving = saving;
     g_fd.pick[0] = 0;
-    if (ofn->lpstrInitialDir && ofn->lpstrInitialDir[0])
-        snprintf(g_fd.dir, sizeof g_fd.dir, "%s", ofn->lpstrInitialDir);
-    else if (!getcwd(g_fd.dir, sizeof g_fd.dir))
-        snprintf(g_fd.dir, sizeof g_fd.dir, "/");
+    /* Where the box opens, which is a question with a documented order
+     * of answers and this used to have only the last of them -- the
+     * working directory, every time. A program launched from a build
+     * directory therefore had its Open box looking there forever: a
+     * picture in the home directory answered "The file could not be
+     * found" with its name typed into the box whole and correct, which
+     * reads as a fault in the box and is the box starting in the wrong
+     * place. The machine's order:
+     *
+     *   1. a path already in the name field, which a program that has a
+     *      file open puts there;
+     *   2. lpstrInitialDir, what the program itself says;
+     *   3. the directory the last file came out of, remembered for the
+     *      life of the process;
+     *   4. the working directory.
+     */
+    {
+        const char *slash = strrchr(ofn->lpstrFile, '/');
+        const char *from = NULL;
+        size_t len = 0;
+        if (slash) { /* 1: a path in the field, down to its directory */
+            from = ofn->lpstrFile;
+            len = slash == from ? 1 /* a file in the root itself */
+                                : (size_t)(slash - from);
+        } else if (ofn->lpstrInitialDir && ofn->lpstrInitialDir[0]) {
+            from = ofn->lpstrInitialDir; /* 2: what the program said */
+            len = strlen(from);
+        } else if (g_fd.last_dir[0]) { /* 3: the last one's directory */
+            from = g_fd.last_dir;
+            len = strlen(from);
+        }
+        if (from) {
+            if (len >= sizeof g_fd.dir)
+                len = sizeof g_fd.dir - 1;
+            memcpy(g_fd.dir, from, len);
+            g_fd.dir[len] = 0;
+        } else if (!getcwd(g_fd.dir, sizeof g_fd.dir)) /* 4: the cwd */
+            snprintf(g_fd.dir, sizeof g_fd.dir, "/");
+    }
 
     /* An empty template: the size is set and the controls are made when it
      * comes up, because both are in pixels rather than in dialog units. */
@@ -1299,6 +1406,19 @@ static BOOL run_file_dialog(OPENFILENAMEA *ofn, int saving)
                  NULL, 0);
     if (DialogBoxIndirectParamA(NULL, tmpl, ofn->hwndOwner, file_proc, 0) != 1)
         return FALSE;
+
+    /* Where the next box opens: the directory this one ended in, which is
+     * what the machine remembers for the life of the process. A cancelled
+     * box remembers nothing -- the one after it starts where this one
+     * would have. */
+    {
+        const char *slash = strrchr(g_fd.pick, '/');
+        if (slash && slash != g_fd.pick)
+            snprintf(g_fd.last_dir, sizeof g_fd.last_dir, "%.*s",
+                     (int)(slash - g_fd.pick), g_fd.pick);
+        else if (slash) /* a file in the root itself */
+            snprintf(g_fd.last_dir, sizeof g_fd.last_dir, "/");
+    }
 
     snprintf(ofn->lpstrFile, ofn->nMaxFile ? ofn->nMaxFile : sizeof g_fd.pick,
              "%s", g_fd.pick);
