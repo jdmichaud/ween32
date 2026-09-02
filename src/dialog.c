@@ -548,7 +548,19 @@ BOOL IsDialogMessageA(HWND dlg, LPMSG msg)
         return TRUE;
     }
     case VK_SPACE:
-        if (focus && focus != dlg) {
+        /* **A field takes a space as a letter, not as a press.** This sent
+         * the focus window a WM_KEYDOWN and said TRUE, which is exactly
+         * right for a button -- but no field turns a key into a character
+         * by itself; that is TranslateMessage's job, and told TRUE the
+         * pump never ran it. So a space could not be typed into any field
+         * in any dialog: a file name with one in it came out without it,
+         * and the Open box said "The file could not be found" of a file
+         * that was there. The guard is the one the bare letters use
+         * above: a control answering DLGC_WANTCHARS is being typed into,
+         * and everything else is being pressed. */
+        if (focus && focus != dlg &&
+            !(SendMessageA(focus, WM_GETDLGCODE, VK_SPACE, 0) &
+              (DLGC_WANTCHARS | DLGC_WANTALLKEYS))) {
             SendMessageA(focus, WM_KEYDOWN, VK_SPACE, msg->lParam);
             return TRUE;
         }

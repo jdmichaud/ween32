@@ -72,10 +72,12 @@ const ween_surface *ween_headless_surface(void)
  *   c:N / C:N   with Control, and with Control and Shift: an accelerator
  *   a:N         with Alt, which is how the menu bar is reached
  *   h:s h:c h:sc h:      hold a modifier over the presses that follow
- *   t:TEXT      **type it**, a character at a time. `_` is a space, and the
- *               run ends at the first real one. This is how a file name gets
- *               into a common dialog, which is the whole of what a program's
- *               Open and Save can be driven with
+ *   t:TEXT      **type it**, a character at a time. `_` is a space, `__` an
+ *               underscore, and the run ends at the first real space. This
+ *               is how a file name gets into a common dialog, which is the
+ *               whole of what a program's Open and Save can be driven
+ *               with — and without `__` no name with an underscore in it,
+ *               which is half of them, could be
  *   r:W,H       the window system hands the app a new size
  *   W:W,H       a *window manager* imposes this size on every window,
  *               whatever size the app asked for -- 0,0 gives it back. This
@@ -133,9 +135,20 @@ static void inject_script(const char *script)
             ween_headless_inject(ev);
         } else if (kind == 't' && p[1] == ':') {
             for (p += 2; *p && *p != ' '; p++) {
+                unsigned ch = (unsigned char)*p;
+                /* `_` is a space, because the run cannot hold a real one;
+                 * `__` is an underscore, because a file name can carry one
+                 * and until it could, no name that did could be typed into
+                 * a box by script */
+                if (ch == '_') {
+                    if (p[1] == '_')
+                        p++;
+                    else
+                        ch = ' ';
+                }
                 memset(&ev, 0, sizeof(ev));
                 ev.kind = WEEN_EV_KEY;
-                ev.ch = (unsigned char)(*p == '_' ? ' ' : *p);
+                ev.ch = ch;
                 ev.vk = ev.ch >= 'a' && ev.ch <= 'z' ? ev.ch - 32 : ev.ch;
                 ween_headless_inject(ev);
             }

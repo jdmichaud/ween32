@@ -358,6 +358,67 @@ int main(void)
               "a bare letter is taken when the focus does not want it");
         CHECK(GetFocus() == yes,
               "and it goes to the button whose label marks that letter");
+
+        /* **A space is a letter to a field and a press to a button**, and
+         * the dialog manager used to take it from both. It pressed the
+         * focus window's control whatever that was, and a field turns no
+         * key into a character by itself -- that is TranslateMessage's
+         * job, and told the key was handled the pump never ran it. So a
+         * space could not be typed into any field in any dialog: a file
+         * name with one in it came out without it, and the Open box said
+         * "The file could not be found" of a file that was there. The
+         * space asks the field the same question the letter above does. */
+        /* A field of its own, empty: what the letter tests left in theirs
+         * is theirs to keep, and a space asserted against a used field says
+         * as much about the caret as about the key. */
+        HWND space_field =
+            CreateWindowExA(0, "EDIT", "", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                            80, 130, 80, 21, dlg, (HMENU)(UINT_PTR)994, NULL,
+                            NULL);
+        SetFocus(space_field);
+        memset(&m, 0, sizeof(m));
+        m.hwnd = space_field; /* the character is the focus window's, as a
+                                 pump addresses it */
+        m.message = WM_KEYDOWN;
+        m.wParam = VK_SPACE;
+        m.lParam = (LPARAM)' ' << 16; /* it rides in the scan code's word */
+        CHECK(!IsDialogMessageA(dlg, &m),
+              "a field keeps the space -- it is typing, not a press");
+        TranslateMessage(&m);
+        DispatchMessageA(&m);
+        /* The character is a posted message: it lands when a pump picks it
+         * up, as the one below main's is going to. An empty queue is this
+         * backend's "done", and the click main injects later re-arms it. */
+        while (GetMessageA(&m, NULL, 0, 0)) {
+            if (!IsDialogMessageA(dlg, &m)) {
+                TranslateMessage(&m);
+                DispatchMessageA(&m);
+            }
+        }
+        GetWindowTextA(space_field, typed, sizeof typed);
+        CHECK(!strcmp(typed, " "),
+              "and the space lands in the field as a character");
+        DestroyWindow(space_field);
+
+        {
+            /* Its own snapshot, put back afterwards: a press of OK here is
+             * this test's business and not the ledger the click at the end
+             * of main reads -- the comment above the mnemonic block says
+             * exactly how a shared counter turns a later assertion into an
+             * assertion about this one. */
+            int before_space = g_ok_clicks;
+            SetFocus(ok);
+            memset(&m, 0, sizeof(m));
+            m.hwnd = dlg;
+            m.message = WM_KEYDOWN;
+            m.wParam = VK_SPACE;
+            m.lParam = (LPARAM)' ' << 16;
+            CHECK(IsDialogMessageA(dlg, &m),
+                  "a space is taken when the focus is a button");
+            CHECK(g_ok_clicks == before_space + 1,
+                  "and it presses that button");
+            g_ok_clicks = before_space;
+        }
         DestroyWindow(field);
         DestroyWindow(yes);
     }
