@@ -1,6 +1,6 @@
 .{
     .name = .ween32,
-    .version = "0.4.0",
+    .version = "0.5.0",
     .fingerprint = 0x843ab14c20ac068e,
     .minimum_zig_version = "0.17.0-dev.1158",
     .dependencies = .{
