@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "../src/ween_internal.h"
 
@@ -86,6 +88,22 @@ static void key(unsigned vk)
     ev.kind = WEEN_EV_KEY;
     ev.vk = vk;
     ween_headless_inject(ev);
+}
+
+/* Type it, a character at a time, the way the backend delivers a keystroke:
+ * both the character and the virtual key, because a field needs the first
+ * and the dialog manager looks at the second. */
+static void type_text(const char *s)
+{
+    for (; *s; s++) {
+        ween_event ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.kind = WEEN_EV_KEY;
+        ev.ch = (unsigned char)*s;
+        ev.vk = (*s >= 'a' && *s <= 'z') ? (unsigned)(*s - 32)
+                                         : (unsigned)(unsigned char)*s;
+        ween_headless_inject(ev);
+    }
 }
 
 /* Every place and size the hook saw the box in. */
@@ -709,6 +727,107 @@ int main(void)
                   "the other rows' letters are both under the field");
         }
         DestroyWindow(host);
+    }
+
+    /* ---- the file box, which nothing opened until now ---------------------
+     *
+     * `tests/comdlg_test.c` was the colour box and the font box; **no test
+     * anywhere opened a file box and picked a file**, so everything the Open
+     * and Save boxes do was held up by nothing. Three things fixed the same
+     * day were among them, and each one below fails without its fix:
+     *
+     *     the name on disk      a row shows `holiday` under a *.png filter,
+     *                           because a matching extension is hidden the
+     *                           way the shell hides one -- and what must come
+     *                           back is `holiday.png`. jd: "cannot open png"
+     *     lpstrInitialDir       the box opened in the working directory
+     *                           whatever it was handed
+     *     a space in a name     IsDialogMessageA sent VK_SPACE on as a press
+     *                           and said it had handled it, so no field in
+     *                           any dialog ever saw one
+     *
+     * Driven by queued events, as the colour box above is: the file dialog
+     * takes no hook, so there is no way in from the middle. That is also how
+     * jd drives it, which makes this the same path rather than a private one.
+     */
+    {
+        char dir[512], want[600], typed[600];
+        OPENFILENAMEA ofn;
+        char file[600];
+        FILE *fp;
+        int made = 0;
+
+        snprintf(dir, sizeof dir, "/tmp/ween32-filebox-%d", (int)getpid());
+        mkdir(dir, 0700);
+        snprintf(want, sizeof want, "%s/holiday.png", dir);
+        fp = fopen(want, "wb");
+        if (fp) { fputs("x", fp); fclose(fp); made++; }
+        CHECK(made == 1, "one file to pick, so which row is row nought is "
+                         "not left to readdir's order");
+
+        /* **Two tabs reach the list.** The box gives the focus to the name
+         * field, so Down alone goes to a field that has no rows -- the tab
+         * order is the Look-in combo, the list, then the field it started
+         * in. Found by trying each count in its own process: sharing one
+         * event queue across attempts leaks the unconsumed events of one
+         * into the next, and the answer moves. */
+        key(VK_TAB);
+        key(VK_TAB);
+        key(VK_DOWN);
+        key(VK_RETURN);
+        memset(&ofn, 0, sizeof ofn);
+        file[0] = 0;
+        ofn.lStructSize = sizeof ofn;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = sizeof file;
+        ofn.lpstrFilter = "Pictures\0*.png\0";
+        ofn.lpstrInitialDir = dir;
+        CHECK(GetOpenFileNameA(&ofn) == TRUE,
+              "the Open box opens, a row is picked and it answers TRUE");
+        CHECK(strcmp(file, want) == 0,
+              "and hands back the name on disk, extension and all, not the "
+              "one the row showed with the suffix hidden");
+
+        /* The same box, with the name typed rather than picked -- and the
+         * name has a space in it. The second file is made only now, so the
+         * pick above had exactly one row to find. */
+        snprintf(typed, sizeof typed, "%s/two words.png", dir);
+        fp = fopen(typed, "wb");
+        if (fp) { fputs("x", fp); fclose(fp); }
+        type_text("two words.png");
+        key(VK_RETURN);
+        memset(&ofn, 0, sizeof ofn);
+        file[0] = 0;
+        ofn.lStructSize = sizeof ofn;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = sizeof file;
+        ofn.lpstrFilter = "Pictures\0*.png\0";
+        ofn.lpstrInitialDir = dir;
+        CHECK(GetOpenFileNameA(&ofn) == TRUE,
+              "a name typed into the field opens too");
+        CHECK(strcmp(file, typed) == 0,
+              "and the space in it survived being typed, which it did not "
+              "when the dialog manager took VK_SPACE for a button press");
+
+        /* **The control: these checks must be able to fail.** Every
+         * assertion above is of the form "the box answered TRUE and filled
+         * the buffer", and a box that answered TRUE whatever happened would
+         * pass all of them. */
+        key(VK_ESCAPE);
+        memset(&ofn, 0, sizeof ofn);
+        file[0] = 0;
+        ofn.lStructSize = sizeof ofn;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = sizeof file;
+        ofn.lpstrFilter = "Pictures\0*.png\0";
+        ofn.lpstrInitialDir = dir;
+        CHECK(GetOpenFileNameA(&ofn) == FALSE && file[0] == 0,
+              "Escape answers FALSE and writes nothing, so the three above "
+              "are reporting on something");
+
+        unlink(want);
+        unlink(typed);
+        rmdir(dir);
     }
 
     if (g_failures) {
